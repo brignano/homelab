@@ -1,0 +1,24 @@
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+    networks:
+      - tunnel
+      - core
+      - ai
+
+# Attach to existing networks so cloudflared can proxy to other stacks.
+# Run the other stacks first, then bring this one up.
+networks:
+  tunnel:
+    driver: bridge
+  core:
+    external: true
+    name: core_core
+  ai:
+    external: true
+    name: ai_ai
