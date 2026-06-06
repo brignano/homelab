@@ -1,0 +1,24 @@
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Secrets
+*.key
+*.pem
+*.crt
+secrets/
+
+# Docker volumes (local bind mounts)
+data/
+volumes/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
