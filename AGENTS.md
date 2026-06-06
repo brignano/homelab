@@ -51,3 +51,25 @@ These slash commands are available in `.claude/commands/`:
 - When writing setup log entries, use the template in `docs/setup-log.md` and today's date.
 - Prefer `docker compose` (v2) over `docker-compose` (v1).
 - Don't suggest exposing admin services (Portainer, Grafana, PostgreSQL) via Cloudflare Tunnel.
+
+## Token usage rules
+
+- Prefer reading only the smallest relevant files before proposing changes.
+- Do not scan the whole repo unless explicitly asked.
+- Summarize findings before making large edits.
+- For broad repo questions, first inspect README.md, AGENTS.md, and docs/setup-log.md.
+- Use local Ollama/Open WebUI for low-risk, high-token tasks:
+  - repo summaries
+  - log summaries
+  - documentation drafts
+  - boilerplate
+  - first-pass scripts
+  - test scaffolding
+- Use Claude for:
+  - architecture decisions
+  - multi-file edits
+  - hard debugging
+  - security-sensitive changes
+  - final review
+- Before starting a large task, produce a short plan and list the files likely needed.
+- Avoid repeated full-file reads when a targeted grep/search is sufficient.
