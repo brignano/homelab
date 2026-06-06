@@ -65,6 +65,10 @@ homelab/
    docker compose -f docker/ai/docker-compose.yml up -d
    ```
 
+## Tailscale Hostname
+
+<!-- Fill in once the VM is provisioned and connected to Tailscale -->
+
 ## Networking
 
 All services are exposed on the Tailscale interface only (no public ports). Tailscale MagicDNS is used for service discovery within the mesh.

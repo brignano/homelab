@@ -6,6 +6,19 @@
 - **RAM:** 16 GB DDR4
 - **Storage:** 512 GB NVMe
 
+## VM Configuration
+
+Planned Proxmox VM for Docker workloads:
+
+| Parameter | Value |
+|-----------|-------|
+| RAM | 12 GB |
+| vCPUs | 6 cores |
+| Disk | 400 GB |
+| Disk bus | VirtIO |
+| Network | VirtIO |
+| OS | Debian (latest stable) |
+
 ## Stack overview
 
 | Service | Stack file | Network exposure |
