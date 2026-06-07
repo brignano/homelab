@@ -1,0 +1,56 @@
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - proxy
+      - core
+      - monitoring
+      - ai
+
+  adguard:
+    image: adguard/adguardhome:latest
+    container_name: adguard
+    restart: unless-stopped
+    ports:
+      # DNS — every device on the tailnet uses this as its resolver for *.home
+      - "53:53/tcp"
+      - "53:53/udp"
+      # Initial setup wizard (first run only), on 3001 to avoid Grafana's 3000.
+      # Once set up, the admin UI is reached at http://dns.home via Caddy and
+      # this mapping can be removed.
+      - "3001:3000/tcp"
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+    networks:
+      - proxy
+
+volumes:
+  caddy_data:
+  caddy_config:
+  adguard_work:
+  adguard_conf:
+
+networks:
+  proxy:
+    driver: bridge
+  # Attach Caddy to the other stacks' networks so it can reach each service by
+  # container name. These are created by the core/monitoring/ai stacks — bring
+  # those up first.
+  core:
+    external: true
+    name: core_core
+  monitoring:
+    external: true
+    name: monitoring_monitoring
+  ai:
+    external: true
+    name: ai_ai
