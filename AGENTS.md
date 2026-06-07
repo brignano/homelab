@@ -27,37 +27,39 @@ Planned Proxmox LXC container for Docker workloads:
 
 | Service | Stack file | Network exposure |
 |---------|-----------|-----------------|
-| Proxmox VE | bare-metal hypervisor | Tailscale only |
-| Portainer | `docker/core/` | Tailscale only |
-| PostgreSQL 16 | `docker/core/` | Tailscale only |
-| Prometheus | `docker/monitoring/` | Tailscale only |
-| Grafana | `docker/monitoring/` | Tailscale only |
+| Proxmox VE | bare-metal hypervisor | Tailscale only (host mgmt) |
+| Portainer | `docker/core/` | LAN + tailnet (`apps.home`) |
+| PostgreSQL 16 | `docker/core/` | internal only (`127.0.0.1` + Docker network) |
+| Prometheus | `docker/monitoring/` | LAN + tailnet |
+| Grafana | `docker/monitoring/` | LAN + tailnet (`stats.home`) |
 | node-exporter | `docker/monitoring/` | internal |
 | cAdvisor | `docker/monitoring/` | internal |
-| Ollama | `docker/ai/` | Tailscale only |
-| Open WebUI | `docker/ai/` | Tailscale only |
-| cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust |
+| Ollama | `docker/ai/` | LAN + tailnet |
+| Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
+| Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
+| AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
+| cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
 | Jellyfin | planned | Cloudflare Tunnel |
 
 ## Networking rules
-- All ports bind to `127.0.0.1` — nothing is exposed to the LAN or internet directly.
-- **Tailscale-only services:** admin UIs (Portainer, Grafana), databases, AI stack.
-- **Cloudflare Tunnel (public):** Jellyfin, any app previews being shared with friends.
-- The `cloudflared` container joins `core_core` and `ai_ai` networks so it can proxy to containers in other stacks without opening host ports.
+- **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC — `/dev/net/tun` isn't exposed to the container.)
+- **Memorable names (`*.home`):** AdGuard serves DNS (`*.home → 10.0.0.201`) and Tailscale split-DNS points the `home` domain at it; Caddy (`:80`) routes by Host header to each service — `chat.home` (Open WebUI), `stats.home` (Grafana), `apps.home` (Portainer), `dns.home` (AdGuard).
+- **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
+- **Public access:** only via Cloudflare Tunnel (`cloudflared`), reserved for app previews and Jellyfin (planned) — not yet deployed. `cloudflared` joins `core_core` and `ai_ai` so it can proxy to other stacks without opening host ports.
 
 ## Ollama / AI tuning (LXC constraint)
 
 - Ollama auto-detects the **host's** logical CPU count (16), not the LXC's **6-core cgroup quota**. Left at its default it oversubscribes the quota, the kernel CFS-throttles the inference threads, and generation collapses to ~0.5 tok/s.
 - **Every model must pin `num_thread` ≤ the LXC core count** via a Modelfile in `docker/ai/models/`. Use `num_thread 4` (matches 6's ~16 tok/s while leaving 2 cores for other stacks).
-- Apply with `ollama create <tag> -f docker/ai/models/<name>.Modelfile` (rebuilds the same tag in place — no Open WebUI change needed).
-- There is no global Ollama thread env var, so this is per-model and must be repeated for each new model.
+- Apply all tuned models at once with `docker/ai/load-models.sh` (runs `ollama create` for every `models/*.Modelfile`, rebuilding each tag in place — no Open WebUI change needed). For a single model: `ollama create <tag> -f docker/ai/models/<name>.Modelfile`.
+- There is no global Ollama thread env var, so this is per-model: adding a model means dropping a Modelfile in `docker/ai/models/` and re-running the loader.
 
 ## Repo conventions
 - Each Docker stack lives in its own `docker/<name>/` directory with its own `docker-compose.yml` and `.env.example`.
 - Never commit `.env` files — only `.env.example` with placeholder values.
 - Secrets that must exist use `${VAR:?required}` syntax so Compose fails loudly if unset.
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
-- All ports default to `127.0.0.1:<port>` bindings.
+- New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
 
 ## Custom commands
 These slash commands are available in `.claude/commands/`:
@@ -70,7 +72,7 @@ These slash commands are available in `.claude/commands/`:
 | `/expose-service` | Add a service to the Cloudflare Tunnel config |
 
 ## How to help me
-- When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings, named volume, restart policy.
+- When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.
 - When I describe a problem with a container, check `docker logs`, `docker inspect`, and the compose file before suggesting fixes.
 - When writing setup log entries, use the template in `docs/setup-log.md` and today's date.
 - Prefer `docker compose` (v2) over `docker-compose` (v1).
