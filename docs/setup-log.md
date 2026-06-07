@@ -27,6 +27,19 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Doc sync: networking reality + Ollama model loader
+
+**Goal:** Bring `AGENTS.md` back in line with the deployed setup and reduce the per-model tuning toll.
+
+**Steps:**
+1. Fixed the stale `AGENTS.md` networking docs: it still claimed "all ports bind to `127.0.0.1`," untrue since the rebind of Portainer/Grafana/Prometheus/Ollama to all interfaces. Rewrote the networking rules (subnet route, `*.home` split-DNS, the loopback-vs-all-interfaces split) and added the missing **proxy stack** (Caddy + AdGuard) to the stack overview.
+2. Added `docker/ai/load-models.sh` — runs `ollama create` for every `docker/ai/models/*.Modelfile`, rebuilding each tag in place. Adding a tuned model is now "drop a Modelfile, run the loader."
+
+**Notes / next steps:**
+- New-service guidance in `AGENTS.md` now says: default to `127.0.0.1`, open to all interfaces + a Caddy `*.home` route only when LAN/tailnet access is needed.
+
+---
+
 ## 2026-06-07 — Fixed pathologically slow Ollama (LXC thread oversubscription)
 
 **Goal:** Open WebUI chat responses were extremely slow; find out why and fix it.
