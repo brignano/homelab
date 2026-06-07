@@ -7,6 +7,13 @@ services:
       - ollama_data:/root/.ollama
     ports:
       - "11434:11434"
+    environment:
+      # Keep models resident in RAM instead of evicting after the 5-min default.
+      # A cold load of llama3.2:3b on CPU costs ~40s; without this, any chat after
+      # an idle gap eats that reload before the first token — felt as "slow" even
+      # though generation itself runs at ~16 tok/s. The 3B model is ~2-3 GB, well
+      # within the LXC's 14 GB. -1 = never unload.
+      OLLAMA_KEEP_ALIVE: "-1"
     networks:
       - ai
     healthcheck:
