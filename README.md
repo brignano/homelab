@@ -67,7 +67,7 @@ homelab/
 
 ## Tailscale Hostname
 
-<!-- Fill in once the VM is provisioned and connected to Tailscale -->
+The Proxmox host `m5` is on the tailnet as **`m5.tail58e272.ts.net`** (`100.116.69.120`). It runs as a **subnet router** advertising the LAN `10.0.0.0/24` (route approved in the admin console), so the Docker LXC and every service at `10.0.0.201` is reachable from any tailnet device — e.g. Grafana at `http://10.0.0.201:3000`. Set `--accept-routes` on client devices to use it.
 
 ## Networking
 
