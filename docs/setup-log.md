@@ -27,6 +27,28 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Switched planned Docker host from VM to LXC
+
+**Goal:** Pick the right host type for Docker workloads on the 16 GB / 512 GB GMKtec M5 Ultra without starving Proxmox.
+
+**Steps:**
+1. Compared three host options for the Docker workload.
+2. Selected a Proxmox LXC container and updated `AGENTS.md` (`## LXC Configuration`) accordingly.
+
+**Options considered:**
+- **Proxmox + VM:** Strong isolation, but the 12 GB RAM reservation is a hard carve-out — on a 16 GB host that left Proxmox only ~2 GB of headroom.
+- **Proxmox + LXC (chosen):** RAM is a limit rather than a hard reservation and disk is thin-provisioned, so the host keeps real headroom while still running under Proxmox.
+- **Bare-metal Debian:** Maximum performance, but loses Proxmox snapshots/management and the ability to run other VMs/containers on the box.
+
+**Resolution:**
+- Going with a **Proxmox LXC container**. The 12 GB VM reservation left Proxmox only ~2 GB on the 16 GB host; an LXC's 14 GB limit plus thin-provisioned disk leaves usable host headroom.
+
+**Notes / next steps:**
+- The LXC must be **privileged** with **`nesting=1`** enabled (required for Docker-in-LXC).
+- Workload runs identically inside the LXC — no changes to compose files or the bootstrap script.
+
+---
+
 ## 2026-06-06 — Pre-provisioning hardening and tooling
 
 **Goal:** Make initial server setup smoother before the Proxmox VM is provisioned.

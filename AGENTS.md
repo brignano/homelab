@@ -6,18 +6,22 @@
 - **RAM:** 16 GB DDR4
 - **Storage:** 512 GB NVMe
 
-## VM Configuration
+## LXC Configuration
 
-Planned Proxmox VM for Docker workloads:
+Planned Proxmox LXC container for Docker workloads:
 
 | Parameter | Value |
 |-----------|-------|
-| RAM | 12 GB |
+| RAM | 14 GB (limit) |
 | vCPUs | 6 cores |
-| Disk | 400 GB |
+| Disk | 400 GB (thin-provisioned) |
 | Disk bus | VirtIO |
 | Network | VirtIO |
 | OS | Debian (latest stable) |
+| Privilege | Privileged container |
+| Features | `nesting=1` (required for Docker-in-LXC) |
+
+**Rationale:** LXC RAM is a limit, not a hard carve-out, and the disk is thin-provisioned, leaving host headroom on a 16 GB / 512 GB box.
 
 ## Stack overview
 
