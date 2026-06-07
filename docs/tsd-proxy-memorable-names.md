@@ -22,8 +22,8 @@ Names are trivial to change later: edit the site label in `Caddyfile` + the matc
 client (phone/laptop, anywhere)
   │  asks DNS for chat.home
   ▼
-Tailscale split-DNS  ──(domain "home")──▶  AdGuard Home (in LXC)
-  │  AdGuard rewrite: *.home -> 10.0.0.201
+Tailscale split-DNS  ──(domain "home" → 10.0.0.201)──▶  AdGuard Home (in LXC)
+  │  AdGuard rewrite: *.home -> 10.0.0.201          (reached via host subnet route)
   ▼
 Caddy :80 (in LXC)  ──(Host: chat.home)──▶  open-webui:8080
 ```
@@ -31,10 +31,11 @@ Caddy :80 (in LXC)  ──(Host: chat.home)──▶  open-webui:8080
 - **Caddy** (`caddy:2-alpine`) — reverse proxy on `:80`, routes by Host header. Attached to the `core`, `monitoring`, and `ai` Docker networks so it can reach each service by container name. `auto_https off` → plain HTTP (Tailscale already encrypts).
 - **AdGuard Home** (`adguard/adguardhome:latest`) — DNS resolver answering `*.home → 10.0.0.201`, plus network-wide ad/tracker blocking. DNS on `:53`, admin UI behind Caddy at `dns.home`.
 
-## Enabling changes
+## Enabling change
 
-1. **Tailscale inside the LXC** — install + `tailscale up --hostname=lab`, so AdGuard is a reachable tailnet node usable as the split-DNS resolver. (Host subnet route stays as-is.)
-2. **Tailscale admin → DNS → Split DNS** — add a custom nameserver for domain `home` pointing at the LXC's tailnet IP, so `*.home` resolves for every tailnet device, anywhere.
+**Tailscale admin → DNS → Split DNS** — add a custom nameserver for domain `home` pointing at **`10.0.0.201`** (the LXC's LAN IP, already reachable from every tailnet device via the host subnet route). So `*.home` resolves anywhere, and AdGuard needs no tailnet presence of its own.
+
+*(Avoided: running Tailscale inside the LXC. `/dev/net/tun` isn't exposed to the container, and pointing split-DNS at the subnet-routed `10.0.0.201` is simpler and needs no extra Proxmox device config.)*
 
 ## Conventions / footprint
 
@@ -45,12 +46,11 @@ Caddy :80 (in LXC)  ──(Host: chat.home)──▶  open-webui:8080
 ## Risks / notes
 
 - `.home` is a made-up suffix — fine over private split-DNS; `.internal` is the collision-safe alternative if ever desired.
-- Port `53` may collide with the LXC's `systemd-resolved` stub; disable the stub listener or bind AdGuard to the LXC IP if so.
+- Port `53`: verified free in the LXC (`systemd-resolved` inactive), so AdGuard can bind it.
 - Caddy depends on the `core_core`, `monitoring_monitoring`, `ai_ai` external networks — those stacks must be up first.
 
 ## Implementation order
 
-1. Add Tailscale to the LXC (`tailscale up --hostname=lab`).
-2. Bring up `proxy` stack; complete AdGuard setup; add `*.home → 10.0.0.201` rewrite.
-3. Configure Tailscale Split DNS (`home` → LXC tailnet IP).
-4. Verify `chat.home` from the phone off-WiFi; log + PR.
+1. Bring up `proxy` stack; complete AdGuard setup; add `*.home → 10.0.0.201` rewrite.
+2. Configure Tailscale Split DNS (`home` → `10.0.0.201`).
+3. Verify `chat.home` from the phone off-WiFi; log + PR.
