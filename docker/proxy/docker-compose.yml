@@ -23,9 +23,10 @@ services:
       # DNS — every device on the tailnet uses this as its resolver for *.home
       - "53:53/tcp"
       - "53:53/udp"
-      # Initial setup wizard (first run only). Once set up, the admin UI is
-      # reached at http://dns.home via Caddy; this can be removed after setup.
-      - "3000:3000/tcp"
+      # Initial setup wizard (first run only), on 3001 to avoid Grafana's 3000.
+      # Once set up, the admin UI is reached at http://dns.home via Caddy and
+      # this mapping can be removed.
+      - "3001:3000/tcp"
     volumes:
       - adguard_work:/opt/adguardhome/work
       - adguard_conf:/opt/adguardhome/conf
