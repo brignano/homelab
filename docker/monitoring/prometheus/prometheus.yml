@@ -14,11 +14,10 @@ scrape_configs:
         labels:
           host: docker-lxc
 
-  # Proxmox host node_exporter (apt-installed on the bare-metal host).
-  # EDIT: set to the Proxmox host IP:9100 (e.g. 10.0.0.200:9100).
+  # Proxmox host node_exporter (apt-installed on the bare-metal host m5).
   - job_name: node-proxmox
     static_configs:
-      - targets: ["PROXMOX_HOST_IP:9100"]
+      - targets: ["10.0.0.200:9100"]
         labels:
           host: proxmox
 
@@ -26,15 +25,14 @@ scrape_configs:
     static_configs:
       - targets: ["cadvisor:8080"]
 
-  # Proxmox VE API metrics via the multi-target pve-exporter.
-  # EDIT: set the target to the Proxmox host IP (the API endpoint).
+  # Proxmox VE API metrics via the multi-target pve-exporter (host m5 API).
   - job_name: pve
     metrics_path: /pve
     params:
       module: [default]
     static_configs:
       - targets:
-          - PROXMOX_HOST_IP
+          - 10.0.0.200
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target
