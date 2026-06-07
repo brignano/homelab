@@ -11,7 +11,7 @@ services:
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=30d"
     ports:
-      - "127.0.0.1:9090:9090"
+      - "9090:9090"
     networks:
       - monitoring
 
@@ -26,7 +26,7 @@ services:
     volumes:
       - grafana_data:/var/lib/grafana
     ports:
-      - "127.0.0.1:3000:3000"
+      - "3000:3000"
     networks:
       - monitoring
     depends_on:

@@ -7,8 +7,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - portainer_data:/data
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9443:9443"
+      - "9000:9000"
+      - "9443:9443"
     networks:
       - core
 
@@ -23,6 +23,9 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
+      # Loopback-only on purpose: apps reach Postgres over the internal Docker
+      # network; the published port is just for local admin tools. Not exposed
+      # to the LAN/tailnet.
       - "127.0.0.1:5432:5432"
     networks:
       - core
