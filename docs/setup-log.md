@@ -27,6 +27,38 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Observability stack deployed & verified in production
+
+**Goal:** Deploy the monitoring buildout (exporters, Loki/Alloy, dashboards, ntfy
+alerting) to the LXC and confirm it works end to end.
+
+**Steps:**
+1. On host **m5**: created read-only PVE token (`monitoring@pve!grafana`, role
+   `PVEAuditor`); installed `prometheus-node-exporter` on the bare metal.
+2. In the LXC: created read-only Postgres role (`monitoring`, `pg_monitor`);
+   filled `.env`; `docker compose up -d` (all 11 containers up).
+3. Follow-ups (PR #11): switched the ntfy contact point to `?template=grafana`
+   for readable pushes; fronted ntfy with Caddy as `alerts.home`; baked the
+   Proxmox host IP (`10.0.0.200`) into `prometheus.yml`. Added
+   `GF_SERVER_ROOT_URL=http://stats.home` so alert links work from the phone.
+
+**Verified:**
+- All Prometheus targets `UP` — host, LXC, containers, `pve`, `postgres`, all 7
+  blackbox probes, loki, alloy.
+- Grafana provisioning loaded cleanly (datasources, 6 dashboards, 5 alert rules).
+- Loki shows live `{job="docker"}` logs via Alloy.
+- Test alert delivered to the ntfy phone app, formatted by the Grafana template.
+
+**Notes / next steps:**
+- Grafana admin password was reset on the box via
+  `grafana cli admin reset-admin-password` (env var doesn't change an already-
+  initialised instance).
+- ntfy web UI shows a harmless "notifications only over HTTPS" banner — browser
+  API limitation only; phone app + Grafana delivery are unaffected.
+- Optional later: custom ntfy template to drop markdown / add severity+host.
+
+---
+
 ## 2026-06-07 — `.home` names stopped resolving (wedged Tailscale subnet session)
 
 **Goal:** `chat.home` (and all `*.home`) stopped loading from the MacBook, while the
