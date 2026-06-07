@@ -1,0 +1,17 @@
+# Tuned build of llama3.2:3b for the Docker LXC (CT 100).
+#
+# Why: Ollama auto-detects the *host's* logical CPU count (16) rather than the
+# LXC's 6-core cgroup quota, so by default it oversubscribes the quota and the
+# kernel CFS-throttles the inference threads — generation collapses to ~0.5
+# tok/s. Pinning threads at or below the quota removes the throttling and
+# restores expected speed (~16 tok/s). 4 threads matches 6's throughput while
+# leaving 2 cores for the other stacks.
+#
+# Apply (rebuilds the same tag in place, so Open WebUI needs no change):
+#   ollama create llama3.2:3b -f docker/ai/models/llama3.2.Modelfile
+#
+# Every model added to this host must set num_thread the same way — see AGENTS.md.
+
+FROM llama3.2:3b
+
+PARAMETER num_thread 4

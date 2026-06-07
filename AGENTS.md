@@ -45,6 +45,13 @@ Planned Proxmox LXC container for Docker workloads:
 - **Cloudflare Tunnel (public):** Jellyfin, any app previews being shared with friends.
 - The `cloudflared` container joins `core_core` and `ai_ai` networks so it can proxy to containers in other stacks without opening host ports.
 
+## Ollama / AI tuning (LXC constraint)
+
+- Ollama auto-detects the **host's** logical CPU count (16), not the LXC's **6-core cgroup quota**. Left at its default it oversubscribes the quota, the kernel CFS-throttles the inference threads, and generation collapses to ~0.5 tok/s.
+- **Every model must pin `num_thread` ≤ the LXC core count** via a Modelfile in `docker/ai/models/`. Use `num_thread 4` (matches 6's ~16 tok/s while leaving 2 cores for other stacks).
+- Apply with `ollama create <tag> -f docker/ai/models/<name>.Modelfile` (rebuilds the same tag in place — no Open WebUI change needed).
+- There is no global Ollama thread env var, so this is per-model and must be repeated for each new model.
+
 ## Repo conventions
 - Each Docker stack lives in its own `docker/<name>/` directory with its own `docker-compose.yml` and `.env.example`.
 - Never commit `.env` files — only `.env.example` with placeholder values.
