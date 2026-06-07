@@ -1,0 +1,49 @@
+// Grafana Alloy — ships Docker container logs and the host systemd journal to Loki.
+
+logging {
+  level  = "warn"
+  format = "logfmt"
+}
+
+// Discover all running Docker containers via the (read-only) socket.
+discovery.docker "containers" {
+  host = "unix:///var/run/docker.sock"
+}
+
+// Turn Docker metadata into useful Loki labels.
+discovery.relabel "containers" {
+  targets = discovery.docker.containers.targets
+
+  rule {
+    source_labels = ["__meta_docker_container_name"]
+    regex         = "/(.*)"
+    target_label  = "container"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_log_stream"]
+    target_label  = "stream"
+  }
+}
+
+// Tail container logs and forward to Loki.
+loki.source.docker "containers" {
+  host          = "unix:///var/run/docker.sock"
+  targets       = discovery.docker.containers.targets
+  relabel_rules = discovery.relabel.containers.rules
+  forward_to    = [loki.write.default.receiver]
+  labels        = { job = "docker" }
+}
+
+// Host systemd journal (may be empty in an LXC if journald isn't persisted).
+loki.source.journal "host" {
+  forward_to = [loki.write.default.receiver]
+  labels     = { job = "systemd-journal" }
+  max_age    = "12h"
+}
+
+loki.write "default" {
+  endpoint {
+    url = "http://loki:3100/loki/api/v1/push"
+  }
+}

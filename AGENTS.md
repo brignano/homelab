@@ -34,6 +34,12 @@ Planned Proxmox LXC container for Docker workloads:
 | Grafana | `docker/monitoring/` | LAN + tailnet (`stats.home`) |
 | node-exporter | `docker/monitoring/` | internal |
 | cAdvisor | `docker/monitoring/` | internal |
+| pve-exporter | `docker/monitoring/` | internal (Proxmox API) |
+| postgres-exporter | `docker/monitoring/` | internal (+ `core_core`) |
+| blackbox-exporter | `docker/monitoring/` | internal (+ `core`/`ai`/`proxy`) |
+| Loki | `docker/monitoring/` | internal (log store) |
+| Alloy | `docker/monitoring/` | internal (log shipper) |
+| ntfy | `docker/monitoring/` | LAN + tailnet (alerts, `:8090`) |
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |

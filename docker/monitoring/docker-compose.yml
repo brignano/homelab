@@ -10,6 +10,7 @@ services:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
       - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
     ports:
       - "9090:9090"
     networks:
@@ -23,14 +24,18 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
       - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     networks:
       - monitoring
     depends_on:
       - prometheus
+      - loki
 
   node-exporter:
     image: prom/node-exporter:latest
@@ -62,10 +67,120 @@ services:
     networks:
       - monitoring
 
+  # --- Proxmox VE metrics (queries the PVE API with a read-only token) ---
+  pve-exporter:
+    image: prompve/prometheus-pve-exporter:latest
+    container_name: pve-exporter
+    restart: unless-stopped
+    environment:
+      PVE_USER: ${PVE_USER:?required}
+      PVE_TOKEN_NAME: ${PVE_TOKEN_NAME:?required}
+      PVE_TOKEN_VALUE: ${PVE_TOKEN_VALUE:?required}
+      PVE_VERIFY_SSL: "false"
+    networks:
+      - monitoring
+
+  # --- PostgreSQL metrics (read-only monitoring role on the core stack DB) ---
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:latest
+    container_name: postgres-exporter
+    restart: unless-stopped
+    environment:
+      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DSN:?required}
+    networks:
+      - monitoring
+      - core
+
+  # --- Endpoint uptime probing ---
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    container_name: blackbox-exporter
+    restart: unless-stopped
+    volumes:
+      - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
+    command:
+      - "--config.file=/etc/blackbox_exporter/config.yml"
+    networks:
+      - monitoring
+      - core
+      - ai
+      - proxy
+
+  # --- Log store ---
+  loki:
+    image: grafana/loki:latest
+    container_name: loki
+    restart: unless-stopped
+    command: -config.file=/etc/loki/loki-config.yml
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml:ro
+      - loki_data:/loki
+    networks:
+      - monitoring
+
+  # --- Log shipper (Docker container logs + host journal -> Loki) ---
+  alloy:
+    image: grafana/alloy:latest
+    container_name: alloy
+    restart: unless-stopped
+    user: root
+    command:
+      - run
+      - /etc/alloy/config.alloy
+      - --server.http.listen-addr=0.0.0.0:12345
+      - --storage.path=/var/lib/alloy/data
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/log/journal:/var/log/journal:ro
+      - /etc/machine-id:/etc/machine-id:ro
+      - alloy_data:/var/lib/alloy/data
+    ports:
+      - "127.0.0.1:12345:12345"
+    networks:
+      - monitoring
+    depends_on:
+      - loki
+
+  # --- Self-hosted push notifications for alerts ---
+  ntfy:
+    image: binwiederhier/ntfy:latest
+    container_name: ntfy
+    restart: unless-stopped
+    command: serve
+    environment:
+      NTFY_BASE_URL: ${NTFY_BASE_URL:?required}
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+      # Forwards iOS poll requests to ntfy.sh so APNs can wake the app
+      # (only a wake-up poke leaves the server; message bodies stay local).
+      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
+      NTFY_BEHIND_PROXY: "true"
+    volumes:
+      - ntfy_data:/var/lib/ntfy
+    ports:
+      - "${NTFY_PORT:-8090}:80"
+    networks:
+      - monitoring
+      - proxy
+
 volumes:
   prometheus_data:
   grafana_data:
+  loki_data:
+  alloy_data:
+  ntfy_data:
 
 networks:
   monitoring:
     driver: bridge
+  core:
+    external: true
+    name: core_core
+  ai:
+    external: true
+    name: ai_ai
+  proxy:
+    external: true
+    name: proxy_proxy

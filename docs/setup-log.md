@@ -27,6 +27,44 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Observability buildout: exporters, logs, dashboards, alerting
+
+**Goal:** Prometheus + Grafana were running but observing nothing — no exporters
+beyond node/cadvisor, no dashboards, no logs, no alerts. Stand up full coverage
+(Proxmox host, LXC, containers, PostgreSQL, endpoint uptime) plus log aggregation
+and push alerting, within the 16 GB RAM budget.
+
+**Steps (all in `docker/monitoring/`, branch `feat/observability-stack`):**
+1. Added exporters to the compose: `pve-exporter` (Proxmox API, read-only
+   `PVEAuditor` token via `PVE_*` env), `postgres-exporter` (read-only `pg_monitor`
+   role, joins `core_core`), `blackbox-exporter` (HTTP probes, joins
+   `core`/`ai`/`proxy`).
+2. Added logs: `loki` (filesystem store, 30-day retention) + `alloy` (ships Docker
+   container logs via the read-only socket + host journal → Loki).
+3. Added `ntfy` for push alerts (`NTFY_UPSTREAM_BASE_URL=https://ntfy.sh` so iOS
+   gets instant APNs delivery; only a wake-up poke leaves the box).
+4. Provisioned Grafana as code: Prometheus + Loki datasources, a dashboard file
+   provider, and unified alerting (ntfy webhook contact point + default policy +
+   5 alert rules: target down, disk >85%, mem <10%, probe down, postgres down).
+5. Extended `prometheus.yml` with jobs: `node-proxmox`, `pve`, `postgres`,
+   `blackbox`, `loki`, `alloy` (+ `--web.enable-lifecycle` for hot reload).
+6. `scripts/fetch-dashboards.sh` downloads community dashboards (1860, 19792,
+   10347, 9628, 7587, 13639) and pins datasource inputs to the fixed UIDs.
+
+**Notes / next steps:**
+- **Manual host steps before deploy:** `apt install prometheus-node-exporter` on
+  the Proxmox host; set `PROXMOX_HOST_IP` (×2) in `prometheus.yml`; create the PVE
+  token and Postgres `monitoring` role; fill `.env`; run `fetch-dashboards.sh`.
+- Decision: kept secrets in `.env` (`${VAR:?required}`) per repo convention rather
+  than secret files — the PG role is read-only and the DB is internal-only.
+- Validated locally: `docker compose config` and YAML parse all pass. `promtool`
+  and live target/alert verification must run on the host (Docker daemon not on
+  the Mac). See `docker/monitoring/README.md` for the verify checklist.
+- Follow-up: front ntfy with Caddy as `alerts.home`; consider a relay for prettier
+  alert message formatting (currently raw Grafana JSON).
+
+---
+
 ## 2026-06-07 — Doc sync: networking reality + Ollama model loader
 
 **Goal:** Bring `AGENTS.md` back in line with the deployed setup and reduce the per-model tuning toll.
