@@ -27,6 +27,51 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — `.home` names stopped resolving (wedged Tailscale subnet session)
+
+**Goal:** `chat.home` (and all `*.home`) stopped loading from the MacBook, while the
+direct `http://10.0.0.201:3010` still worked. Determine whether DNS was broken and fix it.
+
+**Diagnosis:**
+1. Confirmed the DNS record itself was fine: `dig @10.0.0.201 chat.home` → `10.0.0.201`,
+   Caddy `:80` open, Open WebUI up. But `dig @100.100.100.100 chat.home` (Tailscale
+   resolver) timed out and `curl http://chat.home/` hung (HTTP 000).
+2. Ruled out config: AdGuard rewrite `*.home → 10.0.0.201` correct, `allowed_clients: []`
+   (allows all), Caddy route correct, m5 `ip_forward=1` (persisted), `ts-forward`/masquerade
+   chains intact, m5 → `10.0.0.201` on LAN fine. Nothing mis-set.
+3. Found the fault in the tailnet path: `tailscale status` showed m5 as
+   `relay "nyc", tx … rx 0` — sending but receiving nothing. SSH to m5's *own* tailnet IP
+   (`100.116.69.120`) worked, but traffic *forwarded through* m5 to the subnet-routed
+   `10.0.0.201` (how every device resolves `.home`) died. Only 49 packets had ever hit the
+   subnet masquerade.
+
+**Root cause:**
+- A stale, half-open WireGuard session to m5 stuck on the DERP relay and never re-formed a
+  direct path (the UPnP-based direct path had lapsed). The node stayed reachable, but
+  subnet-router forwarding to `10.0.0.201` was effectively dead — so split-DNS lookups for
+  `*.home`, which forward to `10.0.0.201`, timed out. **Operational fault, not config or
+  architecture.**
+
+**Resolution:**
+- Restarted `tailscaled` on m5 (detached `systemd-run` so it survived the Tailscale-SSH drop).
+  The session immediately re-formed **direct** (`10.0.0.200:41641`, `rx > 0`); `tailscale ping
+  10.0.0.201` went from DERP-40ms/timeout → direct 3ms; `chat.home` → **HTTP 200 in 17ms**.
+- Hardened inside the existing single-gateway design (did **not** add Tailscale to the LXC —
+  consistent with the `/dev/net/tun` constraint): added a static **UDP `41641` →
+  `10.0.0.200`** port-forward on the Xfinity router + DHCP reservation for m5, so the direct
+  path is deterministic instead of depending on UPnP lease renewal. Verified m5's tailscaled
+  listens on `:41641` and it now advertises `73.143.128.196:41641` as a peer endpoint.
+  (Closes the long-pending DHCP-reservation item for `10.0.0.200`.)
+
+**Notes / next steps:**
+- **Runbook:** if `*.home` goes flaky again, first check `tailscale status | grep m5` on any
+  device — `relay` instead of `direct` = this same failure; fix is `systemctl restart
+  tailscaled` on m5. The router port-forward should now prevent the relay-wedge recurring.
+- The true off-LAN test (direct handshake inbound on `41641`) happens next time a device
+  connects from outside the home network — it should go direct instead of relay.
+
+---
+
 ## 2026-06-07 — Observability buildout: exporters, logs, dashboards, alerting
 
 **Goal:** Prometheus + Grafana were running but observing nothing — no exporters
