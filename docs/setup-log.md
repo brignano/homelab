@@ -40,6 +40,31 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Ollama still slow after the num_thread commit: it was never applied + cold-load tax
+
+**Goal:** The `num_thread 4` Modelfile was committed but Open WebUI was still slow. Find out why.
+
+**Diagnosis:**
+1. `ollama show llama3.2:3b --modelfile | grep num_thread` returned **empty** — the *committed* Modelfile had never been applied to the *running* model. Committing the file does nothing; the tag must be rebuilt with `ollama create` on the box.
+2. `load-models.sh` couldn't apply it either: Ollama runs as a **Docker container** (`ollama`), not on the LXC PATH, so `pct exec 100 -- ollama …` fails with `Failed to exec "ollama"`. Must go through `docker exec ollama …`.
+3. `ollama create -f -` (Modelfile via stdin) is **not supported** on this version — needs a real file path. Used `docker cp` to land the Modelfile in the container, then `ollama create -f /tmp/…`.
+4. After rebuild, `ollama show … | grep num_thread` → `PARAMETER num_thread 4`. A timed `ollama run … --verbose`: **eval rate 16.25 tok/s** (generation fixed). But `load duration: 42s` dominated total time — the model reload into RAM.
+
+**Root cause of the *lingering* slowness:**
+- Two separate things: (a) the tuned params were never live, and (b) Ollama's default `keep_alive` is 5 min, so after any idle gap the next chat pays a ~40s cold load before the first token — felt as "still slow" even though generation now runs at ~16 tok/s.
+
+**Resolution:**
+- Rebuilt the live model in the container (`docker cp` Modelfile → `docker exec ollama ollama create llama3.2:3b -f …`).
+- Set `OLLAMA_KEEP_ALIVE: "-1"` on the ollama container in `docker/ai/docker-compose.yml` so the model stays resident (3B ≈ 2-3 GB, fits the 14 GB LXC).
+- Rewrote `load-models.sh` to operate on the container (`docker cp` + `docker exec ollama ollama create`), since the CLI isn't on the LXC PATH.
+- Open WebUI's per-model `num_thread` left on **Default** (not 0): Default = not sent, so the Modelfile's value wins. `0` would mean "auto-detect" and re-trigger the 16-thread oversubscription.
+
+**Notes / next steps:**
+- Standing gotcha: editing a Modelfile is inert until `./docker/ai/load-models.sh` rebuilds the tag *inside the container*. Commit ≠ deploy.
+- Apply the keep_alive change: `cd <repo-on-lxc>/docker/ai && docker compose up -d ollama`.
+
+---
+
 ## 2026-06-07 — Fixed pathologically slow Ollama (LXC thread oversubscription)
 
 **Goal:** Open WebUI chat responses were extremely slow; find out why and fix it.
