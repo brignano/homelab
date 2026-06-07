@@ -1,0 +1,32 @@
+# Memorable, port-free names for homelab services.
+#
+# Traffic rides the Tailscale tailnet (WireGuard-encrypted at the network
+# layer), so we serve plain HTTP — no TLS, no certs, no warnings to manage.
+# `auto_https off` keeps Caddy on :80 and stops it trying to provision certs.
+#
+# To rename a service, edit its site label here and the matching DNS rewrite
+# in AdGuard, then `docker compose restart caddy`.
+
+{
+	auto_https off
+}
+
+# chat.home  ->  Open WebUI (the AI chat UI; container listens on 8080)
+http://chat.home {
+	reverse_proxy open-webui:8080
+}
+
+# stats.home ->  Grafana
+http://stats.home {
+	reverse_proxy grafana:3000
+}
+
+# apps.home  ->  Portainer (Docker management)
+http://apps.home {
+	reverse_proxy portainer:9000
+}
+
+# dns.home   ->  AdGuard Home admin UI
+http://dns.home {
+	reverse_proxy adguard:80
+}
