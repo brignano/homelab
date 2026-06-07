@@ -36,8 +36,8 @@ alerting (Grafana), and push notifications (ntfy).
    GRANT pg_monitor TO monitoring;
    ```
 
-4. **Set the Proxmox host IP** in `prometheus/prometheus.yml` — replace both
-   `PROXMOX_HOST_IP` occurrences (jobs `node-proxmox` and `pve`).
+4. **Proxmox host IP** — `prometheus/prometheus.yml` is pre-set to `10.0.0.200`
+   (host m5). Change it there if your host IP differs.
 
 5. **Install node_exporter on the Proxmox host** (bare metal, Debian):
    ```bash
@@ -54,9 +54,9 @@ alerting (Grafana), and push notifications (ntfy).
    docker compose up -d
    ```
 
-8. **ntfy app**: install the ntfy app (iOS/Android), point it at `NTFY_BASE_URL`,
-   subscribe to topic `homelab-alerts`. Keep Tailscale active on the phone so it
-   can fetch alert bodies when away from home.
+8. **ntfy app**: install the ntfy app (iOS/Android), add server `http://alerts.home`
+   (or the LXC IP + `NTFY_PORT`), subscribe to topic `homelab-alerts`. Keep
+   Tailscale active on the phone so it can fetch alert bodies when away from home.
 
 ## Verify
 
@@ -70,7 +70,8 @@ alerting (Grafana), and push notifications (ntfy).
 
 ## Notes
 
-- ntfy can be fronted by Caddy as `alerts.home`; add a route in `docker/proxy/`
-  and set `NTFY_BASE_URL=http://alerts.home`.
-- Grafana alert notification body is the raw alert JSON (functional, not pretty).
-  A small relay or message template can be added later for nicer formatting.
+- ntfy is fronted by Caddy as `alerts.home` (route in `docker/proxy/Caddyfile`);
+  the `:8090` host port remains as a direct fallback.
+- Alert messages are formatted by ntfy's built-in Grafana template
+  (`?template=grafana` on the contact-point webhook URL) — readable title +
+  body rather than raw JSON.

@@ -30,3 +30,8 @@ http://apps.home {
 http://dns.home {
 	reverse_proxy adguard:80
 }
+
+# alerts.home -> ntfy (push notifications for monitoring alerts)
+http://alerts.home {
+	reverse_proxy ntfy:80
+}

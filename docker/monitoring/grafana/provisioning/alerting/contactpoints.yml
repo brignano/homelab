@@ -7,8 +7,8 @@ contactPoints:
       - uid: ntfy_webhook
         type: webhook
         settings:
-          # Topic in the path => ntfy uses the POST body as the message.
-          # Grafana posts its alert JSON; readable enough for push alerts.
-          url: http://ntfy:80/homelab-alerts
+          # ?template=grafana => ntfy's built-in Grafana template parses the
+          # alert JSON into a readable title + message instead of raw JSON.
+          url: http://ntfy:80/homelab-alerts?template=grafana
           httpMethod: POST
         disableResolveMessage: false
