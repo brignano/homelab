@@ -27,6 +27,30 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Fixed pathologically slow Ollama (LXC thread oversubscription)
+
+**Goal:** Open WebUI chat responses were extremely slow; find out why and fix it.
+
+**Diagnosis:**
+1. Queried the Ollama API directly (`/api/ps`, `/api/generate`). Model `llama3.2:3b` (Q4_K_M) runs **CPU-only** (`size_vram: 0` — expected, no GPU).
+2. Benchmarked generation: **~0.5 tok/s** by default — about 30× slower than this CPU should manage for a 3B Q4 model. An 80-token request even timed out.
+3. Re-ran with an explicit thread count: `num_thread=4` → **16.1 tok/s**, `num_thread=6` → **17.0 tok/s**. Explicit threads = ~30× faster.
+
+**Root cause:**
+- Ollama auto-detects the **host's** logical CPU count (16), not the LXC's **6-core cgroup quota**. It spawns more inference threads than the quota allows; the kernel CFS-throttles them (scheduled → hit quota → stall), so throughput collapses. Capping threads ≤ the quota removes the throttling.
+
+**Resolution:**
+- Added `docker/ai/models/llama3.2.Modelfile` (`FROM llama3.2:3b` + `PARAMETER num_thread 4`) — version-controlled, reproducible.
+- Apply on the box: `ollama create llama3.2:3b -f docker/ai/models/llama3.2.Modelfile` (rebuilds the same tag in place, so Open WebUI needs no change).
+- Chose `num_thread 4` over 6: same throughput (~16 vs 17 tok/s) while leaving 2 cores for the other stacks.
+- Documented the constraint as a standing convention in `AGENTS.md` (every new model must pin `num_thread`).
+
+**Notes / next steps:**
+- No global Ollama thread env var exists, so this is per-model — repeat the Modelfile pattern for every model added.
+- `AGENTS.md` networking rules still say "all ports bind to 127.0.0.1"; that's stale since today's rebind of Portainer/Grafana/Prometheus/Ollama to all interfaces — worth a separate doc cleanup.
+
+---
+
 ## 2026-06-07 — Memorable service names (proxy stack: Caddy + AdGuard)
 
 **Goal:** Reach services at memorable, port-free names (`chat.home`, `stats.home`, `apps.home`, `dns.home`) that resolve on any tailnet device, anywhere.
