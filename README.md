@@ -26,6 +26,23 @@ Personal homelab running on a GMKtec M5 Ultra mini PC.
 | Database | PostgreSQL |
 | Media server | Jellyfin *(planned)* |
 
+## Service URLs
+
+Memorable, port-free names served by the `proxy` stack (Caddy + AdGuard split-DNS).
+They resolve on any device on the Tailscale tailnet — phone or laptop, anywhere.
+Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
+
+| URL | Service | What it's for |
+|-----|---------|---------------|
+| http://chat.home | Open WebUI | AI chat |
+| http://stats.home | Grafana | Dashboards & metrics |
+| http://apps.home | Portainer | Docker management |
+| http://dns.home | AdGuard Home | DNS admin & ad blocking |
+| http://alerts.home | ntfy | Monitoring push notifications |
+
+> These names only resolve over the tailnet via AdGuard (`*.home → 10.0.0.201`).
+> To add or rename one: edit the site label in the Caddyfile, then `docker compose restart caddy`.
+
 ## Repository layout
 
 ```
