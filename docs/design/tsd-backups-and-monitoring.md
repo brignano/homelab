@@ -17,7 +17,7 @@ Swept both hosts (Proxmox `m5` @ 10.0.0.200, docker LXC @ 10.0.0.201): **no user
 
 ### Stopgaps already done (2026-06-08 — zero-cost, same-disk only)
 - [x] All live LXC configs committed + pushed to this repo (drift check caught 6 untracked Grafana dashboards). GitHub = free offsite for the reproducible layer.
-- [x] Nightly `pg_dumpall` — [`scripts/pg-backup.sh`](../scripts/pg-backup.sh), cron 02:00, 14-day retention, `/opt/backups/postgres`, `umask 077` (dumps contain SCRAM role password hashes). Survives accidental `DROP`/corruption — **not** disk failure.
+- [x] Nightly `pg_dumpall` — [`scripts/pg-backup.sh`](../../scripts/pg-backup.sh), cron 02:00, 14-day retention, `/opt/backups/postgres`, `umask 077` (dumps contain SCRAM role password hashes). Survives accidental `DROP`/corruption — **not** disk failure.
 
 ## Why this matters
 Detection ≠ prevention. The #1 cause of homelab data loss is a backup that ran fine but couldn't be restored. The layers: **create → verify it restores → monitor that it runs.** A monitored-but-never-tested backup gives false confidence.
