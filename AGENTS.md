@@ -45,6 +45,8 @@ Planned Proxmox LXC container for Docker workloads:
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
+| Sablier | `docker/desktops/` | internal (on-demand engine for desktops) |
+| Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
 | Jellyfin | planned | Cloudflare Tunnel |
 
 ## Networking rules

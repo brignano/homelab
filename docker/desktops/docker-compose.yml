@@ -1,0 +1,44 @@
+services:
+  # On-demand engine: starts/stops desktop containers based on request traffic.
+  sablier:
+    image: sablierapp/sablier:1.8.1
+    container_name: sablier
+    command: ["start", "--provider.name=docker"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    networks:
+      - proxy
+
+  # Browser-native Kali desktop (Selkies on :3000). Lifecycle owned by Sablier,
+  # so no restart policy. Reached at http://kali.home via Caddy.
+  kali-linux:
+    image: lscr.io/linuxserver/kali-linux:latest
+    container_name: kali-linux
+    environment:
+      PUID: 1000
+      PGID: 1000
+      TZ: ${TZ:-America/New_York}
+      CUSTOM_USER: ${DESKTOP_USER:?required}
+      PASSWORD: ${DESKTOP_PASSWORD:?required}
+    volumes:
+      - kali_config:/config
+    shm_size: "1gb"
+    mem_limit: 4g            # safety ceiling; container only uses what it touches
+    security_opt:
+      - seccomp:unconfined
+    labels:
+      - sablier.enable=true
+      - sablier.group=desktops
+    networks:
+      - proxy
+
+volumes:
+  kali_config:
+
+networks:
+  # Caddy + Sablier + the desktops all share the proxy network so Caddy can reach
+  # them by container name. Created by the proxy stack — bring that up first.
+  proxy:
+    external: true
+    name: proxy_proxy

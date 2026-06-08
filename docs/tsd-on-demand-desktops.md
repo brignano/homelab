@@ -1,6 +1,6 @@
 # TSD — On-demand browser desktops (webtop + Sablier)
 
-**Status:** Proposed
+**Status:** Approved
 **Date:** 2026-06-07
 **Author:** Anthony Brignano
 **Supersedes:** the on-demand Kali *VM* proposal (chose containers for browser-on-demand UX)
@@ -61,6 +61,20 @@ Always-on cost is just **Sablier (~30 MB)**. The Kali desktop uses **0 when
 stopped** and ~1.5 GB only while you're actively in it — then Sablier scales it
 back to zero. This is the most RAM-friendly possible shape and fits comfortably in
 the ~11 GiB free (post-BIOS reclaim).
+
+## Per-desktop sizing
+
+Containers use only the RAM they actually touch (no VM-style pre-allocation or
+ballooning), so right-sizing is just a per-service ceiling:
+
+| Desktop | `mem_limit` | Notes |
+|---|---|---|
+| Kali (learning/simple pentest) | `4g` | Plenty for nmap/Metasploit/Burp; idle ~1–1.5 GB |
+| Light desktop (Ubuntu XFCE) | `2g` | Basic browsing/dev |
+| Heavy dev desktop | `6g` | IDEs, browsers, builds |
+
+Add `cpus: "N"` similarly if a desktop should be capped on CPU (default: shares
+all cores, fine for bursty interactive use). Each service sets its own limits.
 
 ## The repeatable pattern (add any desktop in ~6 lines)
 
@@ -129,6 +143,7 @@ services:
     volumes:
       - kali_config:/config
     shm_size: "1gb"
+    mem_limit: 4g          # safety ceiling; container only uses what it touches
     security_opt:
       - seccomp:unconfined
     labels:
@@ -170,6 +185,10 @@ DESKTOP_PASSWORD=changeme
   it's effectively privileged; keep it internal.
 
 ## HTTPS note (functionality wrinkle)
+
+**Decision: HTTP for now** — Tailscale already encrypts tailnet traffic, so HTTPS
+adds no transport security here; we accept possibly-limited clipboard/audio in the
+webtop and can flip to `tls internal` site-wide later if it becomes annoying.
 
 LinuxServer notes the Selkies desktop needs **HTTPS for full functionality**
 (clipboard, audio). Caddy currently serves plain HTTP (`auto_https off`,
