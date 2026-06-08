@@ -1,6 +1,6 @@
 # TSD — Homelab MCP server (read-only observability gateway)
 
-**Status:** ✅ accepted — scaffolding (2026-06-08)
+**Status:** ✅ deployed & verified (2026-06-08) — live at `http://mcp.home/mcp`
 **Goal:** One centrally-hosted MCP server on CT 100 that gives both dev machines (Mac + Windows desktop) a consistent, read-only tool surface over the homelab's existing telemetry — Prometheus metrics and Loki logs — so Claude Code can answer "what's going on with the lab" without bespoke per-machine setup.
 
 > **Framing correction (from reading the code, not memory):** Claude is *not* a local model — Claude Code is a thin client to Anthropic's API, so there is nothing to self-host for inference. The win here is **one tool definition, shared by every dev machine**, not local compute. Windows has no WSL, which makes per-machine stdio installs fiddly — another reason to centralize.
