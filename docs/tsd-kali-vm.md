@@ -22,7 +22,7 @@ This is a **Proxmox VM** (qemu), not a Docker stack — so it lives outside the
 | Choice | Decision | Why |
 |---|---|---|
 | Install | **Prebuilt Kali QEMU image** (qcow2) | Boots straight to a working XFCE desktop; no installer time |
-| Remote access | **xrdp / RDP** over Tailscale | Snappy full desktop + clipboard via Microsoft Remote Desktop (Mac) |
+| Remote access | **xrdp / RDP** over Tailscale, reached at **`kali.home`** | Snappy full desktop + clipboard via Microsoft Remote Desktop (Mac); friendly name via a specific AdGuard rewrite |
 | Sizing | **4 vCPU / 6 GB max RAM / 40 GB disk** | Comfortable XFCE desktop |
 | RAM safety | **Ballooning: min 2 GB / max 6 GB** | Only holds what it's using (~2–3 GB idle); bursts to 6 only if host has room |
 | Lifecycle | **On-demand** (`onboot=0`) | 0 RAM when off; started manually for a session |
@@ -94,7 +94,13 @@ sudo systemctl enable --now xrdp
 sudo systemctl status xrdp --no-pager | head -5
 ```
 
-Finally, from the **Mac**: Microsoft Remote Desktop → add PC `10.0.0.x` →
+**Friendly hostname `kali.home`:** pin the VM's IP (DHCP reservation for its MAC,
+or a static IP in Kali), then add a **specific** AdGuard rewrite
+`kali.home → <VM-IP>` (a specific entry overrides any `*.home → 10.0.0.201`
+wildcard, so RDP reaches the VM, not the Caddy LXC). Note: this is DNS only —
+Caddy is not involved, because RDP (3389) isn't HTTP.
+
+Finally, from the **Mac**: Microsoft Remote Desktop → add PC `kali.home` →
 connect over Tailscale → log in as `kali`.
 
 ## Verify
@@ -118,3 +124,9 @@ qm stop 110 && qm destroy 110     # removes the VM and its disk
   2×16 GB DDR4-3200 SODIMM kit (32 GB) — deferred for now due to the AI-driven
   DRAM price spike.
 - Snapshot before big experiments: `qm snapshot 110 clean-base`.
+- **Future: browser/mobile access via Apache Guacamole.** A ~400 MB always-on
+  gateway (guacd + guacamole, reusing the core Postgres) fronted by Caddy as
+  `kali.home` would give clientless desktop-in-a-browser from any device. Worth
+  it once there's a second remote target (e.g. a Windows VM); it proxies the same
+  RDP we set up here, so adding it later needs no Kali-side rework. Deferred —
+  too much always-on gateway for a single on-demand VM today.
