@@ -9,6 +9,9 @@
 
 {
 	auto_https off
+	# Let the Sablier plugin be used as a normal directive (it must run before
+	# reverse_proxy so it can boot the backend on demand).
+	order sablier before reverse_proxy
 }
 
 # chat.home  ->  Open WebUI (the AI chat UI; container listens on 8080)
