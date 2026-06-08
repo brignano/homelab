@@ -1,0 +1,27 @@
+# SearXNG config for Open WebUI integration.
+# Inherits upstream defaults; only the overrides below are applied.
+# https://docs.searxng.org/admin/settings/index.html
+use_default_settings: true
+
+server:
+  # Placeholder — the container entrypoint replaces "ultrasecretkey" with the
+  # value of $SEARXNG_SECRET at startup (see docker-compose.yml). Never commit a
+  # real secret here.
+  secret_key: "ultrasecretkey"
+  # No public exposure (internal-only, reached by Open WebUI on the ai network),
+  # so the bot limiter just gets in the way of programmatic queries. Off.
+  limiter: false
+  image_proxy: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: ""
+  # JSON is REQUIRED — Open WebUI talks to SearXNG over JSON. Without it every
+  # query 403s and you get "no sources found".
+  formats:
+    - html
+    - json
+
+ui:
+  static_use_hash: true

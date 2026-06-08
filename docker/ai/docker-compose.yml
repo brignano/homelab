@@ -38,6 +38,15 @@ services:
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       WEBUI_SECRET_KEY: ${WEBUI_SECRET_KEY:?required}
+      # Web search via the local SearXNG below (same network, no host port).
+      # These seed a fresh instance; on an existing data volume Open WebUI keeps
+      # the values set in the UI (PersistentConfig), so also switch the engine to
+      # "searxng" + set this query URL under Admin > Settings > Web Search.
+      ENABLE_WEB_SEARCH: "true"
+      WEB_SEARCH_ENGINE: "searxng"
+      SEARXNG_QUERY_URL: "http://searxng:8080/search?q=<query>"
+      WEB_SEARCH_RESULT_COUNT: "3"
+      WEB_SEARCH_CONCURRENT_REQUESTS: "3"
     volumes:
       - open_webui_data:/app/backend/data
     ports:
@@ -47,6 +56,35 @@ services:
     depends_on:
       ollama:
         condition: service_healthy
+      searxng:
+        condition: service_healthy
+
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    restart: unless-stopped
+    environment:
+      # Entrypoint substitutes this into settings.yml's secret_key at startup.
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?required}
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    networks:
+      - ai
+    # No host port: only Open WebUI (same network) needs it, reached at
+    # http://searxng:8080. Internal-only per the repo's binding convention.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - DAC_OVERRIDE
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
 
 volumes:
   ollama_data:

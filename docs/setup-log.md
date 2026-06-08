@@ -27,6 +27,42 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Self-hosted web search for Open WebUI (SearXNG)
+
+**Goal:** Give the local Llama model working web search. DuckDuckGo (DDGS) via
+Open WebUI's built-in engine kept returning "no sources found" (DuckDuckGo
+rate-limits/blocks the scraped queries), so answers silently fell back to stale
+training data.
+
+**Steps:**
+1. Added a `searxng` service to `docker/ai/` (same `ai` network as Open WebUI,
+   **no host port** — internal-only). Hardened with `cap_drop: ALL` + minimal
+   `cap_add`, healthcheck on `/healthz`.
+2. Committed `docker/ai/searxng/settings.yml` with `use_default_settings: true`,
+   `limiter: false`, and the critical `search.formats: [html, json]` — Open WebUI
+   talks to SearXNG over JSON; without it every query 403s.
+3. Wired Open WebUI to it via env (`WEB_SEARCH_ENGINE=searxng`,
+   `SEARXNG_QUERY_URL=http://searxng:8080/search?q=<query>`) and added
+   `SEARXNG_SECRET` to `.env.example` (entrypoint injects it into `secret_key`).
+
+**Issues encountered:**
+- DDGS "no sources found" → DuckDuckGo throttling, not a config bug.
+- Existing Open WebUI volume persists web-search config (PersistentConfig), so the
+  new env vars don't override it on an already-running instance.
+
+**Resolution:**
+- On the box: set `SEARXNG_SECRET` in `.env`, `docker compose up -d`, then in
+  Open WebUI **Admin > Settings > Web Search** switch the engine to **searxng**
+  and set the Query URL to `http://searxng:8080/search?q=<query>`.
+
+**Notes / next steps:**
+- Result count 3 + fetch length capped to keep prompts small on the CPU-only LXC
+  (long context = slow time-to-first-token on the 7730U).
+- Verify with a current-events query ("latest stable Proxmox VE version" → should
+  return 8.x **with** source citations).
+
+---
+
 ## 2026-06-07 — Observability stack deployed & verified in production
 
 **Goal:** Deploy the monitoring buildout (exporters, Loki/Alloy, dashboards, ntfy
