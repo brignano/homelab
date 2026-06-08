@@ -8,7 +8,11 @@
 # in AdGuard, then `docker compose restart caddy`.
 
 {
-	auto_https off
+	# HTTP-only for the *.home sites (Tailscale already encrypts), but keep cert
+	# management on so kali.home can use Caddy's internal CA for HTTPS — the
+	# Selkies desktop refuses to run without a secure context. disable_redirects
+	# stops the http:// sites from being forced to https.
+	auto_https disable_redirects
 }
 
 # chat.home  ->  Open WebUI (the AI chat UI; container listens on 8080)
@@ -36,8 +40,15 @@ http://alerts.home {
 	reverse_proxy ntfy:80
 }
 
-# kali.home -> Kali webtop, booted on-demand by Sablier, scaled to zero when idle
+# kali.home -> Kali webtop, booted on-demand by Sablier, scaled to zero when idle.
+# Served over HTTPS (Caddy internal CA) because the Selkies desktop requires a
+# secure context; plain http redirects to https.
 http://kali.home {
+	redir https://kali.home{uri}
+}
+
+https://kali.home {
+	tls internal
 	route {
 		sablier http://sablier:10000 {
 			group desktops
