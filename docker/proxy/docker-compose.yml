@@ -6,6 +6,7 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
+      - "443:443"            # HTTPS for kali.home (Selkies desktop needs a secure context)
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
