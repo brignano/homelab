@@ -27,6 +27,9 @@ services:
     mem_limit: 4g            # safety ceiling; container only uses what it touches
     security_opt:
       - seccomp:unconfined
+    cap_add:                 # nmap/etc. carry file-caps that exec fails without these
+      - NET_ADMIN
+      - NET_RAW
     labels:
       - sablier.enable=true
       - sablier.group=desktops
