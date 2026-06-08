@@ -39,6 +39,7 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 | http://apps.home | Portainer | Docker management |
 | http://dns.home | AdGuard Home | DNS admin & ad blocking |
 | http://alerts.home | ntfy | Monitoring push notifications |
+| http://kali.home | Kali Linux (webtop) | On-demand security desktop (boots on visit, scales to zero) |
 
 > These names only resolve over the tailnet via AdGuard (`*.home → 10.0.0.201`).
 > To add or rename one: edit the site label in the Caddyfile, then `docker compose restart caddy`.

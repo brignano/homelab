@@ -51,7 +51,7 @@ Planned Proxmox LXC container for Docker workloads:
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC — `/dev/net/tun` isn't exposed to the container.)
-- **Memorable names (`*.home`):** AdGuard serves DNS (`*.home → 10.0.0.201`) and Tailscale split-DNS points the `home` domain at it; Caddy (`:80`) routes by Host header to each service — `chat.home` (Open WebUI), `stats.home` (Grafana), `apps.home` (Portainer), `dns.home` (AdGuard).
+- **Memorable names (`*.home`):** AdGuard serves DNS (`*.home → 10.0.0.201`) and Tailscale split-DNS points the `home` domain at it; Caddy (`:80`) routes by Host header to each service — `chat.home` (Open WebUI), `stats.home` (Grafana), `apps.home` (Portainer), `dns.home` (AdGuard), `alerts.home` (ntfy), `kali.home` (Kali webtop, on-demand).
 - **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
 - **Public access:** only via Cloudflare Tunnel (`cloudflared`), reserved for app previews and Jellyfin (planned) — not yet deployed. `cloudflared` joins `core_core` and `ai_ai` so it can proxy to other stacks without opening host ports.
 
