@@ -1,0 +1,25 @@
+# Tuned build of qwen2.5:7b for the Docker LXC (CT 100).
+#
+# Why this model: llama3.2:3b is too small to faithfully use retrieved web-search
+# context — it ignores fetched sources and falls back to its training prior
+# (answered "Proxmox 7.0.18" while the search results clearly showed 9.0). A 7B
+# model is markedly better at RAG faithfulness / instruction-following, so it's
+# the one to select when Web Search is on. Keep llama3.2:3b for quick chats.
+#
+# Why num_thread 4: same LXC CPU-quota reason as llama3.2 — Ollama otherwise
+# detects the host's 16 logical CPUs, oversubscribes the 6-core cgroup quota, and
+# the kernel CFS-throttles inference to a crawl. 4 threads leaves 2 cores for the
+# other stacks. Expect ~7-9 tok/s on the 7730U (vs ~16 for the 3B) — slower, but
+# the trade is correctness when it matters.
+#
+# RAM: ~5 GB resident (Q4). Both models pinned at once would crowd the 14 GB LXC,
+# so OLLAMA_KEEP_ALIVE is set to 5m (see docker-compose.yml) — Ollama loads
+# whichever model the chat selects and unloads it after idle.
+#
+# Apply (rebuilds the same tag in place, so Open WebUI needs no change):
+#   ./docker/ai/load-models.sh        # or, single model:
+#   ollama create qwen2.5:7b -f docker/ai/models/qwen2.5.Modelfile
+
+FROM qwen2.5:7b
+
+PARAMETER num_thread 4

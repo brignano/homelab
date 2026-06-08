@@ -55,11 +55,22 @@ training data.
   Open WebUI **Admin > Settings > Web Search** switch the engine to **searxng**
   and set the Query URL to `http://searxng:8080/search?q=<query>`.
 
+**Follow-up — model upgrade for RAG faithfulness:**
+- With SearXNG working, search retrieved the *correct* sources (Proxmox VE 9.0),
+  but `llama3.2:3b` ignored them and still answered "7.0.18" from its training
+  prior — a 3B model is too small to faithfully use retrieved context.
+- Added `qwen2.5:7b` (pinned `num_thread 4`) in `docker/ai/models/`. Select it in
+  Open WebUI when Web Search is on; keep `llama3.2:3b` for quick chats.
+- Changed `OLLAMA_KEEP_ALIVE` from `-1` to `5m`: pinning both models resident is
+  ~8 GB and crowds the 14 GB LXC. Ollama now loads whichever model the chat
+  selects and frees it after idle (cost: ~10-40s reload on switch).
+- Apply on the box: `./docker/ai/load-models.sh` (pulls + tunes qwen2.5:7b).
+
 **Notes / next steps:**
 - Result count 3 + fetch length capped to keep prompts small on the CPU-only LXC
   (long context = slow time-to-first-token on the 7730U).
 - Verify with a current-events query ("latest stable Proxmox VE version" → should
-  return 8.x **with** source citations).
+  return **9.0 with source citations** when using qwen2.5:7b + Web Search).
 
 ---
 
