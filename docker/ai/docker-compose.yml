@@ -8,12 +8,13 @@ services:
     ports:
       - "11434:11434"
     environment:
-      # Keep models resident in RAM instead of evicting after the 5-min default.
-      # A cold load of llama3.2:3b on CPU costs ~40s; without this, any chat after
-      # an idle gap eats that reload before the first token — felt as "slow" even
-      # though generation itself runs at ~16 tok/s. The 3B model is ~2-3 GB, well
-      # within the LXC's 14 GB. -1 = never unload.
-      OLLAMA_KEEP_ALIVE: "-1"
+      # Idle-unload models after 5 min. We now run two models (llama3.2:3b for
+      # quick chats, qwen2.5:7b for trustworthy web-search answers); pinning both
+      # resident (-1) is ~8 GB and crowds the 14 GB LXC alongside the other
+      # containers. With 5m, Ollama loads whichever model the chat selects and
+      # frees it after an idle gap. Cost: a ~10-40s reload when you switch models
+      # or return after idle — acceptable vs. the RAM pressure of pinning both.
+      OLLAMA_KEEP_ALIVE: "5m"
     networks:
       - ai
     healthcheck:
