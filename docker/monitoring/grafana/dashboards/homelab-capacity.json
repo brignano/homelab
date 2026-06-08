@@ -198,8 +198,8 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"}",
-          "legendFormat": "{{id}}",
+          "expr": "pve_memory_usage_bytes{id=~\"qemu/.*|lxc/.*\"} * on(id) group_left(name) pve_guest_info",
+          "legendFormat": "{{name}}",
           "instant": true
         }
       ],
