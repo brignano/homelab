@@ -68,11 +68,11 @@ Planned Proxmox LXC container for Docker workloads:
 - Secrets that must exist use `${VAR:?required}` syntax so Compose fails loudly if unset.
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
+- **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
 
 ## Planned / proposals (not yet deployed)
-Homelab-specific specs live here in `docs/` (the `ideas` repo is for greenfield products/apps, not infra).
-- [`docs/tsd-backups-and-monitoring.md`](docs/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would reuse the existing ntfy (`alerts.home`); only Healthchecks is net-new.
-- [`docs/tsd-self-healing-remediation.md`](docs/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
+- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would reuse the existing ntfy (`alerts.home`); only Healthchecks is net-new.
+- [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
 
 ## Custom commands
 These slash commands are available in `.claude/commands/`:
