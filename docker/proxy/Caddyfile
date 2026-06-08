@@ -9,9 +9,6 @@
 
 {
 	auto_https off
-	# Let the Sablier plugin be used as a normal directive (it must run before
-	# reverse_proxy so it can boot the backend on demand).
-	order sablier before reverse_proxy
 }
 
 # chat.home  ->  Open WebUI (the AI chat UI; container listens on 8080)
@@ -41,13 +38,15 @@ http://alerts.home {
 
 # kali.home -> Kali webtop, booted on-demand by Sablier, scaled to zero when idle
 http://kali.home {
-	sablier http://sablier:10000 {
-		group desktops
-		session_duration 30m
-		dynamic {
-			display_name "Kali Desktop"
-			theme hacker-terminal
+	route {
+		sablier http://sablier:10000 {
+			group desktops
+			session_duration 30m
+			dynamic {
+				display_name "Kali Desktop"
+				theme hacker-terminal
+			}
 		}
+		reverse_proxy kali-linux:3000
 	}
-	reverse_proxy kali-linux:3000
 }
