@@ -83,41 +83,23 @@ homelab/
    docker compose -f docker/ai/docker-compose.yml up -d
    ```
 
-## AI models & web search
+## AI models
 
-Two tuned models run on Ollama (built from the Modelfiles in
-[`docker/ai/models/`](docker/ai/models/) via
-[`docker/ai/load-models.sh`](docker/ai/load-models.sh); each pins `num_thread 4`
-for the LXC CPU quota — see [`AGENTS.md`](AGENTS.md)). Web search is served by a
-self-hosted **SearXNG** on the `ai` network (internal-only, no host port).
+One model runs on Ollama: **`llama3.2:3b`** (built from
+[`docker/ai/models/llama3.2.Modelfile`](docker/ai/models/llama3.2.Modelfile) via
+[`docker/ai/load-models.sh`](docker/ai/load-models.sh); pins `num_thread 4` for
+the LXC CPU quota — see [`AGENTS.md`](AGENTS.md)). Kept resident
+(`OLLAMA_KEEP_ALIVE=-1`) so there's no cold-load lag.
 
-| Model | Use for | Web search | Speed |
-|-------|---------|-----------|-------|
-| `llama3.2:3b` | Fast, offline general chat / drafts | **Off** | ~16 tok/s |
-| `qwen2.5:7b` | Current facts, versions, docs (reads live web) | **On** | ~7–9 tok/s |
+**Use it for** fast, private, offline tasks: quick Q&A from training knowledge,
+summarizing/rewriting pasted text, drafting boilerplate. No web search — see
+[`docs/ai-strategy.md`](docs/ai-strategy.md) for what goes to local vs. Claude.
 
-**Why two:** a 3B model can't faithfully use retrieved web results — it ignores
-fetched sources and answers from its training prior. The 7B handles RAG reliably.
-`OLLAMA_KEEP_ALIVE=5m` lets Ollama load whichever model the chat selects and free
-it after idle, so both don't pin RAM at once on the 16 GB box.
-
-### Open WebUI model presets (manual — not version-controlled)
-
-These presets live in Open WebUI's database (the `open_webui_data` volume), so
-they must be **recreated by hand after a volume loss**. In
-**Workspace → Models → Edit**, set the display name, description, and per-model
-**Capabilities / Default Features**:
-
-| Preset | Base | Web Search capability | Default Feature |
-|--------|------|----------------------|-----------------|
-| **⚡ Quick Chat** | `llama3.2:3b` | **Disabled** (hard lock — can't be toggled on in chat) | — |
-| **🔎 Research** | `qwen2.5:7b` | Enabled | **Web Search on** (auto every chat) |
-
-> Disabling the web-search *capability* on Quick Chat makes the tool unavailable
-> even if toggled on mid-chat — it prevents the 3B from returning confidently
-> wrong "researched" answers. SearXNG settings (engine, query URL, result count)
-> are also stored in this volume — re-set them under **Admin → Settings → Web
-> Search** (engine `searxng`, URL `http://searxng:8080/search?q=<query>`).
+> **Tried and removed (2026-06-07):** a self-hosted SearXNG + `qwen2.5:7b` for
+> web-augmented answers. On this CPU-only / 16 GB box the 7B was too slow and
+> RAM-hungry, and a 3B can't faithfully use retrieved sources anyway. Anything
+> needing current web data or real reasoning (trip/weather planning, research,
+> debugging) goes to Claude. See `docs/ai-strategy.md`.
 
 ## Tailscale Hostname
 

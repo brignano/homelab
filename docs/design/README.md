@@ -13,3 +13,4 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-on-demand-desktops.md`](tsd-on-demand-desktops.md) | on-demand Kali webtop via Sablier |
 | [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) | ⏸ parked — backups + restore testing + job monitoring (blocked on a USB SSD) |
 | [`tsd-self-healing-remediation.md`](tsd-self-healing-remediation.md) | 💡 future — auto-remediation layer |
+| [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — read-only telemetry tool; better served by Claude on current hardware |
