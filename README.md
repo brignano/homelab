@@ -83,6 +83,42 @@ homelab/
    docker compose -f docker/ai/docker-compose.yml up -d
    ```
 
+## AI models & web search
+
+Two tuned models run on Ollama (built from the Modelfiles in
+[`docker/ai/models/`](docker/ai/models/) via
+[`docker/ai/load-models.sh`](docker/ai/load-models.sh); each pins `num_thread 4`
+for the LXC CPU quota — see [`AGENTS.md`](AGENTS.md)). Web search is served by a
+self-hosted **SearXNG** on the `ai` network (internal-only, no host port).
+
+| Model | Use for | Web search | Speed |
+|-------|---------|-----------|-------|
+| `llama3.2:3b` | Fast, offline general chat / drafts | **Off** | ~16 tok/s |
+| `qwen2.5:7b` | Current facts, versions, docs (reads live web) | **On** | ~7–9 tok/s |
+
+**Why two:** a 3B model can't faithfully use retrieved web results — it ignores
+fetched sources and answers from its training prior. The 7B handles RAG reliably.
+`OLLAMA_KEEP_ALIVE=5m` lets Ollama load whichever model the chat selects and free
+it after idle, so both don't pin RAM at once on the 16 GB box.
+
+### Open WebUI model presets (manual — not version-controlled)
+
+These presets live in Open WebUI's database (the `open_webui_data` volume), so
+they must be **recreated by hand after a volume loss**. In
+**Workspace → Models → Edit**, set the display name, description, and per-model
+**Capabilities / Default Features**:
+
+| Preset | Base | Web Search capability | Default Feature |
+|--------|------|----------------------|-----------------|
+| **⚡ Quick Chat** | `llama3.2:3b` | **Disabled** (hard lock — can't be toggled on in chat) | — |
+| **🔎 Research** | `qwen2.5:7b` | Enabled | **Web Search on** (auto every chat) |
+
+> Disabling the web-search *capability* on Quick Chat makes the tool unavailable
+> even if toggled on mid-chat — it prevents the 3B from returning confidently
+> wrong "researched" answers. SearXNG settings (engine, query URL, result count)
+> are also stored in this volume — re-set them under **Admin → Settings → Web
+> Search** (engine `searxng`, URL `http://searxng:8080/search?q=<query>`).
+
 ## Tailscale Hostname
 
 The Proxmox host `m5` is on the tailnet as **`m5.tail58e272.ts.net`** (`100.116.69.120`). It runs as a **subnet router** advertising the LAN `10.0.0.0/24` (route approved in the admin console), so the Docker LXC and every service at `10.0.0.201` is reachable from any tailnet device — e.g. Grafana at `http://10.0.0.201:3000`. Set `--accept-routes` on client devices to use it.
