@@ -179,23 +179,37 @@ DESKTOP_PASSWORD=changeme
 - **Set `DESKTOP_USER`/`DESKTOP_PASSWORD`** — otherwise anyone on the tailnet gets
   a root-capable Kali desktop.
 - Tailnet-only (Caddy :80, LAN/tailnet). **Never** add to the Cloudflare Tunnel.
-- `seccomp:unconfined` + shared kernel = weaker isolation than a VM (the accepted
-  trade-off). Keep it tailnet-only and don't run untrusted payloads against the host.
+- `seccomp:unconfined` + `cap_add: NET_ADMIN, NET_RAW` (so nmap and other
+  raw-socket tools can exec — their binaries carry file-caps the default bounding
+  set rejects) + shared kernel = **weaker isolation than a VM**. `NET_ADMIN` in
+  particular widens the container-escape surface. Unlike a VM (own kernel, hyper-
+  visor boundary), a container shares the **host kernel**, so a kernel bug here
+  could be leveraged to escape — and this runs inside the *privileged* Docker LXC,
+  a softer boundary still.
+- **Acceptable because:** tailnet-only, single-user, and we control what runs in
+  it. **The line:** scanning/learning/known tools = fine; **detonating untrusted
+  or malicious code (malware analysis, sketchy exploits) belongs in a disposable
+  VM with snapshots, not here.** That's the trigger to add the Kali *VM*.
 - Sablier mounts the Docker socket **read-only** but can start/stop containers —
   it's effectively privileged; keep it internal.
 
-## HTTPS note (functionality wrinkle)
+## HTTPS note (resolved — HTTPS required)
 
-**Decision: HTTP for now** — Tailscale already encrypts tailnet traffic, so HTTPS
-adds no transport security here; we accept possibly-limited clipboard/audio in the
-webtop and can flip to `tls internal` site-wide later if it becomes annoying.
+**Outcome: `kali.home` is served over HTTPS.** We intended HTTP (Tailscale already
+encrypts), but the Selkies desktop **hard-refuses to run without a secure context**
+— plain HTTP shows "This application requires a secure connection (HTTPS)" and a
+black screen, not just degraded clipboard. So HTTP was not an option for this image.
 
-LinuxServer notes the Selkies desktop needs **HTTPS for full functionality**
-(clipboard, audio). Caddy currently serves plain HTTP (`auto_https off`,
-tailnet-encrypted). The desktop will render fine over HTTP, but clipboard/audio
-may be limited. If that bites: add `tls internal` to the `kali.home` block (Caddy's
-local CA) and trust that CA on your devices, or front it with Tailscale Serve for a
-real cert. Start on HTTP; revisit only if needed.
+Implemented: Caddy global `auto_https disable_redirects` (keeps the other `*.home`
+sites on HTTP without forced redirects, while allowing cert management), a
+`https://kali.home` block with **`tls internal`** (Caddy's local CA), an
+`http://kali.home → https` redirect, and `:443` published on the caddy container.
+
+First visit shows a browser cert warning (local CA untrusted); proceed through it
+(still a valid secure context, so Selkies works) or install Caddy's root CA on each
+device to remove it: `docker exec caddy cat /data/caddy/pki/authorities/local/root.crt`
+→ trust in the OS keychain (macOS: System keychain → Always Trust; iOS: install
+profile + enable in Certificate Trust Settings).
 
 ## Verify
 
