@@ -1,0 +1,35 @@
+services:
+  # Read-only MCP gateway over the lab's telemetry. Talks to Grafana (which
+  # already has the Prometheus + Loki datasources wired up), so Claude Code on
+  # the dev machines gets metrics, logs and alert-rule status through one tool
+  # surface. See docs/design/tsd-homelab-mcp-server.md.
+  mcp-grafana:
+    image: grafana/mcp-grafana:latest
+    container_name: mcp-grafana
+    restart: unless-stopped
+    command:
+      - "-t"
+      - "streamable-http"      # MCP over HTTP; dev machines use Claude Code type "http"
+      - "--address"
+      - ":8000"                # bind all interfaces (default is localhost-only) so Caddy can reach it
+      - "--disable-write"      # read-only mode — no create/update/delete tools
+      - "--disable-admin"      # trim surface (Viewer token is the hard ceiling; this is belt-and-suspenders)
+      - "--disable-oncall"
+      - "--disable-dashboard"  # we only need datasource queries + alerts, not dashboard tools
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      # Grafana service-account token — MUST be Viewer-scoped (the hard read-only guarantee).
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ${GRAFANA_SERVICE_ACCOUNT_TOKEN:?required}
+    networks:
+      - mcp
+      - monitoring
+
+# Joins the monitoring stack's network to reach grafana:3000, and so Caddy
+# (also attached to monitoring) can reverse-proxy mcp.home -> mcp-grafana:8000.
+# Bring the monitoring stack up first.
+networks:
+  mcp:
+    driver: bridge
+  monitoring:
+    external: true
+    name: monitoring_monitoring

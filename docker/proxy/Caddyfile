@@ -40,6 +40,23 @@ http://alerts.home {
 	reverse_proxy ntfy:80
 }
 
+# mcp.home -> Grafana MCP server (read-only metrics/logs/alerts for Claude Code).
+# Tailscale is the network boundary; this bearer check is the app-layer guard
+# (mcp-grafana has no built-in endpoint auth). The Viewer-scoped Grafana service
+# account behind it is the hard read-only ceiling. Token comes from MCP_BEARER_TOKEN
+# in docker/proxy/.env. If unset, the matcher rejects everything (fail-closed) and
+# only mcp.home is affected — the other sites keep working.
+http://mcp.home {
+	@noauth not header Authorization "Bearer {env.MCP_BEARER_TOKEN}"
+	respond @noauth "Unauthorized" 401
+
+	# flush_interval -1 disables buffering so MCP streamable-HTTP / SSE events
+	# reach the client immediately instead of being held by the proxy.
+	reverse_proxy mcp-grafana:8000 {
+		flush_interval -1
+	}
+}
+
 # kali.home -> Kali webtop, booted on-demand by Sablier, scaled to zero when idle.
 # Served over HTTPS (Caddy internal CA) because the Selkies desktop requires a
 # secure context; plain http redirects to https.

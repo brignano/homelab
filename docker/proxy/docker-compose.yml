@@ -11,6 +11,11 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    environment:
+      # Bearer token the mcp.home site requires (see Caddyfile). Empty default =
+      # fail-closed: if unset, mcp.home rejects all requests but the other sites
+      # are unaffected and Caddy still starts. Set the real value in ./.env.
+      MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
     networks:
       - proxy
       - core
