@@ -1,6 +1,7 @@
 services:
   caddy:
-    image: caddy:2-alpine
+    build: .                 # custom build: Caddy + Sablier plugin (see Dockerfile)
+    image: caddy-sablier:local
     container_name: caddy
     restart: unless-stopped
     ports:
