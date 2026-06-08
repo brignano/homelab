@@ -27,7 +27,43 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-06-07 — Reverted web search + 7B; consolidated to single local model
+
+**Goal:** Walk back the SearXNG + `qwen2.5:7b` web-search experiment (below). In
+practice the 7B was too slow and RAM-hungry on this CPU-only / 16 GB box, and a
+3B can't faithfully use retrieved sources anyway — so the whole web-augmented
+path added latency and confidently-wrong answers for no real gain.
+
+**Steps:**
+1. Removed the `searxng` service + `docker/ai/searxng/settings.yml`, the
+   web-search env on `open-webui`, and `SEARXNG_SECRET` from `.env.example`.
+2. Removed `docker/ai/models/qwen2.5.Modelfile`; back to a single `llama3.2:3b`.
+3. Restored `OLLAMA_KEEP_ALIVE=-1` (one small model, keep it resident — no
+   cold-load lag).
+4. Rewrote the README AI section; recorded the rationale + local-vs-Claude split
+   in `docs/ai-strategy.md`; shelved `docs/design/tsd-ai-homelab-assistant.md`.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+docker compose -f docker/ai/docker-compose.yml up -d --remove-orphans   # drops searxng
+docker exec ollama ollama rm qwen2.5:7b                                  # reclaim ~5 GB
+# remove the leftover bind-mount dir + the now-unused SEARXNG_SECRET line in .env
+rm -rf docker/ai/searxng
+```
+In Open WebUI: delete the "🔎 Research" preset; keep "⚡ Quick Chat" (llama3.2:3b,
+web search off). Web-search settings persist in the `open_webui_data` volume but
+are harmless once the engine/container is gone.
+
+**Notes:**
+- Decision recorded in `docs/ai-strategy.md` → Decision log. Live-data / reasoning
+  tasks (incl. trip & climbing-weather planning) go to Claude.
+
+---
+
 ## 2026-06-07 — Self-hosted web search for Open WebUI (SearXNG)
+
+> ⚠️ **Superseded** by the entry above — this setup was reverted the same day.
 
 **Goal:** Give the local Llama model working web search. DuckDuckGo (DDGS) via
 Open WebUI's built-in engine kept returning "no sources found" (DuckDuckGo
