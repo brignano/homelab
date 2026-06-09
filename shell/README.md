@@ -34,7 +34,7 @@ To wire it by hand instead:
 - **Mac** `~/.zshrc` / **server** `~/.bashrc`:
   ```sh
   HOMELAB_DIR="${HOMELAB_DIR:-$HOME/Projects/homelab}"   # server: set to /opt/homelab
-  [ -f "$HOMELAB_DIR/shell/aliases.sh" ] && . "$HOMELAB_DIR/shell/aliases.sh"
+  if [ -f "$HOMELAB_DIR/shell/aliases.sh" ]; then . "$HOMELAB_DIR/shell/aliases.sh"; fi
   ```
 - **Windows** `$PROFILE`:
   ```powershell
