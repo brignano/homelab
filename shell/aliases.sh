@@ -7,7 +7,8 @@
 #   • on the server  → calls the doer functions in lib.sh locally
 #   • anywhere else   → calls the SAME doers over SSH (ssh $HL_SSH)
 # URL-opener / Tailscale / status commands always run locally — they don't touch
-# Docker. Run `hl-help` for the full list.
+# Docker. The only name to remember is `hl`: bare it lists everything (fzf picker
+# when installed, hl-help otherwise); `hl logs grafana` ≡ `hl-logs grafana`.
 
 # Where this homelab checkout lives (the ai-tools hook exports this; default for
 # direct sourcing on the Mac). Used to find lib.sh and detect server mode.
@@ -126,6 +127,10 @@ hl-help() {
 	cat <<'EOF'
 homelab hl-* commands  (same names on Mac, Windows & the server)
 
+  can't remember a name? just type `hl`
+    hl                   this help — or a fuzzy picker when fzf is installed
+    hl <cmd> [args]      dash-less form of any command: hl logs grafana ≡ hl-logs grafana
+
   open a service
     hl-chat hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
   connectivity
@@ -143,4 +148,67 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
 EOF
+}
+
+# ── hl — the only name you have to remember ──────────────────────────────────
+# Bare `hl` lists every command: a fuzzy picker when fzf is installed (Enter
+# runs it; in zsh arg-taking commands are pre-filled on the prompt instead so
+# you can finish typing), hl-help otherwise. `hl <cmd> [args]` dispatches to
+# the matching hl-<cmd>, so the dashed names keep working untouched.
+
+# One line per command: NAME  ARGS  DESCRIPTION (NAME must stay column one —
+# the picker extracts it with awk). Keep in sync with hl-help above.
+_hl_menu() {
+	cat <<'EOF'
+status        -                    which layer is down: client / route / server
+ps            -                    all containers
+logs          <svc> [n]            tail & follow a container's logs
+restart       <svc>                restart one container
+up            [stack]              whole lab (boot order) or one stack
+down          [stack]              whole lab (reverse) or one stack
+stack         <up|down|restart> <stack>
+backup        -                    pg_dumpall (scripts/pg-backup.sh)
+models        -                    rebuild tuned Ollama models
+reload-prom   -                    reload Prometheus config (no downtime)
+ssh           [cmd]                ssh into the Docker LXC
+vpn           -                    tailscale status
+vpn-up        -                    tailscale up --accept-routes
+vpn-down      -                    tailscale down
+chat          -                    open Open WebUI         (chat-ip by IP)
+stats         -                    open Grafana            (stats-ip by IP)
+apps          -                    open Portainer          (apps-ip by IP)
+dns           -                    open AdGuard            (dns-ip by IP)
+alerts        -                    open Alertmanager       (alerts-ip by IP)
+kali          -                    open Kali desktop
+help          -                    the full cheatsheet
+EOF
+}
+
+hl() {
+	if [ $# -eq 0 ]; then
+		if command -v fzf >/dev/null 2>&1 && [ -t 0 ]; then
+			_hl_pick="$(_hl_menu | fzf --height=50% --reverse --prompt='hl ' \
+				--header='Enter runs it; commands with <args> pre-fill in zsh')" || return 0
+			[ -n "$_hl_pick" ] || return 0
+			_hl_name="$(printf '%s\n' "$_hl_pick" | awk '{print $1}')"
+			# zsh + a command that takes args → put "hl <name> " on the prompt
+			# to finish typing; everything else runs immediately.
+			if [ -n "${ZSH_VERSION:-}" ] && printf '%s' "$_hl_pick" | grep -q '<'; then
+				print -z -- "hl $_hl_name "
+			else
+				hl "$_hl_name"
+			fi
+		else
+			hl-help
+		fi
+		return 0
+	fi
+	case "$1" in help|-h|--help) hl-help; return 0 ;; esac
+	_hl_cmd="hl-$1"; shift
+	if command -v -- "$_hl_cmd" >/dev/null 2>&1; then
+		"$_hl_cmd" "$@"
+	else
+		echo "hl: unknown command '${_hl_cmd#hl-}' — type bare 'hl' for the list" >&2
+		return 2
+	fi
 }

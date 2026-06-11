@@ -1,14 +1,17 @@
 # `hl-*` shell commands
 
 One memorable command set for the homelab, identical on **Mac (zsh)**, **Windows
-(PowerShell)**, and the **server (bash, the Docker LXC)**. Type `hl-help` anywhere
-for the list.
+(PowerShell)**, and the **server (bash, the Docker LXC)**. The only name to
+remember is `hl`: bare, it lists everything — a fuzzy picker if `fzf` is
+installed (Mac/server), the cheatsheet otherwise. Every command also works
+dash-less through it.
 
 ```
-hl-stats          # open Grafana
-hl-status         # is it me or the lab? (Tailscale / route / server)
-hl-logs grafana   # tail a container's logs (runs on the server, over SSH from a client)
-hl-up monitoring  # bring a stack up
+hl                # forgot the name? fuzzy picker (fzf) or the cheatsheet
+hl stats          # open Grafana            (≡ hl-stats)
+hl status         # is it me or the lab? (Tailscale / route / server)
+hl logs grafana   # tail a container's logs (runs on the server, over SSH from a client)
+hl up monitoring  # bring a stack up
 ```
 
 ## How it's wired
