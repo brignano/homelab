@@ -87,6 +87,10 @@ function hl-help {
 @"
 homelab hl-* commands  (same names on Mac, Windows & the server)
 
+  can't remember a name? just type 'hl'
+    hl                   this help
+    hl <cmd> [args]      dash-less form of any command: hl logs grafana = hl-logs grafana
+
   open a service
     hl-chat hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
   connectivity
@@ -104,4 +108,18 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
 "@ | Write-Host
+}
+
+# ── hl — the only name you have to remember ───────────────────────────────────
+# `hl` alone prints the cheatsheet; `hl <cmd> [args]` dispatches to hl-<cmd>,
+# so `hl logs grafana` = `hl-logs grafana`. The dashed names keep working.
+function hl {
+	if ($args.Count -eq 0 -or $args[0] -in 'help', '-h', '--help') { hl-help; return }
+	$name, $rest = $args
+	$cmd = "hl-$name"
+	if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+		& $cmd @rest
+	} else {
+		Write-Host "hl: unknown command '$name' - run 'hl' for the list"
+	}
 }
