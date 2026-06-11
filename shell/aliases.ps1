@@ -7,7 +7,7 @@
 
 # ── Config (env overrides win; defaults match shell/lib.sh) ───────────────────
 $HL_SSH  = if ($env:HL_SSH)  { $env:HL_SSH }  else { "root@10.0.0.201" }
-$HL_REPO = if ($env:HL_REPO) { $env:HL_REPO } else { "/opt/homelab" }
+$HL_REPO = if ($env:HL_REPO) { $env:HL_REPO } else { "/root/homelab" }
 $HL_IP   = if ($env:HL_IP)   { $env:HL_IP }   else { "10.0.0.201" }
 
 # ── Docker / ops — SSH into the LXC and run the lib.sh doer ────────────────────

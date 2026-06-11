@@ -33,7 +33,7 @@ To wire it by hand instead:
 
 - **Mac** `~/.zshrc` / **server** `~/.bashrc`:
   ```sh
-  HOMELAB_DIR="${HOMELAB_DIR:-$HOME/Projects/homelab}"   # server: set to /opt/homelab
+  HOMELAB_DIR="${HOMELAB_DIR:-$HOME/Projects/homelab}"   # server: set to /root/homelab
   if [ -f "$HOMELAB_DIR/shell/aliases.sh" ]; then . "$HOMELAB_DIR/shell/aliases.sh"; fi
   ```
 - **Windows** `$PROFILE`:
@@ -51,7 +51,7 @@ Defaults live at the top of [`lib.sh`](lib.sh) and can be overridden with env va
 | Var | Default | Meaning |
 |-----|---------|---------|
 | `HL_SSH` | `root@10.0.0.201` | SSH target — the Docker LXC (LAN + Tailscale subnet route). |
-| `HL_REPO` | `/opt/homelab` | Repo path **on the server**. |
+| `HL_REPO` | `/root/homelab` | Repo path **on the server**. |
 | `HL_IP` | `10.0.0.201` | Host for the `*-ip` URL fallbacks. |
 | `HL_STACKS` | `core monitoring ai proxy mcp desktops` | Boot order for `hl-up`/`hl-down`. `tunnel` is opt-in. |
 | `HOMELAB_DIR` | `~/Projects/homelab` | Local checkout path (where these files live). |

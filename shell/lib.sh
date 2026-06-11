@@ -12,8 +12,8 @@
 # Direct SSH to the Docker LXC. The same 10.0.0.201 IP is reachable on the LAN
 # and over the Tailscale subnet route, so one target works from every device.
 : "${HL_SSH:=root@10.0.0.201}"
-# Repo path ON THE SERVER (where the compose files live).
-: "${HL_REPO:=/opt/homelab}"
+# Repo path ON THE SERVER (where the compose files live; the LXC clones to /root).
+: "${HL_REPO:=/root/homelab}"
 # Host:port to reach services directly by IP (the *.home fallback below).
 : "${HL_IP:=10.0.0.201}"
 # Stacks in dependency / boot order. `tunnel` is intentionally omitted (opt-in,
