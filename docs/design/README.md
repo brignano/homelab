@@ -13,4 +13,5 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-on-demand-desktops.md`](tsd-on-demand-desktops.md) | on-demand Kali webtop via Sablier |
 | [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) | ⏸ parked — backups + restore testing + job monitoring (blocked on a USB SSD) |
 | [`tsd-self-healing-remediation.md`](tsd-self-healing-remediation.md) | 💡 future — auto-remediation layer |
-| [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — read-only telemetry tool; better served by Claude on current hardware |
+| [`tsd-local-llm-discord-jobs.md`](tsd-local-llm-discord-jobs.md) | ✅ approved / shipped — local-LLM async jobs delivered over Discord (`docker/assistant/`) |
+| [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — open-ended telemetry querying; its canned-summary half shipped in `tsd-local-llm-discord-jobs.md` |

@@ -23,6 +23,7 @@ Personal homelab running on a GMKtec M5 Ultra mini PC.
 | Dashboards | Grafana |
 | Local AI inference | Ollama |
 | AI chat UI | Open WebUI |
+| Local-LLM jobs & digests | Discord bot (`docker/assistant/`) |
 | Database | PostgreSQL |
 | Media server | Jellyfin *(planned)* |
 
@@ -55,8 +56,11 @@ homelab/
 │   │       └── prometheus.yml
 │   ├── core/                # Portainer + PostgreSQL
 │   │   └── docker-compose.yml
-│   └── ai/                  # Ollama + Open WebUI
-│       └── docker-compose.yml
+│   ├── ai/                  # Ollama + Open WebUI
+│   │   └── docker-compose.yml
+│   └── assistant/           # Discord bot: local-LLM jobs + daily digest
+│       ├── docker-compose.yml
+│       └── app/
 ├── scripts/
 │   └── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
 ├── docs/
@@ -75,12 +79,14 @@ homelab/
    cp docker/core/.env.example docker/core/.env
    cp docker/monitoring/.env.example docker/monitoring/.env
    cp docker/ai/.env.example docker/ai/.env
+   cp docker/assistant/.env.example docker/assistant/.env
    ```
 3. Bring up a stack:
    ```bash
    docker compose -f docker/core/docker-compose.yml up -d
    docker compose -f docker/monitoring/docker-compose.yml up -d
    docker compose -f docker/ai/docker-compose.yml up -d
+   docker compose -f docker/assistant/docker-compose.yml up -d --build
    ```
 
 ## AI models
@@ -94,6 +100,26 @@ the LXC CPU quota — see [`AGENTS.md`](AGENTS.md)). Kept resident
 **Use it for** fast, private, offline tasks: quick Q&A from training knowledge,
 summarizing/rewriting pasted text, drafting boilerplate. No web search — see
 [`docs/ai-strategy.md`](docs/ai-strategy.md) for what goes to local vs. Claude.
+
+### Using it: Discord, not the chat page
+
+The deciding question is **is anyone waiting on the answer?** A CPU-only 3B at
+~16 tok/s is painful to watch and perfectly fine when the result arrives on its
+own — so most local work goes through the
+[`assistant`](docker/assistant/README.md) stack, a Discord bot that runs jobs and
+pushes results back:
+
+| | |
+|---|---|
+| daily digest | homelab health posted each morning — services up, CPU/RAM/disk, restarts, log errors |
+| `/ask`, `/summarize` | fire it off and read the reply when it lands |
+| *right-click → Summarize message* | summarize any Discord message in place |
+| `/digest`, `/status` | run a digest now; check model + queue |
+
+It adds **no inbound attack surface** (the bot dials out, so there's no port,
+route or tunnel) and consequently works **off-tailnet**, which `chat.home`
+can't. Open WebUI stays for when you actually want interactive chat.
+Design: [`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
 
 > **Tried and removed (2026-06-07):** a self-hosted SearXNG + `qwen2.5:7b` for
 > web-augmented answers. On this CPU-only / 16 GB box the 7B was too slow and
@@ -116,4 +142,5 @@ All services are exposed on the Tailscale interface only (no public ports). Tail
 | Prometheus | 9090 |
 | Open WebUI | 3010 |
 | Ollama API | 11434 |
+| assistant | *(none — outbound only)* |
 | PostgreSQL | 5432 |

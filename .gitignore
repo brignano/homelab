@@ -13,6 +13,11 @@ secrets/
 data/
 volumes/
 
+# Python (docker/assistant)
+__pycache__/
+*.py[cod]
+.venv/
+
 # OS
 .DS_Store
 Thumbs.db

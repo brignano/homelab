@@ -27,6 +27,81 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-22 — Local LLM moved from pull (chat page) to push (Discord jobs)
+
+**Goal:** Actually use the local `llama3.2:3b` instead of reaching for Claude by
+default. The blocker was never the model — it was that Open WebUI is a *pull*
+interface: you go to `chat.home`, type, and watch ~16 tok/s. Against Claude that
+comparison is lost before it starts, so the box idled.
+
+**Steps:**
+1. Added the `assistant` stack (`docker/assistant/`) — a small Python container
+   running a Discord bot. No `ports:`, no Caddy route, no DNS rewrite: it opens
+   an *outbound* websocket to Discord, so it adds zero inbound surface and works
+   off-tailnet, which `chat.home` can't.
+2. Scheduled daily digest (`DIGEST_AT`, default 07:30): services up/down,
+   CPU/RAM/disk, container restarts, and log-error counts by container, queried
+   from Prometheus + Loki.
+3. Interactive surfaces: `/ask`, `/summarize`, right-click → *Summarize message*,
+   plus `/digest` and `/status`.
+4. All LLM work funnels through a single-worker priority queue
+   (`app/jobqueue.py`), interactive ahead of scheduled.
+5. Wrote `docs/design/tsd-local-llm-discord-jobs.md`; reframed
+   `docs/ai-strategy.md` around "is anyone waiting on the answer?"; noted in
+   `tsd-ai-homelab-assistant.md` that its canned-summary half now ships.
+6. Added `assistant` to `HL_STACKS` in `shell/lib.sh` so `hl-up` includes it.
+
+**Issues encountered:**
+- **Concurrency would have made things worse, not better.** The tuned model pins
+  `num_thread 4` of the LXC's 6-core quota, so two generations at once contend
+  for the same cores and memory bandwidth — both crawl *and* the monitoring/proxy
+  stacks lose their remaining 2 cores. Ollama accepts the parallel requests
+  happily and thrashes.
+- **Request-time options override the Modelfile.** Passing `num_thread` on
+  `/api/generate` would silently undo the pin that took generation from
+  ~0.5 tok/s back to ~16 (the 2026-06-07 fix below).
+- **A digest that can silently say "all clear" is worse than none.** Naive error
+  handling would render an unreachable Prometheus as zero problems.
+
+**Resolution:**
+- Single worker for every LLM call; supporting caps on context, output length,
+  input size, backlog depth, and per-job timeout.
+- `num_thread` deliberately never sent; documented as a rule in `AGENTS.md`.
+- Python queries *and thresholds* every fact, including the "is this fine?"
+  verdict — the model only restates a finished facts block. If Ollama fails the
+  digest still posts without prose; an unreadable backend is reported as
+  **Incomplete**, never as healthy.
+- Container healthcheck watches a 60s heartbeat file, since a Discord client can
+  lose its gateway socket while the process stays alive.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+cp docker/assistant/.env.example docker/assistant/.env
+# fill in DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_DIGEST_CHANNEL_ID,
+# DISCORD_ALLOWED_USER_IDS, TZ
+
+# check the backends before involving Discord — needs no token:
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+docker logs -f assistant     # expect "connected as <bot> (guild ...)"
+```
+Discord app setup (bot token, guild install with `bot` + `applications.commands`,
+**no** privileged intents) is in
+[`docker/assistant/README.md`](../docker/assistant/README.md).
+
+**Notes / next steps:**
+- Not yet deployed — the image has not been built or run against real Discord,
+  Prometheus, Loki or Ollama. Logic was verified offline (parsers against real
+  API payload shapes, queue serialization/priority and load-shedding, and the full
+  digest path over stub HTTP servers); `--selftest` is the first real check.
+- Grafana-managed alert state is deliberately not in the digest — the rules live
+  in Grafana, not Prometheus, so `ALERTS` isn't queryable. Could be added later
+  via the Grafana API.
+- If a second container ever drives Ollama, the single-worker guarantee breaks —
+  the queue would need to move behind a shared gateway.
+
 ## 2026-06-07 — Reverted web search + 7B; consolidated to single local model
 
 **Goal:** Walk back the SearXNG + `qwen2.5:7b` web-search experiment (below). In

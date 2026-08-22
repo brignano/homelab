@@ -1,0 +1,49 @@
+services:
+  # Discord-fronted job runner for the local model. See
+  # docs/design/tsd-local-llm-discord-jobs.md for why this exists.
+  #
+  # Note there are no `ports:` here and no Caddy route. The bot opens an
+  # OUTBOUND websocket to Discord, so it adds zero inbound attack surface — and
+  # unlike chat.home it keeps working when you're off the tailnet.
+  assistant:
+    build: .
+    image: homelab-assistant:latest
+    container_name: assistant
+    restart: unless-stopped
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?required}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?required}
+      DISCORD_DIGEST_CHANNEL_ID: ${DISCORD_DIGEST_CHANNEL_ID:?required}
+      DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:?required}
+
+      # Internal DNS names on the joined networks — no host ports involved.
+      OLLAMA_URL: http://ollama:11434
+      PROMETHEUS_URL: http://prometheus:9090
+      LOKI_URL: http://loki:3100
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
+
+      TZ: ${TZ:-UTC}
+      DIGEST_AT: ${DIGEST_AT:-07:30}
+      DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
+
+      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-4096}
+      ASK_NUM_PREDICT: ${ASK_NUM_PREDICT:-400}
+      SUMMARIZE_NUM_PREDICT: ${SUMMARIZE_NUM_PREDICT:-300}
+      DIGEST_NUM_PREDICT: ${DIGEST_NUM_PREDICT:-180}
+      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-300}
+      MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-6000}
+      MAX_QUEUE: ${MAX_QUEUE:-8}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    networks:
+      - ai
+      - monitoring
+
+# Joins the ai stack (ollama) and the monitoring stack (prometheus, loki).
+# Bring both of those up first — Compose will not create external networks.
+networks:
+  ai:
+    external: true
+    name: ai_ai
+  monitoring:
+    external: true
+    name: monitoring_monitoring
