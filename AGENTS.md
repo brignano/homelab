@@ -81,6 +81,12 @@ through the Discord bot in `docker/assistant/` (push) rather than Open WebUI
 (pull). See [`docs/ai-strategy.md`](docs/ai-strategy.md) and
 [`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
 
+The Discord server layout is declarative: `docker/assistant/guild.yml` holds the
+categories/channels/permissions and `--provision` converges the server to it
+(idempotent, additive, never deletes — `#digest` is a log whose history matters).
+Creating the server, creating the bot, and restricting a command to a channel
+all require a *user* login and stay manual; everything else is in git.
+
 Two rules when extending it:
 - **Python decides what's true; the model only writes prose.** Facts are queried
   and thresholded in code — a 3B is not reliable at tool calling or at staying

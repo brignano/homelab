@@ -12,6 +12,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+# Declarative Discord server layout, applied by `--provision`.
+COPY guild.yml .
 
 # Drop privileges — this process needs nothing but an outbound socket.
 RUN useradd --system --create-home --uid 10001 assistant

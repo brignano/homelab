@@ -119,7 +119,13 @@ pushes results back:
 It adds **no inbound attack surface** (the bot dials out, so there's no port,
 route or tunnel) and consequently works **off-tailnet**, which `chat.home`
 can't. Open WebUI stays for when you actually want interactive chat.
-Design: [`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
+
+The Discord server's own layout is codified too —
+[`docker/assistant/guild.yml`](docker/assistant/guild.yml) declares the
+categories, channels, topics and permissions, applied with an idempotent
+`--provision` that never deletes anything. Setup steps:
+[`docker/assistant/README.md`](docker/assistant/README.md). Design:
+[`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
 
 > **Tried and removed (2026-06-07):** a self-hosted SearXNG + `qwen2.5:7b` for
 > web-augmented answers. On this CPU-only / 16 GB box the 7B was too slow and

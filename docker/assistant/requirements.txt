@@ -3,3 +3,5 @@ discord.py==2.4.0
 aiohttp==3.10.11
 # zoneinfo needs a tz database; python:*-slim doesn't ship one.
 tzdata==2024.2
+# Reads guild.yml (the declarative Discord server layout).
+PyYAML==6.0.2

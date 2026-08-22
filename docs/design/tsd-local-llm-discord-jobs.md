@@ -127,7 +127,36 @@ Push delivery is the change that makes the same design worth building. An
 unprompted 07:30 digest is a genuinely different product from a summary you have
 to remember to request, and it needs no reliable tool-calling to work.
 
-### Decision 4 — the numbers are the product; narration is a layer
+### Decision 4 — the server layout is config, not clicks
+
+The channels this depends on are declared in `docker/assistant/guild.yml` and
+applied by `--provision`, for the same reason every other stack's config is in
+git: a layout that exists only as clicks in a UI can't be reviewed, diffed, or
+rebuilt after a mistake.
+
+Three properties, all deliberate:
+
+- **Idempotent** — re-runnable at any time; it diffs and emits only differences.
+- **Additive, never destructive** — it creates and fixes drift but never deletes
+  a channel. `#digest` accumulates the health history; losing it to a config
+  typo would be unrecoverable. Unmanaged channels are reported, not removed.
+- **Plan before apply** — `--provision` prints what it would do and changes
+  nothing; `--apply` is a separate, explicit flag.
+
+It also solves a chicken-and-egg: `DISCORD_DIGEST_CHANNEL_ID` can't be known
+until the channel exists, so the provisioner prints the `.env` line to paste.
+
+Two things stay manual because a bot token is not permitted to do them at all:
+creating the server, and restricting a slash command to a channel (the
+command-permissions API requires a user OAuth token). Both are one-time clicks
+and are documented rather than half-automated.
+
+The one subtlety worth recording: locking `#digest` by denying `@everyone`
+Send Messages also denies the bot, which is a member like any other. The
+provisioner therefore always pairs that deny with an explicit allow for itself —
+without it, locking the channel would silently stop the digest from posting.
+
+### Decision 5 — the numbers are the product; narration is a layer
 
 Failure modes are designed, not incidental:
 
@@ -168,6 +197,7 @@ than none. It never renders unread data as healthy.
 | RAG / web-augmented answers | Tried and reverted — a 3B ignores retrieved sources and answers from its prior. |
 | Keep using Open WebUI | It's the actual problem: pull-based, tailnet-only, and it makes you watch the tokens. It stays for interactive chat; this covers everything else. |
 | ntfy as the primary surface | One-way — no `/ask`. Stays the right tool for alerts. |
+| Clicking the channels together by hand | Works, but can't be reviewed, diffed, or rebuilt — and the rest of the lab's config is in git. |
 | Cron + a shell script posting via webhook | No interactive half, no queue, no priority, no graceful degradation. The container costs ~50 MB to do all four. |
 | Expose the bot via Cloudflare Tunnel | Unnecessary — Discord's outbound socket already solves remote access with strictly less surface. |
 

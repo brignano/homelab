@@ -27,6 +27,71 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-22 — Discord server layout codified (guild.yml + `--provision`)
+
+**Goal:** Start the Discord side from scratch — no server, no bot, no channels —
+without the layout ending up as undocumented clicks in a UI. Everything else in
+this lab is config-in-git; the channels the digest depends on should be too.
+
+**Steps:**
+1. Added `docker/assistant/guild.yml` — declarative categories, channels, topics
+   and permissions.
+2. Added `docker/assistant/app/provision.py` and a `--provision` mode:
+   `--provision` prints a plan and changes nothing; `--provision --apply`
+   executes it.
+3. Layout: category `HOMELAB` with `#digest` (bot posts only), `#ask`
+   (interactive), `#alerts` (reserved for a future ntfy bridge).
+4. Documented the manual-vs-codified split in `docker/assistant/README.md`.
+5. Added PyYAML to the pinned requirements; `guild.yml` is copied into the image.
+
+**Issues encountered:**
+- **Locking `#digest` would have silently broken the digest.** Denying
+  `@everyone` Send Messages also denies the bot — it's a member like any other.
+  Without an explicit self-allow, the daily post would fail into a channel the
+  bot itself created.
+- **Chicken-and-egg on `DISCORD_DIGEST_CHANNEL_ID`.** It can't be known until
+  the channel exists, but `Config.from_env()` requires it, so provisioning
+  couldn't reuse the normal config path.
+- **A bot token cannot do everything.** Creating a server and restricting a
+  slash command to a channel both need a *user* OAuth token.
+- **Deleting channels to converge would be unrecoverable** — `#digest` is the
+  health history.
+
+**Resolution:**
+- Every locked channel gets a paired overwrite: deny `@everyone`, explicitly
+  allow the bot (plus `manage_messages` so it can tidy its own log).
+- `--provision` uses a minimal config path needing only `DISCORD_TOKEN` and
+  `DISCORD_GUILD_ID`, and prints the `.env` line to paste when it finishes.
+- The two bot-impossible steps are documented as clicks rather than
+  half-automated.
+- The provisioner is additive only: it creates and fixes drift, never deletes.
+  Channels not in `guild.yml` are reported and left alone.
+- Login-only (no gateway connect) so it starts and exits in about a second.
+
+**On the box (apply after merge):**
+```bash
+# 1. Create the server + bot by hand (see docker/assistant/README.md).
+#    Invite with Send Messages + Manage Channels + Manage Roles.
+# 2. Fill DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_ALLOWED_USER_IDS, TZ.
+cd ~/homelab && git pull
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision --apply
+# 3. Paste the printed DISCORD_DIGEST_CHANNEL_ID into .env, then:
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+Manage Channels / Manage Roles can be removed afterwards — the bot needs only
+Send Messages to run.
+
+**Notes / next steps:**
+- Still not deployed; no Docker daemon was available. The diff engine and the
+  apply path were verified offline against fakes, and every discord.py call was
+  checked against the pinned 2.4.0 API, but nothing has run against a real guild.
+- `#alerts` is created but nothing writes to it yet — ntfy still serves alerts at
+  `alerts.home`. Bridging it is the obvious next step.
+- Restricting `/ask` to `#ask` (Server Settings → Integrations) is worth doing
+  once, or `#digest` stops being a clean log.
+
 ## 2026-08-22 — Local LLM moved from pull (chat page) to push (Discord jobs)
 
 **Goal:** Actually use the local `llama3.2:3b` instead of reaching for Claude by

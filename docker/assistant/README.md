@@ -78,30 +78,75 @@ crawl and the other stacks starve. Hence:
 > — the fix that took generation from ~0.5 tok/s back to ~16 (AGENTS.md →
 > "Ollama / AI tuning").
 
-## Setup
+## Setup from scratch
 
-### 1. Create the Discord bot
+Three of these steps need your Discord login and can't be automated — a bot
+token isn't allowed to create a server or install itself. Everything else is
+declared in [`guild.yml`](guild.yml) and applied by `--provision`.
+
+| Step | Who does it | Why |
+|------|-------------|-----|
+| Create the server | you, in the Discord app | Bots can't create servers |
+| Create the app + bot, copy the token | you, in the developer portal | Requires your account |
+| Invite the bot | you, via the install URL | Requires your account |
+| **Categories, channels, topics, permissions** | **`--provision`** | Declared in `guild.yml`, in git |
+| Restrict a command to one channel | you, in server settings | Needs a *user* OAuth token; a bot token can't |
+
+### 1. Create the server
+Discord → **+** in the server list → **Create My Own**. Name it whatever you
+like; nothing here depends on the name.
+
+### 2. Create the bot
 1. <https://discord.com/developers/applications> → **New Application**.
-2. **Bot** → **Reset Token** → copy it. No privileged intents are needed —
-   leave Message Content, Server Members and Presence **off**; slash commands
-   and context menus carry their own payloads, so the bot never reads the channel.
-3. **Installation** → Guild install, scopes `bot` + `applications.commands`,
-   bot permission **Send Messages**. Open the generated URL and add it to your
-   server.
+2. **Bot** → **Reset Token** → copy it. Leave Message Content, Server Members
+   and Presence **off** — slash commands and context menus carry their own
+   payloads, so the bot never needs to read your channels.
+3. **Installation** → Guild install, scopes `bot` + `applications.commands`.
+   Bot permissions: **Send Messages**, plus **Manage Channels** and
+   **Manage Roles** *for the provisioning step*.
+4. Open the generated URL and add it to your server.
 
-### 2. Collect the IDs
-Discord → **Settings → Advanced → Developer Mode** on, then right-click to copy:
-your **server ID**, the **channel** the digest should post to, and your own
-**user ID**.
+> **On those two extra permissions.** `--provision` needs Manage Channels to
+> create channels and Manage Roles to set the `#digest` lock. Once the layout
+> exists you can remove both and leave only Send Messages — the bot needs
+> nothing else to run. Keep them only if you expect to re-run `--provision`
+> often; re-adding them takes a few seconds either way.
 
-### 3. Configure
+### 3. Configure what you have so far
+Discord → **Settings → Advanced → Developer Mode** on, then right-click to copy
+your **server ID** and your own **user ID**. The digest channel ID doesn't exist
+yet — step 5 produces it.
+
 ```sh
 cp docker/assistant/.env.example docker/assistant/.env
-# fill in DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_DIGEST_CHANNEL_ID,
-# DISCORD_ALLOWED_USER_IDS, and TZ
+# fill in DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_ALLOWED_USER_IDS, TZ
 ```
 
-### 4. Bring it up
+### 4. Check the backends before involving Discord
+Needs no Discord token at all, so it isolates "can't reach Ollama" from
+"bad bot token" — the two things that actually go wrong:
+
+```sh
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+```
+
+### 5. Create the channels
+```sh
+# prints a plan and changes nothing
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision
+
+# execute it
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision --apply
+```
+
+It ends by printing the line to paste into `.env`:
+
+```
+Paste into docker/assistant/.env:
+  DISCORD_DIGEST_CHANNEL_ID=1234567890123456789
+```
+
+### 6. Bring it up
 The `ai` and `monitoring` stacks must be running first — this stack joins their
 networks and Compose will not create external networks.
 
@@ -111,16 +156,34 @@ docker compose -f docker/monitoring/docker-compose.yml up -d
 docker compose -f docker/assistant/docker-compose.yml up -d --build
 ```
 
-## Verify
+### 7. Keep `/ask` out of the log (optional, manual)
+Server Settings → **Integrations** → your bot → restrict `/ask` and
+`/summarize` to `#ask`. This is the one layout step a bot token genuinely
+cannot do — the command-permissions API requires a user OAuth token — so it
+stays a click.
 
-Check the backends before going near Discord — this needs no token:
+## The server layout
 
-```sh
-docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+[`guild.yml`](guild.yml) is the source of truth:
+
+```
+📁 HOMELAB
+   # digest    bot posts only — the daily health log
+   # ask       where you run /ask and /summarize
+   # alerts    reserved for a future ntfy bridge
 ```
 
-It prints which backends it reached, whether Ollama has the model, and a real
-digest. Then:
+The one decision that matters: **the digest is a log, not a chat.** "Was disk
+climbing last week?" is a question you'll actually scroll back for, and forty
+interleaved `/ask` replies would destroy that. So `#digest` denies
+`@everyone` Send Messages and `#ask` is where the conversation goes.
+
+`--provision` is **idempotent and additive**: re-run it any time to fix drift
+(someone edits a topic in the UI), and it will never delete a channel —
+deleting one destroys its history, and `#digest` *is* the history. Channels it
+finds that aren't in `guild.yml` are reported and left alone.
+
+## Verify
 
 ```sh
 docker logs -f assistant          # expect "connected as <bot> (guild …)"
@@ -163,4 +226,6 @@ docker compose -f docker/assistant/docker-compose.yml run --rm assistant --dry-r
 | Digest posts without prose | Ollama unreachable or the model isn't loaded — check `/status`, then `docker exec ollama ollama list`. |
 | Digest says *Incomplete* | Prometheus or Loki couldn't be read; confirm the `monitoring` stack is up. |
 | Container unhealthy but running | Gateway socket wedged — the heartbeat went stale. `docker restart assistant`. |
+| `--provision` fails with 403 Forbidden | Bot is missing Manage Channels / Manage Roles. Re-invite with those, or add them to its role. |
+| Digest channel exists but nothing posts | `DISCORD_DIGEST_CHANNEL_ID` not updated after provisioning, or the bot lost its Send Messages allow on the locked channel — re-run `--provision`. |
 | Answers take minutes | Expected on this hardware. Check `/status` for queue depth; that's the design, not a fault. |
