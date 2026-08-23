@@ -42,6 +42,7 @@ Planned Proxmox LXC container for Docker workloads:
 | ntfy | `docker/monitoring/` | LAN + tailnet (alerts, `:8090`) |
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
+| assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
@@ -61,6 +62,8 @@ Planned Proxmox LXC container for Docker workloads:
 - **Every model must pin `num_thread` ≤ the LXC core count** via a Modelfile in `docker/ai/models/`. Use `num_thread 4` (matches 6's ~16 tok/s while leaving 2 cores for other stacks).
 - Apply all tuned models at once with `docker/ai/load-models.sh` (runs `ollama create` for every `models/*.Modelfile`, rebuilding each tag in place — no Open WebUI change needed). For a single model: `ollama create <tag> -f docker/ai/models/<name>.Modelfile`.
 - There is no global Ollama thread env var, so this is per-model: adding a model means dropping a Modelfile in `docker/ai/models/` and re-running the loader.
+- **Never send `num_thread` as a request-time option.** Options passed on `/api/generate` override the Modelfile, so doing so silently undoes the pin above. The `assistant` stack deliberately omits it.
+- **One generation at a time.** `num_thread 4` of the 6-core quota means concurrent generations contend for the same cores and memory bandwidth — both crawl and the other stacks starve. Anything driving Ollama must serialize its requests; `docker/assistant/app/jobqueue.py` is the reference implementation (single worker, interactive prioritised over scheduled).
 
 ## Repo conventions
 - Each Docker stack lives in its own `docker/<name>/` directory with its own `docker-compose.yml` and `.env.example`.
@@ -69,6 +72,27 @@ Planned Proxmox LXC container for Docker workloads:
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
 - **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
+
+## Local LLM usage
+
+The deciding question is **is anyone waiting on the answer?** — synchronous work
+goes to Claude, asynchronous work to the local 3B. That's why local jobs run
+through the Discord bot in `docker/assistant/` (push) rather than Open WebUI
+(pull). See [`docs/ai-strategy.md`](docs/ai-strategy.md) and
+[`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
+
+The Discord server layout is declarative: `docker/assistant/guild.yml` holds the
+categories/channels/permissions and `--provision` converges the server to it
+(idempotent, additive, never deletes — `#digest` is a log whose history matters).
+Creating the server, creating the bot, and restricting a command to a channel
+all require a *user* login and stay manual; everything else is in git.
+
+Two rules when extending it:
+- **Python decides what's true; the model only writes prose.** Facts are queried
+  and thresholded in code — a 3B is not reliable at tool calling or at staying
+  faithful to retrieved sources.
+- **A model failure must degrade, not delete.** The digest posts its numbers even
+  when Ollama is down; unreadable data is reported, never rendered as "all clear".
 
 ## Planned / proposals (not yet deployed)
 - [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would reuse the existing ntfy (`alerts.home`); only Healthchecks is net-new.

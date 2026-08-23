@@ -18,7 +18,7 @@
 : "${HL_IP:=10.0.0.201}"
 # Stacks in dependency / boot order. `tunnel` is intentionally omitted (opt-in,
 # needs CLOUDFLARE_TUNNEL_TOKEN) — add it here if/when it's deployed.
-: "${HL_STACKS:=core monitoring ai proxy mcp desktops}"
+: "${HL_STACKS:=core monitoring ai assistant proxy mcp desktops}"
 
 # compose -f path for a stack name
 _hl_compose() {

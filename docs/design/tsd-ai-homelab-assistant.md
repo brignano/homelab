@@ -4,6 +4,10 @@
 **Date:** 2026-06-07
 **Owner:** Anthony
 
+**Superseded in part:** the canned `homelab_health()` half shipped as the daily
+digest in [`tsd-local-llm-discord-jobs.md`](tsd-local-llm-discord-jobs.md) — what
+unblocked it was push delivery, not a better model. Open-ended querying stays shelved.
+
 ## Problem
 The lab has solid monitoring (Prometheus, Loki, Grafana, ntfy), but answering
 "is anything wrong right now?" means opening Grafana and reading panels. A

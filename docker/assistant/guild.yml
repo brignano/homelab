@@ -1,0 +1,38 @@
+# Desired state for the homelab Discord server.
+#
+# This file is the source of truth for the server's layout. Apply it with:
+#
+#   docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision
+#   # ^ prints a plan and changes nothing. Add --apply to execute it.
+#
+# The provisioner is idempotent (run it as often as you like) and additive: it
+# creates what's missing and fixes drift, but NEVER deletes a channel — deleting
+# one destroys its history, and #digest *is* the history. Channels found on the
+# server but absent here are reported, not removed.
+#
+# What this file can't cover, because a bot token isn't allowed to do it:
+#   - creating the server itself
+#   - restricting which channels a slash command appears in
+# Both are one-time clicks; see docker/assistant/README.md.
+
+categories:
+  - name: HOMELAB
+    channels:
+      # The daily digest lands here. Locked so it stays a clean, scrollable
+      # log — "was disk climbing last week?" is a question you'll actually ask
+      # it, and 40 interleaved /ask replies would ruin that.
+      - name: digest
+        topic: "Daily homelab health digest, posted automatically. Bot writes only — ask things in #ask."
+        bot_only: true
+
+      # Where you run /ask and /summarize. Disposable by design.
+      - name: ask
+        topic: "Ask the local model: /ask, /summarize, or right-click a message -> Apps -> Summarize message."
+        bot_only: false
+
+      # Reserved for a future ntfy -> Discord bridge so alerts land next to the
+      # digest instead of only on your phone. Nothing writes here yet; delete
+      # these three lines if you'd rather not have an empty channel.
+      - name: alerts
+        topic: "Monitoring alerts (not yet wired — currently served by ntfy at alerts.home)."
+        bot_only: true

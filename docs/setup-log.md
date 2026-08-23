@@ -27,6 +27,146 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-22 — Discord server layout codified (guild.yml + `--provision`)
+
+**Goal:** Start the Discord side from scratch — no server, no bot, no channels —
+without the layout ending up as undocumented clicks in a UI. Everything else in
+this lab is config-in-git; the channels the digest depends on should be too.
+
+**Steps:**
+1. Added `docker/assistant/guild.yml` — declarative categories, channels, topics
+   and permissions.
+2. Added `docker/assistant/app/provision.py` and a `--provision` mode:
+   `--provision` prints a plan and changes nothing; `--provision --apply`
+   executes it.
+3. Layout: category `HOMELAB` with `#digest` (bot posts only), `#ask`
+   (interactive), `#alerts` (reserved for a future ntfy bridge).
+4. Documented the manual-vs-codified split in `docker/assistant/README.md`.
+5. Added PyYAML to the pinned requirements; `guild.yml` is copied into the image.
+
+**Issues encountered:**
+- **Locking `#digest` would have silently broken the digest.** Denying
+  `@everyone` Send Messages also denies the bot — it's a member like any other.
+  Without an explicit self-allow, the daily post would fail into a channel the
+  bot itself created.
+- **Chicken-and-egg on `DISCORD_DIGEST_CHANNEL_ID`.** It can't be known until
+  the channel exists, but `Config.from_env()` requires it, so provisioning
+  couldn't reuse the normal config path.
+- **A bot token cannot do everything.** Creating a server and restricting a
+  slash command to a channel both need a *user* OAuth token.
+- **Deleting channels to converge would be unrecoverable** — `#digest` is the
+  health history.
+
+**Resolution:**
+- Every locked channel gets a paired overwrite: deny `@everyone`, explicitly
+  allow the bot (plus `manage_messages` so it can tidy its own log).
+- `--provision` uses a minimal config path needing only `DISCORD_TOKEN` and
+  `DISCORD_GUILD_ID`, and prints the `.env` line to paste when it finishes.
+- The two bot-impossible steps are documented as clicks rather than
+  half-automated.
+- The provisioner is additive only: it creates and fixes drift, never deletes.
+  Channels not in `guild.yml` are reported and left alone.
+- Login-only (no gateway connect) so it starts and exits in about a second.
+
+**On the box (apply after merge):**
+```bash
+# 1. Create the server + bot by hand (see docker/assistant/README.md).
+#    Invite with Send Messages + Manage Channels + Manage Roles.
+# 2. Fill DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_ALLOWED_USER_IDS, TZ.
+cd ~/homelab && git pull
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision --apply
+# 3. Paste the printed DISCORD_DIGEST_CHANNEL_ID into .env, then:
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+Manage Channels / Manage Roles can be removed afterwards — the bot needs only
+Send Messages to run.
+
+**Notes / next steps:**
+- Still not deployed; no Docker daemon was available. The diff engine and the
+  apply path were verified offline against fakes, and every discord.py call was
+  checked against the pinned 2.4.0 API, but nothing has run against a real guild.
+- `#alerts` is created but nothing writes to it yet — ntfy still serves alerts at
+  `alerts.home`. Bridging it is the obvious next step.
+- Restricting `/ask` to `#ask` (Server Settings → Integrations) is worth doing
+  once, or `#digest` stops being a clean log.
+
+## 2026-08-22 — Local LLM moved from pull (chat page) to push (Discord jobs)
+
+**Goal:** Actually use the local `llama3.2:3b` instead of reaching for Claude by
+default. The blocker was never the model — it was that Open WebUI is a *pull*
+interface: you go to `chat.home`, type, and watch ~16 tok/s. Against Claude that
+comparison is lost before it starts, so the box idled.
+
+**Steps:**
+1. Added the `assistant` stack (`docker/assistant/`) — a small Python container
+   running a Discord bot. No `ports:`, no Caddy route, no DNS rewrite: it opens
+   an *outbound* websocket to Discord, so it adds zero inbound surface and works
+   off-tailnet, which `chat.home` can't.
+2. Scheduled daily digest (`DIGEST_AT`, default 07:30): services up/down,
+   CPU/RAM/disk, container restarts, and log-error counts by container, queried
+   from Prometheus + Loki.
+3. Interactive surfaces: `/ask`, `/summarize`, right-click → *Summarize message*,
+   plus `/digest` and `/status`.
+4. All LLM work funnels through a single-worker priority queue
+   (`app/jobqueue.py`), interactive ahead of scheduled.
+5. Wrote `docs/design/tsd-local-llm-discord-jobs.md`; reframed
+   `docs/ai-strategy.md` around "is anyone waiting on the answer?"; noted in
+   `tsd-ai-homelab-assistant.md` that its canned-summary half now ships.
+6. Added `assistant` to `HL_STACKS` in `shell/lib.sh` so `hl-up` includes it.
+
+**Issues encountered:**
+- **Concurrency would have made things worse, not better.** The tuned model pins
+  `num_thread 4` of the LXC's 6-core quota, so two generations at once contend
+  for the same cores and memory bandwidth — both crawl *and* the monitoring/proxy
+  stacks lose their remaining 2 cores. Ollama accepts the parallel requests
+  happily and thrashes.
+- **Request-time options override the Modelfile.** Passing `num_thread` on
+  `/api/generate` would silently undo the pin that took generation from
+  ~0.5 tok/s back to ~16 (the 2026-06-07 fix below).
+- **A digest that can silently say "all clear" is worse than none.** Naive error
+  handling would render an unreachable Prometheus as zero problems.
+
+**Resolution:**
+- Single worker for every LLM call; supporting caps on context, output length,
+  input size, backlog depth, and per-job timeout.
+- `num_thread` deliberately never sent; documented as a rule in `AGENTS.md`.
+- Python queries *and thresholds* every fact, including the "is this fine?"
+  verdict — the model only restates a finished facts block. If Ollama fails the
+  digest still posts without prose; an unreadable backend is reported as
+  **Incomplete**, never as healthy.
+- Container healthcheck watches a 60s heartbeat file, since a Discord client can
+  lose its gateway socket while the process stays alive.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+cp docker/assistant/.env.example docker/assistant/.env
+# fill in DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_DIGEST_CHANNEL_ID,
+# DISCORD_ALLOWED_USER_IDS, TZ
+
+# check the backends before involving Discord — needs no token:
+docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+docker logs -f assistant     # expect "connected as <bot> (guild ...)"
+```
+Discord app setup (bot token, guild install with `bot` + `applications.commands`,
+**no** privileged intents) is in
+[`docker/assistant/README.md`](../docker/assistant/README.md).
+
+**Notes / next steps:**
+- Not yet deployed — the image has not been built or run against real Discord,
+  Prometheus, Loki or Ollama. Logic was verified offline (parsers against real
+  API payload shapes, queue serialization/priority and load-shedding, and the full
+  digest path over stub HTTP servers); `--selftest` is the first real check.
+- Grafana-managed alert state is deliberately not in the digest — the rules live
+  in Grafana, not Prometheus, so `ALERTS` isn't queryable. Could be added later
+  via the Grafana API.
+- If a second container ever drives Ollama, the single-worker guarantee breaks —
+  the queue would need to move behind a shared gateway.
+
 ## 2026-06-07 — Reverted web search + 7B; consolidated to single local model
 
 **Goal:** Walk back the SearXNG + `qwen2.5:7b` web-search experiment (below). In
