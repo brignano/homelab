@@ -16,6 +16,15 @@ services:
       # fail-closed: if unset, mcp.home rejects all requests but the other sites
       # are unaffected and Caddy still starts. Set the real value in ./.env.
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
+      # Base domain every service name hangs off, e.g. home.example.com ->
+      # stats.home.example.com. Required: without it Caddy would try to serve
+      # sites literally named "stats." and certificate issuance would fail.
+      HOMELAB_DOMAIN: ${HOMELAB_DOMAIN:?required}
+      # Cloudflare API token for the ACME DNS-01 challenge. Scope it to exactly
+      # Zone -> DNS -> Edit on this one zone; it is not an account-wide key and
+      # must not be one. This is how real certificates are obtained without ever
+      # accepting an inbound connection.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?required}
     networks:
       - proxy
       - core

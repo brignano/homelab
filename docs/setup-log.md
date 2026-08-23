@@ -27,6 +27,74 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Real domain + real certificates, still not exposed
+
+**Goal:** Replace the `*.home` pseudo-TLD with a real domain and publicly-trusted
+certificates, **without publishing anything**. The obvious reading of "put it on
+my domain" is a tunnel or a port forward; that was not wanted, and `AGENTS.md`
+rules it out for admin services.
+
+**Steps:**
+1. Added `--with github.com/caddy-dns/cloudflare` to the Caddy build (it was
+   already an `xcaddy` build for the Sablier plugin).
+2. Rewrote the Caddyfile: sites are now `<name>.{$HOMELAB_DOMAIN}` with
+   `acme_dns cloudflare` in the global block.
+3. Kept every `*.home` name as an `http://` site that redirects to its real
+   counterpart, so bookmarks, `hl-*` aliases and the dev machines' MCP config
+   keep working.
+4. Added `HOMELAB_DOMAIN` and `CLOUDFLARE_API_TOKEN` (both `:?required`) to the
+   proxy stack; documented the exact token scope in `.env.example`.
+5. `shell/aliases.sh` gained `HL_DOMAIN` (defaults to `home`, so the aliases work
+   unchanged and just take the redirect).
+6. Wrote [`docs/design/tsd-real-domain-private-tls.md`](design/tsd-real-domain-private-tls.md)
+   and annotated the original proxy TSD as superseded in part.
+
+**Issues encountered:**
+- **HTTP-01 cannot work here.** It needs port 80 reachable from the internet —
+  precisely what is being refused.
+- **`.home` must never be sent to a CA.** No public CA will issue for it, and an
+  attempt would produce repeated failures in the log.
+- **Caddy rejects single-line site blocks.** `addr { directive }` on one line is
+  a syntax error; the closing brace needs its own line. Caught by validating
+  with a real Caddy binary rather than by eye.
+
+**Resolution:**
+- **ACME DNS-01**: Caddy proves ownership by writing a TXT record to the
+  Cloudflare zone, never by receiving a connection. That is what makes real
+  HTTPS possible on a host the internet cannot reach — and it retires the
+  internal-CA trust prompt `kali.home` needed.
+- Legacy blocks are declared `http://` so Caddy never attempts issuance for them.
+- Config validated with `caddy validate` (plugin directives stubbed, since the
+  stock binary lacks them) and formatted with `caddy fmt`. All 14 hostnames —
+  7 real, 7 redirects — adapt correctly.
+
+**On the box (apply after merge):**
+```bash
+# 1. Cloudflare DNS: add ONE record, proxy OFF (grey cloud):
+#      Type A   Name *.home   Content 10.0.0.201   Proxy status: DNS only
+#    (adjust "home" to whatever subdomain you chose)
+# 2. Cloudflare API token: dash.cloudflare.com/profile/api-tokens ->
+#    Create Token -> Custom -> Zone | DNS | Edit, scoped to this zone only.
+#    Do NOT use the Global API Key.
+cd ~/homelab && git pull
+nano docker/proxy/.env     # HOMELAB_DOMAIN=, CLOUDFLARE_API_TOKEN=
+
+docker compose -f docker/proxy/docker-compose.yml up -d --build
+docker logs -f caddy       # watch certificate issuance; ~1-2 min for all seven
+```
+Then verify: `https://stats.<domain>` loads with a valid padlock, and
+`http://stats.home` redirects to it.
+
+**Notes / next steps:**
+- **Proxy status must be DNS only.** An orange cloud would route through
+  Cloudflare's edge, which cannot reach a private address.
+- Update each dev machine's `.mcp.json` to `https://mcp.<domain>/mcp`. The old
+  URL still works via redirect, but MCP clients may not follow redirects.
+- Once nothing uses `*.home`, delete that Caddyfile section and the AdGuard
+  rewrites. AdGuard stays for ad blocking and as the tailnet resolver.
+- First issuance is ~7 sequential DNS-01 challenges; subsequent renewals are
+  automatic and staggered.
+
 ## 2026-08-23 — Alerting that survives the box going down
 
 **Goal:** Close the hole found the hard way — the server went offline and

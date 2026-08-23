@@ -29,21 +29,34 @@ Personal homelab running on a GMKtec M5 Ultra mini PC.
 
 ## Service URLs
 
-Memorable, port-free names served by the `proxy` stack (Caddy + AdGuard split-DNS).
-They resolve on any device on the Tailscale tailnet — phone or laptop, anywhere.
+Port-free names on a real domain with real certificates, served by the `proxy`
+stack (Caddy). `HOMELAB_DOMAIN` in [`docker/proxy/.env`](docker/proxy/.env.example)
+sets the base — e.g. `home.example.com` gives `stats.home.example.com`.
 Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 
 | URL | Service | What it's for |
 |-----|---------|---------------|
-| http://chat.home | Open WebUI | AI chat |
-| http://stats.home | Grafana | Dashboards & metrics |
-| http://apps.home | Portainer | Docker management |
-| http://dns.home | AdGuard Home | DNS admin & ad blocking |
-| http://alerts.home | ntfy | Monitoring push notifications |
-| http://kali.home | Kali Linux (webtop) | On-demand security desktop (boots on visit, scales to zero) |
+| https://chat.`$HOMELAB_DOMAIN` | Open WebUI | AI chat |
+| https://stats.`$HOMELAB_DOMAIN` | Grafana | Dashboards & metrics |
+| https://apps.`$HOMELAB_DOMAIN` | Portainer | Docker management |
+| https://dns.`$HOMELAB_DOMAIN` | AdGuard Home | DNS admin & ad blocking |
+| https://alerts.`$HOMELAB_DOMAIN` | ntfy | Monitoring push notifications |
+| https://mcp.`$HOMELAB_DOMAIN` | Grafana MCP | Read-only telemetry for Claude Code (bearer-gated) |
+| https://kali.`$HOMELAB_DOMAIN` | Kali Linux (webtop) | On-demand security desktop (boots on visit, scales to zero) |
 
-> These names only resolve over the tailnet via AdGuard (`*.home → 10.0.0.201`).
-> To add or rename one: edit the site label in the Caddyfile, then `docker compose restart caddy`.
+> **These are not public.** DNS resolves to `10.0.0.201`, a private address — the
+> name is looked up publicly, but only a device on the LAN or tailnet can reach
+> it. Nothing is port-forwarded and no tunnel is deployed.
+>
+> Certificates are real Let's Encrypt ones, obtained via the ACME **DNS-01**
+> challenge: Caddy proves ownership by writing a TXT record to the Cloudflare
+> zone, never by receiving a connection. That's what makes HTTPS possible on a
+> host the internet cannot reach — and it retires the browser warnings the old
+> `kali.home` internal CA produced.
+>
+> The legacy `*.home` names still work; each one now redirects to its real
+> counterpart. To add a service: add a site block to the Caddyfile, then
+> `docker compose restart caddy` — the wildcard DNS record already covers it.
 
 ## Repository layout
 

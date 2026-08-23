@@ -1,52 +1,57 @@
-# Memorable, port-free names for homelab services.
+# Memorable names for homelab services, on a real domain with real certificates.
 #
-# Traffic rides the Tailscale tailnet (WireGuard-encrypted at the network
-# layer), so we serve plain HTTP — no TLS, no certs, no warnings to manage.
-# `auto_https off` keeps Caddy on :80 and stops it trying to provision certs.
+# The sites below are NOT published. DNS for *.{$HOMELAB_DOMAIN} resolves to
+# 10.0.0.201, a private address — anyone can look the name up, but only a device
+# on the LAN or the Tailscale tailnet can reach it. Nothing is port-forwarded and
+# no tunnel is deployed.
 #
-# To rename a service, edit its site label here and the matching DNS rewrite
-# in AdGuard, then `docker compose restart caddy`.
-
+# Certificates come from Let's Encrypt via the ACME DNS-01 challenge: Caddy
+# proves ownership by writing a TXT record to the Cloudflare zone, never by
+# receiving a connection. That is what makes real HTTPS possible on a host the
+# internet cannot reach.
+#
+# To add a service: add a site block here, then `docker compose restart caddy`.
+# No DNS change is needed — a single wildcard record already covers every name.
 {
-	# HTTP-only for the *.home sites (Tailscale already encrypts), but keep cert
-	# management on so kali.home can use Caddy's internal CA for HTTPS — the
-	# Selkies desktop refuses to run without a secure context. disable_redirects
-	# stops the http:// sites from being forced to https.
-	auto_https disable_redirects
+	# Solve DNS-01 with the Cloudflare API. The token needs exactly one
+	# permission: Zone → DNS → Edit, scoped to this zone. See docker/proxy/.env.
+	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
 }
 
-# chat.home  ->  Open WebUI (the AI chat UI; container listens on 8080)
-http://chat.home {
-	reverse_proxy open-webui:8080
-}
+# ── Services ────────────────────────────────────────────────────────────────
 
-# stats.home ->  Grafana
-http://stats.home {
+# Grafana — dashboards & metrics
+stats.{$HOMELAB_DOMAIN} {
 	reverse_proxy grafana:3000
 }
 
-# apps.home  ->  Portainer (Docker management)
-http://apps.home {
+# Open WebUI — AI chat (container listens on 8080)
+chat.{$HOMELAB_DOMAIN} {
+	reverse_proxy open-webui:8080
+}
+
+# Portainer — Docker management
+apps.{$HOMELAB_DOMAIN} {
 	reverse_proxy portainer:9000
 }
 
-# dns.home   ->  AdGuard Home admin UI
-http://dns.home {
+# AdGuard Home — DNS admin & ad blocking
+dns.{$HOMELAB_DOMAIN} {
 	reverse_proxy adguard:80
 }
 
-# alerts.home -> ntfy (push notifications for monitoring alerts)
-http://alerts.home {
+# ntfy — push notifications for monitoring alerts
+alerts.{$HOMELAB_DOMAIN} {
 	reverse_proxy ntfy:80
 }
 
-# mcp.home -> Grafana MCP server (read-only metrics/logs/alerts for Claude Code).
+# Grafana MCP server — read-only metrics/logs/alerts for Claude Code.
 # Tailscale is the network boundary; this bearer check is the app-layer guard
 # (mcp-grafana has no built-in endpoint auth). The Viewer-scoped Grafana service
-# account behind it is the hard read-only ceiling. Token comes from MCP_BEARER_TOKEN
-# in docker/proxy/.env. If unset, the matcher rejects everything (fail-closed) and
-# only mcp.home is affected — the other sites keep working.
-http://mcp.home {
+# account behind it is the hard read-only ceiling. Token comes from
+# MCP_BEARER_TOKEN in docker/proxy/.env. If unset, the matcher rejects everything
+# (fail-closed) and only this site is affected.
+mcp.{$HOMELAB_DOMAIN} {
 	@noauth not header Authorization "Bearer {env.MCP_BEARER_TOKEN}"
 	respond @noauth "Unauthorized" 401
 
@@ -57,15 +62,10 @@ http://mcp.home {
 	}
 }
 
-# kali.home -> Kali webtop, booted on-demand by Sablier, scaled to zero when idle.
-# Served over HTTPS (Caddy internal CA) because the Selkies desktop requires a
-# secure context; plain http redirects to https.
-http://kali.home {
-	redir https://kali.home{uri}
-}
-
-https://kali.home {
-	tls internal
+# Kali webtop — booted on-demand by Sablier, scaled to zero when idle.
+# Selkies requires a secure context; this now gets a genuine certificate rather
+# than Caddy's internal CA, so the browser no longer has to be told to trust it.
+kali.{$HOMELAB_DOMAIN} {
 	route {
 		sablier http://sablier:10000 {
 			group desktops
@@ -77,4 +77,42 @@ https://kali.home {
 		}
 		reverse_proxy kali-linux:3000
 	}
+}
+
+# ── Legacy *.home names ─────────────────────────────────────────────────────
+# Kept so existing bookmarks, shell aliases and the dev machines' MCP config
+# keep working. They are declared `http://` on purpose: `.home` is not a real
+# TLD, so no public CA will ever issue for it and Caddy must not try. Each one
+# simply redirects to its real name.
+#
+# These depend on the AdGuard rewrites (*.home → 10.0.0.201). Once nothing uses
+# them, delete this section and the rewrites; AdGuard itself stays for ad
+# blocking and as the tailnet resolver.
+
+http://stats.home {
+	redir https://stats.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://chat.home {
+	redir https://chat.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://apps.home {
+	redir https://apps.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://dns.home {
+	redir https://dns.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://alerts.home {
+	redir https://alerts.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://mcp.home {
+	redir https://mcp.{$HOMELAB_DOMAIN}{uri} permanent
+}
+
+http://kali.home {
+	redir https://kali.{$HOMELAB_DOMAIN}{uri} permanent
 }

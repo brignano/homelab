@@ -3,6 +3,12 @@
 **Status:** approved 2026-06-07
 **Goal:** Reach every homelab service at a memorable, port-free name (`chat.home`, `stats.home`, …) that resolves on phone + laptop anywhere on the Tailscale tailnet.
 
+**Superseded in part (2026-08-23):** the `.home` pseudo-TLD is replaced by a real
+domain with real Let's Encrypt certificates, obtained via ACME DNS-01 so nothing is
+exposed. The routing design below is unchanged — only the names and the certificate
+story. `*.home` now redirects to the real names. See
+[`tsd-real-domain-private-tls.md`](tsd-real-domain-private-tls.md).
+
 ## Naming scheme
 
 Function-based names under a `.home` suffix (chosen for instant clarity over themed alternatives like `.hq` / `.olympus`):

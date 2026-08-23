@@ -70,12 +70,19 @@ _hl_open() {
 		*)      echo "$1" ;;
 	esac
 }
-hl-chat()   { _hl_open "http://chat.home"; }
-hl-stats()  { _hl_open "http://stats.home"; }
-hl-apps()   { _hl_open "http://apps.home"; }
-hl-dns()    { _hl_open "http://dns.home"; }
-hl-alerts() { _hl_open "http://alerts.home"; }
-hl-kali()   { _hl_open "https://kali.home"; }
+# Base domain for the service names. Defaults to the legacy `home` pseudo-TLD,
+# which Caddy now redirects to the real domain — so these keep working either
+# way. Set HL_DOMAIN to your real base (e.g. home.example.com) to skip the hop
+# and land on HTTPS directly. http:// is fine for both: Caddy upgrades the real
+# domain to HTTPS automatically.
+: "${HL_DOMAIN:=home}"
+
+hl-chat()   { _hl_open "http://chat.$HL_DOMAIN"; }
+hl-stats()  { _hl_open "http://stats.$HL_DOMAIN"; }
+hl-apps()   { _hl_open "http://apps.$HL_DOMAIN"; }
+hl-dns()    { _hl_open "http://dns.$HL_DOMAIN"; }
+hl-alerts() { _hl_open "http://alerts.$HL_DOMAIN"; }
+hl-kali()   { _hl_open "http://kali.$HL_DOMAIN"; }
 # IP fallbacks for when you're on the tailnet but not using AdGuard split-DNS.
 hl-chat-ip()   { _hl_open "http://$HL_IP:3010"; }
 hl-stats-ip()  { _hl_open "http://$HL_IP:3000"; }

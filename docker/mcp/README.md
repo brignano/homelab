@@ -9,7 +9,7 @@ Design + decisions: [`docs/design/tsd-homelab-mcp-server.md`](../../docs/design/
 
 ```
 dev machine (Claude Code)
-   │  http://mcp.home/mcp   Authorization: Bearer <MCP_BEARER_TOKEN>
+   │  https://mcp.$HOMELAB_DOMAIN/mcp   Authorization: Bearer <MCP_BEARER_TOKEN>
    ▼
 Caddy (mcp.home)  ──bearer check──▶  mcp-grafana:8000  ──Viewer SA token──▶  Grafana ──▶ Prometheus + Loki
 ```
@@ -37,9 +37,10 @@ cp docker/proxy/.env.example docker/proxy/.env
 # set MCP_BEARER_TOKEN (openssl rand -hex 32)
 ```
 
-### 3. Add the DNS rewrite
-AdGuard (`http://dns.home`) → **Filters → DNS rewrites → Add** → domain `mcp.home`,
-answer `10.0.0.201` (same as the other `*.home` names).
+### 3. DNS
+Nothing to do — the wildcard `*.<HOMELAB_DOMAIN>` record already covers
+`mcp.<HOMELAB_DOMAIN>`. (The legacy `mcp.home` name still resolves via AdGuard
+and redirects here.)
 
 ### 4. Bring it up
 ```sh
@@ -55,22 +56,22 @@ Add to the Claude Code MCP config (`.mcp.json`):
   "mcpServers": {
     "homelab": {
       "type": "http",
-      "url": "http://mcp.home/mcp",
+      "url": "https://mcp.<your-domain>/mcp",
       "headers": { "Authorization": "Bearer <MCP_BEARER_TOKEN>" }
     }
   }
 }
 ```
-Use the same `MCP_BEARER_TOKEN` from `docker/proxy/.env`. Requires Tailscale up (that's
-how `*.home` resolves and how the tailnet boundary is enforced).
+Use the same `MCP_BEARER_TOKEN` from `docker/proxy/.env`. Requires Tailscale up — the name resolves publicly but the address is
+private, so the tailnet is what makes it reachable at all.
 
 ## Verify
 ```sh
 # Wrong/no token -> 401 from Caddy:
-curl -s -o /dev/null -w '%{http_code}\n' http://mcp.home/mcp           # 401
+curl -s -o /dev/null -w '%{http_code}\n' https://mcp.$HOMELAB_DOMAIN/mcp           # 401
 # Correct token -> reaches mcp-grafana (not 401):
 curl -s -o /dev/null -w '%{http_code}\n' \
-  -H "Authorization: Bearer $MCP_BEARER_TOKEN" http://mcp.home/mcp
+  -H "Authorization: Bearer $MCP_BEARER_TOKEN" https://mcp.$HOMELAB_DOMAIN/mcp
 ```
 
 ## Notes
