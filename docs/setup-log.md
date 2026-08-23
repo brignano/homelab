@@ -59,6 +59,12 @@ from.
   excluded, which is a line GitHub already maintains — so the list stays correct
   without anyone making a recurring taste call about what still counts. Archiving
   a repo removes it from here; that is the same decision, made once.
+- **Grouped by what a repo *is*, not how active it is.** The first attempt split
+  private-personal from public-projects, which put `design` next to `life` and
+  `homelab` next to `hoststats` — both wrong. The distinction that holds:
+  *Personal* (yours, ongoing, not shipped), *Core* (persistent things simply
+  maintained — the site, the lab, the design system; they have no "done", so
+  they are not projects), *Projects* (discrete work with a scope and an end).
 - **Links go as deep as the URL is stable.** Cloudflare uses `?to=/:account/...`
   so it resolves the account id and lands on the zone's DNS page; Discord links
   into the guild rather than the app root. A bookmark that lands on a product's

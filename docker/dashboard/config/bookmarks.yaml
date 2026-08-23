@@ -9,6 +9,13 @@
 # Links go as deep as the URL is stable. A bookmark that lands on a product's
 # marketing page has saved you nothing.
 
+# The split is by what a repo *is*, not by how active it is:
+#
+#   Personal   yours, ongoing, not shipped to anyone
+#   Core       persistent things that are simply maintained — a site, the lab,
+#              the design system. They have no "done", so they are not projects.
+#   Projects   discrete pieces of work with a scope and an end
+
 - Personal:
     - life:
         - abbr: LF
@@ -16,18 +23,23 @@
     - ideas:
         - abbr: ID
           href: https://github.com/brignano/ideas
-    # `design`, not `designs` — the plural one is public and archived.
-    - design:
-        - abbr: DS
-          href: https://github.com/brignano/design
 
-- Projects:
+- Core:
     - homelab:
         - abbr: HL
           href: https://github.com/brignano/homelab
     - brignano.io:
         - abbr: IO
           href: https://github.com/brignano/brignano.io
+    # `design`, not `designs` — the plural one is public and archived.
+    - design:
+        - abbr: DS
+          href: https://github.com/brignano/design
+    - profile:
+        - abbr: PR
+          href: https://github.com/brignano/brignano
+
+- Projects:
     - driftwood:
         - abbr: DW
           href: https://github.com/brignano/driftwood
