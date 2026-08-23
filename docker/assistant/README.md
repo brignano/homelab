@@ -146,17 +146,22 @@ Needs no Discord token at all, so it isolates "can't reach Ollama" from
 "bad bot token" — the two things that actually go wrong:
 
 ```sh
-docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
+docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --selftest
 ```
 
 ### 5. Create the channels
 ```sh
 # prints a plan and changes nothing
-docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision
+docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --provision
 
 # execute it
-docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provision --apply
+docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --provision --apply
 ```
+
+> **Always pass `--build`.** `app/` is copied into the image at build time, not
+> mounted, so `docker compose run` without it silently reuses the last image —
+> and you debug a bug you already fixed. This costs a couple of seconds; a
+> stale image costs an hour.
 
 It ends by printing the line to paste into `.env`:
 
@@ -216,7 +221,7 @@ To render sample digests with no network at all (useful when editing the
 formatting):
 
 ```sh
-docker compose -f docker/assistant/docker-compose.yml run --rm assistant --dry-run
+docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --dry-run
 ```
 
 ## Notes
@@ -247,5 +252,6 @@ docker compose -f docker/assistant/docker-compose.yml run --rm assistant --dry-r
 | Container unhealthy but running | Gateway socket wedged — the heartbeat went stale. `docker restart assistant`. |
 | `--provision` fails with 403 Forbidden (50013) | Bot is missing an invite permission. It needs all four above — and note it must also hold any permission `_overwrites()` grants, not just Manage Roles. Re-invite with the link above. |
 | `--provision` failed partway through | Safe to re-run. It's idempotent: it skips what already exists and creates only what's missing. |
+| A fix you just pulled seems to have no effect | You're running a stale image. `docker compose run` reuses the built image unless you pass `--build`. |
 | Digest channel exists but nothing posts | `DISCORD_DIGEST_CHANNEL_ID` not updated after provisioning, or the bot lost its Send Messages allow on the locked channel — re-run `--provision`. |
 | Answers take minutes | Expected on this hardware. Check `/status` for queue depth; that's the design, not a fault. |
