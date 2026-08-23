@@ -59,7 +59,8 @@ this lab is config-in-git; the channels the digest depends on should be too.
 
 **Resolution:**
 - Every locked channel gets a paired overwrite: deny `@everyone`, explicitly
-  allow the bot (plus `manage_messages` so it can tidy its own log).
+  allow the bot — `send_messages` only, since Discord rejects an overwrite
+  granting a permission the acting bot doesn't itself hold.
 - `--provision` uses a minimal config path needing only `DISCORD_TOKEN` and
   `DISCORD_GUILD_ID`, and prints the `.env` line to paste when it finishes.
 - The two bot-impossible steps are documented as clicks rather than
@@ -71,7 +72,8 @@ this lab is config-in-git; the channels the digest depends on should be too.
 **On the box (apply after merge):**
 ```bash
 # 1. Create the server + bot by hand (see docker/assistant/README.md).
-#    Invite with Send Messages + Manage Channels + Manage Roles.
+#    Invite with View Channels + Send Messages + Manage Channels + Manage Roles
+#    (permissions=268438544).
 # 2. Fill DISCORD_TOKEN, DISCORD_GUILD_ID, DISCORD_ALLOWED_USER_IDS, TZ.
 cd ~/homelab && git pull
 docker compose -f docker/assistant/docker-compose.yml run --rm assistant --selftest
@@ -81,7 +83,7 @@ docker compose -f docker/assistant/docker-compose.yml run --rm assistant --provi
 docker compose -f docker/assistant/docker-compose.yml up -d --build
 ```
 Manage Channels / Manage Roles can be removed afterwards — the bot needs only
-Send Messages to run.
+View Channels + Send Messages to run.
 
 **Notes / next steps:**
 - Still not deployed; no Docker daemon was available. The diff engine and the

@@ -102,15 +102,34 @@ like; nothing here depends on the name.
    and Presence **off** — slash commands and context menus carry their own
    payloads, so the bot never needs to read your channels.
 3. **Installation** → Guild install, scopes `bot` + `applications.commands`.
-   Bot permissions: **Send Messages**, plus **Manage Channels** and
-   **Manage Roles** *for the provisioning step*.
+   Bot permissions: **View Channels**, **Send Messages**, **Manage Channels**,
+   **Manage Roles**.
 4. Open the generated URL and add it to your server.
 
-> **On those two extra permissions.** `--provision` needs Manage Channels to
-> create channels and Manage Roles to set the `#digest` lock. Once the layout
-> exists you can remove both and leave only Send Messages — the bot needs
-> nothing else to run. Keep them only if you expect to re-run `--provision`
-> often; re-adding them takes a few seconds either way.
+Or skip that UI and use a direct invite link with exactly those four
+(`permissions=268438544`), substituting your own application ID:
+
+```
+https://discord.com/oauth2/authorize?client_id=<APP_ID>&scope=bot+applications.commands&permissions=268438544
+```
+
+| Permission | Needed for |
+|------------|------------|
+| View Channels | Reading current state so the `--provision` diff works |
+| Send Messages | Posting the digest and command replies |
+| Manage Channels | Creating the category and channels |
+| Manage Roles | Setting the `#digest` lock (channel permission overwrites) |
+
+> **The invite must cover every permission an overwrite grants.** Discord
+> rejects an overwrite that hands out a permission the acting bot doesn't hold
+> itself — `403 Forbidden (50013)`, even when the bot has Manage Roles. That's
+> why the `#digest` lock grants only `send_messages`, and why adding any
+> permission to `_overwrites()` in `provision.py` means adding it to the invite
+> too.
+
+> **After provisioning**, Manage Channels and Manage Roles can be removed —
+> View Channels and Send Messages are all the running bot needs. Keep them if
+> you expect to re-run `--provision` often.
 
 ### 3. Configure what you have so far
 Discord → **Settings → Advanced → Developer Mode** on, then right-click to copy
@@ -226,6 +245,7 @@ docker compose -f docker/assistant/docker-compose.yml run --rm assistant --dry-r
 | Digest posts without prose | Ollama unreachable or the model isn't loaded — check `/status`, then `docker exec ollama ollama list`. |
 | Digest says *Incomplete* | Prometheus or Loki couldn't be read; confirm the `monitoring` stack is up. |
 | Container unhealthy but running | Gateway socket wedged — the heartbeat went stale. `docker restart assistant`. |
-| `--provision` fails with 403 Forbidden | Bot is missing Manage Channels / Manage Roles. Re-invite with those, or add them to its role. |
+| `--provision` fails with 403 Forbidden (50013) | Bot is missing an invite permission. It needs all four above — and note it must also hold any permission `_overwrites()` grants, not just Manage Roles. Re-invite with the link above. |
+| `--provision` failed partway through | Safe to re-run. It's idempotent: it skips what already exists and creates only what's missing. |
 | Digest channel exists but nothing posts | `DISCORD_DIGEST_CHANNEL_ID` not updated after provisioning, or the bot lost its Send Messages allow on the locked channel — re-run `--provision`. |
 | Answers take minutes | Expected on this hardware. Check `/status` for queue depth; that's the design, not a fault. |

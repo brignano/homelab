@@ -207,6 +207,12 @@ def _overwrites(guild, me, bot_only: bool) -> dict:
     NOTE the second entry. Denying @everyone `send_messages` also denies the
     bot, since it's a member like any other — without an explicit allow for
     ourselves, locking #digest would stop the digest from posting into it.
+
+    Only `send_messages` is granted, and that is deliberate. Discord rejects an
+    overwrite that grants a permission the acting bot does not itself hold
+    (403, error 50013), so every permission named here has to be in the invite.
+    Keeping this to the single permission the bot actually uses means the invite
+    stays minimal — the bot only ever posts, it never edits or deletes messages.
     """
     import discord
 
@@ -214,7 +220,7 @@ def _overwrites(guild, me, bot_only: bool) -> dict:
         return {}
     return {
         guild.default_role: discord.PermissionOverwrite(send_messages=False),
-        me: discord.PermissionOverwrite(send_messages=True, manage_messages=True),
+        me: discord.PermissionOverwrite(send_messages=True),
     }
 
 
