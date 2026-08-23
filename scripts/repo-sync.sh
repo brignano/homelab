@@ -40,19 +40,42 @@
 # Reports only when there is something to do. Silence means "up to date and
 # everything is running current code", the same discipline as heartbeat.sh.
 #
-# NOTE: this never restarts anything. Deciding *when* to restart the box that
-# serves your DNS is a human's call. CI now gates main
-# (.github/workflows/ci.yml), which removes the strongest objection to
-# automating that step later — but a green check on a compose file is not the
-# same as knowing the DNS resolver survives the restart, so the decision stays
-# with a person until something proves otherwise.
+# Self-healing, and where it stops
+# -------------------------------
+# A stale stack is restarted automatically, because the fix was always the same
+# command and running it by hand added nothing. CI gates main, and a build
+# failure is inherently safe: `up -d --build` builds *before* it recreates, so a
+# broken build leaves the old container serving.
+#
+# The dangerous case is a build that succeeds and then crashes, which is why
+# every restart is *verified* rather than fired and forgotten. Restarting
+# without checking is not self-healing, it is auto-breaking faster.
+#
+# HL_NO_AUTOHEAL lists stacks that are only ever reported, never restarted.
+# `proxy` is there by default and should stay: it contains AdGuard, which is the
+# household's DNS. A 4am restart that does not come back takes the network down
+# until someone notices, and every tool you would reach for to diagnose it
+# resolves names through the thing that is down. CI validating the Caddyfile
+# reduces that risk; it cannot know whether AdGuard comes back.
+#
+# Auto-healing is also skipped entirely when the pull failed — a tree in an
+# unknown state is not one to deploy from.
 #
 set -eu
 
 REPO="${HL_REPO:-/root/homelab}"
 ENV_FILE="$REPO/docker/monitoring/.env"
-# Discord's hard cap is 2000 characters; leave room for the code fence.
+# Discord's hard cap is 2000 characters; leave room for the code fences.
 MAX_CHARS=1800
+
+# Stacks never restarted automatically — see "Self-healing" above.
+NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy}"
+# Set HL_AUTOHEAL=no for report-only behaviour.
+AUTOHEAL="${HL_AUTOHEAL:-yes}"
+# Verification after a restart: attempts x delay. Compose needs a few seconds to
+# settle, and a container that crashes on boot usually does so within one cycle.
+VERIFY_TRIES="${HL_VERIFY_TRIES:-3}"
+VERIFY_DELAY="${HL_VERIFY_DELAY:-10}"
 
 cd "$REPO" || { echo "repo-sync: $REPO not found" >&2; exit 1; }
 
@@ -94,7 +117,40 @@ human() {
   }'
 }
 
-STALE=""
+# Containers compose is currently running for this stack directory.
+running_ids() {
+  docker ps --filter "label=com.docker.compose.project.working_dir=$1" \
+            --filter "status=running" --format '{{.ID}}' 2>/dev/null || true
+}
+
+# Did the stack come back? Two questions, because either can fail alone: are at
+# least as many containers running as before, and is anything stuck in a restart
+# loop (which `status=running` would otherwise happily count).
+verify_stack() {
+  _abs=$1; _want=$2; _try=0
+  while [ "$_try" -lt "$VERIFY_TRIES" ]; do
+    sleep "$VERIFY_DELAY"
+    _try=$((_try + 1))
+    _now=$(running_ids "$_abs" | wc -l | tr -d ' ')
+    _bad=$(docker ps --filter "label=com.docker.compose.project.working_dir=$_abs" \
+                     --filter "status=restarting" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')
+    if [ "$_now" -ge "$_want" ] && [ "$_bad" -eq 0 ]; then
+      return 0
+    fi
+  done
+  echo "$_now/$_want running, $_bad restarting"
+  return 1
+}
+
+in_list() {
+  for _w in $2; do [ "$_w" = "$1" ] && return 0; done
+  return 1
+}
+
+HEALED=""
+FAILED=""
+MANUAL=""
+MANUAL_CMDS=""
 NOT_RUNNING=""
 
 for dir in docker/*/; do
@@ -125,8 +181,7 @@ for dir in docker/*/; do
 
   # Absolute path is what compose stamps on its containers.
   abs=$(cd "$dir" && pwd)
-  cids=$(docker ps --filter "label=com.docker.compose.project.working_dir=$abs" \
-                   --format '{{.ID}}' 2>/dev/null || true)
+  cids=$(running_ids "$abs")
   if [ -z "$cids" ]; then
     NOT_RUNNING="$NOT_RUNNING $stack"
     continue
@@ -154,11 +209,39 @@ for dir in docker/*/; do
   done
   [ -n "$oldest" ] || continue
 
-  if [ "$commit_ts" -gt "$oldest" ]; then
-    age=$(human $((commit_ts - oldest)))
-    STALE="$STALE
-  $stack — code is ${age} newer than its $basis  ->  docker compose -f $compose $hint"
+  [ "$commit_ts" -gt "$oldest" ] || continue
+  age=$(human $((commit_ts - oldest)))
+  cmd="docker compose -f $compose $hint"
+
+  # Report-only: globally disabled, on the never-touch list, or the tree is in
+  # an unknown state because the pull failed.
+  if [ "$AUTOHEAL" != "yes" ] || in_list "$stack" "$NO_AUTOHEAL" || [ -n "$PULL_ERROR" ]; then
+    MANUAL="$MANUAL
+  $stack ($basis, $age)"
+    MANUAL_CMDS="$MANUAL_CMDS
+$cmd"
+    continue
   fi
+
+  want=$(printf '%s\n' "$cids" | wc -l | tr -d ' ')
+  if ! err=$(cd "$REPO" && $cmd 2>&1); then
+    # The build or the pull failed. `up -d --build` builds before recreating, so
+    # the previous containers are almost certainly still serving — say so rather
+    # than implying the stack is down.
+    FAILED="$FAILED
+  $stack ($basis, $age) — command failed, previous containers likely still up
+    $(printf '%s' "$err" | tail -n 2 | tr '\n' ' ')"
+    continue
+  fi
+
+  if ! why=$(verify_stack "$abs" "$want"); then
+    FAILED="$FAILED
+  $stack ($basis, $age) — restarted but did NOT come back: $why
+    $cmd"
+    continue
+  fi
+  HEALED="$HEALED
+  $stack ($basis, $age)"
 done
 
 # --- report -------------------------------------------------------------------
@@ -166,26 +249,47 @@ done
 # Built with `if` rather than `[ x ] && MSG=...`: under `set -e` an AND-list
 # whose test fails takes the whole script down with it, and the test failing is
 # the *normal* case here.
+#
+# One section per outcome, and the commands you still have to run collected into
+# a single block at the end rather than repeated after every line — they are all
+# the same shape, and a block is one paste instead of three.
 MSG=""
 if [ -n "$PULL_ERROR" ]; then
   MSG="$MSG
-**Repo sync failed on $(hostname)**
-$PULL_ERROR"
+**Repo sync failed on $(hostname)** — nothing was restarted
+\`\`\`
+$PULL_ERROR
+\`\`\`"
 fi
-if [ -n "$PULLED" ] && [ -n "$STALE" ]; then
+if [ -n "$PULLED" ]; then
   MSG="$MSG
 $PULLED"
 fi
-if [ -n "$STALE" ]; then
+if [ -n "$HEALED" ]; then
   MSG="$MSG
-**Stacks running older code than the repo:**
-\`\`\`$STALE
+**Restarted, now running current code:**
+\`\`\`$HEALED
+\`\`\`"
+fi
+if [ -n "$FAILED" ]; then
+  MSG="$MSG
+**RESTART FAILED — still on old code:**
+\`\`\`$FAILED
+\`\`\`"
+fi
+if [ -n "$MANUAL" ]; then
+  MSG="$MSG
+**Needs you:**
+\`\`\`$MANUAL
+\`\`\`
+\`\`\`bash
+cd $REPO$MANUAL_CMDS
 \`\`\`"
 fi
 
-# Nothing worth saying. Note the asymmetry: a clean pull with everything current
-# is silent, but a pull that changed nothing while a stack is stale still
-# reports — the stack is stale either way.
+# Nothing worth saying. Silence now means "nothing changed and nothing needs
+# you" — a successful restart IS a change and is always reported, so the channel
+# doubles as a deployment log.
 if [ -z "$MSG" ]; then
   if [ -n "$NOT_RUNNING" ]; then
     echo "repo-sync: ok (stacks not running:$NOT_RUNNING)"
@@ -213,5 +317,6 @@ curl -fsS -m 20 --retry 3 --retry-delay 5 \
   -H 'Content-Type: application/json' \
   -d "{\"content\":\"$PAYLOAD\"}" "$WEBHOOK" >/dev/null
 
-# Exit non-zero on a pull failure so cron surfaces it even if Discord is down.
-[ -z "$PULL_ERROR" ]
+# Exit non-zero if anything actually went wrong, so cron surfaces it even when
+# Discord is unreachable. A stack merely *needing* a human is not an error.
+[ -z "$PULL_ERROR" ] && [ -z "$FAILED" ]
