@@ -27,6 +27,43 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Drift report cried wolf on its first run
+
+**Goal:** Fix a 50% false-positive rate in `repo-sync.sh`, found the first time
+it ran for real.
+
+**Steps:**
+1. Excluded `**/*.md`, `tests/**` and `.env.example` from the "newest commit
+   touching this stack" calculation.
+
+**Issues encountered:**
+- **Docs and tests live inside the stack directories but are never deployed.**
+  The first real run flagged four stacks; two were changes that could not
+  possibly affect them — `mcp` for a `README.md`, `assistant` partly for a
+  `README.md` and `tests/smoke.py`, neither of which the Dockerfile copies (it
+  takes `requirements.txt`, `app/` and `guild.yml`). A report that is wrong half
+  the time is one you learn to ignore, which is worse than not having it.
+- **`:(exclude)` silently does nothing with `**`.** Git pathspec needs glob
+  magic for `**` to expand, so the exclusion must be written
+  `:(exclude,glob)`. Written the obvious way it fails open — the filter appears
+  to work and changes nothing. Caught by comparing filtered against unfiltered
+  output rather than assuming.
+
+**Verification:**
+- Throwaway repo with a stubbed `docker`: a doc-only commit after container
+  start does not flag; a compose change after container start does.
+- Against the real repo the filter moves `mcp` from "10 hours ago" back to
+  "3 months ago" — older than its container, correctly clearing it.
+
+**Notes / next steps:**
+- What the first run *did* correctly catch: `monitoring` had been up 24 days
+  while its alerting provisioning was written 10 hours earlier. Grafana reads
+  alerting provisioning only at startup, so the codified contact points had
+  never been loaded — the working alerts were hand-made in the UI. Exactly the
+  invisible gap the report exists to surface.
+
+---
+
 ## 2026-08-23 — Repo drift: a daily pull, a report, and a CI gate
 
 **Goal:** Stop the working tree on CT 100 silently falling days behind GitHub —
