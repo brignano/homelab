@@ -93,6 +93,11 @@ hl_models() {
 	sh "$HL_REPO/docker/ai/load-models.sh"
 }
 
+# hl_heartbeat       — run the dead man's switch once (same as the 5-min cron)
+hl_heartbeat() {
+	sh "$HL_REPO/scripts/heartbeat.sh" && echo "heartbeat: pinged ok"
+}
+
 # hl_reload_prom     — reload Prometheus config with no downtime (SIGHUP)
 hl_reload_prom() {
 	docker kill --signal HUP prometheus

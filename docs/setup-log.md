@@ -27,6 +27,74 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Alerting that survives the box going down
+
+**Goal:** Close the hole found the hard way — the server went offline and
+nothing said so. Grafana evaluates the rules, ntfy delivers the push, and the
+assistant posts the digest, all inside CT 100. When the box dies, all three die
+with it. The one failure most worth hearing about was guaranteed to be silent.
+
+**Steps:**
+1. Added a `discord` receiver alongside the existing ntfy webhook in
+   `contactpoints.yml` — one contact point, two receivers, so `policies.yml`
+   only changed its target name (`ntfy` → `homelab`).
+2. Passed `DISCORD_ALERT_WEBHOOK` into the Grafana container so provisioning can
+   interpolate it; documented it in `.env.example`.
+3. Added [`scripts/heartbeat.sh`](../scripts/heartbeat.sh) — a dead man's switch
+   that pings Healthchecks.io from cron every 5 minutes.
+4. Updated `#alerts` in `guild.yml` to say what actually feeds it, and added
+   `hl-heartbeat` to `shell/lib.sh`.
+5. Wrote [`docs/design/tsd-alerting-off-box.md`](design/tsd-alerting-off-box.md).
+
+**Issues encountered:**
+- **A monitoring system cannot report its own death.** No alert rule and no
+  extra container on CT 100 can fix this; anything hosted on the watched machine
+  inherits the same failure.
+- **An unconditional ping would only prove cron ran**, not that monitoring works.
+- **Routing alerts through the assistant bot** would have reintroduced exactly
+  the dependency being removed.
+
+**Resolution:**
+- Inverted the logic: the box pings *out*, and **silence is the signal**. That's
+  the only shape that survives the failure it's meant to catch — and it needs no
+  inbound access, so still no port, no tunnel, no public endpoint.
+- The heartbeat pings only while `grafana` and `prometheus` are running, so
+  "host up, Docker wedged" is caught too. If either is missing it pings `/fail`
+  and alerts immediately rather than waiting out the grace period.
+- `#alerts` is fed by **webhooks only**. A Discord webhook needs no bot process,
+  so alerts arrive even when the whole `ai` stack is down.
+- Kept ntfy. Redundancy at the notification layer is cheap, and it preserves a
+  path that doesn't depend on Discord or on having internet at all.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+
+# 1. Discord webhook: Server Settings -> Integrations -> Webhooks ->
+#    New Webhook -> channel #alerts -> Copy Webhook URL
+# 2. Healthchecks.io: create a check, period 5m, grace 15m, and add its
+#    Discord integration pointed at the same webhook. Copy the ping URL.
+nano docker/monitoring/.env      # DISCORD_ALERT_WEBHOOK=, HEALTHCHECKS_PING_URL=
+
+docker compose -f docker/monitoring/docker-compose.yml up -d   # reload provisioning
+./scripts/heartbeat.sh && echo ok                              # verify by hand
+
+# 3. Schedule it (alongside the 02:00 pg-backup entry):
+crontab -e
+*/5 * * * * /root/homelab/scripts/heartbeat.sh
+```
+Verify end to end: in Grafana, **Alerting → Contact points → homelab → Test** —
+a message should land in `#alerts`. Then stop the monitoring stack for 15
+minutes and confirm Healthchecks alerts. Testing the failure path is the whole
+point; an untested dead man's switch is an assumption.
+
+**Notes / next steps:**
+- Healthchecks itself going down is uncovered and accepted.
+- The same Healthchecks account can later monitor `pg-backup.sh`, which is what
+  `tsd-backups-and-monitoring.md` wanted it for. Still ⏸ parked on a USB SSD.
+- 5m period / 15m grace = two consecutive misses before alerting. Widen the
+  grace before weakening the check if false alarms appear.
+
 ## 2026-08-22 — Discord server layout codified (guild.yml + `--provision`)
 
 **Goal:** Start the Discord side from scratch — no server, no bot, no channels —
