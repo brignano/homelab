@@ -126,6 +126,15 @@ computed in code too, so it is told the conclusion rather than asked to reach on
   wrong numbers would be worse than none.
 - Costs ~50–60 tokens of prompt per turn. `CHAT_LIVE_METRICS=false` disables it.
 
+**Injected every turn; mentioned only when relevant.** The readings are always in
+the prompt — the model doesn't choose whether to have them — but it is told not
+to bring them up unless the message is actually about the server. That guard is
+explicit because the opposite has happened twice here: a persona line and a
+"you cannot see live data" line both bled into unrelated answers, because a 3B
+leads with whatever is most salient. If it still volunteers metrics you didn't
+ask about, tighten that instruction in `app/chat.py` (`_WITH_LIVE`) rather than
+removing the readings.
+
 It still has no internet access, and says so — that caveat is now scoped to
 things genuinely outside the box rather than announced on every question.
 
