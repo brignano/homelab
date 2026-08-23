@@ -63,6 +63,25 @@ class Ollama:
         names = {m.get("name", "") for m in data.get("models", [])}
         return self._model in names
 
+    async def chat(self, messages: list[dict], num_predict: int, temperature: float = 0.6) -> Completion:
+        """Multi-turn conversation via /api/chat.
+
+        Uses /api/chat rather than /api/generate because it applies the model's
+        own chat template to the role-tagged messages. Hand-concatenating turns
+        into a single prompt would produce something the model was never trained
+        on, and a 3B degrades quickly when the format drifts.
+        """
+        return await self._post("/api/chat", {
+            "model": self._model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_ctx": self._num_ctx,
+                "num_predict": num_predict,
+                "temperature": temperature,
+            },
+        }, extract=lambda data: (data.get("message") or {}).get("content") or "")
+
     async def generate(self, prompt: str, system: str, num_predict: int, temperature: float = 0.4) -> Completion:
         """One-shot, non-streaming generation.
 
@@ -88,10 +107,15 @@ class Ollama:
                 "temperature": temperature,
             },
         }
+        return await self._post("/api/generate", payload,
+                                extract=lambda data: data.get("response") or "")
+
+    async def _post(self, path: str, payload: dict, extract) -> Completion:
+        """Shared request path for /api/generate and /api/chat."""
         started = time.monotonic()
         try:
             async with self._session.post(
-                f"{self._base}/api/generate",
+                f"{self._base}{path}",
                 json=payload,
                 timeout=aiohttp.ClientTimeout(total=self._timeout_s),
             ) as resp:
@@ -104,7 +128,7 @@ class Ollama:
         except aiohttp.ClientError as exc:
             raise OllamaError(f"cannot reach ollama at {self._base}: {exc}") from exc
 
-        text = (data.get("response") or "").strip()
+        text = (extract(data) or "").strip()
         if not text:
             raise OllamaError("ollama returned an empty response")
         return Completion(text=text, seconds=time.monotonic() - started, model=self._model)

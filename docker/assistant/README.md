@@ -33,11 +33,72 @@ costs nothing either. Slow is only expensive when you're watching it.
 | Surface | Kind | What it's for |
 |---------|------|---------------|
 | daily digest | scheduled | Homelab health at `DIGEST_AT`, posted to one channel |
+| **`#chat`** | **conversational** | **Just type — every message gets a reply, with memory** |
 | `/ask` | interactive | Question to the local model; queued, answers when ready |
 | `/summarize` | interactive | Condense pasted text — the 3B's genuine strength |
 | *Apps → Summarize message* | interactive | Right-click any message to summarize it in place |
 | `/digest` | interactive | Run the digest now instead of waiting |
 | `/status` | interactive | Model readiness, queue depth, next scheduled digest |
+
+## Conversational mode
+
+Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —
+type, get a reply, reply back, and it follows the conversation.
+
+**Where you type decides what it remembers.** There is no command and no state
+to manage — the context is always visibly implied by where the message sits:
+
+| Where | Context | For |
+|-------|---------|-----|
+| plain message in the channel | **just that message** | a one-off question that leaves no residue |
+| **reply** to a message | **that reply chain** | picking a thread of conversation back up, no ceremony |
+| inside a **thread** | **the whole thread** | a named, persistent conversation with its own memory |
+
+Rolling channel history was the first attempt and it was wrong: two unrelated
+questions in the same channel contaminated each other, and there was no way to
+end a conversation short of waiting for it to scroll away. Following Discord's
+own primitives fixes that and needs no extra concepts.
+
+> **Threads are the persistence unit.** Right-click any message → *Create
+> Thread*, name it, and it becomes a scoped conversation you can come back to
+> days later. Point `DISCORD_CHAT_CHANNEL_ID` at a **forum channel** instead and
+> every post is one of these by construction — a browsable list of titled
+> conversations. That works today with no code change, because a forum post
+> *is* a thread; create the forum channel by hand in Discord.
+
+**The memory lives in Discord, not in the bot.** No store, no database, no
+in-process state — the bot reads the relevant messages back out of Discord each
+time. That means:
+
+- **Restart-safe.** Rebuild the container mid-conversation and it picks up
+  where it was — the history was never in the container.
+- **What you see is what it sees.** Delete a message and it leaves the context.
+  Scrolling up *is* reading the model's working memory.
+- **`//` is an escape hatch.** A line starting with `//` gets no reply and stays
+  out of the context — for notes, links and asides.
+
+Thread history and reply chains are both capped by a turn count and a character
+budget (`CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`). Prompt evaluation is CPU-bound and
+roughly linear in tokens, so an unbounded memory would make every reply slower
+than the last. Trimming drops the *oldest* turns; the newest message is always
+kept, since it's the one being answered.
+
+Under the hood this uses Ollama's `/api/chat`, not `/api/generate`, so the
+model's own chat template is applied to the role-tagged turns. Concatenating
+turns into one prompt string produces a format the model was never trained on,
+and a 3B degrades fast when that drifts.
+
+> **This needs the Message Content privileged intent** — Developer Portal → Bot
+> → Privileged Gateway Intents → **Message Content** → on. Without it Discord
+> delivers messages with an empty body and the bot cannot see what you typed.
+> No approval is needed under 100 servers.
+>
+> It is a genuine widening: the bot can now read message text server-wide. It's
+> narrowed in code rather than by Discord — `_should_handle` returns immediately
+> unless the message is from an allowlisted user in the one configured channel
+> (or a thread under it), and it ignores bots including itself, which is what
+> stops it replying to its own replies forever. Leave `DISCORD_CHAT_CHANNEL_ID`
+> blank and the intent is never requested at all.
 
 ## Two rules that make a 3B usable here
 
@@ -191,16 +252,28 @@ stays a click.
 [`guild.yml`](guild.yml) is the source of truth:
 
 ```
-📁 HOMELAB
-   # digest    bot posts only — the daily health log
-   # ask       where you run /ask and /summarize
-   # alerts    reserved for a future ntfy bridge
+📁 HOMELAB      the lab reporting to you — you scroll these
+   # digest     daily health log, bot posts only
+   # alerts     Grafana + dead-man's-switch, webhook-fed
+
+📁 ASSISTANT    you talking to the model
+   # chat       conversational, remembers recent messages
 ```
 
-The one decision that matters: **the digest is a log, not a chat.** "Was disk
-climbing last week?" is a question you'll actually scroll back for, and forty
-interleaved `/ask` replies would destroy that. So `#digest` denies
-`@everyone` Send Messages and `#ask` is where the conversation goes.
+The split is by **direction** — things the lab tells you unprompted, versus
+things you ask it. Output channels are worth scrolling back through; the
+conversation isn't.
+
+Within that, one decision carries the weight: **the digest is a log, not a
+chat.** "Was disk climbing last week?" is a question you'll actually scroll back
+for, and interleaved conversation would destroy it. So `#digest` and `#alerts`
+deny `@everyone` Send Messages, and everything you type goes in `#chat`.
+
+> **Renaming an existing channel:** do it in Discord, not here. Renaming
+> preserves the channel and its history, and the provisioner then sees the new
+> name as already existing. Change the name in `guild.yml` instead and it
+> creates a *new* empty channel and reports the old one as unmanaged — it never
+> deletes, so nothing is lost, but you end up with both.
 
 `--provision` is **idempotent and additive**: re-run it any time to fix drift
 (someone edits a topic in the UI), and it will never delete a channel —

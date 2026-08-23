@@ -24,6 +24,10 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
+from .chat import (
+    CHAIN, CHAT_SYSTEM, SINGLE, THREAD, Turn, build_messages, clean_bot_text,
+    context_mode, is_ignorable,
+)
 from .config import Config
 from .digest import build as build_digest
 from .facts import FactCollector
@@ -62,8 +66,19 @@ ASK_FOOTER = "-# {model} · {secs:.0f}s · local model, no web access — verify
 
 class Assistant(discord.Client):
     def __init__(self, cfg: Config) -> None:
-        # Default intents only: no message content, no members, no presence.
-        super().__init__(intents=discord.Intents.default())
+        # Conversational mode needs the Message Content privileged intent —
+        # without it Discord delivers messages with an empty `content`, so the
+        # bot literally cannot see what you typed. It is enabled only when a
+        # chat channel is configured, so a slash-commands-only deployment keeps
+        # the smaller surface. Members and Presence stay off in both cases.
+        #
+        # The intent is server-wide, so the narrowing is done in code: on_message
+        # returns immediately unless the message is from an allowlisted user in
+        # the one configured channel (or a thread under it). See _should_handle.
+        intents = discord.Intents.default()
+        if cfg.chat_channel_id is not None:
+            intents.message_content = True
+        super().__init__(intents=intents)
         self.cfg = cfg
         self.tree = app_commands.CommandTree(self)
         self.queue = JobQueue(max_size=cfg.max_queue)
@@ -113,6 +128,144 @@ class Assistant(discord.Client):
 
     async def on_ready(self) -> None:
         log.info("connected as %s (guild %s)", self.user, self.cfg.guild_id)
+        if self.cfg.chat_channel_id:
+            log.info("conversational mode active in channel %s", self.cfg.chat_channel_id)
+
+    # --- conversational channel ---
+
+    def _should_handle(self, message: discord.Message) -> bool:
+        """Narrow the server-wide intent down to one channel and one person.
+
+        The first check is the important one: without it the bot would answer
+        its own replies and spin forever.
+        """
+        if message.author.bot or message.author.id == (self.user.id if self.user else None):
+            return False
+        if self.cfg.chat_channel_id is None:
+            return False
+        if message.author.id not in self.cfg.allowed_user_ids:
+            return False
+        # Threads started under the chat channel count as their own conversations.
+        channel = message.channel
+        parent_id = getattr(channel, "parent_id", None)
+        if channel.id != self.cfg.chat_channel_id and parent_id != self.cfg.chat_channel_id:
+            return False
+        return not is_ignorable(message.content or "")
+
+    def _to_turn(self, message: discord.Message) -> Turn | None:
+        """One Discord message as a conversation turn, or None if it's noise."""
+        content = message.content or ""
+        if message.author.id == (self.user.id if self.user else None):
+            content = clean_bot_text(content)
+            role = "assistant"
+        elif message.author.bot or is_ignorable(content):
+            return None
+        else:
+            role = "user"
+        content = content.strip()
+        return Turn(role=role, content=content) if content else None
+
+    async def _thread_turns(self, channel) -> list[Turn]:
+        """Everything said in this thread, oldest first.
+
+        Over-fetches, because ignorable and empty messages are dropped after.
+        """
+        turns: list[Turn] = []
+        async for msg in channel.history(limit=self.cfg.chat_history_turns * 2):
+            if (turn := self._to_turn(msg)) is not None:
+                turns.append(turn)
+        turns.reverse()          # history() yields newest-first
+        return turns
+
+    async def _chain_turns(self, message: discord.Message) -> list[Turn]:
+        """Walk the reply chain back from `message`, oldest first.
+
+        Each hop may cost an API call, so it is capped and guards against a
+        cycle. `reference.resolved` is used when Discord already cached the
+        parent, which is the common case for a recent exchange.
+        """
+        collected: list[discord.Message] = []
+        current: discord.Message | None = message
+        seen: set[int] = set()
+
+        while current is not None and len(collected) < self.cfg.chat_history_turns:
+            collected.append(current)
+            ref = current.reference
+            if ref is None or ref.message_id is None or ref.message_id in seen:
+                break
+            seen.add(ref.message_id)
+            resolved = ref.resolved
+            if isinstance(resolved, discord.Message):
+                current = resolved
+                continue
+            try:
+                current = await current.channel.fetch_message(ref.message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.debug("reply chain stops early: %s", exc)
+                break
+
+        collected.reverse()
+        return [t for m in collected if (t := self._to_turn(m)) is not None]
+
+    async def _context_for(self, message: discord.Message) -> tuple[list[Turn], str]:
+        """Gather the conversation for this message, per the rule in chat.py."""
+        mode = context_mode(
+            in_thread=isinstance(message.channel, discord.Thread),
+            is_reply=message.reference is not None,
+        )
+        if mode == THREAD:
+            return await self._thread_turns(message.channel), THREAD
+        if mode == CHAIN:
+            return await self._chain_turns(message), CHAIN
+        turn = self._to_turn(message)
+        return ([turn] if turn else []), SINGLE
+
+    async def on_message(self, message: discord.Message) -> None:
+        if not self._should_handle(message):
+            return
+
+        channel = message.channel
+        try:
+            turns, mode = await self._context_for(message)
+        except discord.HTTPException as exc:
+            log.warning("could not read context: %s", exc)
+            turns, mode = [Turn(role="user", content=(message.content or "").strip())], SINGLE
+        log.info("chat: %s context, %d turn(s)", mode, len(turns))
+
+        messages = build_messages(
+            turns,
+            system=CHAT_SYSTEM,
+            max_turns=self.cfg.chat_history_turns,
+            max_chars=self.cfg.chat_history_chars,
+        )
+
+        try:
+            # Typing indicator held for the whole wait — on a CPU-only box a
+            # reply takes tens of seconds, and silence reads as "it's broken".
+            async with channel.typing():
+                completion = await self.queue.submit(
+                    "chat",
+                    lambda: self.ollama.chat(messages, num_predict=self.cfg.chat_predict),
+                    priority=PRIORITY_INTERACTIVE,
+                )
+        except QueueFull:
+            await message.reply("Busy right now — say that again in a minute.", mention_author=False)
+            return
+        except OllamaError as exc:
+            await message.reply(f"Local model failed: `{exc}`", mention_author=False)
+            return
+        except Exception:  # noqa: BLE001 — a bad reply must not kill the handler
+            log.exception("chat reply failed")
+            return
+
+        body = completion.text + f"\n-# {completion.model} · {completion.seconds:.0f}s"
+        parts = chunk(body)
+        try:
+            await message.reply(parts[0], mention_author=False)
+            for part in parts[1:]:
+                await channel.send(part)
+        except discord.HTTPException as exc:
+            log.warning("could not post reply: %s", exc)
 
     # --- background loops ---
 

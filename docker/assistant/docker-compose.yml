@@ -27,6 +27,12 @@ services:
       LOKI_URL: http://loki:3100
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
 
+      # Optional: enables conversational mode in one channel. Blank = off.
+      DISCORD_CHAT_CHANNEL_ID: ${DISCORD_CHAT_CHANNEL_ID:-}
+      CHAT_HISTORY_TURNS: ${CHAT_HISTORY_TURNS:-12}
+      CHAT_HISTORY_CHARS: ${CHAT_HISTORY_CHARS:-4000}
+      CHAT_NUM_PREDICT: ${CHAT_NUM_PREDICT:-350}
+
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}

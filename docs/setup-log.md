@@ -27,6 +27,148 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Conversational #chat, and a layout that means something
+
+**Goal:** Two complaints. The channels felt like stock Discord with no
+intention behind them, and talking to the model meant typing `/ask` every single
+time — no continuity, no follow-ups, no conversation.
+
+**Steps:**
+1. Reworked `guild.yml` into two categories split by **direction**: `HOMELAB`
+   (digest, alerts — the lab reporting to you) and `ASSISTANT` (chat — you
+   talking to it), with real topics explaining what each is for.
+2. Renamed `#ask` to `#chat` and made it conversational: `on_message` answers
+   every message, no command needed.
+3. Added `app/chat.py` and `Ollama.chat()` (`/api/chat`), factoring the shared
+   request handling out of `generate()` into `_post()`.
+3b. **Context now follows Discord's own primitives** rather than rolling channel
+   history: a plain message is a one-off, a reply walks its reply chain, and a
+   message in a thread reads the whole thread. Threads (and forum posts, which
+   are threads) are therefore the persistence unit — named conversations you can
+   return to. Pointing `DISCORD_CHAT_CHANNEL_ID` at a forum channel gives a
+   browsable list of them with no code change.
+4. New optional settings: `DISCORD_CHAT_CHANNEL_ID` (blank = feature off),
+   `CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`, `CHAT_NUM_PREDICT`.
+
+**Issues encountered:**
+- **A bot that answers every message will answer itself, forever.** The first
+  thing `_should_handle` checks is whether the author is a bot.
+- **Reading plain messages needs the Message Content privileged intent.** PR #34
+  listed "no privileged intents" as a security property, so this walks one back.
+- **Conversation memory needs somewhere to live**, and any in-process store is
+  lost on the restarts that happen constantly during setup.
+- **Rolling channel history was the wrong default.** Two unrelated questions
+  typed into the same channel contaminate each other's context, and there is no
+  way to end a conversation short of waiting for it to scroll away.
+- **Unbounded history would get slower every turn** — prompt evaluation is
+  CPU-bound and roughly linear in tokens.
+- **Concatenating turns into one prompt** would feed the model a format it was
+  never trained on.
+
+**Resolution:**
+- **Discord *is* the store**, and *where you type* decides what is read back:
+  plain message → itself only; reply → the reply chain; thread → the whole
+  thread. No command, no state, and the context is always visibly implied by
+  where the message sits. No database, no state: restart-safe, threads get
+  their own context for free, and deleting a message actually removes it from
+  the model's memory. What you see in the channel is what it sees.
+- The intent is requested **only when a chat channel is configured**, and
+  narrowed in code — one channel (plus its threads), allowlisted users only.
+- Both a turn cap and a character budget, trimming oldest-first while always
+  keeping the newest message, since that is the one being answered.
+- `/api/chat` applies the model's own chat template to role-tagged turns.
+- `//` prefix: no reply, and excluded from context — for notes and asides.
+
+**On the box (apply after merge):**
+```bash
+# 1. Developer Portal -> Bot -> Privileged Gateway Intents -> Message Content ON
+# 2. Rename #ask to #chat IN DISCORD (preserves history), then copy its ID
+cd ~/homelab && git pull
+nano docker/assistant/.env      # DISCORD_CHAT_CHANNEL_ID=<the #chat id>
+
+docker compose -f docker/assistant/docker-compose.yml run --rm --build \
+  assistant --provision                     # review, then --apply
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+Then just type in `#chat`. Expect ~10-30s per reply depending on how much
+history is in context.
+
+**Notes / next steps:**
+- Rename in Discord rather than in `guild.yml` — the provisioner never deletes,
+  so changing the name in the file creates a second, empty channel instead.
+- If replies get slow, lower `CHAT_HISTORY_TURNS` before anything else; context
+  length is the dominant cost on this hardware.
+- `#alerts` stays webhook-fed and is untouched by any of this — deliberately, so
+  it keeps working when the bot is down.
+
+## 2026-08-23 — Real domain + real certificates, still not exposed
+
+**Goal:** Replace the `*.home` pseudo-TLD with a real domain and publicly-trusted
+certificates, **without publishing anything**. The obvious reading of "put it on
+my domain" is a tunnel or a port forward; that was not wanted, and `AGENTS.md`
+rules it out for admin services.
+
+**Steps:**
+1. Added `--with github.com/caddy-dns/cloudflare` to the Caddy build (it was
+   already an `xcaddy` build for the Sablier plugin).
+2. Rewrote the Caddyfile: sites are now `<name>.{$HOMELAB_DOMAIN}` with
+   `acme_dns cloudflare` in the global block.
+3. Kept every `*.home` name as an `http://` site that redirects to its real
+   counterpart, so bookmarks, `hl-*` aliases and the dev machines' MCP config
+   keep working.
+4. Added `HOMELAB_DOMAIN` and `CLOUDFLARE_API_TOKEN` (both `:?required`) to the
+   proxy stack; documented the exact token scope in `.env.example`.
+5. `shell/aliases.sh` gained `HL_DOMAIN` (defaults to `home`, so the aliases work
+   unchanged and just take the redirect).
+6. Wrote [`docs/design/tsd-real-domain-private-tls.md`](design/tsd-real-domain-private-tls.md)
+   and annotated the original proxy TSD as superseded in part.
+
+**Issues encountered:**
+- **HTTP-01 cannot work here.** It needs port 80 reachable from the internet —
+  precisely what is being refused.
+- **`.home` must never be sent to a CA.** No public CA will issue for it, and an
+  attempt would produce repeated failures in the log.
+- **Caddy rejects single-line site blocks.** `addr { directive }` on one line is
+  a syntax error; the closing brace needs its own line. Caught by validating
+  with a real Caddy binary rather than by eye.
+
+**Resolution:**
+- **ACME DNS-01**: Caddy proves ownership by writing a TXT record to the
+  Cloudflare zone, never by receiving a connection. That is what makes real
+  HTTPS possible on a host the internet cannot reach — and it retires the
+  internal-CA trust prompt `kali.home` needed.
+- Legacy blocks are declared `http://` so Caddy never attempts issuance for them.
+- Config validated with `caddy validate` (plugin directives stubbed, since the
+  stock binary lacks them) and formatted with `caddy fmt`. All 14 hostnames —
+  7 real, 7 redirects — adapt correctly.
+
+**On the box (apply after merge):**
+```bash
+# 1. Cloudflare DNS: add ONE record, proxy OFF (grey cloud):
+#      Type A   Name *.home   Content 10.0.0.201   Proxy status: DNS only
+#    (adjust "home" to whatever subdomain you chose)
+# 2. Cloudflare API token: dash.cloudflare.com/profile/api-tokens ->
+#    Create Token -> Custom -> Zone | DNS | Edit, scoped to this zone only.
+#    Do NOT use the Global API Key.
+cd ~/homelab && git pull
+nano docker/proxy/.env     # HOMELAB_DOMAIN=, CLOUDFLARE_API_TOKEN=
+
+docker compose -f docker/proxy/docker-compose.yml up -d --build
+docker logs -f caddy       # watch certificate issuance; ~1-2 min for all seven
+```
+Then verify: `https://stats.<domain>` loads with a valid padlock, and
+`http://stats.home` redirects to it.
+
+**Notes / next steps:**
+- **Proxy status must be DNS only.** An orange cloud would route through
+  Cloudflare's edge, which cannot reach a private address.
+- Update each dev machine's `.mcp.json` to `https://mcp.<domain>/mcp`. The old
+  URL still works via redirect, but MCP clients may not follow redirects.
+- Once nothing uses `*.home`, delete that Caddyfile section and the AdGuard
+  rewrites. AdGuard stays for ad blocking and as the tailnet resolver.
+- First issuance is ~7 sequential DNS-01 challenges; subsequent renewals are
+  automatic and staggered.
+
 ## 2026-08-23 — Alerting that survives the box going down
 
 **Goal:** Close the hole found the hard way — the server went offline and

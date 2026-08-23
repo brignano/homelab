@@ -45,6 +45,20 @@ def _id_set(name: str) -> frozenset[int]:
     return frozenset(out)
 
 
+def _optional_id(name: str) -> int | None:
+    """A Discord snowflake that may legitimately be unset.
+
+    Unlike the digest channel, conversational mode is opt-in: leaving this blank
+    turns it off entirely and the bot keeps working as slash-commands-only.
+    """
+    raw = os.environ.get(name, "").strip()
+    if not raw or set(raw) == {"0"}:
+        return None
+    if not raw.isdigit():
+        raise SystemExit(f"config error: {name}={raw!r} is not a numeric channel ID")
+    return int(raw)
+
+
 def _hhmm(name: str, default: str) -> tuple[int, int]:
     raw = os.environ.get(name, "").strip() or default
     try:
@@ -102,6 +116,12 @@ class Config:
     llm_timeout_s: int
     max_input_chars: int
 
+    # --- Conversational channel ---
+    chat_channel_id: int | None
+    chat_history_turns: int
+    chat_history_chars: int
+    chat_predict: int
+
     # --- Queue ---
     max_queue: int
 
@@ -140,5 +160,9 @@ class Config:
             digest_predict=_int("DIGEST_NUM_PREDICT", 180),
             llm_timeout_s=_int("LLM_TIMEOUT_S", 300),
             max_input_chars=_int("MAX_INPUT_CHARS", 6000),
+            chat_channel_id=_optional_id("DISCORD_CHAT_CHANNEL_ID"),
+            chat_history_turns=_int("CHAT_HISTORY_TURNS", 12),
+            chat_history_chars=_int("CHAT_HISTORY_CHARS", 4000),
+            chat_predict=_int("CHAT_NUM_PREDICT", 350),
             max_queue=_int("MAX_QUEUE", 8),
         )
