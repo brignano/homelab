@@ -73,6 +73,20 @@ Planned Proxmox LXC container for Docker workloads:
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
 - **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
 
+## Alerting
+
+**Nothing that runs on CT 100 can tell you CT 100 is down.** Grafana, ntfy and
+the assistant bot all live on the machine they watch, so a dead host is silent.
+That gap is closed from outside by `scripts/heartbeat.sh` — a dead man's switch
+that pings Healthchecks.io from cron, so *silence* is the signal. See
+[`docs/design/tsd-alerting-off-box.md`](docs/design/tsd-alerting-off-box.md).
+
+- `#alerts` in Discord is fed by **webhooks only** (Grafana + Healthchecks),
+  never by the assistant bot — routing through the bot would reintroduce the
+  dependency the design removes.
+- When adding an alert path, ask which failures it can *not* report, and where
+  that one is observed from.
+
 ## Local LLM usage
 
 The deciding question is **is anyone waiting on the answer?** — synchronous work

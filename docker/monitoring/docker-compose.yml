@@ -27,6 +27,10 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       # External URL so alert links (silence, dashboard) are clickable from phones
       GF_SERVER_ROOT_URL: http://stats.home
+      # Interpolated into provisioning/alerting/contactpoints.yml. Empty is
+      # allowed (ntfy still works) but then Discord alerts silently go nowhere,
+      # so verify with the test button after setting it.
+      DISCORD_ALERT_WEBHOOK: ${DISCORD_ALERT_WEBHOOK:-}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro

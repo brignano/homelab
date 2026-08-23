@@ -30,9 +30,11 @@ categories:
         topic: "Ask the local model: /ask, /summarize, or right-click a message -> Apps -> Summarize message."
         bot_only: false
 
-      # Reserved for a future ntfy -> Discord bridge so alerts land next to the
-      # digest instead of only on your phone. Nothing writes here yet; delete
-      # these three lines if you'd rather not have an empty channel.
+      # Fed by WEBHOOKS, not by this bot — deliberately. Grafana posts here,
+      # and so does the Healthchecks dead man's switch when the whole box stops
+      # pinging. A webhook needs no bot process, so alerts still arrive when the
+      # assistant (or the entire ai stack) is down. See
+      # docs/design/tsd-alerting-off-box.md.
       - name: alerts
-        topic: "Monitoring alerts (not yet wired — currently served by ntfy at alerts.home)."
+        topic: "Monitoring alerts from Grafana, and dead-man's-switch alerts when the box goes offline."
         bot_only: true

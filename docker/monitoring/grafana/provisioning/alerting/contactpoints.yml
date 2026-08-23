@@ -1,14 +1,32 @@
 apiVersion: 1
 
+# One contact point, two deliveries. Grafana routes a policy to a single
+# contact point, but a contact point may hold several receivers — so alerts fan
+# out to both ntfy (phone push over the tailnet) and Discord (#alerts, readable
+# anywhere) without duplicating the notification policy.
+#
+# Neither of these covers the box being *down*: Grafana, ntfy and the Discord
+# bot all run on the machine they watch, so a dead host is silent. That gap is
+# closed from outside by scripts/heartbeat.sh — see docs/design/tsd-alerting-off-box.md.
 contactPoints:
   - orgId: 1
-    name: ntfy
+    name: homelab
     receivers:
+      # ?template=grafana => ntfy's built-in Grafana template parses the
+      # alert JSON into a readable title + message instead of raw JSON.
       - uid: ntfy_webhook
         type: webhook
         settings:
-          # ?template=grafana => ntfy's built-in Grafana template parses the
-          # alert JSON into a readable title + message instead of raw JSON.
           url: http://ntfy:80/homelab-alerts?template=grafana
           httpMethod: POST
+        disableResolveMessage: false
+
+      # Discord webhook -> #alerts. A webhook is write-only and needs no bot,
+      # which is the point: it still delivers when the assistant bot is down.
+      # Set DISCORD_ALERT_WEBHOOK in docker/monitoring/.env.
+      - uid: discord_webhook
+        type: discord
+        settings:
+          url: ${DISCORD_ALERT_WEBHOOK}
+          use_discord_username: false
         disableResolveMessage: false
