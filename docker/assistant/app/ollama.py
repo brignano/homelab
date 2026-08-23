@@ -28,6 +28,10 @@ class Completion:
     text: str
     seconds: float
     model: str
+    # True when generation stopped because it hit num_predict rather than
+    # finishing. Without this the reply just ends mid-sentence and reads as a
+    # bug; the caller says so instead.
+    truncated: bool = False
 
 
 class Ollama:
@@ -38,12 +42,14 @@ class Ollama:
         model: str,
         num_ctx: int,
         timeout_s: int,
+        keep_alive: str = "30m",
     ) -> None:
         self._session = session
         self._base = base_url
         self._model = model
         self._num_ctx = num_ctx
         self._timeout_s = timeout_s
+        self._keep_alive = keep_alive
 
     @property
     def model(self) -> str:
@@ -66,6 +72,11 @@ class Ollama:
     async def chat(self, messages: list[dict], num_predict: int, temperature: float = 0.6) -> Completion:
         """Multi-turn conversation via /api/chat.
 
+        `keep_alive` is sent on every request because Ollama's default unloads
+        the model after 5 minutes idle, so the first message after any quiet
+        spell pays a full reload from disk before a single token is generated.
+        In a chat channel that is exactly the message you are waiting on.
+
         Uses /api/chat rather than /api/generate because it applies the model's
         own chat template to the role-tagged messages. Hand-concatenating turns
         into a single prompt would produce something the model was never trained
@@ -75,6 +86,7 @@ class Ollama:
             "model": self._model,
             "messages": messages,
             "stream": False,
+            "keep_alive": self._keep_alive,
             "options": {
                 "num_ctx": self._num_ctx,
                 "num_predict": num_predict,
@@ -97,6 +109,7 @@ class Ollama:
             "prompt": prompt,
             "system": system,
             "stream": False,
+            "keep_alive": self._keep_alive,
             "options": {
                 # Prompt evaluation is CPU-bound and roughly linear in context
                 # length, so a big window costs real wall-clock even when unused.
@@ -131,4 +144,9 @@ class Ollama:
         text = (extract(data) or "").strip()
         if not text:
             raise OllamaError("ollama returned an empty response")
-        return Completion(text=text, seconds=time.monotonic() - started, model=self._model)
+        return Completion(
+            text=text,
+            seconds=time.monotonic() - started,
+            model=self._model,
+            truncated=data.get("done_reason") == "length",
+        )

@@ -162,6 +162,31 @@ only what a real conversation showed you needed. Tone lives in
 `docker/ai/models/llama3.2.Modelfile`, which is shared with Open WebUI and needs
 a `load-models.sh` re-run to change.
 
+### Tuning it
+
+Voice on a small model is empirical — the fix for *"it sounds robotic"* and the
+fix for *"it won't shut up"* are opposite edits, and you only find out which you
+have by talking to it. So the knobs are env vars, tunable without a code change:
+
+| Var | Default | Turn it up when |
+| --- | --- | --- |
+| `CHAT_TEMPERATURE` | `0.6` | replies feel canned or open the same way every time. Below ~0.5 a 3B gets repetitive; above ~0.9 it drifts. |
+| `CHAT_NUM_PREDICT` | `350` | replies are getting cut off. The footer now says when that happened, so you are not guessing. |
+| `CHAT_HISTORY_TURNS` / `CHAT_HISTORY_CHARS` | `12` / `4000` | it forgets what you said earlier. This is the memory length — **not** `OLLAMA_NUM_CTX`, which is already ~3× larger than the character budget ever uses. It costs latency: prompt evaluation is CPU-bound and re-runs every turn, so doubling the budget roughly doubles time-to-first-token. |
+| `OLLAMA_KEEP_ALIVE` | `30m` | you chat in bursts spread over hours. |
+
+`OLLAMA_KEEP_ALIVE` is the one worth understanding. Ollama's own default unloads
+a model after **5 minutes** idle, so the first message after any pause paid a
+full reload from disk before generating a single token — and in a chat channel
+that is precisely the message you are sitting there waiting on. `30m` covers a
+conversation with gaps while still releasing the RAM overnight; `-1` keeps the
+model resident forever (~2.5 GB held), `0` unloads immediately. It is sent on
+every request, so it keeps the model warm for Open WebUI too.
+
+`num_thread` is still never sent — see the note in
+[`app/ollama.py`](app/ollama.py). Request-time options override the Modelfile,
+and that pin is what stops the LXC CPU-quota oversubscription.
+
 ## Two rules that make a 3B usable here
 
 **1. Python decides what's true; the model only writes prose.**
