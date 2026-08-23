@@ -27,6 +27,63 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — #chat can see the homelab
+
+**Goal:** First real conversation in `#chat` produced *"I can't access anything
+on the homelab or assess the current load or performance metrics."* True — and
+explicitly instructed — but useless, and the data was two seconds away in the
+same bot. `/digest` reads Prometheus and Loki; `#chat` could not.
+
+**Steps:**
+1. Added `Facts.compact()` — one dense line of readings for a chat prompt,
+   terser than the digest's block.
+2. Replaced the fixed `CHAT_SYSTEM` with `build_system(facts_line)`: with
+   readings it states them as measured fact; without, it falls back to saying it
+   cannot see live data.
+3. Added `_live_metrics()` to the bot, with a TTL cache.
+4. New knobs: `CHAT_LIVE_METRICS` (default true), `CHAT_METRICS_TTL_S` (60).
+
+**Issues encountered:**
+- **Tool-calling was the obvious answer and the wrong one.** A 3B is unreliable
+  at it — the reason `tsd-ai-homelab-assistant.md` shelved itself — and the same
+  hardware constraints still apply.
+- **The old prompt made the limitation too salient.** "You cannot see any live
+  data" as a standing declaration meant a 3B led with it on every question,
+  related or not — the same failure as the persona bug earlier today.
+- **Six queries per message** would be wasteful in a fast back-and-forth.
+- **A stale reading is worse than no reading.** Numbers presented as current but
+  measured minutes ago during an outage would actively mislead.
+
+**Resolution:**
+- **Injection, not tools.** Facts are gathered deterministically on every turn;
+  the model never decides whether to look, it simply always has them. Python
+  measures — including the "needs attention" verdict — and the model only reads
+  the numbers out. Same rule that makes the digest trustworthy.
+- The no-live-data clause now appears *only* when collection actually failed.
+  The no-internet caveat stays, scoped to things genuinely outside the box.
+- Cached for 60s; a homelab does not change meaningfully between two messages
+  typed seconds apart.
+- **Failure yields no readings, never stale ones** — the cache is not served past
+  its TTL when a fresh collection fails, and failures are not cached.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+No config change needed — it is on by default. Ask "how's the server doing?" in
+`#chat`; expect real numbers. `docker logs assistant` shows the collection.
+
+**Notes / next steps:**
+- Web search was **not** added. The 2026-06-07 decision still holds: a 3B
+  ignored retrieved sources and answered from its prior, which a better search
+  engine does not fix.
+- Filesystem/shell access was **not** added. Debugging needs multi-step
+  reasoning over tool results — the 3B's weakest area — and `mcp.home` already
+  gives Claude that job with a read-only ceiling.
+- If replies slow noticeably, the readings cost ~50-60 tokens per turn;
+  `CHAT_LIVE_METRICS=false` removes them.
+
 ## 2026-08-23 — Conversational #chat, and a layout that means something
 
 **Goal:** Two complaints. The channels felt like stock Discord with no
