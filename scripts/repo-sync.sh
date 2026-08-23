@@ -41,8 +41,11 @@
 # everything is running current code", the same discipline as heartbeat.sh.
 #
 # NOTE: this never restarts anything. Deciding *when* to restart the box that
-# serves your DNS is a human's call, and the repo has no CI gate on main that
-# would make unattended deploys defensible.
+# serves your DNS is a human's call. CI now gates main
+# (.github/workflows/ci.yml), which removes the strongest objection to
+# automating that step later — but a green check on a compose file is not the
+# same as knowing the DNS resolver survives the restart, so the decision stays
+# with a person until something proves otherwise.
 #
 set -eu
 
