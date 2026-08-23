@@ -247,6 +247,25 @@ Server Settings → **Integrations** → your bot → restrict `/ask` and
 cannot do — the command-permissions API requires a user OAuth token — so it
 stays a click.
 
+## The bot's name
+
+`guild.yml` declares it:
+
+```yaml
+bot:
+  nickname: Otto
+```
+
+Change that line, re-run `--provision --apply`, done — and because it's declared
+rather than clicked, a later run puts it back if it ever drifts.
+
+This is deliberately the **per-server nickname**, not the global username. The
+username lives in the Developer Portal and Discord rate-limits changes to it
+(2 per hour); a nickname is server-scoped, free to change, and overrides the
+username everywhere in this server. Setting it needs the *Change Nickname*
+permission, which `@everyone` has by default — and if it's missing, provisioning
+logs a warning and carries on rather than aborting over something cosmetic.
+
 ## The server layout
 
 [`guild.yml`](guild.yml) is the source of truth:

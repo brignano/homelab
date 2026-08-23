@@ -26,7 +26,8 @@ import yaml
 log = logging.getLogger(__name__)
 
 ActionKind = Literal[
-    "create_category", "create_channel", "update_topic", "update_permissions", "extra_channel"
+    "create_category", "create_channel", "update_topic", "update_permissions",
+    "extra_channel", "set_nickname",
 ]
 
 
@@ -47,6 +48,7 @@ class Action:
             "update_topic": "~ topic   ",
             "update_permissions": "~ perms   ",
             "extra_channel": "? extra   ",
+            "set_nickname": "~ nickname",
         }[self.kind]
         return f"  {symbol}  {where}" + (f"  — {self.detail}" if self.detail else "")
 
@@ -62,6 +64,17 @@ def load_desired(path: str) -> dict[str, Any]:
 
     if not isinstance(raw, dict) or "categories" not in raw:
         raise SystemExit(f"{path}: expected a top-level 'categories:' list")
+
+    bot = raw.get("bot") or {}
+    if not isinstance(bot, dict):
+        raise SystemExit(f"{path}: 'bot' must be a mapping")
+    nickname = bot.get("nickname")
+    if nickname is not None:
+        if not isinstance(nickname, str) or not nickname.strip():
+            raise SystemExit(f"{path}: bot.nickname must be a non-empty string")
+        # Discord rejects nicknames over 32 characters outright.
+        if len(nickname) > 32:
+            raise SystemExit(f"{path}: bot.nickname is {len(nickname)} chars; Discord's limit is 32")
 
     categories = raw["categories"]
     if not isinstance(categories, list) or not categories:
@@ -91,7 +104,11 @@ def load_desired(path: str) -> dict[str, Any]:
 
 # --- Planning (pure) ---------------------------------------------------------
 
-def plan(desired: dict[str, Any], existing: dict[str, list[dict[str, Any]]]) -> list[Action]:
+def plan(
+    desired: dict[str, Any],
+    existing: dict[str, list[dict[str, Any]]],
+    current_nickname: str | None = None,
+) -> list[Action]:
     """Diff desired state against the server.
 
     `existing` maps category name -> list of {name, topic, bot_only}. Channels
@@ -99,6 +116,14 @@ def plan(desired: dict[str, Any], existing: dict[str, list[dict[str, Any]]]) -> 
     """
     actions: list[Action] = []
     declared: set[str] = set()
+
+    wanted_nick = (desired.get("bot") or {}).get("nickname")
+    if wanted_nick and wanted_nick != current_nickname:
+        actions.append(Action(
+            "set_nickname", "bot",
+            detail=f"{current_nickname or '(none)'} -> {wanted_nick}",
+            spec={"nickname": wanted_nick},
+        ))
 
     for cat in desired["categories"]:
         cat_name = cat["name"]
@@ -170,10 +195,11 @@ class Snapshot:
     state: dict[str, list[dict[str, Any]]]   # category name -> channel dicts, for plan()
     channels: dict[str, Any]                 # channel name -> discord object, for apply()
     categories: dict[str, Any]               # category name -> discord object, for apply()
+    nickname: str | None = None              # the bot's current nickname in this guild
 
 
-async def read_server(guild) -> Snapshot:
-    """Snapshot the server's categories and text channels in a single API call."""
+async def read_server(guild, me=None) -> Snapshot:
+    """Snapshot the server's categories, text channels and the bot's nickname."""
     import discord
 
     fetched = await guild.fetch_channels()
@@ -198,7 +224,8 @@ async def read_server(guild) -> Snapshot:
     # An existing but empty category must not be recreated.
     for name in categories:
         state.setdefault(name, [])
-    return Snapshot(state=state, channels=channels, categories=categories)
+    return Snapshot(state=state, channels=channels, categories=categories,
+                    nickname=getattr(me, "nick", None))
 
 
 def _overwrites(guild, me, bot_only: bool) -> dict:
@@ -236,6 +263,15 @@ async def apply(guild, me, actions: list[Action], snapshot: Snapshot) -> dict[st
 
     for action in actions:
         if action.kind == "extra_channel":
+            continue
+
+        if action.kind == "set_nickname":
+            nick = action.spec["nickname"]
+            log.info("setting bot nickname to %s", nick)
+            try:
+                await me.edit(nick=nick)
+            except Exception as exc:  # noqa: BLE001 — a cosmetic step must not abort provisioning
+                log.warning("could not set nickname (needs Change Nickname permission): %s", exc)
             continue
 
         if action.kind == "create_category":
