@@ -32,6 +32,18 @@
         description: Containers, images and volumes
         icon: portainer.png
 
+# Not on this box, but externally reachable — so unlike a bookmark it can carry
+# a real status check, and "is my site up?" is worth answering at a glance.
+# The Caddyfile-coverage check ignores hrefs without {{HOMEPAGE_VAR_DOMAIN}},
+# so an external service here is not mistaken for a tile pointing at a deleted
+# site block.
+- Web:
+    - brignano.io:
+        href: https://brignano.io
+        siteMonitor: https://brignano.io
+        description: Personal site
+        icon: si-vercel
+
 - AI:
     - Open WebUI:
         href: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
