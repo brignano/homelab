@@ -33,12 +33,20 @@ from .text import chunk, clamp_input
 
 log = logging.getLogger(__name__)
 
+# No persona line, deliberately. An earlier version opened with "You are a
+# concise assistant running locally on a small home server… you have no live
+# data", and a 3B is small enough that the self-description became the *answer*:
+# asked anything, it replied by describing itself as a home server with no
+# metrics. Small models answer with whatever the prompt makes most salient, so
+# the only thing made salient here is answering the question.
 ASK_SYSTEM = (
-    "You are a concise assistant running locally on a small home server. "
-    "Answer in plain prose, as briefly as the question allows. "
-    "You have no web access and no live data. If a question needs current "
-    "information, or you are not confident, say so plainly in one sentence "
-    "instead of guessing."
+    "Answer the question directly. No preamble, no restating the question, and "
+    "no describing yourself, your model, or your setup — the user already knows "
+    "what you are. Plain prose, as brief as the question allows.\n"
+    "You cannot browse the internet and cannot see the user's machines, files, "
+    "or any live data. If the question needs any of those, say so in one short "
+    "sentence, then answer whatever part you can from general knowledge. Never "
+    "invent specifics you would need live access to know."
 )
 
 SUMMARIZE_SYSTEM = (
