@@ -74,12 +74,20 @@ homelab/
 │   └── assistant/           # Discord bot: local-LLM jobs + daily digest
 │       ├── docker-compose.yml
 │       └── app/
-├── scripts/
-│   └── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
+├── scripts/                 # Run from cron on the Docker LXC
+│   ├── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
+│   ├── heartbeat.sh         # Dead man's switch -> Healthchecks (*/5 min)
+│   └── repo-sync.sh         # Daily git pull + deployment-drift report
+├── .github/
+│   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
 ├── docs/
 │   └── setup-log.md         # Chronological setup notes
 └── .gitignore
 ```
+
+Nothing here deploys itself. `repo-sync.sh` pulls and *reports* which stacks are
+running older code than the tree; restarting them stays a deliberate act,
+because this box serves the household's DNS.
 
 ## Quick start
 

@@ -1,0 +1,133 @@
+# Validate everything that can be validated without the homelab.
+#
+# Why this exists
+# ---------------
+# Nothing used to check a commit before it reached main, which mattered more
+# than it sounds: this repo deploys to a box that serves the household's DNS, so
+# a broken compose file or Caddyfile is a network outage, not a failed build.
+# Every check below is one that has actually caught something by hand —
+# a Caddyfile that parsed nowhere, a config knob wired into compose but never
+# read, an Ollama option that silently undid a performance fix.
+#
+# None of it needs secrets or network access to the lab: the compose files are
+# validated with throwaway values, and the Caddyfile is checked inside the real
+# proxy image so the plugin-provided directives actually resolve.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  assistant:
+    name: assistant (tests + imports)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker/assistant
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # Match the Dockerfile — a version skew here would test something the
+          # container never runs.
+          python-version: "3.12"
+
+      - name: Install pinned dependencies
+        run: pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Offline smoke tests
+        # Pure and offline: no Discord, no Ollama, no Prometheus. Asserts the
+        # invariants that have broken before — see tests/smoke.py.
+        run: python tests/smoke.py
+
+      - name: Every module compiles
+        run: python -m compileall -q app tests
+
+  compose:
+    name: compose files parse
+    runs-on: ubuntu-latest
+    # Throwaway values for the vars each stack declares with `:?required`.
+    # Compose interpolates before it validates, so without these the check
+    # cannot run at all. None of these are real, and none need to be.
+    env:
+      WEBUI_SECRET_KEY: ci
+      DISCORD_TOKEN: ci
+      DISCORD_GUILD_ID: "1"
+      DISCORD_ALLOWED_USER_IDS: "1"
+      POSTGRES_PASSWORD: ci
+      DESKTOP_USER: ci
+      DESKTOP_PASSWORD: ci
+      GRAFANA_SERVICE_ACCOUNT_TOKEN: ci
+      GRAFANA_ADMIN_PASSWORD: ci
+      PVE_USER: ci
+      PVE_TOKEN_NAME: ci
+      PVE_TOKEN_VALUE: ci
+      POSTGRES_EXPORTER_DSN: ci
+      NTFY_BASE_URL: http://ntfy.invalid
+      HOMELAB_DOMAIN: example.com
+      CLOUDFLARE_API_TOKEN: ci
+      CLOUDFLARE_TUNNEL_TOKEN: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: docker compose config
+        # Catches malformed YAML, unknown keys, bad port/volume syntax, and any
+        # NEW `:?required` var that was added without being listed above — which
+        # is the failure worth having: it means someone must decide whether that
+        # var belongs in .env.example too.
+        run: |
+          status=0
+          for f in docker/*/docker-compose.yml; do
+            if docker compose -f "$f" config -q; then
+              echo "ok    $f"
+            else
+              echo "FAIL  $f"
+              status=1
+            fi
+          done
+          exit $status
+
+  scripts:
+    name: shell scripts parse
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: sh -n
+        # Syntax only, deliberately. These run from cron where a parse error is
+        # silent until the day you need the script to work.
+        run: |
+          status=0
+          for f in scripts/*.sh; do
+            if sh -n "$f"; then echo "ok    $f"; else echo "FAIL  $f"; status=1; fi
+          done
+          exit $status
+
+  caddy:
+    name: Caddyfile validates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the proxy image
+        # The real image, not stock Caddy. The Caddyfile uses directives that
+        # only exist once the sablier and cloudflare plugins are compiled in —
+        # stock Caddy rejects `acme_dns cloudflare` with "module not registered",
+        # so validating against it would prove nothing about what we deploy.
+        run: docker build -t homelab-caddy docker/proxy
+
+      - name: caddy validate
+        # The Caddyfile is bind-mounted at runtime rather than baked in, so it
+        # is mounted here the same way. Env vars are substituted at load time;
+        # the values are irrelevant to whether the config parses.
+        run: |
+          docker run --rm \
+            -e HOMELAB_DOMAIN=example.com \
+            -e CLOUDFLARE_API_TOKEN=ci \
+            -v "$PWD/docker/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            homelab-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

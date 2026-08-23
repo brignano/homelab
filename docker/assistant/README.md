@@ -187,6 +187,25 @@ every request, so it keeps the model warm for Open WebUI too.
 [`app/ollama.py`](app/ollama.py). Request-time options override the Modelfile,
 and that pin is what stops the LXC CPU-quota oversubscription.
 
+### Tests
+
+```bash
+cd docker/assistant && python3 tests/smoke.py
+```
+
+22 checks, no pytest, no network — pure functions only, so it runs in under a
+second and CI needs nothing but `pip install -r requirements.txt`.
+
+They are chosen by what has actually broken here, not by coverage. `num_thread`
+must never appear in a request payload (it would override the Modelfile pin that
+took generation from ~0.5 to ~16 tok/s); the chat prompt must not claim it cannot
+see live data while holding live readings; a malformed `guild.yml` must be
+rejected before it creates a mis-named channel you cannot delete without losing
+its history.
+
+Both of the first two were verified by mutation — breaking the invariant on
+purpose turns the suite red, which is the only way to know a test is doing work.
+
 ## Two rules that make a 3B usable here
 
 **1. Python decides what's true; the model only writes prose.**
