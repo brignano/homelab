@@ -27,6 +27,102 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Repo drift: a daily pull, a report, and a CI gate
+
+**Goal:** Stop the working tree on CT 100 silently falling days behind GitHub —
+without turning that into an unattended deploy pipeline aimed at the box that
+serves the household's DNS.
+
+**Steps:**
+1. Added [`scripts/repo-sync.sh`](../scripts/repo-sync.sh) — daily
+   `git pull --ff-only` plus a deployment-drift report, posting to `#alerts`
+   only when there is something to do.
+2. Added `.github/workflows/ci.yml` — the first CI this repo has had. Four jobs:
+   assistant smoke tests, `docker compose config` on all eight stacks, `sh -n`
+   on the cron scripts, and `caddy adapt` inside the real proxy image.
+3. Added [`docker/assistant/tests/smoke.py`](../docker/assistant/tests/smoke.py)
+   — 22 offline checks, no pytest, no network.
+
+**Issues encountered:**
+- **A pull cron on its own would have made things worse.** Nothing on the box
+  runs from the working tree; every service runs from a built image or read its
+  config when its container started. Pulling silently leaves the repo *ahead* of
+  what is running, so `git log` says you are current when you are not — a
+  visible gap converted into an invisible one. The pull is only safe because the
+  drift report ships with it.
+- **"Is this stack stale?" is two different questions.** A stack that builds its
+  own image (assistant, proxy) has to be compared against the *image* creation
+  time, because a restart does not rebuild — and a host reboot restarts
+  everything, which would otherwise read as fresh. A stack that pulls upstream
+  images and bind-mounts its config from the repo only needs a restart, so
+  *container start* time is the right basis. The script picks per stack by
+  looking for a `build:` key in the compose file.
+- **`set -e` plus `[ -n "$X" ] && VAR=…` is a trap.** When the test fails the
+  AND-list returns non-zero and the whole script exits — and the test failing is
+  the *normal* case when building an optional report. Caught by running it;
+  rewritten as `if` blocks.
+- **A pull is not inert.** Seven repo files are bind-mounted into running
+  containers, and Grafana polls its dashboard provisioning directory. An
+  automatic pull can therefore change dashboards with no restart from you.
+- **Stock Caddy cannot check this Caddyfile at all.** `acme_dns cloudflare`
+  fails with "module not registered" unless the plugin is compiled in, so CI
+  builds the real proxy image and checks inside it. Checking against stock Caddy
+  would have proved nothing about what actually deploys.
+- **`caddy validate` was the wrong verb, and CI proved it.** The first run went
+  red: `validate` does not stop at parsing — it *provisions* every module, and
+  the cloudflare DNS provider checks its API token's format while doing so, so
+  the throwaway `ci` token was rejected. A real `validate` would need a
+  credential-shaped secret in CI to say anything at all, which means either
+  putting a live Cloudflare token there or testing a fake. `caddy adapt` stops
+  at Caddyfile → JSON, which is the right boundary: it still catches syntax
+  errors and missing plugin directives, and needs no *valid* secrets. Worth
+  noting what the failure *did* prove — the log shows `adapted config to JSON`
+  before the provisioning error, so the Caddyfile itself was never in question.
+- **Then it went red a second time, for the opposite reason.** Having decided
+  the token was not needed, dropping it entirely fails earlier still:
+  `acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}` expands to nothing and the
+  directive is rejected at *adapt* time with "missing API token". So the token
+  must be present but need not be well-formed — presence is checked by the
+  adapter, format by the provisioner. Two failures, two different stages, and
+  the first run's log was what proved the fix: it had already adapted cleanly
+  with exactly this value.
+
+**Verification:**
+- `repo-sync.sh` exercised against a throwaway origin and a stubbed `docker`,
+  covering all three paths: clean (silent, exit 0), pull-and-stale (correct
+  stack flagged, correct restart hint), and pull failure (reported, exit 1).
+- Smoke tests mutation-checked: leaking `num_thread` into a request payload and
+  deleting the do-not-volunteer guard from the chat prompt each turn the suite
+  red, so the checks are load-bearing rather than decorative.
+- Three of four CI jobs run locally and pass; the `caddy` job needs a Docker
+  daemon and was verified only as far as a stock binary allows — it failed on
+  its first real run and was fixed (see above), which is roughly the point of
+  having CI.
+
+**Install the cron entry** (on CT 100, as root):
+
+```bash
+crontab -e
+```
+
+```
+0 4 * * * /root/homelab/scripts/repo-sync.sh
+```
+
+Silence means the tree is current and every stack is running that code. Run it
+by hand once first — it prints the same report it would post.
+
+**Notes / next steps:**
+- A `/deploy` slash command is the obvious sequel, and deliberately not built
+  yet: it needs the Docker socket in the assistant container (root-equivalent on
+  that host), and it is only defensible now that CI gates `main`. The model must
+  never be the thing that chooses — Discord's own enumerated choices are the
+  picker, Python does the work.
+- CI does not yet lint shell beyond `sh -n`; shellcheck on the existing scripts
+  is unverified and would need a pass before being made blocking.
+
+---
+
 ## 2026-08-23 — #chat can see the homelab
 
 **Goal:** First real conversation in `#chat` produced *"I can't access anything
