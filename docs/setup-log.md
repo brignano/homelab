@@ -92,10 +92,17 @@ itself is sound.
   nothing inside the container should be able to drift it away from what CI
   checks. But Homepage writes its log file to `config/logs`, so the mkdir failed
   on every render and the page 500'd with the config perfectly valid. Fixed with
-  a named volume nested inside the read-only bind: logs writable, config not,
-  and no untracked directory in the working tree. Both dashboard bugs were
-  runtime behaviour of an image that was never started before it shipped —
-  static checks were never going to catch either.
+  a named volume nested inside the read-only bind — which failed too, and worse:
+  runc has to *create* the mountpoint inside the bind before mounting over it,
+  and the bind is read-only, so the container would not start at all. Settled on
+  a plain writable bind. `:ro` there was defensive polish rather than a boundary
+  — Homepage never writes its own config, the container has no Docker socket and
+  sits on one network, and CI is what actually keeps the directory honest.
+  `config/logs/` is gitignored.
+
+  All three dashboard failures were runtime behaviour of an image that was never
+  started before it shipped: static checks passed every time. Worth remembering
+  next time a stack looks finished because CI is green.
 
 **Notes / next steps:**
 - Adding a service is now three edits: a Caddyfile block, a dashboard tile, and
