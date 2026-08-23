@@ -1,24 +1,59 @@
-# Links to things that are NOT on this box, so they get no status check —
-# that is the whole distinction between this file and services.yaml.
+# Things that are NOT on this box, so they get no status check — that is the
+# whole distinction between this file and services.yaml.
 #
-# Keeping them here rather than on a second dashboard is deliberate: two
-# dashboards just moves the problem to "which dashboard was it on".
+# Where the list stops: active repositories. Archived ones are excluded, which
+# is a line GitHub already maintains, so this stays correct without anybody
+# making a taste call about what still counts as current. Archive a repo and it
+# belongs off here; that is the same decision, made once.
+#
+# Links go as deep as the URL is stable. A bookmark that lands on a product's
+# marketing page has saved you nothing.
 
-- Repos:
+- Personal:
+    - life:
+        - abbr: LF
+          href: https://github.com/brignano/life
+    - ideas:
+        - abbr: ID
+          href: https://github.com/brignano/ideas
+    # `design`, not `designs` — the plural one is public and archived.
+    - design:
+        - abbr: DS
+          href: https://github.com/brignano/design
+
+- Projects:
     - homelab:
         - abbr: HL
           href: https://github.com/brignano/homelab
     - brignano.io:
         - abbr: IO
           href: https://github.com/brignano/brignano.io
+    - driftwood:
+        - abbr: DW
+          href: https://github.com/brignano/driftwood
+    - hoststats:
+        - abbr: HS
+          href: https://github.com/brignano/hoststats
+    - card:
+        - abbr: CD
+          href: https://github.com/brignano/card
+    - ai-tools:
+        - abbr: AI
+          href: https://github.com/brignano/ai-tools
 
 - Infrastructure:
-    - Cloudflare:
+    # ?to=/:account/... resolves the account id for you, so this lands on the
+    # DNS page for the zone rather than the Cloudflare dashboard root.
+    - Cloudflare DNS:
         - abbr: CF
-          href: https://dash.cloudflare.com
+          href: https://dash.cloudflare.com/?to=/:account/brignano.io/dns
     - Healthchecks:
         - abbr: HC
-          href: https://healthchecks.io
+          href: https://healthchecks.io/checks/
+    # Straight into the homelab guild rather than the Discord app root.
     - Discord:
         - abbr: DC
-          href: https://discord.com/app
+          href: https://discord.com/channels/1540936342714974298
+    - GitHub Actions:
+        - abbr: CI
+          href: https://github.com/brignano/homelab/actions

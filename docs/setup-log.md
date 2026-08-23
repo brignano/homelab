@@ -55,6 +55,19 @@ from.
   `siteMonitor` gives up/down and response time and needs nothing.
 - **No `siteMonitor` on Kali.** Polling it would boot the container on every
   dashboard refresh, defeating Sablier's scale-to-zero.
+- **Where the bookmark list stops: active repositories.** Archived ones are
+  excluded, which is a line GitHub already maintains — so the list stays correct
+  without anyone making a recurring taste call about what still counts. Archiving
+  a repo removes it from here; that is the same decision, made once.
+- **Links go as deep as the URL is stable.** Cloudflare uses `?to=/:account/...`
+  so it resolves the account id and lands on the zone's DNS page; Discord links
+  into the guild rather than the app root. A bookmark that lands on a product's
+  marketing page has saved nothing.
+- **brignano.io is a service, not a bookmark.** It is off-box but externally
+  reachable, so unlike a bookmark it can carry a real status check, and "is my
+  site up?" is worth answering at a glance. The coverage check ignores hrefs
+  without `{{HOMEPAGE_VAR_DOMAIN}}`, so an external service is not mistaken for
+  a tile pointing at a deleted site block.
 
 **Issues encountered:**
 - **A DNS wildcard does not match its own parent.** `*.home` covers
