@@ -49,7 +49,7 @@
           href: https://dash.cloudflare.com/?to=/:account/brignano.io/dns
     - Healthchecks:
         - abbr: HC
-          href: https://healthchecks.io/checks/
+          href: https://healthchecks.io/projects/{{HOMEPAGE_VAR_HC_PROJECT}}/checks/
     # Straight into the homelab guild rather than the Discord app root.
     - Discord:
         - abbr: DC
