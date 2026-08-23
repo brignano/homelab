@@ -71,9 +71,9 @@ async def _provision_async(apply_changes: bool) -> int:
     try:
         guild = await client.fetch_guild(int(guild_id))
         me = await guild.fetch_member(client.user.id)
-        snapshot = await read_server(guild)
+        snapshot = await read_server(guild, me)
 
-        actions = plan(desired, snapshot.state)
+        actions = plan(desired, snapshot.state, snapshot.nickname)
         print(f"Server: {guild.name}\n")
         print(render_plan(actions))
 

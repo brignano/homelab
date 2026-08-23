@@ -18,6 +18,15 @@
 # creating the server, and restricting which channels a slash command appears
 # in. Both are one-time clicks; see docker/assistant/README.md.
 
+# Per-server nickname for the bot. This is deliberately the nickname and not the
+# global username: the username lives in the Developer Portal and Discord rate
+# limits changes to it (2 per hour), whereas a nickname is server-scoped, free
+# to change, and overrides the username everywhere in this server. Declaring it
+# here means the name is reproducible along with everything else, and a
+# re-provision puts it back if it ever drifts.
+bot:
+  nickname: Otto
+
 categories:
   # ── Output: things the lab tells you, unprompted ────────────────────────
   - name: HOMELAB

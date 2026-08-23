@@ -94,7 +94,13 @@ Then just type in `#chat`. Expect ~10-30s per reply depending on how much
 history is in context.
 
 **Notes / next steps:**
-- Rename in Discord rather than in `guild.yml` — the provisioner never deletes,
+- The bot's display name is now declared too (`bot.nickname` in `guild.yml`,
+  applied as a per-server nickname). Deliberately the nickname rather than the
+  global username: Discord rate-limits username changes to 2/hour, while a
+  nickname is server-scoped and free to change. Renamed `spotter` to `Otto` —
+  a role-description read as cold in practice; a plain name reads like a
+  participant in the conversation.
+- Rename channels in Discord rather than in `guild.yml` — the provisioner never deletes,
   so changing the name in the file creates a second, empty channel instead.
 - If replies get slow, lower `CHAT_HISTORY_TURNS` before anything else; context
   length is the dominant cost on this hardware.
