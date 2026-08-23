@@ -1,0 +1,24 @@
+# Links to things that are NOT on this box, so they get no status check —
+# that is the whole distinction between this file and services.yaml.
+#
+# Keeping them here rather than on a second dashboard is deliberate: two
+# dashboards just moves the problem to "which dashboard was it on".
+
+- Repos:
+    - homelab:
+        - abbr: HL
+          href: https://github.com/brignano/homelab
+    - brignano.io:
+        - abbr: IO
+          href: https://github.com/brignano/brignano.io
+
+- Infrastructure:
+    - Cloudflare:
+        - abbr: CF
+          href: https://dash.cloudflare.com
+    - Healthchecks:
+        - abbr: HC
+          href: https://healthchecks.io
+    - Discord:
+        - abbr: DC
+          href: https://discord.com/app

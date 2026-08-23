@@ -1,0 +1,31 @@
+# Homepage settings. See https://gethomepage.dev/configs/settings/
+
+title: homelab
+description: Every service on the box, in one place.
+
+# Sections render in this order regardless of where they appear in
+# services.yaml, so the file can stay grouped by meaning rather than by layout.
+layout:
+  Monitoring:
+    style: row
+    columns: 3
+  AI:
+    style: row
+    columns: 2
+  Network:
+    style: row
+    columns: 2
+  Desktops:
+    style: row
+    columns: 2
+
+headerStyle: clean
+statusStyle: dot
+theme: dark
+color: slate
+
+# The clock is genuinely useful here: every timestamp in the digest, the alerts
+# and the logs is in this timezone, and the dashboard is where you cross-check.
+quicklaunch:
+  searchDescriptions: true
+  hideInternetSearch: true

@@ -1,0 +1,18 @@
+# Header widgets. Deliberately minimal and credential-free.
+#
+# The resources widget reads the *dashboard container's* view of the host, which
+# is the same disk and memory everything else runs on — a cheap sanity check
+# that does not require reaching into another stack.
+
+- resources:
+    cpu: true
+    memory: true
+    disk: /
+    label: docker host
+
+- datetime:
+    text_size: xl
+    format:
+      dateStyle: short
+      timeStyle: short
+      hour12: true

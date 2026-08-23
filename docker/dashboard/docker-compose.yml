@@ -1,0 +1,36 @@
+services:
+  # The landing page for everything else. Lives at home.<domain>, which is the
+  # parent of every service name — so it is the one URL that does not have to be
+  # remembered, and every other name is discoverable from it.
+  #
+  # Config is bind-mounted from the repo rather than held in a volume: the tile
+  # list is exactly the sort of thing that rots when it lives only on the box,
+  # and CI checks it against the Caddyfile (see .github/workflows/ci.yml).
+  dashboard:
+    image: ghcr.io/gethomepage/homepage:v1.5.0
+    container_name: dashboard
+    restart: unless-stopped
+    environment:
+      # Homepage refuses requests whose Host header it does not recognise —
+      # without this you get "Invalid Host header" rather than a page, which
+      # looks exactly like a Caddy problem and is not.
+      HOMEPAGE_ALLOWED_HOSTS: home.${HOMELAB_DOMAIN:?required}
+      # Referenced in the YAML as {{HOMEPAGE_VAR_DOMAIN}} so the committed config
+      # carries no domain of its own. Only vars with this prefix are substituted.
+      HOMEPAGE_VAR_DOMAIN: ${HOMELAB_DOMAIN:?required}
+    volumes:
+      - ./config:/app/config:ro
+    networks:
+      # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
+      # the tiles are plain links, and the up/down checks go through Caddy over
+      # the same URLs a browser uses, so there is nothing to reach directly.
+      #
+      # No Docker socket either. Homepage can auto-discover services from
+      # container labels, but that needs the socket — root-equivalent on this
+      # host — to save maintaining a list that CI already keeps honest.
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy

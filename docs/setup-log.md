@@ -27,6 +27,61 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — A landing page, and CI to stop it drifting
+
+**Goal:** Seven subdomains and growing, none of them memorable. One URL to start
+from.
+
+**Steps:**
+1. Added `docker/dashboard/` — [gethomepage](https://gethomepage.dev), config
+   bind-mounted from the repo rather than kept in a volume.
+2. Served at the bare `{$HOMELAB_DOMAIN}` — the parent of every service name, so
+   it is the only URL worth memorising.
+3. Added [`scripts/check-dashboard.sh`](../scripts/check-dashboard.sh) and a CI
+   job: every Caddyfile site must have a tile, and every tile must point at a
+   real site block.
+
+**Decisions:**
+- **One dashboard, not two.** Splitting homelab from other projects just moves
+  the problem to "which dashboard was it on". Grouped sections instead, with the
+  real distinction being *services* (on this box, status-checked) versus
+  *bookmarks* (elsewhere, just links).
+- **No Docker socket.** Homepage can auto-discover services from container
+  labels, but that needs the socket — root-equivalent on this host — to avoid
+  maintaining a list CI already keeps honest. The same trade rejected for
+  `/deploy`, and it comes out the same way.
+- **No credentialed widgets.** A Grafana or AdGuard widget means putting an
+  admin password into this stack to render a number that is one click away.
+  `siteMonitor` gives up/down and response time and needs nothing.
+- **No `siteMonitor` on Kali.** Polling it would boot the container on every
+  dashboard refresh, defeating Sablier's scale-to-zero.
+
+**Issues encountered:**
+- **A DNS wildcard does not match its own parent.** `*.home` covers
+  `stats.home.<zone>` but never `home.<zone>`, so the dashboard needs its own
+  `A` record. Missing it looks exactly like a Caddy fault and is not.
+- **Homepage rejects unrecognised Host headers.** Without `HOMEPAGE_ALLOWED_HOSTS`
+  it answers "Invalid Host header" rather than serving a page — again, looks
+  like a proxy problem.
+- **The tile list is a second copy of the Caddyfile's list**, hand-maintained,
+  in another file. That is the same drift shape as the deployment gap, except a
+  stale dashboard never breaks — it just silently stops being complete, so you
+  go on trusting it. Hence the CI check, in both directions: a site with no tile
+  fails, and a tile pointing at a deleted site fails too.
+
+**Verification:** the check was tested by breaking it on purpose — adding a
+Caddyfile site with no tile (`MISSING vault`, exit 1) and a tile pointing at a
+non-existent site (`STALE gone`, exit 1). All nine compose files still validate,
+the four config files parse as YAML, and stock Caddy parses past the new site
+block (failing later on the sablier plugin it does not have), so the block
+itself is sound.
+
+**Notes / next steps:**
+- Adding a service is now three edits: a Caddyfile block, a dashboard tile, and
+  `docker compose restart caddy`. CI enforces the middle one.
+
+---
+
 ## 2026-08-23 — repo-sync heals instead of nagging
 
 **Goal:** The drift report's answer was always "run this command", so stop
