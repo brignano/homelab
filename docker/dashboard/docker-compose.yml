@@ -24,16 +24,24 @@ services:
       # carries no domain of its own. Only vars with this prefix are substituted.
       HOMEPAGE_VAR_DOMAIN: ${HOMELAB_DOMAIN:?required}
     volumes:
-      # Config read-only: it is the codified part, it comes from the repo, and
-      # nothing should be able to edit it from inside the container and drift
-      # away from what CI checks.
-      - ./config:/app/config:ro
-      # But Homepage writes its own log file to config/logs, and a read-only
-      # mount makes that mkdir fail on every render — the whole page 500s, with
-      # the config itself perfectly valid. A named volume nested inside the
-      # read-only bind keeps logs writable without making the config writable,
-      # and without leaving an untracked directory in the working tree.
-      - dashboard_logs:/app/config/logs
+      # Writable, and it took two failures to accept that.
+      #
+      # `:ro` was the obvious choice — the config is the codified part, it comes
+      # from the repo, and CI checks it. But Homepage writes its log file to
+      # config/logs, so a read-only mount fails the mkdir on every render and
+      # every page 500s with the config perfectly valid.
+      #
+      # The next attempt nested a named volume at /app/config/logs to keep the
+      # config itself read-only. That cannot work either: runc has to *create*
+      # the mountpoint inside the bind before mounting over it, and the bind is
+      # read-only, so the container refuses to start at all.
+      #
+      # A pre-created logs/ directory in the repo would satisfy runc, but this is
+      # not worth a third guess at container behaviour. `:ro` here was defensive
+      # polish, not a boundary: Homepage never writes its own config, the
+      # container has no Docker socket and sits on one network, and CI is what
+      # actually keeps this directory honest. logs/ is gitignored.
+      - ./config:/app/config
     networks:
       # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
       # the tiles are plain links, and the up/down checks go through Caddy over
@@ -43,9 +51,6 @@ services:
       # container labels, but that needs the socket — root-equivalent on this
       # host — to save maintaining a list that CI already keeps honest.
       - proxy
-
-volumes:
-  dashboard_logs:
 
 networks:
   proxy:
