@@ -13,7 +13,12 @@ services:
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?required}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:?required}
-      DISCORD_DIGEST_CHANNEL_ID: ${DISCORD_DIGEST_CHANNEL_ID:?required}
+      # NOT `:?required`, deliberately. Compose interpolates before the
+      # container starts, so requiring this here would block `--provision` —
+      # the command whose whole job is to create the channel and hand you this
+      # ID. The bot itself still refuses to start without it (config.py), which
+      # is where the guarantee belongs. Empty is fine until provisioning runs.
+      DISCORD_DIGEST_CHANNEL_ID: ${DISCORD_DIGEST_CHANNEL_ID:-}
       DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:?required}
 
       # Internal DNS names on the joined networks — no host ports involved.

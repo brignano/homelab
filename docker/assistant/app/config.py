@@ -57,6 +57,24 @@ def _hhmm(name: str, default: str) -> tuple[int, int]:
     return h, m
 
 
+def _channel_id() -> int:
+    """The digest channel, with a pointer to what produces it.
+
+    This is the one value you cannot know up front — it doesn't exist until
+    `--provision --apply` creates the channel. Say so, rather than leaving
+    someone staring at a bare "required but unset".
+    """
+    raw = os.environ.get("DISCORD_DIGEST_CHANNEL_ID", "").strip()
+    if not raw or set(raw) == {"0"}:
+        raise SystemExit(
+            "config error: DISCORD_DIGEST_CHANNEL_ID is unset or still the placeholder.\n"
+            "  Run `--provision --apply` first — it creates #digest and prints the ID to paste in."
+        )
+    if not raw.isdigit():
+        raise SystemExit(f"config error: DISCORD_DIGEST_CHANNEL_ID={raw!r} is not a numeric channel ID")
+    return int(raw)
+
+
 @dataclass(frozen=True)
 class Config:
     # --- Discord ---
@@ -107,7 +125,7 @@ class Config:
         return cls(
             discord_token=_req("DISCORD_TOKEN"),
             guild_id=int(_req("DISCORD_GUILD_ID")),
-            digest_channel_id=int(_req("DISCORD_DIGEST_CHANNEL_ID")),
+            digest_channel_id=_channel_id(),
             allowed_user_ids=allowed,
             ollama_url=os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/"),
             ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
