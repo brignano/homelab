@@ -77,7 +77,7 @@ homelab/
 ├── scripts/                 # Run from cron on the Docker LXC
 │   ├── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
 │   ├── heartbeat.sh         # Dead man's switch -> Healthchecks (*/5 min)
-│   └── repo-sync.sh         # Daily git pull + deployment-drift report
+│   └── repo-sync.sh         # Daily git pull, restart stale stacks, report
 ├── .github/
 │   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
 ├── docs/
@@ -85,9 +85,17 @@ homelab/
 └── .gitignore
 ```
 
-Nothing here deploys itself. `repo-sync.sh` pulls and *reports* which stacks are
-running older code than the tree; restarting them stays a deliberate act,
-because this box serves the household's DNS.
+`repo-sync.sh` pulls nightly, restarts any stack running older code than the
+tree, and **verifies each one came back** — a restart that is not checked is not
+self-healing, it is auto-breaking faster. It reports what it restarted, so
+`#alerts` doubles as a deployment log and silence means nothing changed.
+
+One stack is excluded by default and should stay that way: `proxy` contains
+AdGuard, which is the household's DNS. A 4am restart that does not come back
+takes the network down until someone notices, and every tool you would reach for
+to diagnose it resolves names through the thing that is down. It is reported
+instead, with the command to run. Adjust with `HL_NO_AUTOHEAL`, or set
+`HL_AUTOHEAL=no` for report-only.
 
 ## Quick start
 

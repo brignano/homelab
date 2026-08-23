@@ -27,6 +27,47 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — repo-sync heals instead of nagging
+
+**Goal:** The drift report's answer was always "run this command", so stop
+printing it and run it — without handing a cron job the power to take the
+network down.
+
+**Steps:**
+1. `repo-sync.sh` now restarts stale stacks itself, verifies each came back, and
+   reports what changed.
+2. `HL_NO_AUTOHEAL` (default `proxy`) lists stacks that are only ever reported.
+   `HL_AUTOHEAL=no` restores report-only behaviour.
+3. Reworked the output: one section per outcome (restarted / failed / needs you)
+   and the remaining commands collected into a single block instead of repeated
+   after every line.
+
+**Issues encountered:**
+- **`proxy` is the exception, and it is not a close call.** AdGuard runs in that
+  stack, so auto-restarting it is auto-restarting the household's DNS. Nothing
+  guards that failure the way `heartbeat.sh` guards Grafana and Prometheus, and
+  a failure at 4am leaves no working name resolution to debug through.
+- **A restart without verification is worse than no restart**, because it turns
+  "stale but working" into "broken and unattended" while reporting success.
+  Every heal is followed by a check that at least as many containers are running
+  as before and none are stuck restarting.
+- **One failure mode turned out to already be safe:** `up -d --build` builds
+  *before* it recreates, so a broken build leaves the previous container
+  serving. The case worth catching is a build that succeeds and then crashes.
+- **Auto-healing is skipped entirely when the pull failed.** A tree that could
+  not fast-forward is in an unknown state and is not one to deploy from.
+- Real rollback was considered and rejected: `--build` discards the previous
+  image unless it is tagged first, so a genuine rollback needs a tagging scheme
+  and a retention policy. Verify-and-shout is the honest version of the 90%.
+
+**Verification:** stubbed `docker`, a throwaway origin and a local webhook
+receiver, covering each path — clean heal (exit 0); a stack that comes back with
+fewer containers (reported under RESTART FAILED as `1/2 running`, exit 1);
+`proxy` routed to "Needs you" with its command; a failed pull suppressing all
+healing.
+
+---
+
 ## 2026-08-23 — Drift report cried wolf on its first run
 
 **Goal:** Fix a 50% false-positive rate in `repo-sync.sh`, found the first time
