@@ -102,8 +102,25 @@ for dir in docker/*/; do
   compose="${dir}docker-compose.yml"
   [ -f "$compose" ] || continue
 
-  # Newest commit touching this stack. No commits (untracked dir) -> skip.
-  commit_ts=$(git log -1 --format=%ct -- "$dir" 2>/dev/null || true)
+  # Newest commit touching this stack that could actually change what runs.
+  #
+  # Documentation, tests and .env.example live inside the stack directories but
+  # are never deployed — the assistant Dockerfile, for instance, copies only
+  # requirements.txt, app/ and guild.yml. Counting them meant a README-only
+  # commit reported the stack as stale, which on the first real run flagged two
+  # of four stacks for changes that could not possibly affect them. A drift
+  # report with a 50% false-positive rate is one you learn to ignore, which is
+  # worse than not having it.
+  #
+  # `:(exclude,glob)` and not plain `:(exclude)`: without glob magic `**` is not
+  # expanded and the exclusion silently does nothing.
+  #
+  # Empty result (a stack whose only commits are docs) -> nothing deployable has
+  # ever changed, so there is nothing to be stale against. Skip it.
+  commit_ts=$(git log -1 --format=%ct -- "$dir" \
+    ":(exclude,glob)${dir}**/*.md" \
+    ":(exclude,glob)${dir}tests/**" \
+    ":(exclude)${dir}.env.example" 2>/dev/null || true)
   [ -n "$commit_ts" ] || continue
 
   # Absolute path is what compose stamps on its containers.
