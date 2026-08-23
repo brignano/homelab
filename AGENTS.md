@@ -102,6 +102,13 @@ categories/channels/permissions and `--provision` converges the server to it
 Creating the server, creating the bot, and restricting a command to a channel
 all require a *user* login and stay manual; everything else is in git.
 
+Conversational `#chat` keeps its memory **in Discord** — the bot re-reads recent
+channel messages as context rather than holding state, so it is restart-safe and
+what you see in the channel is exactly what the model sees. It needs the Message
+Content intent, narrowed in code to one channel and the user allowlist; the
+first check in `_should_handle` ignores bots (including itself), which is what
+prevents an infinite self-reply loop.
+
 Two rules when extending it:
 - **Python decides what's true; the model only writes prose.** Facts are queried
   and thresholded in code — a 3B is not reliable at tool calling or at staying

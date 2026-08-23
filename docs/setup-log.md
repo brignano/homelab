@@ -27,6 +27,69 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-23 — Conversational #chat, and a layout that means something
+
+**Goal:** Two complaints. The channels felt like stock Discord with no
+intention behind them, and talking to the model meant typing `/ask` every single
+time — no continuity, no follow-ups, no conversation.
+
+**Steps:**
+1. Reworked `guild.yml` into two categories split by **direction**: `HOMELAB`
+   (digest, alerts — the lab reporting to you) and `ASSISTANT` (chat — you
+   talking to it), with real topics explaining what each is for.
+2. Renamed `#ask` to `#chat` and made it conversational: `on_message` answers
+   every message, no command needed.
+3. Added `app/chat.py` and `Ollama.chat()` (`/api/chat`), factoring the shared
+   request handling out of `generate()` into `_post()`.
+4. New optional settings: `DISCORD_CHAT_CHANNEL_ID` (blank = feature off),
+   `CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`, `CHAT_NUM_PREDICT`.
+
+**Issues encountered:**
+- **A bot that answers every message will answer itself, forever.** The first
+  thing `_should_handle` checks is whether the author is a bot.
+- **Reading plain messages needs the Message Content privileged intent.** PR #34
+  listed "no privileged intents" as a security property, so this walks one back.
+- **Conversation memory needs somewhere to live**, and any in-process store is
+  lost on the restarts that happen constantly during setup.
+- **Unbounded history would get slower every turn** — prompt evaluation is
+  CPU-bound and roughly linear in tokens.
+- **Concatenating turns into one prompt** would feed the model a format it was
+  never trained on.
+
+**Resolution:**
+- **Discord *is* the store.** On each message the bot re-reads recent channel
+  history as the conversation. No database, no state: restart-safe, threads get
+  their own context for free, and deleting a message actually removes it from
+  the model's memory. What you see in the channel is what it sees.
+- The intent is requested **only when a chat channel is configured**, and
+  narrowed in code — one channel (plus its threads), allowlisted users only.
+- Both a turn cap and a character budget, trimming oldest-first while always
+  keeping the newest message, since that is the one being answered.
+- `/api/chat` applies the model's own chat template to role-tagged turns.
+- `//` prefix: no reply, and excluded from context — for notes and asides.
+
+**On the box (apply after merge):**
+```bash
+# 1. Developer Portal -> Bot -> Privileged Gateway Intents -> Message Content ON
+# 2. Rename #ask to #chat IN DISCORD (preserves history), then copy its ID
+cd ~/homelab && git pull
+nano docker/assistant/.env      # DISCORD_CHAT_CHANNEL_ID=<the #chat id>
+
+docker compose -f docker/assistant/docker-compose.yml run --rm --build \
+  assistant --provision                     # review, then --apply
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+Then just type in `#chat`. Expect ~10-30s per reply depending on how much
+history is in context.
+
+**Notes / next steps:**
+- Rename in Discord rather than in `guild.yml` — the provisioner never deletes,
+  so changing the name in the file creates a second, empty channel instead.
+- If replies get slow, lower `CHAT_HISTORY_TURNS` before anything else; context
+  length is the dominant cost on this hardware.
+- `#alerts` stays webhook-fed and is untouched by any of this — deliberately, so
+  it keeps working when the bot is down.
+
 ## 2026-08-23 — Real domain + real certificates, still not exposed
 
 **Goal:** Replace the `*.home` pseudo-TLD with a real domain and publicly-trusted
