@@ -27,3 +27,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+
+# Homepage writes its log file here if the config mount is ever made writable.
+docker/dashboard/config/logs/
