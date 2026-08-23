@@ -121,6 +121,8 @@ class Config:
     chat_history_turns: int
     chat_history_chars: int
     chat_predict: int
+    chat_live_metrics: bool
+    chat_metrics_ttl_s: int
 
     # --- Queue ---
     max_queue: int
@@ -164,5 +166,7 @@ class Config:
             chat_history_turns=_int("CHAT_HISTORY_TURNS", 12),
             chat_history_chars=_int("CHAT_HISTORY_CHARS", 4000),
             chat_predict=_int("CHAT_NUM_PREDICT", 350),
+            chat_live_metrics=os.environ.get("CHAT_LIVE_METRICS", "true").lower() != "false",
+            chat_metrics_ttl_s=_int("CHAT_METRICS_TTL_S", 60),
             max_queue=_int("MAX_QUEUE", 8),
         )

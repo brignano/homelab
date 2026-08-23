@@ -135,6 +135,38 @@ class Facts:
     def all_clear(self) -> bool:
         return not self.concerns and not self.problems
 
+    def compact(self) -> str:
+        """One dense line of readings, for injecting into a chat prompt.
+
+        Deliberately terser than the digest's block: this rides along on every
+        conversational turn, and prompt evaluation is CPU-bound and roughly
+        linear in tokens. Roughly 50-60 tokens against a 4096 window.
+
+        Only facts appear here — no interpretation. The "needs attention" list
+        is still computed in Python (see `concerns`) so the model is told the
+        verdict rather than asked to reach one.
+        """
+        bits: list[str] = []
+        if self.targets_total:
+            bits.append(f"services {self.targets_up}/{self.targets_total} up")
+        if self.targets_down:
+            bits.append("DOWN: " + ", ".join(self.targets_down))
+        for label, value in (("CPU", self.cpu_pct), ("RAM", self.mem_pct), ("disk /", self.disk_pct)):
+            if value is not None:
+                bits.append(f"{label} {value:.0f}%")
+        bits.append(
+            "restarts 24h: " + (", ".join(f"{n} x{c}" for n, c in self.restarts) if self.restarts else "none")
+        )
+        bits.append(
+            "log errors 24h: " + (", ".join(f"{n} {c}" for n, c in self.log_errors) if self.log_errors else "none")
+        )
+        line = "; ".join(bits)
+        if self.concerns:
+            line += " | NEEDS ATTENTION: " + "; ".join(self.concerns)
+        if self.problems:
+            line += " | could not read: " + "; ".join(self.problems)
+        return line
+
 
 # --- Collection ---------------------------------------------------------------
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import time
 
 import aiohttp
 import discord
@@ -25,7 +26,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from .chat import (
-    CHAIN, CHAT_SYSTEM, SINGLE, THREAD, Turn, build_messages, clean_bot_text,
+    CHAIN, SINGLE, THREAD, Turn, build_messages, build_system, clean_bot_text,
     context_mode, is_ignorable,
 )
 from .config import Config
@@ -83,6 +84,8 @@ class Assistant(discord.Client):
         self.tree = app_commands.CommandTree(self)
         self.queue = JobQueue(max_size=cfg.max_queue)
         self._session: aiohttp.ClientSession | None = None
+        # (measured_at, line) — see _live_metrics for why this is cached.
+        self._metrics_cache: tuple[float, str] | None = None
         self.ollama: Ollama | None = None
         self.collector: FactCollector | None = None
         self._guild = discord.Object(id=cfg.guild_id)
@@ -220,6 +223,38 @@ class Assistant(discord.Client):
         turn = self._to_turn(message)
         return ([turn] if turn else []), SINGLE
 
+    async def _live_metrics(self) -> str | None:
+        """A compact line of current homelab readings, or None if unavailable.
+
+        Injected rather than exposed as a tool the model can call. Tool-calling
+        is unreliable on a 3B (see docs/design/tsd-ai-homelab-assistant.md), so
+        the facts are gathered here, deterministically, on every turn — the model
+        never decides whether to look, it simply always has them. Same rule as
+        the digest: Python measures, the model only reads the numbers out.
+
+        Cached briefly: the queries are cheap but a rapid back-and-forth would
+        re-run six of them per message, and a homelab does not change
+        meaningfully between two messages typed seconds apart.
+        """
+        if not self.cfg.chat_live_metrics or self.collector is None:
+            return None
+
+        now = time.monotonic()
+        if self._metrics_cache is not None:
+            measured_at, line = self._metrics_cache
+            if now - measured_at < self.cfg.chat_metrics_ttl_s:
+                return line
+
+        try:
+            facts = await self.collector.collect(dt.datetime.now(tz=self.cfg.tz))
+        except Exception as exc:  # noqa: BLE001 — chat must still work without them
+            log.warning("could not collect live metrics for chat: %s", exc)
+            return None
+
+        line = facts.compact()
+        self._metrics_cache = (now, line)
+        return line
+
     async def on_message(self, message: discord.Message) -> None:
         if not self._should_handle(message):
             return
@@ -232,9 +267,10 @@ class Assistant(discord.Client):
             turns, mode = [Turn(role="user", content=(message.content or "").strip())], SINGLE
         log.info("chat: %s context, %d turn(s)", mode, len(turns))
 
+        metrics = await self._live_metrics()
         messages = build_messages(
             turns,
-            system=CHAT_SYSTEM,
+            system=build_system(metrics),
             max_turns=self.cfg.chat_history_turns,
             max_chars=self.cfg.chat_history_chars,
         )

@@ -112,6 +112,12 @@ Content intent, narrowed in code to one channel and the user allowlist; the
 first check in `_should_handle` ignores bots (including itself), which is what
 prevents an infinite self-reply loop.
 
+`#chat` is given live homelab readings by **injection**, not by tool-calling: the
+facts are collected deterministically before every reply, so the model never
+decides whether to look. Tool-calling is unreliable on a 3B — adding tools is the
+thing this repo has already tried and reverted twice. If collection fails the
+readings are omitted rather than served stale.
+
 Two rules when extending it:
 - **Python decides what's true; the model only writes prose.** Facts are queried
   and thresholded in code — a 3B is not reliable at tool calling or at staying

@@ -41,17 +41,46 @@ IGNORE_PREFIX = "//"
 # those back as conversation would teach it to imitate them.
 FOOTER_PREFIX = "-#"
 
-CHAT_SYSTEM = (
+_BASE = (
     "You are in an ongoing conversation. Reply to the most recent message, using "
     "the earlier turns for context. Answer directly — no preamble, no restating "
     "the question, and no describing yourself or your setup.\n"
     "Keep replies short: a sentence or two unless genuinely more is needed. This "
     "is a chat, not an essay.\n"
-    "You cannot browse the internet and cannot see the user's machines, files or "
-    "any live data. If something needs those, say so in one short sentence and "
-    "then answer whatever part you can. Never invent specifics you would need "
-    "live access to know."
 )
+
+# Used when live readings could not be collected. Kept narrow: an earlier
+# version made "you cannot see any live data" a standing declaration, and a 3B
+# leads with whatever is most salient — so it announced the limitation on every
+# question, whether or not anything live was involved.
+_NO_LIVE = (
+    "You have no internet access and cannot see live system data right now. If "
+    "the question needs either, say so in one short sentence and then answer "
+    "whatever part you can from general knowledge. Never invent readings."
+)
+
+# Used when a facts line is available. The readings are stated as fact because
+# Python measured them; the model's job is to read them out, not to judge them.
+_WITH_LIVE = (
+    "Current readings from the user's homelab are given below. They were measured "
+    "just now and are accurate — use them for anything about the server, and quote "
+    "the numbers as given. Never invent a reading that is not listed; if something "
+    "is not in the readings, say it is not being measured.\n"
+    "You still have no internet access, so for anything needing the web, say so in "
+    "one short sentence and answer what you can from general knowledge.\n"
+    "\nLIVE HOMELAB READINGS: {facts}"
+)
+
+
+def build_system(facts_line: str | None = None) -> str:
+    """The system prompt, with live readings folded in when we have them."""
+    if facts_line:
+        return _BASE + _WITH_LIVE.format(facts=facts_line)
+    return _BASE + _NO_LIVE
+
+
+# Back-compat default for callers that have no live data to offer.
+CHAT_SYSTEM = build_system(None)
 
 
 # --- How much context, and from where -----------------------------------------

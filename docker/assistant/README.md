@@ -100,6 +100,35 @@ and a 3B degrades fast when that drifts.
 > stops it replying to its own replies forever. Leave `DISCORD_CHAT_CHANNEL_ID`
 > blank and the intent is never requested at all.
 
+### Live homelab readings in the conversation
+
+Ask *"how's the server doing?"* in `#chat` and you get real numbers, because
+before each reply the bot runs the same Prometheus/Loki queries the digest uses
+and injects one compact line:
+
+```
+LIVE HOMELAB READINGS: services 15/15 up; CPU 2%; RAM 30%; disk / 12%;
+restarts 24h: none; log errors 24h: grafana 432, adguard 1
+```
+
+**Injected, not offered as a tool the model can call.** Tool-calling is
+unreliable on a 3B — that is why
+[`tsd-ai-homelab-assistant.md`](../../docs/design/tsd-ai-homelab-assistant.md)
+shelved itself — so the model never decides whether to look. It simply always
+has the numbers, and its only job is to read them out. Same rule as the digest:
+**Python measures, the model narrates.** The "needs attention" verdict is
+computed in code too, so it is told the conclusion rather than asked to reach one.
+
+- Cached for `CHAT_METRICS_TTL_S` (60s). The queries are cheap, but a rapid
+  back-and-forth would re-run six of them per message.
+- **A failure yields no readings, never stale ones.** If collection fails the
+  line is omitted and the prompt reverts to saying it cannot see live data —
+  wrong numbers would be worse than none.
+- Costs ~50–60 tokens of prompt per turn. `CHAT_LIVE_METRICS=false` disables it.
+
+It still has no internet access, and says so — that caveat is now scoped to
+things genuinely outside the box rather than announced on every question.
+
 ## Two rules that make a 3B usable here
 
 **1. Python decides what's true; the model only writes prose.**
