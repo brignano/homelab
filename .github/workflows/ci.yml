@@ -109,7 +109,7 @@ jobs:
           exit $status
 
   caddy:
-    name: Caddyfile validates
+    name: Caddyfile adapts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,13 +121,28 @@ jobs:
         # so validating against it would prove nothing about what we deploy.
         run: docker build -t homelab-caddy docker/proxy
 
-      - name: caddy validate
-        # The Caddyfile is bind-mounted at runtime rather than baked in, so it
-        # is mounted here the same way. Env vars are substituted at load time;
-        # the values are irrelevant to whether the config parses.
+      - name: caddy adapt
+        # `adapt`, not `validate`, and the distinction is the whole point.
+        #
+        # `validate` goes on to *provision* every module, and the cloudflare DNS
+        # provider checks its API token's format while doing so — so a real
+        # validate needs a credential-shaped secret to say anything at all. That
+        # would mean either putting a Cloudflare token in CI, or feeding it a
+        # fake and testing the fake. Neither proves the config is good.
+        #
+        # `adapt` stops at converting the Caddyfile to JSON, which is exactly the
+        # boundary worth guarding here: it still catches syntax errors and any
+        # directive the compiled-in plugins do not provide (stock Caddy dies on
+        # `acme_dns cloudflare` right here), without needing a single secret.
+        #
+        # HOMELAB_DOMAIN is still set because the adapter substitutes it into the
+        # site addresses; unset, every site block would be named `stats.` and the
+        # check would be testing something we never deploy.
+        #
+        # The Caddyfile is bind-mounted at runtime rather than baked into the
+        # image, so it is mounted here the same way.
         run: |
           docker run --rm \
             -e HOMELAB_DOMAIN=example.com \
-            -e CLOUDFLARE_API_TOKEN=ci \
             -v "$PWD/docker/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
-            homelab-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+            homelab-caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null

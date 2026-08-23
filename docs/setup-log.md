@@ -39,7 +39,7 @@ serves the household's DNS.
    only when there is something to do.
 2. Added `.github/workflows/ci.yml` — the first CI this repo has had. Four jobs:
    assistant smoke tests, `docker compose config` on all eight stacks, `sh -n`
-   on the cron scripts, and `caddy validate` inside the real proxy image.
+   on the cron scripts, and `caddy adapt` inside the real proxy image.
 3. Added [`docker/assistant/tests/smoke.py`](../docker/assistant/tests/smoke.py)
    — 22 offline checks, no pytest, no network.
 
@@ -64,10 +64,20 @@ serves the household's DNS.
 - **A pull is not inert.** Seven repo files are bind-mounted into running
   containers, and Grafana polls its dashboard provisioning directory. An
   automatic pull can therefore change dashboards with no restart from you.
-- **Stock Caddy cannot validate this Caddyfile.** `acme_dns cloudflare` fails
-  with "module not registered" unless the plugin is compiled in, so CI builds
-  the real proxy image and validates inside it. Validating against stock Caddy
+- **Stock Caddy cannot check this Caddyfile at all.** `acme_dns cloudflare`
+  fails with "module not registered" unless the plugin is compiled in, so CI
+  builds the real proxy image and checks inside it. Checking against stock Caddy
   would have proved nothing about what actually deploys.
+- **`caddy validate` was the wrong verb, and CI proved it.** The first run went
+  red: `validate` does not stop at parsing — it *provisions* every module, and
+  the cloudflare DNS provider checks its API token's format while doing so, so
+  the throwaway `ci` token was rejected. A real `validate` would need a
+  credential-shaped secret in CI to say anything at all, which means either
+  putting a live Cloudflare token there or testing a fake. `caddy adapt` stops
+  at Caddyfile → JSON, which is the right boundary: it still catches syntax
+  errors and missing plugin directives, and needs no secrets. Worth noting what
+  the failure *did* prove — the log shows `adapted config to JSON` before the
+  provisioning error, so the Caddyfile itself was never in question.
 
 **Verification:**
 - `repo-sync.sh` exercised against a throwaway origin and a stubbed `docker`,
@@ -77,7 +87,9 @@ serves the household's DNS.
   deleting the do-not-volunteer guard from the chat prompt each turn the suite
   red, so the checks are load-bearing rather than decorative.
 - Three of four CI jobs run locally and pass; the `caddy` job needs a Docker
-  daemon and was verified only as far as a stock binary allows.
+  daemon and was verified only as far as a stock binary allows — it failed on
+  its first real run and was fixed (see above), which is roughly the point of
+  having CI.
 
 **Install the cron entry** (on CT 100, as root):
 
