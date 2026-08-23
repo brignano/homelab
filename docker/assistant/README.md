@@ -138,6 +138,30 @@ removing the readings.
 It still has no internet access, and says so — that caveat is now scoped to
 things genuinely outside the box rather than announced on every question.
 
+### Voice: register, never a character
+
+`#chat` sets a tone, but it does it with verbs and concrete bans rather than a
+persona:
+
+> Write the way a knowledgeable colleague talks: plain, direct, a touch dry. No
+> corporate warmth, no cheerleading, no "great question", no offering to help
+> further. Say "I don't know" plainly when you don't, and never apologise for
+> what you cannot do.
+
+The distinction matters more here than it would on a large model. A persona is
+identity text, and a 3B answers with whatever the prompt makes most salient — so
+`/ask` once replied to a real question by describing itself as *"a small home
+server with basic hardware components"*. That was the persona line becoming the
+answer, which is why `ASK_SYSTEM` has none. Behavioural instructions don't
+recite: there is nothing in *"no cheerleading"* for the model to read back.
+
+The same reasoning caps how much of this is worth adding. Every line competes
+for attention with the actual question, so tune by **subtracting** first, and add
+only what a real conversation showed you needed. Tone lives in
+[`app/chat.py`](app/chat.py) (`_BASE`) — deliberately not in
+`docker/ai/models/llama3.2.Modelfile`, which is shared with Open WebUI and needs
+a `load-models.sh` re-run to change.
+
 ## Two rules that make a 3B usable here
 
 **1. Python decides what's true; the model only writes prose.**

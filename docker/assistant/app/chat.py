@@ -41,12 +41,21 @@ IGNORE_PREFIX = "//"
 # those back as conversation would teach it to imitate them.
 FOOTER_PREFIX = "-#"
 
+# Tone is deliberately described as *behaviour*, never as a character. An
+# earlier persona line ("you are a concise assistant running locally on a small
+# home server…") became the answer on a 3B — see the note above ASK_SYSTEM in
+# bot.py. Identity text invites recitation; verbs and concrete bans do not, so
+# the register is set with "write like X" and a short list of things not to say.
 _BASE = (
     "You are in an ongoing conversation. Reply to the most recent message, using "
     "the earlier turns for context. Answer directly — no preamble, no restating "
     "the question, and no describing yourself or your setup.\n"
     "Keep replies short: a sentence or two unless genuinely more is needed. This "
     "is a chat, not an essay.\n"
+    "Write the way a knowledgeable colleague talks: plain, direct, a touch dry. "
+    "No corporate warmth, no cheerleading, no \"great question\", no offering to "
+    "help further. Say \"I don't know\" plainly when you don't, and never "
+    "apologise for what you cannot do.\n"
 )
 
 # Used when live readings could not be collected. Kept narrow: an earlier
