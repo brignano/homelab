@@ -29,6 +29,16 @@ def _int(name: str, default: int) -> int:
         raise SystemExit(f"config error: {name}={raw!r} is not an integer")
 
 
+def _float(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        raise SystemExit(f"config error: {name}={raw!r} is not a number")
+
+
 def _id_set(name: str) -> frozenset[int]:
     """Parse a comma-separated list of Discord snowflake IDs."""
     raw = os.environ.get(name, "").strip()
@@ -115,12 +125,14 @@ class Config:
     digest_predict: int
     llm_timeout_s: int
     max_input_chars: int
+    ollama_keep_alive: str
 
     # --- Conversational channel ---
     chat_channel_id: int | None
     chat_history_turns: int
     chat_history_chars: int
     chat_predict: int
+    chat_temperature: float
     chat_live_metrics: bool
     chat_metrics_ttl_s: int
 
@@ -162,10 +174,12 @@ class Config:
             digest_predict=_int("DIGEST_NUM_PREDICT", 180),
             llm_timeout_s=_int("LLM_TIMEOUT_S", 300),
             max_input_chars=_int("MAX_INPUT_CHARS", 6000),
+            ollama_keep_alive=os.environ.get("OLLAMA_KEEP_ALIVE", "").strip() or "30m",
             chat_channel_id=_optional_id("DISCORD_CHAT_CHANNEL_ID"),
             chat_history_turns=_int("CHAT_HISTORY_TURNS", 12),
             chat_history_chars=_int("CHAT_HISTORY_CHARS", 4000),
             chat_predict=_int("CHAT_NUM_PREDICT", 350),
+            chat_temperature=_float("CHAT_TEMPERATURE", 0.6),
             chat_live_metrics=os.environ.get("CHAT_LIVE_METRICS", "true").lower() != "false",
             chat_metrics_ttl_s=_int("CHAT_METRICS_TTL_S", 60),
             max_queue=_int("MAX_QUEUE", 8),

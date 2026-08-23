@@ -100,6 +100,7 @@ class Assistant(discord.Client):
             model=self.cfg.ollama_model,
             num_ctx=self.cfg.num_ctx,
             timeout_s=self.cfg.llm_timeout_s,
+            keep_alive=self.cfg.ollama_keep_alive,
         )
         self.collector = FactCollector(
             self._session,
@@ -255,11 +256,9 @@ class Assistant(discord.Client):
         self._metrics_cache = (now, line)
         return line
 
-    async def on_message(self, message: discord.Message) -> None:
-        if not self._should_handle(message):
-            return
-
-        channel = message.channel
+    async def _chat_completion(self, message: discord.Message):
+        """Gather context, gather readings, generate. Split out of on_message so
+        the whole sequence sits inside one typing indicator."""
         try:
             turns, mode = await self._context_for(message)
         except discord.HTTPException as exc:
@@ -267,23 +266,34 @@ class Assistant(discord.Client):
             turns, mode = [Turn(role="user", content=(message.content or "").strip())], SINGLE
         log.info("chat: %s context, %d turn(s)", mode, len(turns))
 
-        metrics = await self._live_metrics()
         messages = build_messages(
             turns,
-            system=build_system(metrics),
+            system=build_system(await self._live_metrics()),
             max_turns=self.cfg.chat_history_turns,
             max_chars=self.cfg.chat_history_chars,
         )
+        return await self.queue.submit(
+            "chat",
+            lambda: self.ollama.chat(
+                messages,
+                num_predict=self.cfg.chat_predict,
+                temperature=self.cfg.chat_temperature,
+            ),
+            priority=PRIORITY_INTERACTIVE,
+        )
 
+    async def on_message(self, message: discord.Message) -> None:
+        if not self._should_handle(message):
+            return
+
+        channel = message.channel
         try:
-            # Typing indicator held for the whole wait — on a CPU-only box a
-            # reply takes tens of seconds, and silence reads as "it's broken".
+            # Typing indicator held for the whole wait, starting *before* the
+            # history and metrics fetches rather than just around generation.
+            # Those are several round trips to Discord, Prometheus and Loki, and
+            # any silent gap before the indicator appears reads as "it ignored me".
             async with channel.typing():
-                completion = await self.queue.submit(
-                    "chat",
-                    lambda: self.ollama.chat(messages, num_predict=self.cfg.chat_predict),
-                    priority=PRIORITY_INTERACTIVE,
-                )
+                completion = await self._chat_completion(message)
         except QueueFull:
             await message.reply("Busy right now — say that again in a minute.", mention_author=False)
             return
@@ -294,7 +304,12 @@ class Assistant(discord.Client):
             log.exception("chat reply failed")
             return
 
-        body = completion.text + f"\n-# {completion.model} · {completion.seconds:.0f}s"
+        footer = f"-# {completion.model} · {completion.seconds:.0f}s"
+        if completion.truncated:
+            # It stopped at CHAT_NUM_PREDICT, not because it was finished. Say so:
+            # a reply that just stops mid-sentence otherwise looks like a crash.
+            footer += " · hit the length limit — ask me to continue"
+        body = completion.text + "\n" + footer
         parts = chunk(body)
         try:
             await message.reply(parts[0], mention_author=False)

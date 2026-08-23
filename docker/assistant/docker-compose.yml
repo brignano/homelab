@@ -32,6 +32,7 @@ services:
       CHAT_HISTORY_TURNS: ${CHAT_HISTORY_TURNS:-12}
       CHAT_HISTORY_CHARS: ${CHAT_HISTORY_CHARS:-4000}
       CHAT_NUM_PREDICT: ${CHAT_NUM_PREDICT:-350}
+      CHAT_TEMPERATURE: ${CHAT_TEMPERATURE:-0.6}
       CHAT_LIVE_METRICS: ${CHAT_LIVE_METRICS:-true}
       CHAT_METRICS_TTL_S: ${CHAT_METRICS_TTL_S:-60}
 
@@ -40,6 +41,10 @@ services:
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
 
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-4096}
+      # How long Ollama keeps the model resident after a request. Its own
+      # default is 5m, which makes the first message after any pause pay a
+      # cold load. "0" unloads immediately, "-1" never unloads.
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
       ASK_NUM_PREDICT: ${ASK_NUM_PREDICT:-400}
       SUMMARIZE_NUM_PREDICT: ${SUMMARIZE_NUM_PREDICT:-300}
       DIGEST_NUM_PREDICT: ${DIGEST_NUM_PREDICT:-180}
