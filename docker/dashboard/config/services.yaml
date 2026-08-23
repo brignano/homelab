@@ -1,0 +1,55 @@
+# Every service that has a site block in docker/proxy/Caddyfile.
+#
+# These two files must agree, and CI enforces it: the `dashboard` job fails if a
+# Caddyfile site has no tile here. Add a service to the Caddyfile, forget the
+# tile, and the build goes red rather than the dashboard quietly lying about
+# what exists. Exemptions live in scripts/check-dashboard.sh, with reasons.
+#
+# {{HOMEPAGE_VAR_DOMAIN}} comes from HOMELAB_DOMAIN via the compose file, so the
+# committed config carries no domain of its own.
+#
+# `siteMonitor` gives up/down and response time by fetching the URL. It needs no
+# credentials, which is why there are no widgets here — a Grafana or AdGuard
+# widget would mean putting an admin password in this stack to render a number
+# you can see by clicking through.
+
+- Monitoring:
+    - Grafana:
+        href: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Dashboards, metrics and alert rules
+        icon: grafana.png
+
+    - ntfy:
+        href: https://alerts.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://alerts.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Push notifications for alerts
+        icon: ntfy.png
+
+    - Portainer:
+        href: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Containers, images and volumes
+        icon: portainer.png
+
+- AI:
+    - Open WebUI:
+        href: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Local model chat — slow by design, prefer Otto in Discord
+        icon: open-webui.png
+
+- Network:
+    - AdGuard Home:
+        href: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
+        description: DNS resolver and ad blocking for the house
+        icon: adguard-home.png
+
+- Desktops:
+    - Kali:
+        href: https://kali.{{HOMEPAGE_VAR_DOMAIN}}
+        description: On-demand desktop — Sablier boots it on first request
+        icon: kali-linux.png
+        # No siteMonitor on purpose: polling this URL would boot the container
+        # every time the dashboard refreshes, which defeats scale-to-zero.

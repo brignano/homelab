@@ -36,6 +36,7 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 
 | URL | Service | What it's for |
 |-----|---------|---------------|
+| https://`$HOMELAB_DOMAIN` | **Dashboard** | **Start here** — links to everything below, with up/down status |
 | https://chat.`$HOMELAB_DOMAIN` | Open WebUI | AI chat |
 | https://stats.`$HOMELAB_DOMAIN` | Grafana | Dashboards & metrics |
 | https://apps.`$HOMELAB_DOMAIN` | Portainer | Docker management |
@@ -55,8 +56,14 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 > `kali.home` internal CA produced.
 >
 > The legacy `*.home` names still work; each one now redirects to its real
-> counterpart. To add a service: add a site block to the Caddyfile, then
-> `docker compose restart caddy` — the wildcard DNS record already covers it.
+> counterpart. To add a service: add a site block to the Caddyfile, add a tile to
+> [`docker/dashboard/config/services.yaml`](docker/dashboard/config/services.yaml),
+> then `docker compose restart caddy` — the wildcard DNS record already covers
+> it. CI fails if you do the first and forget the second.
+>
+> The dashboard is the one exception to "the wildcard covers it": it is served at
+> the bare `$HOMELAB_DOMAIN`, and a DNS wildcard substitutes for the `*` rather
+> than matching the parent name, so it needs its own `A` record.
 
 ## Repository layout
 
@@ -71,13 +78,17 @@ homelab/
 │   │   └── docker-compose.yml
 │   ├── ai/                  # Ollama + Open WebUI
 │   │   └── docker-compose.yml
+│   ├── dashboard/           # Landing page — links + status for everything
+│   │   ├── docker-compose.yml
+│   │   └── config/          # Tiles, checked against the Caddyfile by CI
 │   └── assistant/           # Discord bot: local-LLM jobs + daily digest
 │       ├── docker-compose.yml
 │       └── app/
 ├── scripts/                 # Run from cron on the Docker LXC
 │   ├── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
 │   ├── heartbeat.sh         # Dead man's switch -> Healthchecks (*/5 min)
-│   └── repo-sync.sh         # Daily git pull, restart stale stacks, report
+│   ├── repo-sync.sh         # Daily git pull, restart stale stacks, report
+│   └── check-dashboard.sh   # CI: every proxied site has a dashboard tile
 ├── .github/
 │   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
 ├── docs/

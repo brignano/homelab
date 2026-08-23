@@ -20,6 +20,18 @@
 
 # ── Services ────────────────────────────────────────────────────────────────
 
+# The landing page. Deliberately the bare {$HOMELAB_DOMAIN} rather than a
+# subdomain of it: every service name hangs off this one, so it is the only URL
+# worth memorising and the rest are discoverable from it.
+#
+# NOTE — this needs its own DNS record. The `*.home` wildcard covers
+# stats.home.<zone> and friends, but a DNS wildcard substitutes for the `*` and
+# never matches the parent name, so home.<zone> resolves nowhere without an
+# explicit A record alongside it.
+{$HOMELAB_DOMAIN} {
+	reverse_proxy dashboard:3000
+}
+
 # Grafana — dashboards & metrics
 stats.{$HOMELAB_DOMAIN} {
 	reverse_proxy grafana:3000

@@ -108,6 +108,27 @@ jobs:
           done
           exit $status
 
+  dashboard:
+    name: dashboard covers every proxied site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Config files are valid YAML
+        run: |
+          python3 -c "
+          import sys, yaml, pathlib
+          for f in sorted(pathlib.Path('docker/dashboard/config').glob('*.yaml')):
+              yaml.safe_load(f.read_text())
+              print('ok   ', f)
+          "
+
+      - name: Every Caddyfile site has a tile
+        # The Caddyfile and services.yaml are two hand-maintained lists of the
+        # same thing. A dashboard that falls behind does not break — it just
+        # stops being complete, which is worse, because you keep trusting it.
+        run: ./scripts/check-dashboard.sh
+
   caddy:
     name: Caddyfile adapts
     runs-on: ubuntu-latest
