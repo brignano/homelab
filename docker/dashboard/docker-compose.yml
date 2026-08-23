@@ -24,7 +24,16 @@ services:
       # carries no domain of its own. Only vars with this prefix are substituted.
       HOMEPAGE_VAR_DOMAIN: ${HOMELAB_DOMAIN:?required}
     volumes:
+      # Config read-only: it is the codified part, it comes from the repo, and
+      # nothing should be able to edit it from inside the container and drift
+      # away from what CI checks.
       - ./config:/app/config:ro
+      # But Homepage writes its own log file to config/logs, and a read-only
+      # mount makes that mkdir fail on every render — the whole page 500s, with
+      # the config itself perfectly valid. A named volume nested inside the
+      # read-only bind keeps logs writable without making the config writable,
+      # and without leaving an untracked directory in the working tree.
+      - dashboard_logs:/app/config/logs
     networks:
       # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
       # the tiles are plain links, and the up/down checks go through Caddy over
@@ -34,6 +43,9 @@ services:
       # container labels, but that needs the socket — root-equivalent on this
       # host — to save maintaining a list that CI already keeps honest.
       - proxy
+
+volumes:
+  dashboard_logs:
 
 networks:
   proxy:

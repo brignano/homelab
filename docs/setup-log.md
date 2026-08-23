@@ -87,6 +87,16 @@ itself is sound.
   the commit that added the check for it. `check-dashboard.sh` now compares them
   too, and was verified by reintroducing the bug.
 
+- **And then a second one, from the same cause: I never ran the container.**
+  The config mount was `:ro`, which is right — it is the codified part and
+  nothing inside the container should be able to drift it away from what CI
+  checks. But Homepage writes its log file to `config/logs`, so the mkdir failed
+  on every render and the page 500'd with the config perfectly valid. Fixed with
+  a named volume nested inside the read-only bind: logs writable, config not,
+  and no untracked directory in the working tree. Both dashboard bugs were
+  runtime behaviour of an image that was never started before it shipped —
+  static checks were never going to catch either.
+
 **Notes / next steps:**
 - Adding a service is now three edits: a Caddyfile block, a dashboard tile, and
   `docker compose restart caddy`. CI enforces the middle one.
