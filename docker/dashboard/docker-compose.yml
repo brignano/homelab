@@ -14,7 +14,12 @@ services:
       # Homepage refuses requests whose Host header it does not recognise —
       # without this you get "Invalid Host header" rather than a page, which
       # looks exactly like a Caddy problem and is not.
-      HOMEPAGE_ALLOWED_HOSTS: home.${HOMELAB_DOMAIN:?required}
+      # Exactly $HOMELAB_DOMAIN, with no prefix: the Caddyfile serves the
+      # dashboard at the BARE domain, so that is the Host header it receives.
+      # Prefixing it here (home.$HOMELAB_DOMAIN -> home.home.brignano.io) is a
+      # silent mismatch that renders as "Invalid Host header" and reads exactly
+      # like a proxy fault. check-dashboard.sh now compares the two.
+      HOMEPAGE_ALLOWED_HOSTS: ${HOMELAB_DOMAIN:?required}
       # Referenced in the YAML as {{HOMEPAGE_VAR_DOMAIN}} so the committed config
       # carries no domain of its own. Only vars with this prefix are substituted.
       HOMEPAGE_VAR_DOMAIN: ${HOMELAB_DOMAIN:?required}

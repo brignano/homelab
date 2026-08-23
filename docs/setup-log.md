@@ -76,6 +76,17 @@ the four config files parse as YAML, and stock Caddy parses past the new site
 block (failing later on the sablier plugin it does not have), so the block
 itself is sound.
 
+- **Then it shipped with exactly the bug it warned about.**
+  `HOMEPAGE_ALLOWED_HOSTS` was set to `home.$HOMELAB_DOMAIN`, but the Caddyfile
+  serves the dashboard at the *bare* `$HOMELAB_DOMAIN` — so with
+  `HOMELAB_DOMAIN=home.brignano.io` the allowlist read `home.home.brignano.io`
+  and every request was rejected as "Invalid Host header". The container starts
+  fine and Caddy proxies fine; only the page is wrong, which is why it reads as a
+  proxy fault. Two files that must hold the same string, in different syntaxes,
+  with no check between them — the same shape as the tile drift, introduced in
+  the commit that added the check for it. `check-dashboard.sh` now compares them
+  too, and was verified by reintroducing the bug.
+
 **Notes / next steps:**
 - Adding a service is now three edits: a Caddyfile block, a dashboard tile, and
   `docker compose restart caddy`. CI enforces the middle one.
