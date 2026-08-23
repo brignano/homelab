@@ -41,6 +41,12 @@ time — no continuity, no follow-ups, no conversation.
    every message, no command needed.
 3. Added `app/chat.py` and `Ollama.chat()` (`/api/chat`), factoring the shared
    request handling out of `generate()` into `_post()`.
+3b. **Context now follows Discord's own primitives** rather than rolling channel
+   history: a plain message is a one-off, a reply walks its reply chain, and a
+   message in a thread reads the whole thread. Threads (and forum posts, which
+   are threads) are therefore the persistence unit — named conversations you can
+   return to. Pointing `DISCORD_CHAT_CHANNEL_ID` at a forum channel gives a
+   browsable list of them with no code change.
 4. New optional settings: `DISCORD_CHAT_CHANNEL_ID` (blank = feature off),
    `CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`, `CHAT_NUM_PREDICT`.
 
@@ -51,14 +57,19 @@ time — no continuity, no follow-ups, no conversation.
   listed "no privileged intents" as a security property, so this walks one back.
 - **Conversation memory needs somewhere to live**, and any in-process store is
   lost on the restarts that happen constantly during setup.
+- **Rolling channel history was the wrong default.** Two unrelated questions
+  typed into the same channel contaminate each other's context, and there is no
+  way to end a conversation short of waiting for it to scroll away.
 - **Unbounded history would get slower every turn** — prompt evaluation is
   CPU-bound and roughly linear in tokens.
 - **Concatenating turns into one prompt** would feed the model a format it was
   never trained on.
 
 **Resolution:**
-- **Discord *is* the store.** On each message the bot re-reads recent channel
-  history as the conversation. No database, no state: restart-safe, threads get
+- **Discord *is* the store**, and *where you type* decides what is read back:
+  plain message → itself only; reply → the reply chain; thread → the whole
+  thread. No command, no state, and the context is always visibly implied by
+  where the message sits. No database, no state: restart-safe, threads get
   their own context for free, and deleting a message actually removes it from
   the model's memory. What you see in the channel is what it sees.
 - The intent is requested **only when a chat channel is configured**, and

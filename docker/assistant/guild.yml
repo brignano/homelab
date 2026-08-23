@@ -50,9 +50,10 @@ categories:
       # messages as context. No slash command needed.
       - name: chat
         topic: >-
-          Just type — no command needed. Every message goes to the local model,
-          which reads the recent messages as context, so you can reply and it
-          follows. Start a thread for a separate topic or a long paste; threads
-          keep their own history. Prefix a line with // to leave a note without
-          getting a reply. Slash commands still work here too.
+          Just type — no command needed. Where you type decides what it
+          remembers: a plain message is a one-off with no history; REPLY to a
+          message and it follows that reply chain; inside a THREAD it reads the
+          whole thread, so threads are your named, persistent conversations
+          (right-click any message -> Create Thread). Prefix a line with // to
+          leave a note without getting a reply. Slash commands work here too.
         bot_only: false

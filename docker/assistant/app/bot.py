@@ -24,7 +24,10 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from .chat import CHAT_SYSTEM, Turn, build_messages, clean_bot_text, is_ignorable
+from .chat import (
+    CHAIN, CHAT_SYSTEM, SINGLE, THREAD, Turn, build_messages, clean_bot_text,
+    context_mode, is_ignorable,
+)
 from .config import Config
 from .digest import build as build_digest
 from .facts import FactCollector
@@ -149,26 +152,73 @@ class Assistant(discord.Client):
             return False
         return not is_ignorable(message.content or "")
 
-    async def _history(self, channel) -> list[Turn]:
-        """Read the conversation back out of Discord, oldest last.
+    def _to_turn(self, message: discord.Message) -> Turn | None:
+        """One Discord message as a conversation turn, or None if it's noise."""
+        content = message.content or ""
+        if message.author.id == (self.user.id if self.user else None):
+            content = clean_bot_text(content)
+            role = "assistant"
+        elif message.author.bot or is_ignorable(content):
+            return None
+        else:
+            role = "user"
+        content = content.strip()
+        return Turn(role=role, content=content) if content else None
 
-        Discord is the store — see chat.py. Over-fetch a little, because
-        ignorable messages and empty ones are filtered out afterwards.
+    async def _thread_turns(self, channel) -> list[Turn]:
+        """Everything said in this thread, oldest first.
+
+        Over-fetches, because ignorable and empty messages are dropped after.
         """
         turns: list[Turn] = []
         async for msg in channel.history(limit=self.cfg.chat_history_turns * 2):
-            content = msg.content or ""
-            if msg.author.id == (self.user.id if self.user else None):
-                content = clean_bot_text(content)
-                role = "assistant"
-            elif msg.author.bot or is_ignorable(content):
-                continue
-            else:
-                role = "user"
-            if content.strip():
-                turns.append(Turn(role=role, content=content.strip()))
+            if (turn := self._to_turn(msg)) is not None:
+                turns.append(turn)
         turns.reverse()          # history() yields newest-first
         return turns
+
+    async def _chain_turns(self, message: discord.Message) -> list[Turn]:
+        """Walk the reply chain back from `message`, oldest first.
+
+        Each hop may cost an API call, so it is capped and guards against a
+        cycle. `reference.resolved` is used when Discord already cached the
+        parent, which is the common case for a recent exchange.
+        """
+        collected: list[discord.Message] = []
+        current: discord.Message | None = message
+        seen: set[int] = set()
+
+        while current is not None and len(collected) < self.cfg.chat_history_turns:
+            collected.append(current)
+            ref = current.reference
+            if ref is None or ref.message_id is None or ref.message_id in seen:
+                break
+            seen.add(ref.message_id)
+            resolved = ref.resolved
+            if isinstance(resolved, discord.Message):
+                current = resolved
+                continue
+            try:
+                current = await current.channel.fetch_message(ref.message_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as exc:
+                log.debug("reply chain stops early: %s", exc)
+                break
+
+        collected.reverse()
+        return [t for m in collected if (t := self._to_turn(m)) is not None]
+
+    async def _context_for(self, message: discord.Message) -> tuple[list[Turn], str]:
+        """Gather the conversation for this message, per the rule in chat.py."""
+        mode = context_mode(
+            in_thread=isinstance(message.channel, discord.Thread),
+            is_reply=message.reference is not None,
+        )
+        if mode == THREAD:
+            return await self._thread_turns(message.channel), THREAD
+        if mode == CHAIN:
+            return await self._chain_turns(message), CHAIN
+        turn = self._to_turn(message)
+        return ([turn] if turn else []), SINGLE
 
     async def on_message(self, message: discord.Message) -> None:
         if not self._should_handle(message):
@@ -176,10 +226,11 @@ class Assistant(discord.Client):
 
         channel = message.channel
         try:
-            turns = await self._history(channel)
+            turns, mode = await self._context_for(message)
         except discord.HTTPException as exc:
-            log.warning("could not read history: %s", exc)
-            turns = [Turn(role="user", content=(message.content or "").strip())]
+            log.warning("could not read context: %s", exc)
+            turns, mode = [Turn(role="user", content=(message.content or "").strip())], SINGLE
+        log.info("chat: %s context, %d turn(s)", mode, len(turns))
 
         messages = build_messages(
             turns,

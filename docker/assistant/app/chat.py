@@ -54,6 +54,40 @@ CHAT_SYSTEM = (
 )
 
 
+# --- How much context, and from where -----------------------------------------
+
+# Rolling channel history was the first attempt and it was wrong: two unrelated
+# questions typed into the same channel contaminate each other, and there is no
+# way to end a conversation short of waiting for it to scroll away.
+#
+# Discord already has the right primitives, so the rule follows them rather than
+# inventing one. Where you type decides what the model remembers:
+#
+#   in a thread   ->  the whole thread. Threads (and forum posts, which are
+#                     threads) are the persistence unit: titled, listed, and
+#                     scoped. This is the "individual chat with its own context".
+#   a reply       ->  walk the reply chain. Picks up an exchange without
+#                     ceremony, and the chain is exactly what you can see.
+#   anything else ->  just this message. A one-off question stays a one-off and
+#                     leaves no residue for the next one.
+#
+# The nice property is that it needs no commands and no state: the context is
+# always visibly implied by where the message sits.
+
+THREAD = "thread"
+CHAIN = "chain"
+SINGLE = "single"
+
+
+def context_mode(in_thread: bool, is_reply: bool) -> str:
+    """Which context rule applies. Thread membership wins over reply-ness —
+    inside a thread the whole thread is the conversation, so a reply there adds
+    nothing."""
+    if in_thread:
+        return THREAD
+    return CHAIN if is_reply else SINGLE
+
+
 @dataclass(frozen=True)
 class Turn:
     """One message in the conversation, already reduced to what the model needs."""

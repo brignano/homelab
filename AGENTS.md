@@ -102,9 +102,12 @@ categories/channels/permissions and `--provision` converges the server to it
 Creating the server, creating the bot, and restricting a command to a channel
 all require a *user* login and stay manual; everything else is in git.
 
-Conversational `#chat` keeps its memory **in Discord** — the bot re-reads recent
-channel messages as context rather than holding state, so it is restart-safe and
-what you see in the channel is exactly what the model sees. It needs the Message
+Conversational `#chat` keeps its memory **in Discord** — the bot re-reads
+messages as context rather than holding state, so it is restart-safe and what you
+see is exactly what the model sees. *Where* you type decides the scope: a plain
+message is a one-off, a reply walks its reply chain, and a message in a thread
+reads the whole thread. Threads (and forum posts, which are threads) are the
+persistence unit for a named conversation. It needs the Message
 Content intent, narrowed in code to one channel and the user allowlist; the
 first check in `_should_handle` ignores bots (including itself), which is what
 prevents an infinite self-reply loop.

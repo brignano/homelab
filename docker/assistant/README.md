@@ -45,22 +45,40 @@ costs nothing either. Slow is only expensive when you're watching it.
 Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —
 type, get a reply, reply back, and it follows the conversation.
 
+**Where you type decides what it remembers.** There is no command and no state
+to manage — the context is always visibly implied by where the message sits:
+
+| Where | Context | For |
+|-------|---------|-----|
+| plain message in the channel | **just that message** | a one-off question that leaves no residue |
+| **reply** to a message | **that reply chain** | picking a thread of conversation back up, no ceremony |
+| inside a **thread** | **the whole thread** | a named, persistent conversation with its own memory |
+
+Rolling channel history was the first attempt and it was wrong: two unrelated
+questions in the same channel contaminated each other, and there was no way to
+end a conversation short of waiting for it to scroll away. Following Discord's
+own primitives fixes that and needs no extra concepts.
+
+> **Threads are the persistence unit.** Right-click any message → *Create
+> Thread*, name it, and it becomes a scoped conversation you can come back to
+> days later. Point `DISCORD_CHAT_CHANNEL_ID` at a **forum channel** instead and
+> every post is one of these by construction — a browsable list of titled
+> conversations. That works today with no code change, because a forum post
+> *is* a thread; create the forum channel by hand in Discord.
+
 **The memory lives in Discord, not in the bot.** No store, no database, no
-in-process state: when a message arrives the bot reads the last few messages out
-of the channel and hands them to the model as the conversation. That means:
+in-process state — the bot reads the relevant messages back out of Discord each
+time. That means:
 
 - **Restart-safe.** Rebuild the container mid-conversation and it picks up
   where it was — the history was never in the container.
 - **What you see is what it sees.** Delete a message and it leaves the context.
   Scrolling up *is* reading the model's working memory.
-- **Threads are separate conversations for free.** A thread has its own history,
-  so it's its own context with no bookkeeping. Use one for a side topic, or for
-  a long paste you don't want polluting the main thread.
 - **`//` is an escape hatch.** A line starting with `//` gets no reply and stays
   out of the context — for notes, links and asides.
 
-History is capped by both a turn count and a character budget
-(`CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`). Prompt evaluation is CPU-bound and
+Thread history and reply chains are both capped by a turn count and a character
+budget (`CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`). Prompt evaluation is CPU-bound and
 roughly linear in tokens, so an unbounded memory would make every reply slower
 than the last. Trimming drops the *oldest* turns; the newest message is always
 kept, since it's the one being answered.
