@@ -135,14 +135,24 @@ jobs:
         # directive the compiled-in plugins do not provide (stock Caddy dies on
         # `acme_dns cloudflare` right here), without needing a single secret.
         #
-        # HOMELAB_DOMAIN is still set because the adapter substitutes it into the
-        # site addresses; unset, every site block would be named `stats.` and the
-        # check would be testing something we never deploy.
+        # Both env vars must be set, for different reasons, and dropping either
+        # fails the run:
+        #
+        #   HOMELAB_DOMAIN     the adapter substitutes it into every site address.
+        #                      Unset, the blocks become `stats.`, `chat.` and so
+        #                      on — a config we never deploy.
+        #   CLOUDFLARE_API_TOKEN  `acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}`
+        #                      expands to nothing and the directive is rejected
+        #                      at adapt time with "missing API token". The value
+        #                      only has to be non-empty: the check that cares
+        #                      what a token *looks like* runs during provisioning,
+        #                      which `adapt` never reaches.
         #
         # The Caddyfile is bind-mounted at runtime rather than baked into the
         # image, so it is mounted here the same way.
         run: |
           docker run --rm \
             -e HOMELAB_DOMAIN=example.com \
+            -e CLOUDFLARE_API_TOKEN=ci \
             -v "$PWD/docker/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             homelab-caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null

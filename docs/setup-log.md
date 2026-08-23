@@ -75,9 +75,17 @@ serves the household's DNS.
   credential-shaped secret in CI to say anything at all, which means either
   putting a live Cloudflare token there or testing a fake. `caddy adapt` stops
   at Caddyfile → JSON, which is the right boundary: it still catches syntax
-  errors and missing plugin directives, and needs no secrets. Worth noting what
-  the failure *did* prove — the log shows `adapted config to JSON` before the
-  provisioning error, so the Caddyfile itself was never in question.
+  errors and missing plugin directives, and needs no *valid* secrets. Worth
+  noting what the failure *did* prove — the log shows `adapted config to JSON`
+  before the provisioning error, so the Caddyfile itself was never in question.
+- **Then it went red a second time, for the opposite reason.** Having decided
+  the token was not needed, dropping it entirely fails earlier still:
+  `acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}` expands to nothing and the
+  directive is rejected at *adapt* time with "missing API token". So the token
+  must be present but need not be well-formed — presence is checked by the
+  adapter, format by the provisioner. Two failures, two different stages, and
+  the first run's log was what proved the fix: it had already adapted cleanly
+  with exactly this value.
 
 **Verification:**
 - `repo-sync.sh` exercised against a throwaway origin and a stubbed `docker`,
