@@ -135,6 +135,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Blackbox probes hit a path Caddy answers 200
+        # Text-only, so it runs before the image build and fails in seconds.
+        #
+        # Caddy routes by Host header and blackbox probes it by container name,
+        # which matches no service site. A probe of `http://caddy/` therefore
+        # got a 404 and Grafana paged Discord about a healthy proxy, day after
+        # day. The probe target and the block that answers it live in different
+        # files; this keeps them in step. See scripts/check-probes.sh.
+        run: ./scripts/check-probes.sh
+
       - name: Build the proxy image
         # The real image, not stock Caddy. The Caddyfile uses directives that
         # only exist once the sablier and cloudflare plugins are compiled in —

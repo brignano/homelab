@@ -27,6 +27,75 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-24 — Caddy was never down; the probe was asking the wrong question
+
+**Goal:** Stop `#alerts` filling with "Service endpoint unreachable — Probe
+failing for http://caddy/" several times a day. Caddy was up the whole time and
+every service behind it was reachable, so the alert was pure noise — and noise
+in the only channel that pages you is worse than no channel at all.
+
+**Steps:**
+1. Traced the probe end to end. `prometheus.yml` pointed blackbox at
+   `http://caddy:80/`. blackbox reaches Caddy over the Docker network, so the
+   Host header it sends is the literal container name, `caddy`.
+2. Read the Caddyfile against that. Every site block is either
+   `<name>.{$HOMELAB_DOMAIN}` or `http://<name>.home` — nothing matches a Host
+   of `caddy`, and Caddy answers an unmatched Host with an empty 404.
+3. Read the blackbox config against *that*. `http_2xx` has
+   `valid_status_codes: []`, which means only a 2xx passes. 404 → `probe_success 0`
+   → the rule's `for: 2m` elapses → firing, permanently.
+4. Added a `http://caddy` site block serving `/health` as a 200, with `handle`
+   blocks rather than bare `respond`s so the match order is explicit rather than
+   inherited from directive sorting.
+5. Repointed the probe at `http://caddy/health`, bringing it in line with every
+   other target in the job — all of which already ask for a real health endpoint
+   (`/api/health`, `/-/healthy`, `/ready`).
+6. Added `scripts/check-probes.sh` and wired it into the `caddy` CI job ahead of
+   the image build.
+
+**Issues encountered:**
+- The alert *looked* intermittent — "a few times a day" — which sent the first
+  guess toward flapping, restarts or DNS. It was not intermittent at all. The
+  alert had been firing continuously since the probe was added; what arrived a
+  few times a day was the notification policy's `repeat_interval: 4h`
+  re-notifying the same never-resolving alert. Six a day, evenly spaced. Worth
+  remembering: a repeating Discord message is not evidence of a repeating
+  failure.
+- Caddy is the only probe target that is a *router* rather than an application.
+  The others answer on any Host because they only serve one thing; Caddy
+  deliberately answers nothing it was not told to serve. The bare `/` that works
+  fine for Portainer and Ollama could never have worked here.
+
+**Resolution:**
+- `docker/proxy/Caddyfile` — new "Health check" section: `http://caddy` serving
+  `/health` 200, everything else 404. Declared `http://` so Caddy never attempts
+  ACME for a container name, and unreachable from the LAN or tailnet, where
+  requests always carry a real hostname.
+- `docker/monitoring/prometheus/prometheus.yml` — target is now
+  `http://caddy/health`.
+- `scripts/check-probes.sh` — fails if a blackbox target aimed at `caddy` has no
+  `handle <path>` answering 200 in the Caddyfile. This is the same
+  two-files-one-fact drift `check-dashboard.sh` guards, so it is guarded the same
+  way: delete the health block or move the probe, and CI goes red instead of
+  Discord.
+
+**Notes / next steps:**
+- Deploy: `cd docker/proxy && docker compose restart caddy`, then reload
+  Prometheus (`curl -X POST http://localhost:9090/-/reload`).
+- Verify from the box before trusting it:
+  `docker exec blackbox-exporter wget -qSO- 'http://localhost:9115/probe?target=http://caddy/health&module=http_2xx' | grep probe_success`
+  → must be `1`. The Discord "Resolved" message should follow within ~2 minutes.
+- The old alert will resolve on its own: `instance` is part of the alert's
+  identity and it changed, so Grafana retires `http://caddy:80/` rather than
+  transitioning it.
+- Open question for another day: `repeat_interval: 4h` is what turned one bad
+  probe into ~180 messages a month. It is the right setting for an alert you
+  must not miss, but it means every false positive is amplified six-fold. Worth
+  revisiting only if a second one shows up — the fix for a wrong alert is a right
+  alert, not a quieter one.
+
+---
+
 ## 2026-08-24 — The ntfy contact point outlived its deletion
 
 **Goal:** Finish the job the previous entry claimed was done. Removing the ntfy

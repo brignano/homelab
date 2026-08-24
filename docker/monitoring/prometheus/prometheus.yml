@@ -58,7 +58,11 @@ scrape_configs:
           - http://portainer:9000/
           - http://open-webui:8080/
           - http://ollama:11434/
-          - http://caddy:80/
+          # /health, not /, and the path matters: a bare / carries the Host
+          # header `caddy`, which matches no site block and gets a 404 — a
+          # failed probe against a healthy proxy. docker/proxy/Caddyfile
+          # serves this one path 200 for exactly this reason.
+          - http://caddy/health
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

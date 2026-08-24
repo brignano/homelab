@@ -86,6 +86,37 @@ kali.{$HOMELAB_DOMAIN} {
 	}
 }
 
+# ── Health check ────────────────────────────────────────────────────────────
+# The one site addressed by container name rather than by hostname, and it
+# exists for blackbox-exporter alone.
+#
+# blackbox probes over the Docker network, so the URL it fetches is
+# `http://caddy/...` and the Host header it sends is the literal string `caddy`.
+# That matches none of the sites above — they are all `<name>.$HOMELAB_DOMAIN`
+# or `*.home` — and Caddy answers an unmatched Host with 404. blackbox's
+# `http_2xx` module counts anything that is not a 2xx as a failed probe, so the
+# "Service endpoint unreachable" alert fired against a perfectly healthy Caddy,
+# round the clock, from the day the probe was added.
+#
+# So give the probe a Host that Caddy actually serves. Answering here at all
+# proves what the probe is for: the process is up, listening on :80, and routing
+# requests. It is deliberately not a redirect and not a proxy — nothing about
+# this endpoint should depend on a backend or a certificate, or the uptime check
+# starts reporting on something other than Caddy.
+#
+# `http://` on purpose: `caddy` is a container name, no public CA will ever
+# issue for it, and Caddy must not try. Reachable only from inside the Docker
+# networks — a request from the LAN or tailnet arrives with a real hostname in
+# the Host header and never lands here.
+http://caddy {
+	handle /health {
+		respond "OK" 200
+	}
+	handle {
+		respond 404
+	}
+}
+
 # ── Legacy *.home names ─────────────────────────────────────────────────────
 # Kept so existing bookmarks, shell aliases and the dev machines' MCP config
 # keep working. They are declared `http://` on purpose: `.home` is not a real

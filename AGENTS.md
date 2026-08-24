@@ -90,6 +90,12 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   page you.
 - When adding an alert path, ask which failures it can *not* report, and where
   that one is observed from.
+- **Blackbox probes must target a path the service answers 2xx on.** The
+  `http_2xx` module treats anything else — including a 404 or a redirect — as
+  down. This matters most for Caddy, which routes by Host header and sees the
+  container name `caddy` from inside Docker: it serves `/health` for the probe
+  and 404s everything else, and `scripts/check-probes.sh` keeps the two files in
+  step.
 
 ## Local LLM usage
 
