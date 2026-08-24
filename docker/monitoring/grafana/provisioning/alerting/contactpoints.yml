@@ -12,6 +12,28 @@ apiVersion: 1
 # With ntfy gone this is the only path Grafana has, so DISCORD_ALERT_WEBHOOK is
 # `:?required` in docker-compose.yml: the stack refuses to start rather than
 # come up alerting into the void.
+
+# Deleting a receiver from this file does NOT delete it from Grafana. File
+# provisioning upserts by uid; anything already in Grafana's database that
+# simply stops being mentioned is left alone, shown as "Unused", and cannot be
+# removed from the UI either (the Delete button is greyed out on provisioned
+# resources). So dropping the ntfy receiver in the previous commit was a no-op
+# against the running instance: it kept firing at http://ntfy:80, which no
+# longer exists. This is the directive that actually removes it.
+#
+# Safe to keep permanently — a uid that is already gone (or was never there, as
+# on a fresh install) deletes as a no-op, so this converges either way. It can
+# be dropped once every Grafana instance this repo provisions has restarted at
+# least once with it in place.
+#
+# Deletion is by *receiver* uid, not contact-point name. `homelab` itself must
+# survive: policies.yml routes to it by name, and Grafana rejects deleting a
+# contact point a route still points at. Removing one of two receivers leaves
+# the name in place, backed by discord_webhook.
+deleteContactPoints:
+  - orgId: 1
+    uid: ntfy_webhook
+
 contactPoints:
   - orgId: 1
     name: homelab

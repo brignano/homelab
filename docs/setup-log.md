@@ -27,6 +27,60 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-24 — The ntfy contact point outlived its deletion
+
+**Goal:** Finish the job the previous entry claimed was done. Removing the ntfy
+receiver from `contactpoints.yml` turned out not to remove it from Grafana, so
+the running instance still held a receiver pointing at a container that no
+longer exists.
+
+**Steps:**
+1. Added a `deleteContactPoints:` block to `contactpoints.yml` naming
+   `uid: ntfy_webhook` — the directive that actually deletes, as opposed to
+   just ceasing to mention.
+2. Documented both traps in `docker/monitoring/README.md`, plus a
+   `curl`-the-provisioning-API check for what Grafana actually holds.
+
+**Issues encountered:**
+- **File provisioning upserts; it does not sync.** Removing a resource from a
+  provisioning file leaves it in Grafana's database, shown as "Unused". The UI
+  will not let you delete it either, because provisioned resources have the
+  Delete button greyed out — so the state is reachable only by config, and the
+  config that created it no longer mentions it. Deletion requires
+  `deleteContactPoints:` with the uid.
+- **`docker compose up -d` was a no-op on Grafana, and looked like a success.**
+  `provisioning/` is bind-mounted and only read at startup. Editing files under
+  it does not change the container's config hash, so compose printed
+  `✔ Container grafana  Running` and moved on. The deploy appeared clean while
+  changing nothing about alerting. `docker compose restart grafana` is required.
+- **Neither trap was visible from CI.** Every check passed on the PR, because
+  every check validates *files* — YAML parses, compose interpolates, Caddy
+  adapts. Nothing asserts anything about the state of a live Grafana, so a
+  provisioning change that is syntactically perfect and semantically inert is
+  exactly the class of bug this repo's CI cannot see.
+
+**Resolution:**
+- `docker compose restart grafana`, then confirm via
+  `/api/v1/provisioning/contact-points` that `discord_webhook` is the only uid.
+- Deleting by *receiver* uid rather than contact-point name matters here:
+  `policies.yml` routes to the name `homelab`, and Grafana refuses to delete a
+  contact point a route still points at. Dropping one of two receivers leaves
+  the name intact, backed by `discord_webhook`.
+
+**Notes / next steps:**
+- The `deleteContactPoints` block is safe to keep: deleting an absent uid is a
+  no-op, so a fresh install converges to the same place. It can go once every
+  provisioned instance has restarted with it at least once.
+- Worth remembering for the parked backups work, which will provision alert
+  rules: the same upsert semantics apply to `deleteRules:`.
+- Open question not chased here: `docker volume rm monitoring_ntfy_data`
+  returned "no such volume" on CT 100, and no orphan container was removed
+  either, which suggests ntfy was not running under this compose project at the
+  time. Harmless — nothing to clean up — but the name is worth confirming
+  against `docker volume ls` before assuming the data is gone.
+
+---
+
 ## 2026-08-24 — Alerting consolidated to Discord; ntfy removed
 
 **Goal:** Drop the ntfy phone app. Alerts had been fanning out to both ntfy

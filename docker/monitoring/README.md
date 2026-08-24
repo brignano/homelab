@@ -67,6 +67,15 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
 - **Alerts**: Grafana → Alerting → Contact points → test `homelab`; a message
   should land in Discord `#alerts`. Since this is now the only delivery path,
   re-run this test after any change to the webhook.
+- **Contact points are what the file says**: the list should show `homelab`
+  with exactly one integration (Discord). A leftover marked "Unused" means a
+  provisioning deletion did not apply — see the note below.
+  ```bash
+  # Every provisioned receiver uid Grafana currently holds:
+  curl -su admin:"$GRAFANA_ADMIN_PASSWORD" \
+    localhost:3000/api/v1/provisioning/contact-points \
+    | python3 -c 'import json,sys; [print(c["uid"], c["type"], c["name"]) for c in json.load(sys.stdin)]'
+  ```
 
 ## Notes
 
@@ -78,3 +87,14 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
   removed once Discord covered the same ground — see `docs/setup-log.md`. The
   box being *down* is still covered from off-box by `scripts/heartbeat.sh`,
   whose Healthchecks.io check alerts the same `#alerts` channel.
+- **Changing alert provisioning needs a Grafana restart, and deletions need a
+  directive.** Two separate traps, both silent:
+  1. `grafana/provisioning/` is bind-mounted and read only at Grafana startup.
+     Editing a file under it does not change the container's config hash, so
+     `docker compose up -d` reports `Running` and changes nothing. Use
+     `docker compose restart grafana`.
+  2. File provisioning **upserts**. Removing a contact point, receiver or rule
+     from a file does not delete it from Grafana's database — it lingers,
+     marked "Unused", and the UI will not let you delete a provisioned resource
+     either. Deletion needs an explicit `deleteContactPoints:` (or
+     `deleteRules:`) block naming the uid. See `contactpoints.yml`.
