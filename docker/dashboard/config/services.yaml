@@ -20,12 +20,6 @@
         description: Dashboards, metrics and alert rules
         icon: grafana.png
 
-    - ntfy:
-        href: https://alerts.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://alerts.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Push notifications for alerts
-        icon: ntfy.png
-
     - Portainer:
         href: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://apps.{{HOMEPAGE_VAR_DOMAIN}}

@@ -27,10 +27,11 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       # External URL so alert links (silence, dashboard) are clickable from phones
       GF_SERVER_ROOT_URL: http://stats.home
-      # Interpolated into provisioning/alerting/contactpoints.yml. Empty is
-      # allowed (ntfy still works) but then Discord alerts silently go nowhere,
-      # so verify with the test button after setting it.
-      DISCORD_ALERT_WEBHOOK: ${DISCORD_ALERT_WEBHOOK:-}
+      # Interpolated into provisioning/alerting/contactpoints.yml. Required,
+      # not optional: since ntfy was removed this is the ONLY way an alert
+      # reaches you, so an empty value means the stack comes up monitoring
+      # nothing and saying nothing. Fail at `up` instead, where it is visible.
+      DISCORD_ALERT_WEBHOOK: ${DISCORD_ALERT_WEBHOOK:?required}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
@@ -148,35 +149,11 @@ services:
     depends_on:
       - loki
 
-  # --- Self-hosted push notifications for alerts ---
-  ntfy:
-    image: binwiederhier/ntfy:latest
-    container_name: ntfy
-    restart: unless-stopped
-    command: serve
-    environment:
-      NTFY_BASE_URL: ${NTFY_BASE_URL:?required}
-      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
-      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
-      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
-      # Forwards iOS poll requests to ntfy.sh so APNs can wake the app
-      # (only a wake-up poke leaves the server; message bodies stay local).
-      NTFY_UPSTREAM_BASE_URL: https://ntfy.sh
-      NTFY_BEHIND_PROXY: "true"
-    volumes:
-      - ntfy_data:/var/lib/ntfy
-    ports:
-      - "${NTFY_PORT:-8090}:80"
-    networks:
-      - monitoring
-      - proxy
-
 volumes:
   prometheus_data:
   grafana_data:
   loki_data:
   alloy_data:
-  ntfy_data:
 
 networks:
   monitoring:

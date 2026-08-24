@@ -52,11 +52,6 @@ dns.{$HOMELAB_DOMAIN} {
 	reverse_proxy adguard:80
 }
 
-# ntfy — push notifications for monitoring alerts
-alerts.{$HOMELAB_DOMAIN} {
-	reverse_proxy ntfy:80
-}
-
 # Grafana MCP server — read-only metrics/logs/alerts for Claude Code.
 # Tailscale is the network boundary; this bearer check is the app-layer guard
 # (mcp-grafana has no built-in endpoint auth). The Viewer-scoped Grafana service

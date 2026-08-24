@@ -39,7 +39,6 @@ Planned Proxmox LXC container for Docker workloads:
 | blackbox-exporter | `docker/monitoring/` | internal (+ `core`/`ai`/`proxy`) |
 | Loki | `docker/monitoring/` | internal (log store) |
 | Alloy | `docker/monitoring/` | internal (log shipper) |
-| ntfy | `docker/monitoring/` | LAN + tailnet (alerts, `:8090`) |
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
@@ -76,8 +75,8 @@ Planned Proxmox LXC container for Docker workloads:
 
 ## Alerting
 
-**Nothing that runs on CT 100 can tell you CT 100 is down.** Grafana, ntfy and
-the assistant bot all live on the machine they watch, so a dead host is silent.
+**Nothing that runs on CT 100 can tell you CT 100 is down.** Grafana and the
+assistant bot both live on the machine they watch, so a dead host is silent.
 That gap is closed from outside by `scripts/heartbeat.sh` — a dead man's switch
 that pings Healthchecks.io from cron, so *silence* is the signal. See
 [`docs/design/tsd-alerting-off-box.md`](docs/design/tsd-alerting-off-box.md).
@@ -85,6 +84,10 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
 - `#alerts` in Discord is fed by **webhooks only** (Grafana + Healthchecks),
   never by the assistant bot — routing through the bot would reintroduce the
   dependency the design removes.
+- **Discord is the only delivery path.** ntfy was removed once Discord covered
+  the same ground; `DISCORD_ALERT_WEBHOOK` is therefore `:?required` in
+  `docker/monitoring/docker-compose.yml` so the stack cannot start unable to
+  page you.
 - When adding an alert path, ask which failures it can *not* report, and where
   that one is observed from.
 
@@ -126,7 +129,7 @@ Two rules when extending it:
   when Ollama is down; unreadable data is reported, never rendered as "all clear".
 
 ## Planned / proposals (not yet deployed)
-- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would reuse the existing ntfy (`alerts.home`); only Healthchecks is net-new.
+- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would alert via the Discord `#alerts` webhook (the plan originally said ntfy, which has since been removed); only Healthchecks is net-new.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
 
 ## Custom commands
