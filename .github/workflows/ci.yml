@@ -69,7 +69,7 @@ jobs:
       PVE_TOKEN_NAME: ci
       PVE_TOKEN_VALUE: ci
       POSTGRES_EXPORTER_DSN: ci
-      NTFY_BASE_URL: http://ntfy.invalid
+      DISCORD_ALERT_WEBHOOK: https://discord.invalid/api/webhooks/ci
       HOMELAB_DOMAIN: example.com
       CLOUDFLARE_API_TOKEN: ci
       CLOUDFLARE_TUNNEL_TOKEN: ci

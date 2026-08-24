@@ -41,7 +41,6 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 | https://stats.`$HOMELAB_DOMAIN` | Grafana | Dashboards & metrics |
 | https://apps.`$HOMELAB_DOMAIN` | Portainer | Docker management |
 | https://dns.`$HOMELAB_DOMAIN` | AdGuard Home | DNS admin & ad blocking |
-| https://alerts.`$HOMELAB_DOMAIN` | ntfy | Monitoring push notifications |
 | https://mcp.`$HOMELAB_DOMAIN` | Grafana MCP | Read-only telemetry for Claude Code (bearer-gated) |
 | https://kali.`$HOMELAB_DOMAIN` | Kali Linux (webtop) | On-demand security desktop (boots on visit, scales to zero) |
 

@@ -27,6 +27,63 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-24 — Alerting consolidated to Discord; ntfy removed
+
+**Goal:** Drop the ntfy phone app. Alerts had been fanning out to both ntfy
+(push over the tailnet) and Discord `#alerts` since the off-box alerting work,
+and everything was in practice being read in Discord — so ntfy was a container,
+a volume, a Caddy route and an app on the phone all serving a path nobody
+looked at.
+
+**Steps:**
+1. Removed the `ntfy_webhook` receiver from `contactpoints.yml`, leaving the
+   `homelab` contact point with Discord alone. `policies.yml` was untouched —
+   it targets the contact point, not the receiver.
+2. Deleted the `ntfy` service and its `ntfy_data` volume from
+   `docker/monitoring/docker-compose.yml`, the `alerts.*` site block from
+   `docker/proxy/Caddyfile`, the tile from `docker/dashboard/config/services.yaml`,
+   and `NTFY_BASE_URL` / `NTFY_PORT` from `.env.example`.
+3. Promoted `DISCORD_ALERT_WEBHOOK` from `${VAR:-}` to `${VAR:?required}`.
+4. Swapped the `NTFY_BASE_URL` stub in `.github/workflows/ci.yml` for a
+   `DISCORD_ALERT_WEBHOOK` one, since the required-var set changed.
+5. Marked the **ntfy stays** decision in
+   [`tsd-alerting-off-box.md`](design/tsd-alerting-off-box.md) superseded rather
+   than editing it out.
+
+**Issues encountered:**
+- **The webhook had been optional on purpose, and that stopped being safe.**
+  The old comment in `docker-compose.yml` said an empty `DISCORD_ALERT_WEBHOOK`
+  was allowed because "ntfy still works". Remove ntfy and that same default
+  turns into a monitoring stack that starts cleanly, evaluates every rule, and
+  delivers nothing — the worst failure mode available, because the dashboards
+  all look fine. Hence step 3.
+- **CI would have caught it, one commit too late.** The compose job supplies
+  throwaway values for exactly the `:?required` vars; adding a new one without
+  listing it there fails the run. That is the check working as designed, but it
+  meant the required-var change and the CI change had to land together.
+
+**Resolution:**
+- Grafana → Alerting → Contact points → test `homelab` is now the single check
+  that matters, and it is the one to re-run after any webhook change.
+- Deployment on the box is not just `up -d`: the ntfy container and its volume
+  outlive the compose change and have to be reaped explicitly (see below).
+
+**Notes / next steps:**
+- On CT 100: `docker compose up -d --remove-orphans` in `docker/monitoring/`,
+  then `docker volume rm monitoring_ntfy_data` once the container is gone.
+  Reload Caddy for the dropped `alerts.*` route. Then delete the phone app and
+  the `alerts` DNS entry if one was pinned outside the wildcard.
+- **Discord is now a single point of delivery**, which is a real reduction in
+  redundancy and worth being honest about. The mitigation is that the failure it
+  most plausibly hides — the box or its uplink dying — is precisely what
+  `heartbeat.sh` catches from off-box, and Healthchecks alerts the same channel
+  by an independent path. A Discord-wide outage would still be silent; accepted.
+- The parked backups plan (`tsd-backups-and-monitoring.md`) assumed job alerts
+  would reuse ntfy. It should use the `#alerts` webhook instead; the note in
+  `AGENTS.md` now says so.
+
+---
+
 ## 2026-08-23 — A landing page, and CI to stop it drifting
 
 **Goal:** Seven subdomains and growing, none of them memorable. One URL to start

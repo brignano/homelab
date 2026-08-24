@@ -7,9 +7,9 @@
 # Why this exists
 # ---------------
 # Every other alerting path in this lab runs ON the machine it watches:
-# Grafana evaluates the rules, ntfy delivers the push, and the assistant bot
-# posts the digest — all inside CT 100. When the box goes down, all three go
-# down with it and nothing tells you. A monitoring system cannot report its own
+# Grafana evaluates the rules and fires the Discord webhook, and the assistant
+# bot posts the digest — all inside CT 100. When the box goes down, both go down
+# with it and nothing tells you. A monitoring system cannot report its own
 # death.
 #
 # So this inverts the logic. The box pings OUT on a schedule and Healthchecks

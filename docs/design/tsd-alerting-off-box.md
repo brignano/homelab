@@ -72,7 +72,7 @@ that case alerts immediately instead of waiting out the grace period.
 
 | Failure | Caught by | How |
 |---------|-----------|-----|
-| Service down, disk full, endpoint unreachable | Grafana | rules → ntfy + Discord |
+| Service down, disk full, endpoint unreachable | Grafana | rules → Discord webhook |
 | Docker wedged, monitoring stack down | heartbeat | `/fail` ping |
 | **Whole box down / network down** | **heartbeat** | **pings stop → Healthchecks alerts** |
 | Assistant bot down | Grafana | Discord webhook is independent of the bot |
@@ -87,10 +87,19 @@ account later covers backup-job monitoring — which is what
 [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) already
 identified as its only net-new component.
 
-**ntfy stays.** Discord is now the place to read things, but keeping ntfy costs
+**ntfy stays.** ~~Discord is now the place to read things, but keeping ntfy costs
 nothing and preserves a delivery path that does not depend on Discord being up
 or on having an internet connection at all. Redundancy at the notification
-layer is cheap; losing it to tidiness is not worth it.
+layer is cheap; losing it to tidiness is not worth it.~~
+
+> **Superseded 2026-08-24 — ntfy removed; alerting is Discord-only.** The
+> redundancy was only real if the second path was actually watched, and it was
+> not: reading alerts had moved entirely to Discord, leaving ntfy as a server,
+> a Caddy route and a phone app kept alive for a path nobody looked at. The
+> offline-delivery argument also assumed a reader on the tailnet at the time of
+> the alert, which is the same box-is-up assumption this TSD exists to distrust
+> — the case it was supposed to cover is the one `heartbeat.sh` covers from
+> off-box. See `docs/setup-log.md`, 2026-08-24.
 
 **A webhook, not the bot, feeds `#alerts`.** Routing alerts through the
 assistant would reintroduce exactly the dependency this TSD removes.
