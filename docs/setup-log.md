@@ -27,6 +27,68 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-30 — The Caddy probe fix had been on disk for six days and never reached the container
+
+**Goal:** Find out why `#alerts` was still firing about Caddy after two correct
+fixes had been merged. Answered on the box this time, not from the repo.
+
+**Steps:**
+1. Ran `scripts/probe-status.sh` on CT 100. It printed the answer in three
+   lines: `http://caddy/health` **NOT SCRAPED**, `http://caddy:80/` still a live
+   series with **0 state changes in 6h**, and a live probe of
+   `http://caddy/health` returning **HTTP 200**.
+2. Compared the container's config against the host's:
+   ```
+   $ docker exec prometheus grep -n caddy /etc/prometheus/prometheus.yml
+   61:          - http://caddy:80/                  # the file from 2026-08-24
+   $ grep -n caddy docker/monitoring/prometheus/prometheus.yml
+   65:          - http://caddy/health               # the file on disk
+   $ curl -i -X POST http://localhost:9090/-/reload
+   HTTP/1.1 200 OK
+   ```
+3. `docker compose up -d --force-recreate prometheus grafana`.
+
+**Issues encountered:**
+- **A stale single-file bind mount, and every signal said the deploy had
+  worked.** `git pull` reported "Already up to date", `/-/reload` returned 200,
+  CI was green, and Prometheus went on scraping a target that had been replaced
+  six days earlier. Docker resolves a *file* bind mount to an inode when the
+  container is created; git does not edit files in place, it writes a new file
+  and renames it over the old one. So `git pull` gave the path a new inode and
+  left the container mapped to the original, now unlinked. The reload was
+  honest — it re-read the file the container still had.
+- **`docker compose restart` does not fix it either.** Same container, same
+  mounts. Only recreating re-resolves them, and nothing in the deploy notes
+  (including the ones written the same day, in the entry below) said so.
+- This is the whole reason the last two fixes looked wrong. Neither was.
+
+**Resolution:**
+- Recreated Prometheus and Grafana. `http://caddy/health` is scraped, the probe
+  passes, and `http://caddy:80/` is gone.
+- `scripts/probe-status.sh` — when the target list is stale it now diffs the
+  container's `prometheus.yml` against the one on disk and prints the command
+  that actually applies: a reload when the container has the right file, a
+  `--force-recreate` when its mount is stale. Its previous advice was "reload
+  it", which is precisely what does not work here and had already been tried
+  twice.
+- `docker/monitoring/README.md` — a "`restart` and `reload` are not enough after
+  a `git pull`" section with the transcript above, and the note that
+  `grafana/provisioning/` is a *directory* mount and therefore exempt.
+- `AGENTS.md` — recreate, don't restart, for single-file config mounts; prefer a
+  directory mount for new config where the directory holds no secrets.
+
+**Notes / next steps:**
+- The remaining single-file mounts have the same trap: `blackbox.yml`,
+  `loki-config.yml`, `config.alloy` and the Caddyfile. The first three sit in
+  directories containing nothing else and could become directory mounts, which
+  removes the failure mode rather than documenting it. The Caddyfile cannot —
+  `docker/proxy/` holds `.env`.
+- Worth internalising, because it has now cost three sessions: when a fix is
+  merged and the symptom persists, the next question is not "was the fix wrong"
+  but "is the container running it".
+
+---
+
 ## 2026-08-30 — Caddy alerts still arriving: grouping, and the question of whether the fix is running
 
 **Goal:** `#alerts` is still filling with Caddy alerts a week after the probe fix

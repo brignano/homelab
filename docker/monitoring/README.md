@@ -92,7 +92,7 @@ each probe has changed state in the last 6h.
 
 | What it shows | What it means | Fix |
 |---|---|---|
-| `NOT SCRAPED` | Prometheus is running an older config than the repo | `curl -X POST localhost:9090/-/reload` |
+| `NOT SCRAPED` | Prometheus is running an older config than the repo | The script says which: a reload, or a recreate — see below |
 | `DOWN` + 0 state changes | The probe is stuck — it has never passed, so it is asking the wrong question | Point it at a path the service answers 2xx on |
 | `DOWN` + many state changes | The service really is bouncing | Fix the service |
 | Everything `up`, messages continue | Grafana has not reloaded the provisioning | `docker compose restart grafana` |
@@ -101,6 +101,38 @@ A repeating Discord message is **not** evidence of a repeating failure. One
 never-resolving alert produces a message every `repeat_interval` (4h) forever,
 which reads as "firing constantly" and sends you looking for a flap that is not
 there.
+
+### `restart` and `reload` are not enough after a `git pull`
+
+`prometheus.yml`, `blackbox.yml`, `loki-config.yml`, `config.alloy` and the
+Caddyfile are bind-mounted **as single files**, and Docker resolves a file mount
+to an inode when the container is created. git does not edit files in place — it
+writes a new file and renames it over the old one — so `git pull` gives the path
+a new inode and leaves the container mapped to the original, now unlinked.
+
+The container then serves the old config indefinitely, and nothing says so:
+
+```
+$ git pull                                   # Already up to date.
+$ curl -X POST localhost:9090/-/reload       # HTTP/1.1 200 OK
+$ docker exec prometheus grep caddy /etc/prometheus/prometheus.yml
+          - http://caddy:80/                 # ...the file from six days ago
+```
+
+`docker compose restart` does not help either — same container, same mounts.
+**Recreate**, which is what re-resolves the mount:
+
+```bash
+docker compose -f docker/monitoring/docker-compose.yml up -d --force-recreate prometheus
+```
+
+`probe-status.sh` tells this apart from a plain missing reload by diffing the
+container's copy against the one on disk, so you get the right command rather
+than the plausible one.
+
+`grafana/provisioning/` is mounted as a **directory**, which does not have this
+problem — file replacements inside it are visible to the container. It only
+needs `docker compose restart grafana`, because provisioning is read at startup.
 
 ## Notes
 
