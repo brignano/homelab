@@ -77,6 +77,31 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
     | python3 -c 'import json,sys; [print(c["uid"], c["type"], c["name"]) for c in json.load(sys.stdin)]'
   ```
 
+## When `#alerts` is noisy
+
+Start by separating the three things that produce identical-looking Discord
+traffic, because they have opposite fixes:
+
+```bash
+./scripts/probe-status.sh          # run on CT 100, from the repo root
+```
+
+It prints, in order: whether Prometheus is scraping the targets *this checkout*
+declares, what each target answers when probed right now, and how many times
+each probe has changed state in the last 6h.
+
+| What it shows | What it means | Fix |
+|---|---|---|
+| `NOT SCRAPED` | Prometheus is running an older config than the repo | `curl -X POST localhost:9090/-/reload` |
+| `DOWN` + 0 state changes | The probe is stuck — it has never passed, so it is asking the wrong question | Point it at a path the service answers 2xx on |
+| `DOWN` + many state changes | The service really is bouncing | Fix the service |
+| Everything `up`, messages continue | Grafana has not reloaded the provisioning | `docker compose restart grafana` |
+
+A repeating Discord message is **not** evidence of a repeating failure. One
+never-resolving alert produces a message every `repeat_interval` (4h) forever,
+which reads as "firing constantly" and sends you looking for a flap that is not
+there.
+
 ## Notes
 
 - **Capacity & Headroom** dashboard (`grafana/dashboards/homelab-capacity.json`) is a

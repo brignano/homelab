@@ -1,9 +1,43 @@
 apiVersion: 1
 
+# How firing alerts become Discord messages.
+#
+# `group_by` is the setting that decides how *loud* this channel is, and it is
+# easy to get backwards. Alerts sharing every label named here land in one
+# notification group, and a group is re-sent whenever its membership changes —
+# throttled to `group_interval`, not to `repeat_interval`. So the coarser the
+# grouping, the more often each message is re-sent, because more alerts can
+# change it.
+#
+# Grouping on `alertname` alone put every failing endpoint in the lab into a
+# single "Service endpoint unreachable" group. One flapping probe — a container
+# restarting, Loki coming up, a desktop scaling to zero — re-sent that whole
+# group every 5 minutes, and every re-send listed the other endpoints again.
+# The result reads as a specific service alerting non-stop when what is actually
+# happening is one unrelated probe flapping next to it. Grafana's own default
+# is `[grafana_folder, alertname]`, which has the same problem here: there is
+# only one folder.
+#
+# So group on `instance` too. Every rule in rules.yml is per-target — a probe
+# URL, a scrape target, a mountpoint's host — so this gives each failing thing
+# its own message on its own schedule. Caddy going down says so once and repeats
+# every 4h; it no longer gets re-announced because Ollama blinked.
+#
+# The trade is real and deliberate: five endpoints down is now five messages
+# rather than one. That is the right way round. A message that names one thing
+# is actionable, and five distinct outages are five distinct problems — whereas
+# the merged message had to be re-read every time to work out what changed.
 policies:
   - orgId: 1
     receiver: homelab
-    group_by: ["alertname"]
+    group_by: ["alertname", "instance"]
+    # Buffer before the first message, so a host losing several targets at once
+    # still arrives as one burst rather than a trickle.
     group_wait: 30s
+    # Re-send a group when its membership changes, at most this often.
     group_interval: 5m
+    # Re-send an unchanged, still-firing group this often. This is the only
+    # timer that should be producing repeats on a stuck alert; if messages are
+    # arriving faster than this, something is flapping — run
+    # scripts/probe-status.sh on the box to find out what.
     repeat_interval: 4h

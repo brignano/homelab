@@ -96,6 +96,16 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   container name `caddy` from inside Docker: it serves `/health` for the probe
   and 404s everything else, and `scripts/check-probes.sh` keeps the two files in
   step.
+- **Group notifications by `instance`, not by `alertname` alone.** Grouping is
+  what decides how loud `#alerts` is: a notification group is re-sent whenever
+  its membership changes, throttled to `group_interval`, so coarse grouping
+  means one flapping probe re-announces every other firing alert alongside it.
+  See `grafana/provisioning/alerting/policies.yml`.
+- **Before re-diagnosing an alert you already fixed, check it is deployed.**
+  `prometheus.yml`, the Caddyfile and `grafana/provisioning/` are all
+  bind-mounted, so `git pull` changes the files while the containers keep
+  serving the old config — the repo looks right, CI is green, and Discord keeps
+  firing. `scripts/probe-status.sh` answers this from the box in one command.
 
 ## Local LLM usage
 
