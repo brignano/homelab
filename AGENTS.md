@@ -106,6 +106,14 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   bind-mounted, so `git pull` changes the files while the containers keep
   serving the old config — the repo looks right, CI is green, and Discord keeps
   firing. `scripts/probe-status.sh` answers this from the box in one command.
+- **A config bind-mounted as a single file needs the container *recreated*, not
+  restarted or reloaded.** Docker pins a file mount to an inode at container
+  creation, and git replaces files rather than editing them, so after a
+  `git pull` the container is mapped to the old unlinked copy — and a reload
+  returns 200 while changing nothing. Use
+  `docker compose up -d --force-recreate <svc>`. Mounting a whole *directory*
+  avoids this (that is why `grafana/provisioning/` only needs a restart), so
+  prefer a directory mount for new config where the directory holds no secrets.
 
 ## Local LLM usage
 
