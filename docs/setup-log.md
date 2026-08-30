@@ -27,6 +27,84 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-08-30 — Caddy alerts still arriving: grouping, and the question of whether the fix is running
+
+**Goal:** `#alerts` is still filling with Caddy alerts a week after the probe fix
+in [#60](https://github.com/brignano/homelab/pull/60) landed. Establish whether
+that fix is wrong, or is simply not the config the box is running — and stop
+guessing at this, because it is the second time the same symptom has cost a
+full re-diagnosis.
+
+**Steps:**
+1. Re-verified the merged fix rather than trusting it. Ran a real Caddy 2.10
+   against a Caddyfile carrying the same routing shape (HTTPS sites, which add
+   HTTP→HTTPS redirect routes on the HTTP port; the `http://caddy` health site;
+   the `*.home` redirects) and probed it the way blackbox does:
+
+   | Request | Result |
+   |---|---|
+   | `Host: caddy`, `GET /health` | **200** |
+   | `Host: caddy`, `GET /` | 404 |
+   | `Host: caddy:8080`, `GET /health` | **200** |
+
+   The site block and the probe target are correct. The fix is not the problem.
+2. Read the notification policy against the symptom. `group_by: ["alertname"]`
+   put every failing endpoint in the lab into one "Service endpoint unreachable"
+   group, and a group is re-sent whenever its membership changes — throttled to
+   `group_interval` (5m), not to `repeat_interval` (4h).
+3. Wrote `scripts/probe-status.sh` to ask the running stack the question the
+   repo cannot answer.
+
+**Issues encountered:**
+- **Grouping was amplifying unrelated churn into Caddy alerts.** With one group
+  holding every probe, any single flapping target — a container restarting, Loki
+  coming up, a desktop scaling to zero — re-sent the whole group every 5
+  minutes, and each re-send listed every other firing endpoint again. So one
+  unrelated flap reads as *Caddy* alerting non-stop. Grafana's own default
+  (`[grafana_folder, alertname]`) has the same problem here: there is only one
+  folder.
+- **Nothing could tell us whether the fix was deployed.** `prometheus.yml`, the
+  Caddyfile and `grafana/provisioning/` are all bind-mounted, so `git pull`
+  changes the files on disk while the containers keep serving the old config
+  until Caddy is restarted, Prometheus reloaded and Grafana restarted — three
+  different actions, none of which `docker compose up -d` performs, because the
+  container spec has not changed. The repo looks correct, CI is green, and
+  Discord keeps firing the old alert. That gap, not either bug, is what made
+  both of these expensive.
+
+**Resolution:**
+- `grafana/provisioning/alerting/policies.yml` — `group_by` is now
+  `["alertname", "instance"]`. Every rule in `rules.yml` is per-target, so each
+  failing thing now gets its own message on its own schedule. Five endpoints
+  down is five messages rather than one; that is the right way round, because a
+  message naming one thing is actionable and the merged one had to be re-read
+  every time to work out what had changed.
+- `scripts/probe-status.sh` — new runtime diagnostic. Prints (1) whether
+  Prometheus is scraping the targets this checkout declares, (2) what each target
+  answers when probed right now, via `blackbox-exporter`, and (3) `changes()`
+  per probe over 6h. Together those separate *not deployed* from *stuck probe*
+  from *genuinely flapping service*, which are indistinguishable from the
+  Discord channel and have opposite fixes. It is the runtime sibling of
+  `check-probes.sh`, which does the static half in CI.
+- `docker/monitoring/README.md` — a "When `#alerts` is noisy" section with the
+  symptom → meaning → fix table.
+
+**Notes / next steps:**
+- Deploy, all three, because each config is read at a different moment:
+  ```bash
+  cd docker/monitoring && docker compose restart grafana   # provisioning is read at startup only
+  curl -X POST http://localhost:9090/-/reload              # prometheus.yml
+  cd ../proxy && docker compose restart caddy              # Caddyfile
+  ```
+- Then run `./scripts/probe-status.sh` and expect every target `up` and
+  `http://caddy/health` listed as `scraping`. If Caddy still shows `DOWN` with 0
+  state changes after that, the probe is stuck on something new and the live
+  HTTP status in that output says what.
+- A repeating Discord message is not evidence of a repeating failure — noted in
+  the previous entry, and it is what made *this* one look like a flap too.
+
+---
+
 ## 2026-08-24 — Caddy was never down; the probe was asking the wrong question
 
 **Goal:** Stop `#alerts` filling with "Service endpoint unreachable — Probe
