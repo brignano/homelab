@@ -317,6 +317,47 @@ groups:
       # silence is the signal. Alerting on it here too would only duplicate a
       # weaker version of a check that already exists, and would page on every
       # fresh install before install-cron.sh has run.
+      # --- A dead man's switch is not arming ---
+      #
+      # The switches watch the jobs; this watches the switches. On 2026-09-19
+      # the pg_dumpall's ping URL turned out to be the placeholder from
+      # .env.example — non-empty, so the script's "unset" warning never fired,
+      # and pinged with `|| true`, so the 404 went nowhere. A job with no
+      # working switch looks exactly like one whose switch has never had cause
+      # to fire.
+      #
+      # `for: 1h` rather than minutes: a daily job publishes this once a day, so
+      # a real failure stays 0 until tomorrow and will be caught either way,
+      # while the 5-minute heartbeat should be allowed a blip on a flaky uplink
+      # without paging.
+      - uid: hl-hc-ping-failing
+        title: Dead man's switch not arming
+        condition: C
+        for: 1h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} cannot arm its dead man's switch — the ping is failing or its URL is unset; see /var/log/{{ $labels.job }}.log on CT 100"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_healthchecks_ping_success
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 86400, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       - uid: hl-cron-missing
         title: Scheduled job not installed
         condition: C

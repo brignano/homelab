@@ -33,16 +33,22 @@ ENV_FILE="$REPO/docker/monitoring/.env"
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"
+# shellcheck source=scripts/healthchecks.sh
+. "$(dirname "$0")/healthchecks.sh"
 
 DEST="${HL_BACKUP_DIR:-/opt/backups/postgres}"
 RETAIN_DAYS="${HL_RETAIN_DAYS:-14}"
 
-# `|| true` is load-bearing, unlike in the other two scripts. This one runs
-# under `pipefail`, so a missing .env makes sed exit 2, the pipeline inherit it,
-# and `set -e` kill the backup before it starts — a job destroyed by the
-# monitoring bolted onto it, which is the one outcome none of this is allowed to
-# have. Not reading a ping URL is a reason to warn, never a reason not to back up.
-HC_URL=$(sed -n 's/^HEALTHCHECKS_PG_BACKUP_URL=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r' || true)
+# `|| HC_URL=""` is load-bearing, unlike in the other two scripts. This one runs
+# under `pipefail` and `set -e`, and a missing .env or an unusable value must
+# not kill the backup before it starts — a job destroyed by the monitoring
+# bolted onto it is the one outcome none of this is allowed to have. Not having
+# a ping URL is a reason to warn, never a reason not to back up.
+#
+# hc_url rejects a placeholder as firmly as an empty value; HC_REASON says
+# which it was. That distinction is why this file changed: the placeholder was
+# here, silently, from the day the switch was added.
+if hc_url HEALTHCHECKS_PG_BACKUP_URL "$ENV_FILE"; then HC_URL=$HC_VALUE; else HC_URL=""; fi
 
 START=$(date +%s)
 TMP=""
@@ -106,7 +112,11 @@ finish() {
   if [ -n "$HC_URL" ]; then
     # /<exit code>: 0 records a success and anything else a failure, so "ran and
     # failed" stays distinguishable from "never ran".
-    curl -fsS -m 20 --retry 3 --retry-delay 5 "$HC_URL/$_code" >/dev/null 2>&1 || true
+    #
+    # `|| true` because this runs in an EXIT trap: the backup's own verdict is
+    # already decided, and a failed ping must not overwrite it. hc_ping reports
+    # the failure itself, on stderr and as a metric.
+    hc_ping "$HC_URL/$_code" pg-backup || true
   fi
 }
 trap finish EXIT
@@ -115,7 +125,12 @@ if [ -z "$HC_URL" ]; then
   # Said on every run, on stderr, which cron appends to the log. Deliberate:
   # an unconfigured dead man's switch is precisely the silence this exists to
   # break, and the message stops the moment the variable is set.
-  echo "pg-backup: HEALTHCHECKS_PG_BACKUP_URL unset in $ENV_FILE — nothing notices if this stops running" >&2
+  #
+  # And recorded as a metric, because this message was already being printed to
+  # a log nobody reads — the placeholder that prompted all this would not have
+  # been found by writing it more loudly.
+  echo "pg-backup: $HC_REASON — nothing notices if this stops running" >&2
+  hc_unarmed pg-backup
 fi
 
 CONTAINER=$(docker ps --format '{{.Names}} {{.Image}}' \

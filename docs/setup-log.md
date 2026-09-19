@@ -27,6 +27,88 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The backup's dead man's switch was pinging `your-uuid`
+
+**Goal:** Wire up the two Healthchecks checks that had never been created, and
+then fix the reason one of them went unnoticed.
+
+**Steps:**
+1. Created `repo-sync` and `pg-backup` checks (1d period, 6h grace) and put
+   their ping URLs in `docker/monitoring/.env`. Ran `./scripts/pg-backup.sh` by
+   hand to prove the whole path rather than the variable: it dumped, pinged,
+   and the check went green.
+2. Then fixed what let the bad value sit there: added `scripts/healthchecks.sh`,
+   routed all three jobs through it, and added `hl-hc-ping-failing`.
+
+**Issues encountered:**
+- **`HEALTHCHECKS_PG_BACKUP_URL` was `https://hc-ping.com/your-uuid`** — the
+  placeholder straight out of `.env.example`, and every layer agreed it was
+  fine. `pg-backup.sh` warned only on an EMPTY value, and a placeholder is not
+  empty. The ping was `curl -fsS ... || true`, so the 404 went nowhere. No such
+  check existed, so nothing was ever late. The job guarding the only copy of
+  the data had a switch that pinged the void and was indistinguishable from one
+  that worked.
+- **A second `HEALTHCHECKS_REPO_SYNC_URL`** had been pasted pointing at the
+  *heartbeat's* check. Harmless only by luck: the reader ends in `tail -n1`, so
+  the later line won. One reordering away from repo-sync checking the box in
+  once a night on a switch that fires after fifteen minutes of silence.
+- **The obvious fix was the one already tried.** `pg-backup.sh` was printing its
+  warning to a cron log, which is what it did with the placeholder in place —
+  except the warning never fired. Writing it more loudly would have changed
+  nothing.
+
+**Resolution:**
+- `scripts/healthchecks.sh`, sourced after `metrics.sh`, is now the only way a
+  ping URL is read. `hc_url` rejects a value with no path (`https://hc-ping.com`
+  alone answers 200 — a ping that succeeds forever while arming nothing) and
+  the placeholder shapes, and says which variable and why. `hc_ping` reports a
+  failed ping instead of swallowing it.
+- Both outcomes publish `homelab_healthchecks_ping_success{job=...}`, and
+  `hl-hc-ping-failing` alerts on it after an hour — so a switch that stops
+  arming pages the way everything else here does, rather than waiting to be
+  noticed. That is the part the previous two attempts at this lacked.
+- URLs are masked to scheme, host and eight characters in every message. They
+  are capability URLs: anyone holding one can check a job in, which is exactly
+  how you would hide a box that had stopped.
+- `heartbeat.sh` still exits non-zero when it cannot deliver — that ping *is*
+  the job. The two jobs that ping from an EXIT trap discard the result, so a
+  failed ping cannot overwrite the verdict of the work itself.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+./scripts/heartbeat.sh && echo armed          # all three read through hc_url now
+docker compose -f docker/monitoring/docker-compose.yml restart grafana
+```
+The restart is for the new alert rule; the scripts need none.
+
+**Notes / next steps:**
+- The API was nearly wrong in the way this file is about. `hc_url` first
+  returned the URL on stdout, so callers wrote `URL=$(hc_url ...)` — a
+  **subshell**, where `HC_REASON` was set and then discarded with it, leaving
+  all three callers reporting an empty reason. Found by testing the rejection
+  path; it renders correctly in the Discord report now because of that test.
+- Tested against a local sink answering 204 on one path and 404 on another:
+  nine URL shapes (valid, placeholder, angle brackets, no path, trailing slash,
+  quoted, empty, duplicated key, missing key), both ping outcomes, the `/fail`
+  body path, and a box with no textfile directory, where it degrades to a
+  no-op rather than failing the job.
+- The Discord integration turned out never to have existed at all: the
+  Integrations page held one entry, email. The heartbeat check has therefore
+  been alerting an inbox since 2026-08-21, not `#alerts`, and the 2026-08-21
+  entry's claim that it was wired to the webhook was wrong the day it was
+  written. Added as a project-level Discord integration (`basecamp`), which
+  Healthchecks assigned to all three checks.
+- **And then tested the failure path**, which is what that entry asked for and
+  never got: `curl .../fail` on the repo-sync check, then a plain ping. Both the
+  down alert and the recovery arrived in `#alerts`. The off-box half of this
+  lab's alerting had never once delivered a message before 22:34 tonight.
+- Worth adding later: `homelab_healthchecks_ping_success` on the jobs
+  dashboard. The alert covers "it broke"; a panel answers "has it ever worked",
+  which is the question this entry is really about.
+
+---
+
 ## 2026-09-19 — The one clickable thing in an alert pointed at a name phones can't resolve
 
 **Goal:** Every Discord alert ends in an `Open in Grafana →` link. It went to
