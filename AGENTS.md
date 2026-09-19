@@ -93,6 +93,13 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   page you.
 - When adding an alert path, ask which failures it can *not* report, and where
   that one is observed from.
+- **Anything scheduled needs a dead man's switch, including the scheduler.** A
+  job that only speaks when something is wrong cannot report never having run:
+  `repo-sync.sh` was silent for three weeks because its cron entry had never
+  been installed, and the box drifted three weeks behind `main` while every
+  signal said fine. It now pings `HEALTHCHECKS_REPO_SYNC_URL` on every run, and
+  `scripts/install-cron.sh` makes installing the schedule a command rather than
+  a ritual (`--check` reports what is missing).
 - **Blackbox probes must target a path the service answers 2xx on.** The
   `http_2xx` module treats anything else — including a 404 or a redirect — as
   down. This matters most for Caddy, which routes by Host header and sees the
@@ -109,6 +116,14 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   bind-mounted, so `git pull` changes the files while the containers keep
   serving the old config — the repo looks right, CI is green, and Discord keeps
   firing. `scripts/probe-status.sh` answers this from the box in one command.
+- **A container that owns a bind-mounted config directory writes to it.**
+  Homepage drops 0-byte skeletons (`custom.css`, `custom.js`, `docker.yaml`, …)
+  into `docker/dashboard/config/` whenever they are missing. The day the repo
+  starts tracking one of those paths, `git pull` refuses to overwrite the empty
+  local copy and the box stops pulling *entirely* — every stack, over a file
+  with nothing in it. `repo-sync.sh` clears that narrow case (untracked, empty,
+  and added by an incoming commit) and reports it; anything with content in it
+  still stops the pull.
 - **A config bind-mounted as a single file needs the container *recreated*, not
   restarted or reloaded.** Docker pins a file mount to an inode at container
   creation, and git replaces files rather than editing them, so after a

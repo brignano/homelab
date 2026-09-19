@@ -85,8 +85,10 @@ homelab/
 │       └── app/
 ├── scripts/                 # Run from cron on the Docker LXC
 │   ├── bootstrap-docker.sh  # Install Docker on a fresh Debian/Ubuntu host
+│   ├── install-cron.sh      # Schedule the jobs below (idempotent, --check)
 │   ├── heartbeat.sh         # Dead man's switch -> Healthchecks (*/5 min)
 │   ├── repo-sync.sh         # Daily git pull, restart stale stacks, report
+│   ├── pg-backup.sh         # Nightly pg_dumpall, 14-day retention (02:00)
 │   └── check-dashboard.sh   # CI: every proxied site has a dashboard tile
 ├── .github/
 │   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
@@ -99,6 +101,14 @@ homelab/
 tree, and **verifies each one came back** — a restart that is not checked is not
 self-healing, it is auto-breaking faster. It reports what it restarted, so
 `#alerts` doubles as a deployment log and silence means nothing changed.
+
+Install the schedule with `./scripts/install-cron.sh` — idempotent, and
+`--check` reports what is missing without changing anything. Until 2026-09-19
+each script documented its own cron line in a header comment and the sync job
+had simply never been installed: the box sat three weeks behind `main` while
+GitHub said every change had shipped. `repo-sync.sh` now also pings a
+Healthchecks check on every run, so the *absence* of a sync pages you the same
+way the absence of a heartbeat does. A job cannot report its own death.
 
 One stack is excluded by default and should stay that way: `proxy` contains
 AdGuard, which is the household's DNS. A 4am restart that does not come back
