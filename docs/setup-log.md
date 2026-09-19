@@ -27,6 +27,77 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Nothing was watching the watchman: Grafana now scrapes itself
+
+**Goal:** Decide whether any Grafana feature toggles were worth enabling. Ended
+up somewhere else, which is the useful part.
+
+**Steps:**
+1. Looked at the toggles. `grafanaAdvisor` (periodic checks over datasources and
+   plugins) is the one adjacent to how three dashboards died here — a plugin
+   class removed from under a `:latest` image. Worth having; not worth enabling
+   blind, since turning experimental features on *while* the image floats is the
+   exact combination that caused the original problem.
+2. Checked what was actually being scraped before recommending anything, and
+   found the real gap: **Grafana was never scraped.** `prometheus.yml` probes
+   `http://grafana:3000/api/health` through blackbox, and that is the only thing
+   that ever asked Grafana a question.
+
+**Issues encountered:**
+- **A liveness probe and a health check are not the same question.**
+  `/api/health` says Grafana is up. It says nothing about whether the thing
+  Grafana exists to do is working — and the two come apart in the sharpest
+  version of the failure class this lab keeps meeting: **a provisioned alert
+  rule whose query errors does not fire and does not warn. It stops
+  evaluating.** A renamed metric, a datasource that stopped answering, a typo
+  that survived a restart — any of them silently retires a rule, and a retired
+  rule is indistinguishable from a rule with nothing to report. Sixteen rules
+  are provisioned here. Nothing could have told you one had died.
+- **Discord is the only delivery path, and nothing watched it.** ntfy was
+  removed, `DISCORD_ALERT_WEBHOOK` is `:?required` so the stack cannot start
+  unable to page — and none of that helps if the webhook starts rejecting
+  sends. Every rule would fire correctly into nothing, and the first symptom is
+  noticing you have not been paged in a while.
+- **Two metric names, and no way to check from here.** Grafana has used both
+  `grafana_alerting_notifications_failed_total` and
+  `alertmanager_notifications_failed_total` for the embedded Alertmanager's
+  counters, and grafana.com is unreachable from the dev sandbox. Guessing would
+  have produced a panel that renders blank — the precise failure the last change
+  was written to prevent.
+
+**Resolution:**
+- A `grafana` scrape job. One target, no new container, no auth (Grafana serves
+  `/metrics` unauthenticated by default and nothing sets
+  `GF_METRICS_BASIC_AUTH_*`); `:3000` was already published to LAN/tailnet, so
+  this changes no exposure.
+- Four tiles on **Triage** — rules erroring, notifications failing, datasource
+  errors, and rules evaluating — plus one **Alerting pipeline** history panel,
+  because a rule erroring since a provisioning change three days ago and one
+  that broke ten minutes ago want different responses. Evaluations flat at zero
+  means the scheduler itself stopped.
+- Two alert rules: `hl-alert-eval-failing` and `hl-notifications-failing`.
+- The name ambiguity is matched rather than guessed: both panels and the rule
+  use a `{__name__=~"(grafana_alerting|alertmanager)_notifications_failed_total"}`
+  selector, which is correct under either spelling. The README's Verify section
+  has the one command to find out which, and says to collapse it afterwards.
+- `grafanaAdvisor` is in the compose file commented out, with the two commands
+  to check whether this version needs it at all.
+
+**Notes / next steps:**
+- The layering is now explicit, and it is the point: Grafana watches the lab,
+  Prometheus watches Grafana, `up{job="grafana"}` watches that scrape, and
+  `heartbeat.sh` watches all of it from off the box. `hl-notifications-failing`
+  is delivered by the channel it monitors — that covers the partial failures
+  (rate limiting, a rotated webhook, one integration of several), which are the
+  common case, and the total outage stays heartbeat's job.
+- Confirm the metric names on first deploy. A blank tile here means the metric
+  is called something else in this version, not that the lab is quiet.
+- Pinning the Grafana image is worth revisiting once `tsd-dependency-updates.md`
+  §1 lands — the argument against pinning was that a pinned-and-forgotten image
+  is its own silence, and a staleness watchdog removes that objection.
+
+---
+
 ## 2026-09-19 — The dashboards were watching the hardware; the failures were all in the deployment layer
 
 **Goal:** Review the Grafana dashboards, which had started to feel arbitrary,

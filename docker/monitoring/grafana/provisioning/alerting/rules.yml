@@ -498,3 +498,91 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [0] }
+
+      # --- An alert rule is failing to evaluate ---
+      #
+      # The watchman's own blind spot, and the sharpest version of the failure
+      # class this whole stack keeps meeting. A provisioned rule whose query
+      # errors — a renamed metric, a datasource that stopped answering, a typo
+      # that survived a restart — does not fire and does not warn. It stops
+      # evaluating, and stopping is indistinguishable from having nothing to
+      # report. Fourteen rules are provisioned here and until now nothing could
+      # have told you one of them had died.
+      #
+      # This rule is the exception to that, and it cannot cover itself: if the
+      # Grafana scrape is what breaks, `up{job="grafana"}` is what says so
+      # (hl-target-down), and if Grafana is down entirely, heartbeat.sh reports
+      # it from off the box. Each layer is watched by the one outside it.
+      - uid: hl-alert-eval-failing
+        title: Alert rule failing to evaluate
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "A Grafana alert rule is erroring — it is not firing and not warning. Alerting → Rules, filter state=Error"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: sum(increase(grafana_alerting_rule_evaluation_failures_total[15m]))
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # --- Alert notifications are not being delivered ---
+      #
+      # Discord is the only delivery path in this lab — ntfy was removed, and
+      # DISCORD_ALERT_WEBHOOK is `:?required` so the stack cannot start unable to
+      # page you. None of that helps if the webhook starts rejecting sends: every
+      # rule here would fire correctly into nothing, and the first symptom is
+      # noticing you have not been paged in a while.
+      #
+      # The obvious objection is right — this alert is delivered by the channel
+      # it is watching, so a total outage silences it too. It is not useless for
+      # that: partial failures (rate limiting, one integration of several, a
+      # webhook rotated but still resolving) are the common case and do get
+      # through. The total case is heartbeat.sh's job, from off the box.
+      #
+      # The __name__ regex covers both names Grafana has used for the embedded
+      # Alertmanager's counters; collapse it once you have confirmed which one
+      # your version exports (see docker/monitoring/README.md, "Verify").
+      - uid: hl-notifications-failing
+        title: Alert notifications failing to send
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Grafana cannot deliver notifications — alerts may be firing into nothing"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                sum(increase({__name__=~"(grafana_alerting|alertmanager)_notifications_failed_total"}[15m]))
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }

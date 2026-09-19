@@ -25,6 +25,30 @@ scrape_configs:
     static_configs:
       - targets: ["cadvisor:8080"]
 
+  # Grafana's own internals — NOT the same question as the blackbox probe below.
+  #
+  # That probe asks `/api/health` whether Grafana is up. This asks Grafana
+  # whether it is working, and the two came apart in exactly the way this repo
+  # keeps running into: a provisioned alert rule whose query errors does not
+  # notify anyone and does not fail a health check. It simply stops evaluating,
+  # and the silence is indistinguishable from "nothing is wrong" — which is the
+  # entire signal #alerts is built on.
+  #
+  # Fourteen rules are provisioned here and nothing could see one of them die.
+  # `grafana_alerting_rule_evaluation_failures_total` can, and the notification
+  # counters cover the other half: Discord is the only delivery path in this
+  # lab, so a webhook that starts rejecting sends is found today by noticing you
+  # have not been paged in a while.
+  #
+  # No auth: Grafana serves /metrics unauthenticated by default, and nothing
+  # here sets GF_METRICS_BASIC_AUTH_*. Note that :3000 is published to
+  # LAN/tailnet, so this endpoint is reachable there — it was already, this
+  # scrape does not change the exposure, and it carries counters rather than
+  # anything about what the dashboards contain.
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
+
   # Proxmox VE API metrics via the multi-target pve-exporter (host m5 API).
   - job_name: pve
     metrics_path: /pve
