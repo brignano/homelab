@@ -19,9 +19,12 @@
 #   ./scripts/install-cron.sh           # install anything missing
 #   ./scripts/install-cron.sh --check   # report only; non-zero if any are missing
 #
-# An entry already in the crontab is never rewritten, only reported. If you have
-# deliberately moved a job to a different hour, or pointed it at a different
-# log, this leaves it where you put it.
+# An entry already in the crontab is left where you put it — a different hour, a
+# different log file, whatever you chose. The one exception is an entry with no
+# redirection *at all*, which is not a choice but the absence of one: those
+# predate this script and hand their output to a mailbox nobody reads. Those get
+# the redirection appended, and nothing else about the line is touched.
+# `--check` reports them rather than fixing them.
 set -eu
 
 REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
@@ -72,6 +75,7 @@ fi
 
 current=$(crontab -l 2>/dev/null || true)
 added=""
+relogged=""
 missing=""
 
 # Build the new crontab in a temp file rather than by string-appending: a
@@ -96,8 +100,46 @@ for script in heartbeat.sh repo-sync.sh pg-backup.sh; do
     continue
   fi
 
-  if printf '%s\n' "$current" | grep -q "scripts/$script"; then
-    echo "ok       $script is already scheduled: $(printf '%s\n' "$current" | grep "scripts/$script" | head -n1)"
+  # Commented-out lines do not count as scheduled, and the distinction matters:
+  # a job someone disabled with a `#` looks exactly like a job that is running,
+  # and reporting it ok is the precise failure this script was written for. It
+  # is treated as absent, so it gets reinstalled and `--check` reports it.
+  if printf '%s\n' "$current" | grep -v '^[[:space:]]*#' | grep -q "scripts/$script"; then
+    existing=$(printf '%s\n' "$current" | grep -v '^[[:space:]]*#' | grep "scripts/$script" | head -n1)
+
+    # An entry that redirects anywhere is left exactly as it is — that is the
+    # "you pointed it at a different log" case the header promises not to touch.
+    #
+    # An entry with NO redirection at all is a different thing, and the
+    # distinction is the whole point: it is not a choice someone made, it is the
+    # absence of one. Those entries predate this script, and cron mails their
+    # output to a local mailbox nobody reads and no MTA delivers. That silently
+    # discards the only channel a job has left when its own reporting is what
+    # broke — repo-sync.sh says so on stderr and nowhere else when it cannot
+    # read .env or reach the Discord webhook.
+    #
+    # Found on CT 100 on 2026-09-19: heartbeat and repo-sync had no redirection,
+    # pg-backup did, and `--check` called all three ok.
+    case "$existing" in
+      *'>'*)
+        echo "ok       $script is already scheduled: $existing"
+        continue
+        ;;
+    esac
+
+    if [ -n "$check" ]; then
+      echo "MISSING  $script is scheduled but discards its output: $existing"
+      missing="$missing $script"
+      continue
+    fi
+
+    # Narrow on purpose: only lines that name this script, are not commented
+    # out, and contain no redirection at all.
+    awk -v s="scripts/$script" -v r=" >> $LOG_DIR/${script%.sh}.log 2>&1" \
+      'index($0, s) && $0 !~ /^[[:space:]]*#/ && $0 !~ />/ { $0 = $0 r } { print }' \
+      "$tmp" > "$tmp.new" && mv "$tmp.new" "$tmp"
+    echo "fixed    $script now logs to $LOG_DIR/${script%.sh}.log (was discarding output)"
+    relogged="$relogged $script"
     continue
   fi
 
@@ -119,7 +161,7 @@ if [ -n "$check" ]; then
   exit 0
 fi
 
-if [ -n "$added" ]; then
+if [ -n "$added" ] || [ -n "$relogged" ]; then
   crontab "$tmp"
   echo "crontab updated"
 else

@@ -27,6 +27,50 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Two cron jobs were mailing their output to nobody
+
+**Goal:** Close the last gap in the scheduled-job story: the jobs were installed
+and watched, but two of them threw away the only thing they can say when their
+own reporting is what broke.
+
+**Steps:**
+1. `install-cron.sh --check` reported all three jobs `ok`. Reading the entries it
+   printed showed only `pg-backup` had `>> /var/log/... 2>&1`; `heartbeat` and
+   `repo-sync` had none. Those two predate this script, which only ever added
+   redirection to entries it created itself.
+2. Cron mails a job's output to a local mailbox that nobody reads and no MTA
+   delivers. `repo-sync.sh` reports to Discord — but a run that cannot *reach*
+   Discord (unreadable `.env`, curl failing, the webhook rejected) says so on
+   stderr and nowhere else. That is exactly the run whose output was going in the
+   bin.
+
+**Issues encountered:**
+- The header promised an existing entry is "never rewritten, only reported",
+  which is right for a deliberately moved hour or a custom log path — but an
+  entry with *no* redirection is not a choice, it is the absence of one. The
+  invariant needed narrowing rather than keeping or discarding.
+- Testing that surfaced a second, older bug: `grep -q "scripts/$script"` matches
+  **commented-out** lines, so a job someone had disabled with a `#` reported as
+  scheduled. A disabled job that reads as healthy is the same failure this
+  script was written for, one `#` further along.
+
+**Resolution:**
+- An entry containing any redirection is still left untouched. One with none gets
+  the redirection appended and nothing else about the line changed; `--check`
+  reports it and exits non-zero rather than fixing it.
+- Commented-out lines no longer count as scheduled: the job is treated as absent,
+  so it is reinstalled and `--check` reports it. The comment itself is left in
+  place — it is somebody's note.
+
+**Notes / next steps:**
+- Verified against a stubbed `crontab` reproducing CT 100 exactly, plus: a custom
+  log path and a `| logger` pipeline both survive untouched, a moved schedule is
+  preserved, a commented job is reinstalled, and the whole thing stays idempotent.
+- Run `./scripts/install-cron.sh` on CT 100 to apply; it rewrites the two entries
+  in place.
+
+---
+
 ## 2026-09-19 — Alerts said everything except the one sentence worth reading
 
 **Goal:** `#alerts` had become noisy to read. Not noisy in volume — that was
