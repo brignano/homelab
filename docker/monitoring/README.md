@@ -14,6 +14,7 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
 | pve-exporter | Proxmox VE API metrics | internal |
 | postgres-exporter | PostgreSQL metrics (read-only role) | internal + `core_core` |
 | blackbox-exporter | HTTP + DNS probes | internal + `core`/`ai`/`proxy` |
+| *(grafana `/metrics`)* | Grafana's own alerting + datasource internals | scraped on the `grafana` job |
 | loki | Log store (30-day retention) | internal |
 | alloy | Ships Docker + journal logs → Loki | internal (`127.0.0.1:12345` UI) |
 
@@ -117,6 +118,18 @@ actually writes (`scripts/check-observability.sh`).
   A job reporting `0`, or missing entirely, is fixed with `./scripts/install-cron.sh`.
   `heartbeat.prom` appears within 5 minutes; the other two only after their
   first nightly run, so run them once by hand to avoid waiting.
+- **Grafana's own metric names match the panels** — do this once, on the first
+  deploy after the self-scrape landed. Grafana has used two names for the
+  embedded Alertmanager's counters, so the notification panel and the
+  `hl-notifications-failing` rule match both with a `__name__` regex. Find out
+  which one this version exports and collapse them to it:
+  ```bash
+  docker exec grafana wget -qO- localhost:3000/metrics \
+    | grep -E '^(grafana_alerting|alertmanager)_notifications_failed_total|^grafana_alerting_rule_evaluation|^grafana_datasource_request'
+  ```
+  An empty result for any of those is the answer to a blank panel — the metric
+  is named something else in this version, and the panel should follow it rather
+  than sit there looking calm.
 - **Logs**: Grafana → Drilldown → Logs, filter `{job="docker"}`.
 - **Alerts**: Grafana → Alerting → Contact points → test `homelab`; a message
   should land in Discord `#alerts`. Since this is now the only delivery path,
@@ -208,6 +221,15 @@ needs `docker compose restart grafana`, because provisioning is read at startup.
   daily, so a `homelab_config_drift` or `homelab_stack_deploy_drift_seconds`
   alert keeps firing until the next 04:00 run even after you have fixed the
   cause. Re-run `./scripts/repo-sync.sh` by hand to clear it immediately.
+- **Each layer is watched by the one outside it, and that is the whole design.**
+  Grafana watches the lab. Prometheus scrapes Grafana, so a rule that stops
+  evaluating and a notification that fails to send are visible rather than
+  silent — a rule whose query errors does not fire and does not warn, which
+  until this existed was the one failure nothing in the stack could report.
+  `up{job="grafana"}` covers the scrape itself failing. And `heartbeat.sh`
+  covers all of it from off the box, because nothing running on CT 100 can
+  report that CT 100 is gone. Adding a check means asking which failure it
+  cannot see, and where that one is observed from.
 - **Alerting is Discord-only.** ntfy previously ran here for phone push and was
   removed once Discord covered the same ground — see `docs/setup-log.md`. The
   box being *down* is still covered from off-box by `scripts/heartbeat.sh`,
