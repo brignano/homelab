@@ -1,0 +1,92 @@
+/*
+  The dashboard, wearing the shared design system.
+
+  Homepage is config-driven, not a design surface: the only hook it gives is
+  this file, served verbatim at /api/config/custom.css. So the rule here is to
+  reach for the variables Homepage and Tailwind already theme themselves from,
+  and never for a class name — class names churn between releases, and the
+  image is pinned but not frozen.
+
+  Three things are imported or set, in this order:
+
+    design-tokens.css      the package, vendored verbatim. The source of truth.
+    homepage-palette.css   generated from it: the same neutrals in the RGB
+                           channel form Homepage's --color-* variables need.
+    everything below       the remaining bridges — type, shape, state — each
+                           written as a token reference, never a value.
+
+  Both files are served from /assets, which docker-compose.yml mounts. Update
+  them with ./scripts/update-design-tokens.sh; CI checks they still agree.
+
+  This file is public: Homepage serves custom.css without auth so it can style
+  the sign-in page. Nothing sensitive goes in here.
+*/
+@import url("/assets/design-tokens.css");
+@import url("/assets/homepage-palette.css");
+
+/* Geist, vendored beside the tokens. `--sans` names it first and nothing on a
+   phone has it installed, so without this the dashboard quietly falls back to
+   the system face and stops looking like the rest of the sites. Latin subset,
+   one variable file, `swap` so a slow first paint is unstyled text rather than
+   no text. */
+@font-face {
+  font-family: "Geist";
+  src: url("/assets/fonts/geist-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Tailwind v4 resolves its utilities through theme variables — `rounded-md` is
+   `var(--radius-md)`, `bg-red-500` is `var(--color-red-500)`. Redefining those
+   moves every utility at once and survives a Homepage upgrade, which chasing
+   `.bg-theme-200\/50` would not.
+
+   The attribute match is what beats Homepage's own `.theme-<colour>` block on
+   specificity, whichever palette the `color:` setting names. */
+html[class*="theme-"] {
+  /* Type. The stacks come from the tokens; only Geist is served locally. */
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  /* Shape. Homepage's cards are `rounded-md`, its dialogs `rounded-lg`. */
+  --radius-md: var(--radius-sm);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-lg);
+
+  /* State — one hue, one meaning. Homepage paints status dots, errors and
+     warnings with Tailwind's stock hues, so each is pointed at the system's
+     state layer rather than left as a second green and a second red. */
+  --color-green-500: var(--success);
+  --color-emerald-500: var(--success);
+  --color-emerald-300: var(--success-ink);
+  --color-red-500: var(--danger);
+  --color-rose-500: var(--danger);
+  --color-rose-300: var(--danger-ink);
+  --color-orange-400: var(--attention);
+  --color-yellow-500: var(--attention);
+
+  /* Affordance stays cobalt and semantically inert, per the system: it means
+     "you can act on this", never "this is good" or "this is urgent". */
+  --color-blue-500: var(--i);
+  --color-sky-500: var(--i);
+}
+
+/* Homepage hard-codes Manrope and 0.1px of tracking on `html, body`, so this
+   has to out-specify an element selector to land. */
+html[class*="theme-"],
+html[class*="theme-"] body {
+  font-family: var(--sans);
+  letter-spacing: normal;
+}
+
+/* Two rules the system states outright: selection carries the interactive hue,
+   and focus is always visible — 2px of --i-ink at 2px offset, never removed. */
+html[class*="theme-"] ::selection {
+  background: var(--i-selection);
+}
+
+html[class*="theme-"] :focus-visible {
+  outline: 2px solid var(--i-ink);
+  outline-offset: 2px;
+}

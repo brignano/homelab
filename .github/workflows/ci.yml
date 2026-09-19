@@ -123,6 +123,14 @@ jobs:
               print('ok   ', f)
           "
 
+      - name: The generated palette still matches the vendored design tokens
+        # homepage-palette.css is generated from design-tokens.css, because
+        # Homepage themes itself from RGB channels and the design system ships
+        # hex. A hand edit to the generated file is the one way the dashboard
+        # can drift from the package without anyone noticing, so this
+        # regenerates it and diffs. Offline — nothing is fetched.
+        run: ./scripts/update-design-tokens.sh --check
+
       - name: Every Caddyfile site has a tile
         # The Caddyfile and services.yaml are two hand-maintained lists of the
         # same thing. A dashboard that falls behind does not break — it just

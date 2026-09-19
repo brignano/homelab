@@ -59,6 +59,16 @@ services:
       # next `git pull` and serve the old icon until the container was
       # recreated. Read-only — nothing in the container writes here.
       - ./icons:/app/public/icons:ro
+
+      # The design system: the vendored tokens, the palette generated from
+      # them, and Geist. Served at /assets/..., which config/custom.css imports
+      # — Homepage's own config API serves custom.css and custom.js and nothing
+      # else, so anything they reference has to come from /app/public.
+      #
+      # Kept apart from icons/ because these are refreshed by a script
+      # (scripts/update-design-tokens.sh) rather than drawn, and CI checks them
+      # differently.
+      - ./assets:/app/public/assets:ro
     networks:
       # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
       # the tiles are plain links, and the up/down checks go through Caddy over

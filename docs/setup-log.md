@@ -27,6 +27,75 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The dashboard now wears the design system, and pulls it from npm
+
+**Goal:** Make `home.$HOMELAB_DOMAIN` look like the rest of the brignano
+surfaces rather than like a Homepage install, and make that follow
+[`@brignano/design`](https://github.com/brignano/design) when the package moves
+— without the dashboard keeping a private copy of the palette.
+
+**Steps:**
+1. `scripts/update-design-tokens.sh` vendors `tokens.css` from the npm registry
+   into `docker/dashboard/assets/`, pinned to a version recorded beside it, and
+   vendors Geist (latin, variable) from `@fontsource-variable/geist`. Both are
+   committed: nothing on the box runs npm, so `git pull` is the install.
+2. The same script *generates* `assets/homepage-palette.css` from those tokens.
+3. `config/custom.css` imports both and bridges the rest — type, shape, state —
+   through Tailwind v4's own theme variables rather than through class names.
+4. `config/custom.js` mirrors Homepage's `light`/`dark` class onto
+   `<html data-theme>`, which is what the tokens key their dark values off.
+5. CI runs `./scripts/update-design-tokens.sh --check` (offline), and
+   `check-dashboard.sh` now verifies every local path named in `settings.yaml`
+   or `custom.css` exists in the repo and is mounted.
+
+**Issues encountered:**
+- **Homepage has no token layer, and the two can't be wired directly.** It
+  themes itself from ten variables holding *RGB channels* — `--color-800: 39 39
+  42` — while the design system ships hex. CSS cannot convert between them, so
+  something has to translate, and a translation done by hand is a second copy of
+  the palette that drifts silently. Hence the generator, and hence CI diffing
+  it: a hand edit to the generated file is the only drift left, and it fails the
+  build.
+- **The ramps run in opposite directions.** Homepage's goes light → dark in
+  *both* themes (in dark it takes the page background from `--color-800` and its
+  ink from `--color-200`); the design system's inverts between themes. A
+  step-for-step mapping would have put dark ink on a dark page, so each step is
+  mapped by what Homepage *does* with it. The reasoning is in the generator,
+  next to the values.
+- **Two theme systems that cannot see each other.** Homepage ignores the OS and
+  remembers its own toggle; the tokens key off `prefers-color-scheme` unless
+  told otherwise. A phone in light mode on a dashboard pinned to dark got the
+  light ramp painted on a dark page. `custom.js` mirrors one onto the other, so
+  Homepage stays the single source of truth for which theme is on.
+- **Geist had to come with it.** `--sans` names it first and nothing on a phone
+  has it installed, so without the file the dashboard fell back to the system
+  face — the same tokens, a different-looking family of site.
+
+**Resolution:**
+- Verified in a real browser before shipping, since no CI check covers the
+  cascade: Homepage's `theme.css` and the compiled form of the classes it
+  actually uses, served alongside this `custom.css`, driven through all four
+  combinations of Homepage dark/light against OS dark/light, asserting the
+  computed colours equal the token values. Also with the stylesheet order
+  reversed, because `custom.css` is a `<link>` in `_document` and nothing
+  guarantees it lands after Next's own CSS — the selectors carry an attribute
+  match (`html[class*="theme-"]`) so they win either way.
+- Deploy: `git pull` then a restart of the dashboard. `assets/` and `config/`
+  are directory mounts, so replacements inside them are visible without a
+  recreate — unlike the single-file mounts that caused 2026-08-30.
+
+**Notes / next steps:**
+- To move the look, bump the package and run the script. Editing a colour in
+  `custom.css` is the thing not to do; there are no colour values in it, only
+  token references, and that is deliberate.
+- IBM Plex Mono is deliberately not vendored — Homepage uses `font-mono` in four
+  minor places and the token's fallback chain lands on the platform mono face.
+- `color: zinc` in `settings.yaml` no longer decides anything visible, but it
+  still has to be *a* colour: it is what puts the `theme-` class on `<html>`
+  that the generated palette hangs off.
+
+---
+
 ## 2026-09-19 — The dashboard got a mark, because a default favicon is unfindable in a tab group
 
 **Goal:** Make `home.$HOMELAB_DOMAIN` identifiable at 16px. The dashboard shipped

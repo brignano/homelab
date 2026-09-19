@@ -1,0 +1,39 @@
+/* GENERATED FILE — do not edit.
+   Rebuilt from design-tokens.css (@brignano/design@0.1.2) by
+   scripts/update-design-tokens.sh, which is also what CI diffs it against.
+
+   Homepage themes itself from ten variables holding RGB *channels*, so this is
+   the design system's neutral ramp in the only form it can read. The selectors
+   carry an attribute match so they outrank Homepage's own `.theme-<colour>`
+   block whichever palette the `color:` setting happens to name. */
+
+html[class*="theme-"] {
+  --color-50: 250 250 250;    /* n-25 — page background (--bg-color) */
+  --color-100: 243 243 241;   /* n-50 — faintest wash — bg-theme-100/20 */
+  --color-200: 236 236 234;   /* n-100 — card wash and hairline — bg-theme-200/50 */
+  --color-300: 226 226 224;   /* n-200 — hover surface */
+  --color-400: 203 203 206;   /* n-300 — strong border */
+  --color-500: 138 138 143;   /* n-500 — muted label, focus ring */
+  --color-600: 107 107 115;   /* n-600 — scrollbar thumb */
+  --color-700: 82 82 91;      /* n-700 — secondary text — text-theme-700 */
+  --color-800: 17 17 17;      /* n-900 — primary ink — text-theme-800 is the main text class in light */
+  --color-900: 17 17 17;      /* n-900 — shadows, and the darkest wash */
+}
+
+html.dark[class*="theme-"] {
+  /* Dark surfaces are NOT darker than the page. The system builds elevation in
+     dark by getting *lighter*, and Homepage already agrees where it matters —
+     service cards are `dark:bg-white/5`. So --color-900 sits at the page colour
+     and its washes read as nothing, rather than sinking containers below the
+     background and contradicting the rule. */
+  --color-50: 242 242 240;    /* n-900 — lightest step */
+  --color-100: 208 208 210;   /* n-800 */
+  --color-200: 242 242 240;   /* n-900 — primary ink — dark:text-theme-200 is the main text class */
+  --color-300: 208 208 210;   /* n-800 — hover ink */
+  --color-400: 168 168 176;   /* n-700 — secondary ink */
+  --color-500: 139 139 147;   /* n-500 — muted label */
+  --color-600: 85 85 94;      /* n-400 — scrollbar thumb */
+  --color-700: 58 58 65;      /* n-300 — scrollbar track */
+  --color-800: 13 13 15;      /* n-0 — page background (--bg-color) — the system's --bg */
+  --color-900: 13 13 15;      /* n-0 — washes and shadows — see the note above */
+}

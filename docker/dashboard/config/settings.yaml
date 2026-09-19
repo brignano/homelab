@@ -30,10 +30,18 @@ layout:
     style: row
     columns: 2
 
-# Appearance. These are the only knobs Homepage gives you — it is a
-# config-driven dashboard, not a design surface, so it will look tidy rather
-# than bespoke. boxedWidgets + cardBlur is the least default-looking
-# combination available without a background image.
+# Appearance. These are the knobs Homepage gives you; the look itself comes
+# from config/custom.css, which imports the shared design system.
+#
+# `color:` no longer decides anything visible. It still matters: it is what
+# puts a `theme-<colour>` class on <html>, and the generated palette keys its
+# overrides off that class. Changing it is harmless, removing the setting is
+# too (Homepage falls back to `slate`, still a `theme-` class), but the class
+# has to exist.
+#
+# `theme: dark` is the default the dashboard opens in. custom.js mirrors
+# whichever theme Homepage lands on onto <html data-theme>, so the tokens
+# follow the page rather than the phone's OS setting.
 headerStyle: boxedWidgets
 statusStyle: dot
 cardBlur: sm
