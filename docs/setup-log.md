@@ -93,9 +93,16 @@ The restart is for the new alert rule; the scripts need none.
   quoted, empty, duplicated key, missing key), both ping outcomes, the `/fail`
   body path, and a box with no textfile directory, where it degrades to a
   no-op rather than failing the job.
-- Still open: the checks' Discord integrations. Healthchecks pages per-check,
-  and only the heartbeat's was ever wired to `#alerts` — the two new ones page
-  an inbox until that is fixed, which no amount of this helps with.
+- The Discord integration turned out never to have existed at all: the
+  Integrations page held one entry, email. The heartbeat check has therefore
+  been alerting an inbox since 2026-08-21, not `#alerts`, and the 2026-08-21
+  entry's claim that it was wired to the webhook was wrong the day it was
+  written. Added as a project-level Discord integration (`basecamp`), which
+  Healthchecks assigned to all three checks.
+- **And then tested the failure path**, which is what that entry asked for and
+  never got: `curl .../fail` on the repo-sync check, then a plain ping. Both the
+  down alert and the recovery arrived in `#alerts`. The off-box half of this
+  lab's alerting had never once delivered a message before 22:34 tonight.
 - Worth adding later: `homelab_healthchecks_ping_success` on the jobs
   dashboard. The alert covers "it broke"; a panel answers "has it ever worked",
   which is the question this entry is really about.
