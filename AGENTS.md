@@ -132,11 +132,24 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   means one flapping probe re-announces every other firing alert alongside it.
   See `grafana/provisioning/alerting/policies.yml`.
 - **The `summary` annotation is the alert.** Every rule gets one, written as a
-  sentence with the value already interpolated ("docker /var is 87% full"),
-  because that is the whole Discord message — `templates.yml` renders the
-  summary plus one line of timing and drops Grafana's default dump of every
-  label, value and URL. A rule with no summary falls back to its own name, which
-  is readable but says nothing; write the sentence.
+  sentence with the value already interpolated ("docker-lxc /var is 87% full"),
+  because that is the whole Discord message — `templates.yml` renders a heading,
+  those sentences, and one line of timing, and drops Grafana's default dump of
+  every label, value and URL. A rule with no summary falls back to its own name,
+  which is readable but says nothing; write the sentence.
+- **A Discord message's content renders ABOVE its embeds.** Grafana's Discord
+  notifier puts `message` in the content and `title` in an embed, so a title set
+  there arrives *under* the body — which is why the heading is the first line of
+  the message and the embed title is left to be the one clickable element.
+  Anything this repo sends itself (`repo-sync.sh`) uses an embed for the whole
+  report instead, where title and description render in the order written.
+- **`instance` is not identity.** Every alert derived from a textfile metric —
+  stack drift, config drift, backup age, cron — carries
+  `instance=node-exporter:9100`, because that is only where the metric was
+  scraped. It is also what `policies.yml` groups on, so those alerts share a
+  group and arrive as one message listing each subject. Name the subject in the
+  summary (`{{ $labels.stack }}`, `{{ $labels.container }}`), never rely on
+  `instance` to say what broke.
 - **Before re-diagnosing an alert you already fixed, check it is deployed.**
   `prometheus.yml`, the Caddyfile and `grafana/provisioning/` are all
   bind-mounted, so `git pull` changes the files while the containers keep

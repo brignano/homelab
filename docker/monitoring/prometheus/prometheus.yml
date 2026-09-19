@@ -50,6 +50,11 @@ scrape_configs:
       - targets: ["grafana:3000"]
 
   # Proxmox VE API metrics via the multi-target pve-exporter (host m5 API).
+  #
+  # `host` is carried for the same reason the two node jobs carry it: the
+  # instance here is a bare address, and an alert that says "10.0.0.200 is DOWN"
+  # makes you look the address up before you can act on it. Rules prefer this
+  # label over `instance` when writing their summary.
   - job_name: pve
     metrics_path: /pve
     params:
@@ -57,6 +62,8 @@ scrape_configs:
     static_configs:
       - targets:
           - 10.0.0.200
+        labels:
+          host: proxmox
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

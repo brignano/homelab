@@ -27,6 +27,79 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The heading was arriving after the message it was heading
+
+**Goal:** Two follow-ups from reading the new alerts in the channel rather than
+in a template: they start mid-sentence, and the nightly `repo-sync.sh` report
+next to them is still a stack of code fences.
+
+**Steps:**
+1. Looked at a real message instead of the rendered template. Grafana's Discord
+   notifier puts `message` in the Discord **content** and `title` in an **embed**
+   — and Discord renders content *above* embeds. So the heading written this
+   morning was arriving underneath the lines it was meant to head.
+2. Moved the heading into the message: emoji + bold rule name, blank line, one
+   line per alert, timing. The embed title became `Open in Grafana →`, which is
+   the one job it is actually good at — it is the only clickable element.
+3. Rewrote the `repo-sync.sh` report as an embed with a headline, bullets and a
+   colour, and exercised it against a local webhook sink.
+
+**Issues encountered:**
+- **`instance` was in the alert title, and it is not identity.** A real alert
+  read `Stack running old code · node-exporter:9100` — true and useless: every
+  textfile-metric rule (stack drift, config drift, backup age, cron) carries
+  that instance, because that is merely where the metric is scraped from. The
+  subjects were `proxy` and `monitoring`, and they were already named in the
+  summaries.
+- **That same shared instance means groups of several are normal**, despite
+  grouping on `instance` — which the previous layout, built around one alert per
+  message, handled by listing lines under no heading at all.
+- **Code fences do not wrap.** The report's lists were fenced so their alignment
+  survived; on a phone that turns three stack names into a horizontally
+  scrolling grey slab. Fences now appear only for raw error output and commands
+  meant to be copied.
+
+**Resolution:**
+- Alerts: heading, blank line, one line per alert (bulleted only when there is
+  more than one), italic timing. No `instance` anywhere — the summary names the
+  subject, which is now written into `AGENTS.md` as a rule for new alerts.
+- Report: a Discord embed rather than content, because inside an embed the title
+  renders first, in the order the thing is read. It also raised the character
+  budget from 2000 to 4096, so `MAX_CHARS` went 1800 → 3800 and fewer reports
+  get truncated.
+- The report opens with a headline — `pulled 4 commits · restarted 2 stacks · 1
+  stack needs you` — and carries a colour from the design system's semantic
+  tokens (dark-surface step, since a Discord embed is read on a dark card):
+  `--success` when the run only deployed, `--attention` when something wants a
+  person, `--danger` when something failed.
+- The dead man's switch nag moved to the end as one italic line. It is a
+  standing condition, not tonight's news, and it was leading the report.
+- The last bare IP in a message was in the `Target down` summary itself, which
+  printed `instance`. Three targets scrape an address rather than a container
+  name — both node jobs and pve — so the summary now prefers the `host` label
+  where there is one, and `pve` gained the label the node jobs already carried.
+  "pve target proxmox is DOWN" needs no lookup before it can be acted on.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+docker compose -f docker/monitoring/docker-compose.yml restart grafana
+```
+The report needs no restart — cron runs the script from the working tree.
+
+**Notes / next steps:**
+- Tested by slicing the real report section out of `repo-sync.sh` with `sed` and
+  running it against a `python3` HTTP sink, which both proves the hand-rolled
+  JSON escaping survives quotes and backslashes in a git error message, and
+  prints what Discord would render. Five shapes: silent, healthy deploy, needs
+  you, failure, image update.
+- Not changed: `policies.yml`. Grouping on `instance` was worth questioning now
+  that it is known to be shared, but the outcome — every stack-drift alert in
+  one message rather than one message each — is the behaviour that was wanted
+  anyway.
+
+---
+
 ## 2026-09-19 — Two cron jobs were mailing their output to nobody
 
 **Goal:** Close the last gap in the scheduled-job story: the jobs were installed

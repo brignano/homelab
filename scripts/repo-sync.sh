@@ -86,8 +86,9 @@ set -eu
 
 REPO="${HL_REPO:-/root/homelab}"
 ENV_FILE="$REPO/docker/monitoring/.env"
-# Discord's hard cap is 2000 characters; leave room for the code fences.
-MAX_CHARS=1800
+# The report goes out as an embed, whose description caps at 4096 characters —
+# content would have capped at 2000. Leave room for the code fences.
+MAX_CHARS=3800
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"
@@ -169,10 +170,14 @@ else
 fi
 
 AFTER=$(git rev-parse HEAD)
-PULLED=""
+# Kept as two values rather than one sentence: the count goes in the report's
+# headline, the revisions in the same line as a short range, and the count is
+# what decides whether the line appears at all.
+PULL_COUNT=""
+PULL_RANGE=""
 if [ "$BEFORE" != "$AFTER" ]; then
-  COUNT=$(git rev-list --count "$BEFORE..$AFTER")
-  PULLED="Pulled $COUNT commit(s): $(git rev-parse --short "$BEFORE") -> $(git rev-parse --short "$AFTER")"
+  PULL_COUNT=$(git rev-list --count "$BEFORE..$AFTER")
+  PULL_RANGE="$(git rev-parse --short "$BEFORE") → $(git rev-parse --short "$AFTER")"
 fi
 
 # --- drift --------------------------------------------------------------------
@@ -681,72 +686,137 @@ metrics_close
 
 # --- report -------------------------------------------------------------------
 
+# The lists above are built two-space-indented, one entry per line, with
+# four-space continuation lines for the "and here is why" detail. They used to
+# be printed inside code fences, which preserved that shape and cost a lot to
+# read: a fence is monospace, does not wrap, and on a phone turns a list of
+# three stack names into a horizontally scrolling grey slab. Bullets wrap.
+#
+# Discord collapses leading whitespace in ordinary text, so the continuation
+# lines get a mark rather than an indent.
+as_bullets() {
+  printf '%s' "${1:-}" \
+    | sed -e '/^[[:space:]]*$/d' -e 's/^    \(.*\)$/↳ \1/' -e 's/^  \(.*\)$/• \1/'
+}
+
+# `grep -c` would do this, but it exits 1 when it counts nothing, and under
+# `set -e` that takes the script down on the ordinary case.
+count_entries() {
+  printf '%s' "${1:-}" | awk '/^  [^ ]/ { n++ } END { print n + 0 }'
+}
+
+# "1 stack needs you" / "3 stacks need you". Worth the six lines: "1 stack(s)"
+# is how a report tells you it was written by a machine that did not care.
+plural() { # count singular plural
+  if [ "$1" = 1 ]; then printf '%s %s' "$1" "$2"; else printf '%s %s' "$1" "$3"; fi
+}
+
+# Sections are joined with blank lines, so the first one arrives with a leading
+# gap and the last may leave a trailing one. Discord renders both.
+trim_blank_lines() {
+  printf '%s' "${1:-}" | awk '
+    { line[NR] = $0 }
+    END {
+      first = 1; while (first <= NR && line[first] ~ /^[[:space:]]*$/) first++
+      last = NR;  while (last >= first && line[last] ~ /^[[:space:]]*$/) last--
+      for (i = first; i <= last; i++) print line[i]
+    }'
+}
+
+# The headline: what this run did, in one line, before any detail. Written as
+# facts joined by `·` rather than a sentence, because it is read at a glance in
+# a channel list.
+SUMMARY=""
+add_summary() {
+  if [ -n "$SUMMARY" ]; then SUMMARY="$SUMMARY · $1"; else SUMMARY="$1"; fi
+}
+
+if [ -n "$PULL_ERROR" ]; then
+  add_summary "pull failed"
+elif [ -n "$PULL_COUNT" ]; then
+  add_summary "pulled $(plural "$PULL_COUNT" commit commits) \`$PULL_RANGE\`"
+fi
+if [ -n "$CLEARED" ]; then
+  add_summary "cleared $(plural "$(count_entries "$CLEARED")" "empty file" "empty files")"
+fi
+if [ -n "$PULLED_NEW" ]; then
+  add_summary "$(plural "$(count_entries "$PULLED_NEW")" "image update" "image updates")"
+fi
+if [ -n "$HEALED" ]; then
+  add_summary "restarted $(plural "$(count_entries "$HEALED")" stack stacks)"
+fi
+if [ -n "$FAILED" ]; then
+  add_summary "$(plural "$(count_entries "$FAILED")" "restart failed" "restarts failed")"
+fi
+if [ -n "$PULL_STACK_FAILED" ]; then
+  add_summary "$(plural "$(count_entries "$PULL_STACK_FAILED")" "update failed" "updates failed")"
+fi
+if [ -n "$MANUAL" ]; then
+  add_summary "$(plural "$(count_entries "$MANUAL")" "stack needs you" "stacks need you")"
+fi
+if [ -n "$STALE" ]; then
+  add_summary "$(plural "$(count_entries "$STALE")" "stale image" "stale images")"
+fi
+# The one run that says something without having done anything: the dead man's
+# switch nag, which is a standing condition rather than tonight's news.
+if [ -z "$SUMMARY" ]; then SUMMARY="nothing to deploy"; fi
+
 # Built with `if` rather than `[ x ] && MSG=...`: under `set -e` an AND-list
 # whose test fails takes the whole script down with it, and the test failing is
 # the *normal* case here.
 #
 # One section per outcome, and the commands you still have to run collected into
 # a single block at the end rather than repeated after every line — they are all
-# the same shape, and a block is one paste instead of three.
+# the same shape, and a block is one paste instead of three. Fences are kept for
+# exactly two things now: raw error output, and commands meant to be copied.
 MSG=""
 if [ -n "$PULL_ERROR" ]; then
   MSG="$MSG
-**Repo sync failed on $(hostname)** — nothing was restarted
+
+**Pull failed** — nothing was restarted
 \`\`\`
 $PULL_ERROR
 \`\`\`"
 fi
 if [ -n "$CLEARED" ]; then
   MSG="$MSG
-**Cleared empty files a container had written, so the pull could apply:**
-\`\`\`$CLEARED
-\`\`\`"
+
+**Cleared empty files a container had written**, so the pull could apply
+$(as_bullets "$CLEARED")"
 fi
-if [ -n "$PULLED" ]; then
+if [ -n "$PULL_STACK_FAILED" ]; then
   MSG="$MSG
-$PULLED"
+
+**Image update failed**
+$(as_bullets "$PULL_STACK_FAILED")"
 fi
-if [ -z "$HC_URL" ]; then
-  # Reported every run, deliberately: an unconfigured dead man's switch is
-  # exactly the silence this section exists to break, and it stops the moment
-  # the variable is set.
+if [ -n "$FAILED" ]; then
   MSG="$MSG
-**This sync has no dead man's switch.** Set \`HEALTHCHECKS_REPO_SYNC_URL\` in
-\`docker/monitoring/.env\` — without it, nothing notices when this stops running."
+
+**Restart failed — still on old code**
+$(as_bullets "$FAILED")"
 fi
 if [ -n "$PULLED_NEW" ]; then
   # Always reported, never silent: an automatic version change is the one thing
   # here that happened without anyone asking for it, so the channel is also the
   # record of what changed underneath you overnight.
   MSG="$MSG
-**Updated to new upstream images:**
-\`\`\`$PULLED_NEW
-\`\`\`
-Previous digests: \`$DIGEST_LOG\`"
-fi
-if [ -n "$PULL_STACK_FAILED" ]; then
-  MSG="$MSG
-**IMAGE UPDATE FAILED:**
-\`\`\`$PULL_STACK_FAILED
-\`\`\`"
+
+**Updated to new upstream images**
+$(as_bullets "$PULLED_NEW")
+*previous digests: \`$DIGEST_LOG\`*"
 fi
 if [ -n "$HEALED" ]; then
   MSG="$MSG
-**Restarted, now running current code:**
-\`\`\`$HEALED
-\`\`\`"
-fi
-if [ -n "$FAILED" ]; then
-  MSG="$MSG
-**RESTART FAILED — still on old code:**
-\`\`\`$FAILED
-\`\`\`"
+
+**Restarted, now running current code**
+$(as_bullets "$HEALED")"
 fi
 if [ -n "$MANUAL" ]; then
   MSG="$MSG
-**Needs you:**
-\`\`\`$MANUAL
-\`\`\`
+
+**Needs you**
+$(as_bullets "$MANUAL")
 \`\`\`bash
 cd $REPO$MANUAL_CMDS
 \`\`\`"
@@ -756,10 +826,10 @@ fi
 # tomorrow, a failed restart does not.
 if [ -n "$STALE" ]; then
   MSG="$MSG
-**Images older than ${MAX_IMAGE_AGE_DAYS}d:**
-\`\`\`$STALE
-\`\`\`
-Review before running — this pulls new versions nobody has reviewed:
+
+**Images older than ${MAX_IMAGE_AGE_DAYS}d**
+$(as_bullets "$STALE")
+*review before running — this pulls versions nobody has looked at*
 \`\`\`bash
 cd $REPO$STALE_CMDS
 \`\`\`
@@ -767,6 +837,15 @@ A pinned tag does not move on a pull, so for those this changes nothing — bump
 the tag in the compose file instead. That is the usual case for the oldest
 entries here: pinning is what let them get old. \`proxy\` is exempt, Renovate
 opens its bumps as PRs."
+fi
+if [ -z "$HC_URL" ]; then
+  # Reported every run, deliberately: an unconfigured dead man's switch is
+  # exactly the silence this section exists to break, and it stops the moment
+  # the variable is set. Last and quiet, because it is a standing condition
+  # rather than something that happened tonight.
+  MSG="$MSG
+
+*No dead man's switch on this sync — set \`HEALTHCHECKS_REPO_SYNC_URL\` in \`docker/monitoring/.env\`, or nothing notices when it stops running.*"
 fi
 
 # Nothing worth saying. Silence now means "nothing changed and nothing needs
@@ -781,7 +860,27 @@ if [ -z "$MSG" ]; then
   exit 0
 fi
 
+# Status decides the colour and the leading glyph. Three states, in the order
+# they matter: something broke, something wants a person, nothing did either but
+# the run still changed the box.
+#
+# Colours are the design system's semantic tokens, dark-surface step, since a
+# Discord embed is read on a dark card by default — see
+# docker/dashboard/assets/design-tokens.css.
+if [ -n "$PULL_ERROR" ] || [ -n "$FAILED" ] || [ -n "$PULL_STACK_FAILED" ]; then
+  STATUS_GLYPH="❌"; COLOR=14711391  # --danger  #e07a5f
+elif [ -n "$MANUAL" ] || [ -n "$STALE" ] || [ -z "$HC_URL" ]; then
+  STATUS_GLYPH="⚠️"; COLOR=14722127  # --attention #e0a44f
+else
+  STATUS_GLYPH="✅"; COLOR=7323541   # --success #6fbf95
+fi
+TITLE="$STATUS_GLYPH Repo sync · $(hostname)"
+
+# Headline first, then the sections. MSG already starts with a blank line, so
+# the two join with the gap the layout wants.
+MSG=$(trim_blank_lines "$SUMMARY$MSG")
 MSG=$(printf '%s' "$MSG" | cut -c1-"$MAX_CHARS")
+echo "$TITLE"
 echo "$MSG"
 
 [ -f "$ENV_FILE" ] || { echo "repo-sync: $ENV_FILE not found — cannot report" >&2; exit 1; }
@@ -791,13 +890,27 @@ WEBHOOK=$(sed -n 's/^DISCORD_ALERT_WEBHOOK=//p' "$ENV_FILE" | tail -n1 | tr -d '
 
 # Escape for JSON by hand rather than depending on jq or python being installed:
 # backslashes first, then quotes, then fold newlines into \n.
-PAYLOAD=$(printf '%s' "$MSG" \
-  | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
-  | awk '{printf "%s\\n", $0}')
+json_escape() {
+  printf '%s' "${1:-}" \
+    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
+    | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
+}
+json_escape_line() {
+  printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
+}
 
+# An embed rather than plain content, for one reason: Discord renders a
+# message's content ABOVE its embeds, so anything sent as content arrives before
+# its own heading. Inside an embed the title comes first, which is the order
+# this report is read in — what happened, then what it was.
+#
+# It also buys a 4096-character description where content caps at 2000, which is
+# why MAX_CHARS could go up, and a colour bar that says which of the three
+# states this run was without reading a word.
 curl -fsS -m 20 --retry 3 --retry-delay 5 \
   -H 'Content-Type: application/json' \
-  -d "{\"content\":\"$PAYLOAD\"}" "$WEBHOOK" >/dev/null
+  -d "{\"embeds\":[{\"title\":\"$(json_escape_line "$TITLE")\",\"description\":\"$(json_escape "$MSG")\",\"color\":$COLOR}]}" \
+  "$WEBHOOK" >/dev/null
 
 # Exit non-zero if anything actually went wrong, so cron surfaces it even when
 # Discord is unreachable. A stack merely *needing* a human is not an error, and

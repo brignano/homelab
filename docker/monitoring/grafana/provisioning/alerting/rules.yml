@@ -42,7 +42,12 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.job }} target {{ $labels.instance }} is DOWN"
+          # `host` where the target carries one (the two node jobs and pve),
+          # `instance` otherwise: the scrape addresses for those three are bare
+          # IPs, and "10.0.0.200:9100 is DOWN" has to be looked up before it can
+          # be acted on. Everything else scrapes a container by name, which
+          # already reads as the thing it is.
+          summary: "{{ $labels.job }} target {{ if $labels.host }}{{ $labels.host }}{{ else }}{{ $labels.instance }}{{ end }} is DOWN"
         data:
           - refId: A
             relativeTimeRange: { from: 300, to: 0 }

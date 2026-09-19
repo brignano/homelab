@@ -47,8 +47,14 @@ contactPoints:
           url: ${DISCORD_ALERT_WEBHOOK}
           use_discord_username: false
           # Without these two, Grafana uses `default.title` / `default.message`
-          # — the fifteen-line dump of every label, value and URL. Both are
-          # defined in templates.yml, which explains what replaced it and why.
-          title: '{{ template "homelab.title" . }}'
+          # — the fifteen-line dump of every label, value and URL.
+          #
+          # `message` becomes the Discord message content and `title` the embed
+          # BELOW it, which is why the heading lives in the message rather than
+          # here: a title set here renders under the body, not above it. The
+          # embed is left to do the two things it is good at — Grafana colours
+          # it red or green, and this title is its one clickable element.
+          # templates.yml has the reasoning in full.
+          title: 'Open in Grafana →'
           message: '{{ template "homelab.message" . }}'
         disableResolveMessage: false
