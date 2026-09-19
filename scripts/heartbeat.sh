@@ -2,7 +2,7 @@
 #
 # Dead man's switch. Run from cron on the Docker LXC:
 #
-#   */5 * * * * /root/homelab/scripts/heartbeat.sh
+#   */5 * * * * /root/homelab/scripts/heartbeat.sh >> /var/log/heartbeat.log 2>&1
 #
 # Why this exists
 # ---------------

@@ -103,7 +103,10 @@ self-healing, it is auto-breaking faster. It reports what it restarted, so
 `#alerts` doubles as a deployment log and silence means nothing changed.
 
 Install the schedule with `./scripts/install-cron.sh` — idempotent, and
-`--check` reports what is missing without changing anything. Until 2026-09-19
+`--check` reports what is missing without changing anything. Each job it
+installs appends to `/var/log/<script>.log`, because cron mail on this box goes
+to a mailbox nobody reads, and the failures worth keeping are the ones that
+happen before a script can report through its own channel. Until 2026-09-19
 each script documented its own cron line in a header comment and the sync job
 had simply never been installed: the box sat three weeks behind `main` while
 GitHub said every change had shipped. `repo-sync.sh` now also pings a

@@ -85,8 +85,15 @@ needed a person at all.
   for the missing, fresh-install, already-present and no-trailing-newline cases.
 
 **Notes / next steps:**
-- Run `./scripts/install-cron.sh --check` on CT 100. That is the answer to "is
-  this box actually running what the repo thinks it runs".
+- `--check` on CT 100 confirmed it exactly: `heartbeat.sh` and `pg-backup.sh`
+  were both scheduled, `repo-sync.sh` was not. One missing line, twenty days of
+  drift, and the job that would have reported it was the missing one.
+- Each installed entry now appends to `/var/log/<script>.log`. Cron mails a
+  job's output to a local mailbox nobody reads and no MTA delivers, which loses
+  exactly the failures worth keeping: `repo-sync.sh` reports to Discord, but a
+  run that cannot *reach* Discord says so on stderr and nowhere else. The
+  hand-written `pg-backup` entry on the box already did this; it is the default
+  now rather than something each line has to remember.
 - The second Healthchecks check wants period 1d, grace 6h.
 - Worth considering later: `--check` from something that runs *off* the box, so
   a missing crontab is caught the same way a missing heartbeat is.

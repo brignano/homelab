@@ -2,7 +2,7 @@
 #
 # Daily repo sync + deployment drift report. Run from cron on the Docker LXC:
 #
-#   0 4 * * * /root/homelab/scripts/repo-sync.sh
+#   0 4 * * * /root/homelab/scripts/repo-sync.sh >> /var/log/repo-sync.log 2>&1
 #
 # Why this exists
 # ---------------

@@ -20,10 +20,24 @@
 #   ./scripts/install-cron.sh --check   # report only; non-zero if any are missing
 #
 # An entry already in the crontab is never rewritten, only reported. If you have
-# deliberately moved a job to a different hour, this leaves it where you put it.
+# deliberately moved a job to a different hour, or pointed it at a different
+# log, this leaves it where you put it.
 set -eu
 
 REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
+
+# Each job appends to its own log. Cron mails a job's output to the local user,
+# which on this box is a mailbox nobody reads and no MTA delivers — so anything
+# a script says before it can report through its own channel is lost. That is
+# precisely the failure worth keeping: repo-sync.sh reports to Discord, but a
+# run that cannot *reach* Discord (unreadable .env, curl failing, the webhook
+# rejected) says so on stderr and nowhere else.
+#
+# The existing pg-backup entry on CT 100 already did this by hand; this makes it
+# the default rather than a thing each line remembers. All three are quiet on a
+# healthy run — one line a day from repo-sync, nothing at all from heartbeat —
+# so the files stay small enough not to need rotating.
+LOG_DIR="${HL_LOG_DIR:-/var/log}"
 
 # <schedule>|<script>|<what it is>. The schedule here is the one each script's
 # own header documents; they are the same file, so keep them that way.
@@ -77,8 +91,9 @@ for script in heartbeat.sh repo-sync.sh pg-backup.sh; do
     continue
   fi
 
-  printf '%s %s\n' "$schedule" "$path" >> "$tmp"
-  echo "added    $schedule $path"
+  entry="$schedule $path >> $LOG_DIR/${script%.sh}.log 2>&1"
+  printf '%s\n' "$entry" >> "$tmp"
+  echo "added    $entry"
   added="$added $script"
 done
 
