@@ -131,6 +131,12 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   its membership changes, throttled to `group_interval`, so coarse grouping
   means one flapping probe re-announces every other firing alert alongside it.
   See `grafana/provisioning/alerting/policies.yml`.
+- **The `summary` annotation is the alert.** Every rule gets one, written as a
+  sentence with the value already interpolated ("docker /var is 87% full"),
+  because that is the whole Discord message — `templates.yml` renders the
+  summary plus one line of timing and drops Grafana's default dump of every
+  label, value and URL. A rule with no summary falls back to its own name, which
+  is readable but says nothing; write the sentence.
 - **Before re-diagnosing an alert you already fixed, check it is deployed.**
   `prometheus.yml`, the Caddyfile and `grafana/provisioning/` are all
   bind-mounted, so `git pull` changes the files while the containers keep

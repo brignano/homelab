@@ -146,6 +146,11 @@ actually writes (`scripts/check-observability.sh`).
 - **Alerts**: Grafana → Alerting → Contact points → test `homelab`; a message
   should land in Discord `#alerts`. Since this is now the only delivery path,
   re-run this test after any change to the webhook.
+- **Alert messages are two lines**: title (emoji + rule + instance), then the
+  rule's `summary` and an italic timing line. If a test instead produces a wall
+  of labels and URLs, Grafana is falling back to `default.message` — either the
+  restart has not happened or `templates.yml` failed to parse. Alerting →
+  Notification templates should list `homelab`.
 - **Contact points are what the file says**: the list should show `homelab`
   with exactly one integration (Discord). A leftover marked "Unused" means a
   provisioning deletion did not apply — see the note below.

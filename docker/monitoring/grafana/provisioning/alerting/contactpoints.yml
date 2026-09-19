@@ -46,4 +46,9 @@ contactPoints:
         settings:
           url: ${DISCORD_ALERT_WEBHOOK}
           use_discord_username: false
+          # Without these two, Grafana uses `default.title` / `default.message`
+          # — the fifteen-line dump of every label, value and URL. Both are
+          # defined in templates.yml, which explains what replaced it and why.
+          title: '{{ template "homelab.title" . }}'
+          message: '{{ template "homelab.message" . }}'
         disableResolveMessage: false

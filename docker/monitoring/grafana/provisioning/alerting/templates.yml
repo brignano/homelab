@@ -1,0 +1,68 @@
+apiVersion: 1
+
+# What an alert looks like once it reaches #alerts.
+#
+# Grafana's built-in `default.message` prints, for every alert in the group: the
+# value of each query, every label, every annotation, then the Source, Silence,
+# Dashboard and Panel URLs — around fifteen lines, most of a screen on a phone,
+# to say "/ is 87% full". Worse, the one sentence a human needs is buried in the
+# middle of it, under a label list that is mostly `grafana_folder` and the two
+# labels already in the title.
+#
+# Everything worth reading is in the rule's `summary` annotation. rules.yml
+# gives every rule one, written as a sentence with the value already in it
+# ("docker / is 87% full", "caddy has restarted 5 times in 15m"), because that
+# is the line that decides whether you get up. So the message is that sentence
+# and nothing else, and the metadata is one italic line under it.
+#
+# Where each piece goes is chosen for the lock screen, which is where these are
+# actually read first:
+#
+#   - The embed TITLE is what a phone notification preview shows, so it carries
+#     the alert name and the instance — enough to know what broke and where
+#     without unlocking.
+#   - The BODY carries the summary sentence, then the timing.
+#
+# Firing vs resolved is already carried twice over — Grafana colours the embed
+# red or green, and the title leads with an emoji — so there is no "**Firing**"
+# header here. Resolved alerts keep their summary but strike it through, which
+# also reads correctly for a mixed group where one alert recovered and another
+# did not.
+#
+# Times are Discord timestamps (`<t:unix:R>` renders as "3 hours ago"), not
+# strings formatted here. Discord renders them per-client in the reader's own
+# timezone; a time formatted in this template would be UTC, since the Grafana
+# container sets no TZ. The relative form is also the one that matters on a
+# `repeat_interval: 4h` re-send, where the question is "how long has this been
+# broken", not "when did it start".
+#
+# Two things to know before editing:
+#   - Provisioning is read at startup, so changes need `docker compose restart
+#     grafana` like the rest of `grafana/provisioning/` — see README.md.
+#   - A template that fails to parse takes the notification with it. Verify with
+#     Alerting -> Contact points -> homelab -> Test, which exercises both the
+#     firing and resolved paths, before trusting it with a real alert.
+
+templates:
+  - orgId: 1
+    name: homelab
+    template: |
+      {{ define "homelab.title" -}}
+      {{ if eq .Status "resolved" }}✅{{ else if eq .CommonLabels.severity "critical" }}🔴{{ else }}🟠{{ end }} {{ .CommonLabels.alertname }}{{ with .CommonLabels.instance }} · {{ . }}{{ end }}
+      {{- end }}
+
+      {{/* One alert, as a line. Falls back to the rule name so a future rule
+           that forgets its summary annotation degrades to something readable
+           rather than an empty message. */}}
+      {{ define "homelab.line" -}}
+      {{ if eq .Status "resolved" }}~~{{ end }}{{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}{{ .Labels.alertname }}{{ end }}{{ if eq .Status "resolved" }}~~{{ end }}
+      {{- end }}
+
+      {{/* policies.yml groups by [alertname, instance], so a group is normally a
+           single alert; the range is for the no-data and multi-series cases.
+           The timing line uses the first alert in the group. */}}
+      {{ define "homelab.message" -}}
+      {{ range .Alerts }}{{ template "homelab.line" . }}
+      {{ end }}
+      {{- if .Alerts }}{{ if eq .Status "firing" }}*started <t:{{ (index .Alerts 0).StartsAt.Unix }}:R>*{{ else }}*resolved <t:{{ (index .Alerts 0).EndsAt.Unix }}:R>*{{ end }}{{ end }}
+      {{- end }}

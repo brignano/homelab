@@ -27,6 +27,82 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Alerts said everything except the one sentence worth reading
+
+**Goal:** `#alerts` had become noisy to read. Not noisy in volume — that was
+fixed by grouping on `instance` on 2026-08-30 — but noisy per message: fifteen
+lines of Grafana's default template to deliver one fact.
+
+**Steps:**
+1. Looked at what the default actually sends. Grafana's `default.message`
+   prints, for every alert in the group, the value of each query, every label
+   (including `grafana_folder`, and `alertname`/`instance`, which the title
+   already carries), every annotation, then Source, Silence, Dashboard and Panel
+   URLs. The useful sentence is in the middle of that, in the smallest type
+   Discord has.
+2. Added `grafana/provisioning/alerting/templates.yml` with `homelab.title`,
+   `homelab.line` and `homelab.message`, and pointed the Discord receiver's
+   `title` and `message` settings at them in `contactpoints.yml`.
+3. Rendered all six shapes — firing critical, firing warning, resolved, a mixed
+   group, a rule with no `instance` label, a rule with no `summary` — against a
+   mock of Grafana's `ExtendedData` before committing anything.
+
+**Issues encountered:**
+- **The summary annotation was already doing the work, and nothing showed it.**
+  Every rule in `rules.yml` has a `summary` written as a sentence with the value
+  interpolated in — "docker /var is 87% full". That line is the alert; the
+  surrounding fifteen were a template that could not assume it existed.
+- **Two things that must not be formatted here: time and state.** A time
+  formatted in the template renders in the Grafana container's timezone, which
+  is UTC — it sets no `TZ` — so every message would be off by the local offset
+  for the one reader it has. And firing/resolved was about to be stated a third
+  time, in a `**Firing**` header, on a message Grafana already colours red or
+  green.
+- **A broken template is a silent delivery failure**, which is the failure mode
+  this whole channel exists to avoid, and there is no notification-failure
+  counter to catch it (2026-09-19, earlier entry).
+
+**Resolution:**
+- The embed **title** is the lock-screen line: severity emoji, alert name,
+  instance — enough to know what broke and where without unlocking. The **body**
+  is the summary sentence and one italic line of timing. Two lines, from
+  fifteen.
+- Timing uses Discord's own timestamps (`<t:unix:R>` → "3 hours ago"), rendered
+  client-side in the reader's timezone. That form is also the right one for a
+  `repeat_interval: 4h` re-send, where the question is how long this has been
+  broken, not when it started.
+- Resolved alerts keep their summary but strike it through, so a mixed group —
+  one container back, one still down — reads correctly line by line instead of
+  taking a single status for the whole group.
+- `homelab.line` falls back to the rule name when `summary` is absent, so a
+  future rule that forgets one degrades to something readable rather than an
+  empty Discord message.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+docker compose -f docker/monitoring/docker-compose.yml restart grafana
+```
+Then Alerting → Contact points → `homelab` → **Test**, which exercises both the
+firing and resolved paths. Provisioning is read at startup, so without the
+restart the repo says one thing and `#alerts` keeps showing the other — the
+same trap as every other file under `grafana/provisioning/`.
+
+**Notes / next steps:**
+- Validated by rendering, not by reading: `go run` over the extracted template
+  against a mock `ExtendedData` caught the shape of every case before it could
+  fail as a missing notification. Worth repeating for any future template edit;
+  the harness is ten lines of struct and a `template.ParseFiles`.
+- The nightly `repo-sync.sh` report in the same channel is formatted separately,
+  by hand, in the script. It is a report rather than an alert, and was left
+  alone — but it is the other thing in `#alerts` worth a second look.
+- Deliberately not included: the Silence URL. It is the longest line in the
+  default message by some distance, and silencing an alert from a phone is not
+  a thing this lab has ever wanted to do — the embed title links to Grafana for
+  the times it does.
+
+---
+
 ## 2026-09-19 — Every image was months to years old, and the drift report was silent about it
 
 **Goal:** Work out why `sablier` was still on `1.8.1`, and make the answer
