@@ -8,7 +8,7 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
 | Service | Role | Exposure |
 |---|---|---|
 | prometheus | Metrics store + scraper | LAN/tailnet `:9090` |
-| grafana | Dashboards + unified alerting | `stats.home` / `:3000` |
+| grafana | Dashboards + unified alerting | `stats.$HOMELAB_DOMAIN` / `:3000` |
 | node-exporter | LXC/Docker-host OS metrics | internal |
 | cadvisor | Per-container metrics | internal |
 | pve-exporter | Proxmox VE API metrics | internal |
@@ -57,8 +57,13 @@ actually writes (`scripts/check-observability.sh`).
 1. **Copy env and fill secrets**
    ```bash
    cp .env.example .env
-   # set GRAFANA_ADMIN_PASSWORD, PVE_*, POSTGRES_EXPORTER_DSN, DISCORD_ALERT_WEBHOOK
+   # set GRAFANA_ADMIN_PASSWORD, HOMELAB_DOMAIN, PVE_*, POSTGRES_EXPORTER_DSN,
+   # DISCORD_ALERT_WEBHOOK
    ```
+   `HOMELAB_DOMAIN` is the same value as in `docker/proxy/.env`. Grafana builds
+   every link it sends out from it — the `Open in Grafana →` button on a Discord
+   alert, silence links, dashboard links — so a wrong value means alerts that
+   arrive but cannot be opened from the phone reading them.
 
 2. **Create the Proxmox read-only token** (Datacenter → Permissions):
    - User `monitoring@pve`, API token `grafana` (disable privilege separation),

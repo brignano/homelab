@@ -40,8 +40,23 @@ services:
       # (The password lives in .env, not the shell — an unset variable sends
       # `admin:` and returns a 401 that looks like a wrong password.)
       # GF_FEATURE_TOGGLES_ENABLE: grafanaAdvisor
-      # External URL so alert links (silence, dashboard) are clickable from phones
-      GF_SERVER_ROOT_URL: http://stats.home
+      # External URL Grafana writes into every link it sends out — the "Open in
+      # Grafana →" embed on a Discord alert, plus the silence and dashboard URLs.
+      #
+      # This must be the REAL name, not the legacy `stats.home`. `.home` is not a
+      # real TLD: it resolves only through AdGuard's rewrite, which means only on
+      # a device using AdGuard as its resolver. An alert is read on a phone, and
+      # a phone on cellular has never heard of `stats.home` — the link dead-ends
+      # before it can reach Caddy's redirect to the real name. The wildcard
+      # `*.$HOMELAB_DOMAIN` record resolves from anywhere (the ADDRESS is private,
+      # so the link still only *opens* on the LAN or tailnet, which is the
+      # intended boundary — but off-tailnet it now fails as "can't connect to the
+      # lab" rather than as "no such host", and works the moment Tailscale is on).
+      #
+      # https:// for the same reason: the real name has a genuine Let's Encrypt
+      # certificate (DNS-01, see docker/proxy/Caddyfile), so there is no reason to
+      # start on http and bounce through a redirect.
+      GF_SERVER_ROOT_URL: https://stats.${HOMELAB_DOMAIN:?required}
       # Interpolated into provisioning/alerting/contactpoints.yml. Required,
       # not optional: since ntfy was removed this is the ONLY way an alert
       # reaches you, so an empty value means the stack comes up monitoring

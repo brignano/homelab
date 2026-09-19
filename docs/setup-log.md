@@ -27,6 +27,48 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The one clickable thing in an alert pointed at a name phones can't resolve
+
+**Goal:** Every Discord alert ends in an `Open in Grafana →` link. It went to
+`http://stats.home`, not `https://stats.$HOMELAB_DOMAIN`.
+
+**Steps:**
+1. Traced the link back past the template: it is not written in `templates.yml`
+   or `contactpoints.yml` at all. Grafana builds every outbound URL — the embed
+   link, silence links, dashboard links — from `GF_SERVER_ROOT_URL`, which
+   `docker/monitoring/docker-compose.yml` had set to `http://stats.home` from
+   before the real domain existed.
+2. Set it to `https://stats.${HOMELAB_DOMAIN:?required}` and added
+   `HOMELAB_DOMAIN` to `docker/monitoring/.env.example` (same value as
+   `docker/proxy/.env`) and to the README's first-time setup step.
+
+**Issues encountered:**
+- **The legacy redirect does not rescue this one.** `docker/proxy/Caddyfile`
+  still serves `http://stats.home` and 301s it to the real name, so on a laptop
+  using AdGuard the old link worked and the bug looked cosmetic. Alerts are read
+  on a phone, and a phone on cellular resolves `.home` nowhere — the link
+  dead-ends in DNS, before any redirect can run. The failure was invisible in
+  exactly the place the link exists for.
+- The real name does not make Grafana public: `*.$HOMELAB_DOMAIN` resolves from
+  anywhere but points at 10.0.0.201. Off-tailnet the link now fails as "can't
+  connect" rather than "no such host", and works the moment Tailscale is on.
+
+**Resolution:**
+- `GF_SERVER_ROOT_URL: https://stats.${HOMELAB_DOMAIN:?required}`. `:?required`
+  rather than a default, because a silently wrong root URL still delivers alerts
+  — it only breaks the link inside them, which is the part you find out about
+  while standing up at 3am. CI already supplies `HOMELAB_DOMAIN`, so the compose
+  config check covers it.
+
+**Notes / next steps:**
+- `HOMELAB_DOMAIN` is now in three stacks' `.env` files (proxy, dashboard,
+  monitoring). Copies drift; worth a single source at some point.
+- The `.home` names left in `shell/aliases.*` and `docker/mcp/README.md` are
+  deliberate — those run on machines that do use AdGuard. The Caddyfile's legacy
+  redirect block can go once they do too.
+
+---
+
 ## 2026-09-19 — The brignano.io tile was invisible on the theme it ships with
 
 **Goal:** The dashboard's own site tile could not be seen. `theme: dark` is what
