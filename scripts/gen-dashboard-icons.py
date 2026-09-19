@@ -25,6 +25,12 @@ probe well-known ROOT paths (/favicon.ico, /apple-touch-icon.png) instead of
 parsing the page. Those probes never see Homepage's markup at all. The proxy
 rewrites them onto these files — see the dashboard's site block in
 docker/proxy/Caddyfile — and config/custom.js declares the rest.
+
+And one more surface that reads no markup either: an INSTALLED app. Chrome
+draws the window titlebar, the taskbar entry and the install dialog from the
+web app manifest's `icons`, never from `rel="icon"`, so every link tag above is
+invisible to it. icons/site.webmanifest is the answer and these are the files
+it names.
 """
 
 import io
@@ -55,14 +61,47 @@ def main() -> None:
     # 180 is what iOS asks for; the 32 is the form with the fewest ways to go
     # wrong for a browser that declines the SVG — a plain PNG, no ICO container
     # to parse and no inline <style> to evaluate.
-    for name, size in (("apple-touch-icon.png", 180), ("favicon-32.png", 32)):
+    #
+    # 192 and 512 are the manifest's, and they are not negotiable rather than
+    # conventional: Chrome refuses to treat a site as installable without at
+    # least a 192, and uses the 512 for the splash and the larger shell chrome.
+    for name, size in (
+        ("apple-touch-icon.png", 180),
+        ("favicon-32.png", 32),
+        ("icon-192.png", 192),
+        ("icon-512.png", 512),
+    ):
         tile(size).convert("RGB").save(ICONS / name)
         print("wrote", name)
 
-    # Multi-size .ico for the root probe. Pillow packs the frames itself, and
-    # PNG-in-ICO is understood by every browser that still matters.
+    # The one maskable copy, and the only caller `pad` has ever had.
+    #
+    # An Android adaptive icon is cropped to a shape the page does not get to
+    # choose — a circle on one launcher, a squircle on the next — and only the
+    # middle 80% is guaranteed to survive. This mark is near full-bleed by
+    # design (it has to hold at 16px), so declaring the same file `maskable`
+    # would hand the launcher a drawing whose top and bottom bars are exactly
+    # what it crops. Inset by 10% a side, the figure lands inside the safe zone
+    # and the ink ground takes the cropping.
+    tile(512, pad=round(512 * 0.1)).convert("RGB").save(ICONS / "icon-maskable-512.png")
+    print("wrote icon-maskable-512.png")
+
+    # Multi-size .ico for the root probe. PNG-in-ICO is understood by every
+    # browser that still matters.
+    #
+    # Each frame is rendered from the vector at its own size and handed over
+    # with `append_images`. Passing `sizes=` alone looks equivalent and is not:
+    # Pillow then downsamples the single image it was given, so the 16px frame
+    # — the one that actually gets drawn in a tab — would be a resampled 48,
+    # with the rounded corners smeared. An earlier version of this file
+    # rendered all three and then used only the first, which is that bug with
+    # the evidence of the intent still in it.
     frames = [tile(s).convert("RGB") for s in (48, 32, 16)]
-    frames[0].save(ICONS / "favicon.ico", sizes=[(48, 48), (32, 32), (16, 16)])
+    frames[0].save(
+        ICONS / "favicon.ico",
+        sizes=[(48, 48), (32, 32), (16, 16)],
+        append_images=frames[1:],
+    )
     print("wrote favicon.ico")
 
 

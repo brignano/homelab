@@ -30,8 +30,15 @@
 #       a host reboot restarts everything without rebuilding anything.
 #
 #   pulls upstream images (everything else)  ->  compare against the CONTAINER's
-#       start time. These read their config from the repo via bind mounts, and a
-#       plain restart is enough to pick up a change.
+#       start time. These read their config from the repo via bind mounts, so
+#       replacing the process is what picks a change up.
+#
+# What it does about a stale stack is `--force-recreate`, on both branches, and
+# that flag is load-bearing rather than belt-and-braces: every stack here keeps
+# its config in a bind mount, and a change inside a mount is invisible to the
+# hash Compose decides recreates by. Without it `up -d` exits 0 having replaced
+# nothing. See the note at the staleness loop — the version of this script that
+# shipped without the flag reported a heal on every run and performed none.
 #
 # It is a heuristic, not proof: a stack rebuilt for an unrelated reason reads as
 # fresh. It is right about the case that actually happens — you pulled, and
@@ -457,10 +464,39 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
   # `--pull` on `up` fails with "flag needs an argument" — which this script
   # shipped, and which would have failed every auto-rebuild of `assistant` (the
   # other stack with a `build:` key, and unlike `proxy` not on HL_NO_AUTOHEAL).
+  #
+  # `--force-recreate` on BOTH, and without it this whole loop was a no-op that
+  # reported success. Compose decides whether to replace a container by hashing
+  # the SERVICE definition — image, env, ports, the mount's source and target.
+  # The bytes *behind* a mount are not in that hash and cannot be. Every stack
+  # here keeps its config in a bind mount, so the single most common change is
+  # the one Compose is structurally unable to notice:
+  #
+  #   dashboard   ./config, ./icons, ./assets — image pinned, so nothing in a
+  #               deploy ever changes the service definition.
+  #   proxy       ./Caddyfile, which the Dockerfile does not COPY. A rebuild
+  #               with every layer cached produces the same image id, so
+  #               `--build` does not rescue it either.
+  #
+  # `up -d` then finds nothing to do and exits 0 with the old process still
+  # running. `verify_stack` counts containers that never stopped and calls it
+  # healed, `StartedAt` never moves, the stack is flagged stale again tomorrow,
+  # and `homelab_stack_deploy_drift_seconds` climbs next to a success line. A
+  # heal loop that had never once healed anything.
+  #
+  # That is not merely untidy. Homepage enumerates /app/public only at startup
+  # (see docker/dashboard/docker-compose.yml), so "the container was never
+  # replaced" is the difference between the dashboard's mark being served and
+  # being a 404 — which it silently was, from the day it was drawn until this
+  # was found. The same applies to the report-only path: `proxy` is on
+  # HL_NO_AUTOHEAL, so the command printed for a human to run has to work too.
+  #
+  # Recreating when nothing needed it is not a cost worth guarding against:
+  # this line is only reached for a stack already measured as stale.
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    basis="image"; hint="up -d --build --pull always"
+    basis="image"; hint="up -d --build --pull always --force-recreate"
   else
-    basis="start"; hint="up -d"
+    basis="start"; hint="up -d --force-recreate"
   fi
 
   # The oldest container is what limits the stack's freshness.

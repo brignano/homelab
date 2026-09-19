@@ -181,6 +181,42 @@ for ref in $(grep -oE '^[[:space:]]*rewrite[[:space:]]+\S+[[:space:]]+/(icons|as
   check_public_ref "$ref" "Caddyfile"
 done
 
+# The web app manifest, which is the only icon declaration Chrome reads when it
+# draws an INSTALLED app — its window titlebar, its taskbar entry, the install
+# dialog. Two ways for it to be quietly dead, and neither shows up as an error:
+#
+#   1. It names a raster nobody generated. Chrome then declines to install
+#      rather than falling back, so the symptom is a missing menu item.
+#   2. The Caddyfile stops rewriting the root path onto it. Homepage hard-codes
+#      `/site.webmanifest` in its _document and ships its own at that path, so
+#      dropping the rewrite does not 404 — it silently serves Homepage's logo,
+#      which looks like nothing changed.
+MANIFEST="$REPO/docker/dashboard/icons/site.webmanifest"
+if [ -f "$MANIFEST" ]; then
+  if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$MANIFEST" 2>/dev/null; then
+    echo "MISSING  site.webmanifest is not valid JSON"
+    asset_err=yes
+  else
+    for ref in $(python3 -c '
+import json, sys
+m = json.load(open(sys.argv[1]))
+for icon in m.get("icons", []):
+    src = icon.get("src", "")
+    if src:
+        print(src)
+' "$MANIFEST" | sort -u); do
+      check_public_ref "$ref" "site.webmanifest"
+    done
+  fi
+
+  if grep -qE '^[[:space:]]*rewrite[[:space:]]+/site\.webmanifest[[:space:]]+/icons/site\.webmanifest' "$CADDYFILE"; then
+    echo "ok       /site.webmanifest is rewritten onto ours (Caddyfile)"
+  else
+    echo "MISSING  Caddyfile does not rewrite /site.webmanifest — Homepage's own logo wins"
+    asset_err=yes
+  fi
+fi
+
 if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
   echo >&2
   [ -z "$missing" ] || echo "Add a tile to docker/dashboard/config/services.yaml for:$missing" >&2
