@@ -27,15 +27,18 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       # Grafana Advisor — periodic checks over datasources and plugins, which is
       # adjacent to how three dashboards here died (a plugin class removed from
-      # under a :latest image). Left OFF rather than enabled blind: it was an
-      # experimental toggle when this was written, and turning experimental
-      # features on *while* the image floats is the combination that caused the
-      # original problem. Check what your version actually has, then decide:
+      # under a :latest image). Left OFF rather than enabled blind: turning
+      # experimental features on *while* the image floats on :latest is the
+      # combination that caused the original problem, and this box turned out to
+      # be running 13.2.2 — a major version nothing in this repo ever chose.
+      # Check before enabling; on 13.x it may need no toggle at all:
       #
-      #   docker exec grafana grafana --version
-      #   curl -su admin:"$GRAFANA_ADMIN_PASSWORD" localhost:3000/api/featuretoggles
+      #   cd docker/monitoring
+      #   export GRAFANA_ADMIN_PASSWORD=$(grep -m1 '^GRAFANA_ADMIN_PASSWORD=' .env | cut -d= -f2-)
+      #   curl -su "admin:$GRAFANA_ADMIN_PASSWORD" localhost:3000/api/featuretoggles
       #
-      # If it is already GA there, it needs no toggle at all.
+      # (The password lives in .env, not the shell — an unset variable sends
+      # `admin:` and returns a 401 that looks like a wrong password.)
       # GF_FEATURE_TOGGLES_ENABLE: grafanaAdvisor
       # External URL so alert links (silence, dashboard) are clickable from phones
       GF_SERVER_ROOT_URL: http://stats.home

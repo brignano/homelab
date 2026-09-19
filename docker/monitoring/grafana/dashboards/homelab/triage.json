@@ -705,12 +705,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 1
               }
             ]
           },
@@ -749,15 +745,15 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase({__name__=~\"(grafana_alerting|alertmanager)_notifications_failed_total\"}[1h])) or vector(0)",
+          "expr": "increase(grafana_alerting_notification_latency_seconds_count[1h]) or vector(0)",
           "instant": true,
           "range": false,
           "refId": "A"
         }
       ],
-      "title": "Notifications failing (1h)",
+      "title": "Notifications sent (1h)",
       "type": "stat",
-      "description": "Discord is the only delivery path in this lab, so a webhook that starts rejecting sends means alerts are firing into nothing.\n\nThe __name__ regex matches whichever of the two names your Grafana version exports; collapse it to the real one once confirmed with `docker exec grafana wget -qO- localhost:3000/metrics | grep notifications_failed`."
+      "description": "Informational, not pass/fail \u2014 Grafana 13.2 exports no notification *failure* counter, only this send histogram, so there is nothing to threshold on.\n\nRead it against the Alerting pipeline panel below: alerts going active while this stays flat is delivery being stuck, which is the signal a failure counter would have given directly. Discord is the only path in this lab, so that divergence matters."
     },
     {
       "datasource": {
@@ -818,7 +814,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(increase(grafana_datasource_request_total{code!~\"2..\"}[1h])) or vector(0)",
+          "expr": "sum(increase(grafana_plugin_request_total{status=\"error\"}[1h])) or vector(0)",
           "instant": true,
           "range": false,
           "refId": "A"
@@ -826,7 +822,7 @@
       ],
       "title": "Datasource errors (1h)",
       "type": "stat",
-      "description": "Non-2xx responses from Prometheus or Loki to Grafana. A datasource that half-works makes panels and alert rules fail in ways that look like the lab being quiet."
+      "description": "Failed datasource queries. In Grafana 13 these run through the plugin path, so the metric is `grafana_plugin_request_total` rather than the datasource one.\n\nFiltered to `status=\"error\"` and not `!=\"ok\"`, because `cancelled` is someone navigating away from a dashboard mid-query and is not a fault. Break it down by `status_source` to tell a broken plugin from a datasource returning the error."
     },
     {
       "datasource": {
@@ -1387,7 +1383,24 @@
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "alerts active"
+            },
+            "properties": [
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 0
+              }
+            ]
+          }
+        ]
       },
       "gridPos": {
         "h": 7,
@@ -1428,11 +1441,11 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate({__name__=~\"(grafana_alerting|alertmanager)_notifications_failed_total\"}[5m]))",
+          "expr": "sum(rate(grafana_alerting_rule_evaluations_total[5m]))",
           "instant": false,
           "range": true,
           "refId": "B",
-          "legendFormat": "notification failures"
+          "legendFormat": "rule evaluations (all)"
         },
         {
           "datasource": {
@@ -1440,16 +1453,28 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(rate(grafana_alerting_rule_evaluations_total[5m]))",
+          "expr": "rate(grafana_alerting_notification_latency_seconds_count[5m])",
           "instant": false,
           "range": true,
           "refId": "C",
-          "legendFormat": "rule evaluations (all)"
+          "legendFormat": "notifications sent"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "sum(grafana_alerting_active_alerts)",
+          "instant": false,
+          "range": true,
+          "refId": "D",
+          "legendFormat": "alerts active"
         }
       ],
       "title": "Alerting pipeline",
       "type": "timeseries",
-      "description": "The one piece of history on this screen, because a rule that has been erroring since a provisioning change three days ago and one that broke ten minutes ago need different responses. Evaluations flat at zero means the scheduler itself has stopped."
+      "description": "The one piece of history on this screen, because a rule erroring since a provisioning change three days ago and one that broke ten minutes ago need different responses.\n\nEvaluations flat at zero means the scheduler has stopped. Alerts active (right axis) climbing while notifications sent stays flat means they are firing into nothing \u2014 the closest this Grafana version gets to a delivery-failure signal, since it exports no such counter."
     }
   ],
   "preload": false,

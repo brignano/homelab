@@ -118,18 +118,30 @@ actually writes (`scripts/check-observability.sh`).
   A job reporting `0`, or missing entirely, is fixed with `./scripts/install-cron.sh`.
   `heartbeat.prom` appears within 5 minutes; the other two only after their
   first nightly run, so run them once by hand to avoid waiting.
-- **Grafana's own metric names match the panels** — do this once, on the first
-  deploy after the self-scrape landed. Grafana has used two names for the
-  embedded Alertmanager's counters, so the notification panel and the
-  `hl-notifications-failing` rule match both with a `__name__` regex. Find out
-  which one this version exports and collapse them to it:
+- **Grafana's own metric names still match the panels.** Worth re-running after
+  any Grafana upgrade, because the names move between versions and a panel that
+  loses its metric renders a calm zero rather than an error:
   ```bash
-  docker exec grafana wget -qO- localhost:3000/metrics \
-    | grep -E '^(grafana_alerting|alertmanager)_notifications_failed_total|^grafana_alerting_rule_evaluation|^grafana_datasource_request'
+  curl -s -o /dev/null -w 'status=%{http_code}\n' localhost:3000/metrics
+  for m in grafana_alerting_rule_evaluation_failures_total \
+           grafana_alerting_rule_group_rules \
+           grafana_alerting_notification_latency_seconds_count \
+           grafana_alerting_active_alerts \
+           grafana_plugin_request_total; do
+    printf '%-52s %s\n' "$m" \
+      "$(curl -s localhost:3000/metrics | grep -c "^$m")"
+  done
   ```
-  An empty result for any of those is the answer to a blank panel — the metric
-  is named something else in this version, and the panel should follow it rather
-  than sit there looking calm.
+  A `0` against any name means that panel is dead. Use `curl` from the host
+  rather than `wget -qO-` inside the container: `-q` silences connection
+  failures too, so an empty result cannot be told apart from a missing metric —
+  which is the whole failure this check exists to catch, and it bit us once
+  already.
+
+  Do not expect a notification *failure* counter. Grafana 13.2 exports the send
+  histogram (`notification_latency_seconds`) but no success/failure counters, so
+  delivery trouble is read off the Triage dashboard as alerts going active while
+  notifications sent stays flat.
 - **Logs**: Grafana → Drilldown → Logs, filter `{job="docker"}`.
 - **Alerts**: Grafana → Alerting → Contact points → test `homelab`; a message
   should land in Discord `#alerts`. Since this is now the only delivery path,
