@@ -67,7 +67,7 @@ removing and re-adding.
 
 | File | What it is |
 |---|---|
-| `brignano.svg` | The `A\|B` monogram, the mark brignano.io carries. Drawn here. |
+| `brignano.svg` | The `A\|B` monogram, the mark brignano.io carries. Drawn here — one ink, re-inked from the page by `config/custom.css`. |
 | `grafana.svg`, `adguard-home.svg`, `kali-linux.svg` | Vendored verbatim from [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). |
 | `portainer.svg`, `open-webui.svg` | **Generated**: two upstream drawings in one file. |
 | `SOURCE` | The upstream repo and commit every vendored icon came from. |
@@ -83,6 +83,21 @@ one AdGuard rule from a grid of blank squares. They are fetched once and
 committed, and they stay exactly as their projects draw them: recognising
 Grafana's G at a glance is the whole job of a tile icon.
 
+### A tile icon cannot see the page
+
+An `<img>` is its own document, so a `prefers-color-scheme` step inside a tile
+icon follows the **OS**, while the dashboard follows Homepage's `theme:` setting
+and header toggle. Those two disagree by default: `theme: dark` is pinned, so a
+browser in light mode asks each icon for its light-ground drawing and puts it on
+a near-black card.
+
+`brignano.svg` is the icon we draw, so it does not guess. It carries one ink
+(`n-900`, as the site draws it) and `config/custom.css` inverts it when
+`data-theme` is `dark` — the attribute `custom.js` mirrors from Homepage, and the
+one the tokens already read. The mark follows the dashboard; the phone does not
+get a vote. It only works on a single-colour mark, which is a reason to keep it
+one.
+
 Two are generated because their marks are black on a near-black card —
 Portainer's has been invisible since the tile was added. Upstream ships a
 second drawing of each for dark backgrounds, and Homepage renders a tile as an
@@ -90,8 +105,12 @@ second drawing of each for dark backgrounds, and Homepage renders a tile as an
 `scripts/compose-icon.py` puts both drawings in one file, each in a nested
 `<svg>` keeping its own coordinate system, switched by a media query; ids are
 prefixed on the way in because the two drawings are usually the same file with
-different fills. That switch follows the OS, not Homepage's toggle — the same
-`<img>` limit.
+different fills. That switch follows the OS, not Homepage's toggle — the limit
+above, and the one place it is still unfixed: each half is a whole vendor
+drawing in the vendor's colours, and inverting a colour logo is not a re-ink.
+On a light-mode OS with the dashboard in dark, those two are back to a dark mark
+on a dark card. Fixing it means two files per icon and a `src` swap in
+`custom.js`, which is a bigger change than the one mark we draw needed.
 
 ## Known limit
 

@@ -69,6 +69,51 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The brignano.io tile was invisible on the theme it ships with
+
+**Goal:** The dashboard's own site tile could not be seen. `theme: dark` is what
+the dashboard opens in, and the `A|B` monogram was drawing dark on it.
+
+**Steps:**
+1. Read the drawing rather than the card. `icons/brignano.svg` inked itself
+   `n-900` and lifted to `n-0` under `@media (prefers-color-scheme: dark)` — and
+   that query is answered by the **OS**, because an SVG referenced by `<img>` is
+   its own document and cannot see this page. Homepage ignores the OS entirely.
+   So a browser in light mode asked for the light-ground drawing and got
+   #111111 on a near-black card: the icon was there, at 1.2:1.
+2. Made the mark stop guessing. One ink in the file, no media query, and a rule
+   in `config/custom.css` that inverts it when `data-theme` is `dark` — the
+   attribute `custom.js` already mirrors from whatever theme Homepage settled
+   on, and the same one the design tokens read.
+3. Rendered both themes in headless Chromium against the real file before
+   pushing: ink on the light card, #eeeeee on the dark one (measured 16.73:1
+   against `--card`).
+
+**Issues encountered:**
+- **The README predicted this and it still shipped.** `icons/README.md` already
+  said the OS switch and Homepage's toggle "agree unless the dashboard is pinned
+  to a theme the phone is not in" — which, with `theme: dark` pinned, is the
+  default state for anyone whose phone is in light mode. A known limit written
+  down next to the thing it breaks is not the same as a handled one.
+- **`filter` cannot take a token**, so this is the one bridge in `custom.css`
+  that does not name one. `invert(1)` on the single ink lands 2/255 off
+  `--ink`'s dark step, which is why the mark stays one colour — the moment it
+  is two, inverting it stops being a re-ink.
+
+**Resolution:**
+- `icons/brignano.svg` is one ink; `config/custom.css` re-inks it from the page.
+  `scripts/check-dashboard.sh` still passes — no file moved.
+
+**Notes / next steps:**
+- `portainer.svg` and `open-webui.svg` have the same disagreement and are not
+  fixed: each is two whole vendor drawings switched by the same OS query, and
+  inverting a colour logo is not a re-ink. On a light-mode OS with the dashboard
+  in dark, Portainer's mark is dark-on-dark again — the exact thing composing
+  the two drawings was meant to end. The fix is two files per icon and a `src`
+  swap in `custom.js`, which is worth doing the next time that pipeline is open.
+
+---
+
 ## 2026-09-19 — The heading was arriving after the message it was heading
 
 **Goal:** Two follow-ups from reading the new alerts in the channel rather than
