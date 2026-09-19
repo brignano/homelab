@@ -114,6 +114,38 @@ jobs:
         # in either is silent until someone runs an update.
         run: python3 -m compileall -q scripts
 
+  observability:
+    name: dashboards render and metrics line up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Alerting and scrape config is valid YAML
+        run: |
+          python3 -c "
+          import yaml, pathlib
+          for f in ['docker/monitoring/prometheus/prometheus.yml',
+                    'docker/monitoring/blackbox/blackbox.yml']:
+              yaml.safe_load(pathlib.Path(f).read_text()); print('ok   ', f)
+          for f in sorted(pathlib.Path('docker/monitoring/grafana/provisioning').rglob('*.yml')):
+              yaml.safe_load(f.read_text()); print('ok   ', f)
+          "
+
+      - name: Dashboards render, metrics have a writer, job lists agree
+        # Three silent failures, all of which had already happened:
+        #
+        #   A dashboard full of Angular panels that Grafana 12 no longer ships.
+        #   It does not error — it renders blank, which reads like a quiet lab.
+        #   Three of the seven dashboards here were in that state.
+        #
+        #   A homelab_* metric a panel or an alert asks for that no script
+        #   writes. The panel is empty, which also reads like a quiet lab.
+        #
+        #   heartbeat.sh and install-cron.sh drifting on which jobs exist — the
+        #   same two-lists-of-one-thing shape as check-dashboard.sh and
+        #   check-probes.sh, over the very list whose gap cost three weeks.
+        run: ./scripts/check-observability.sh
+
   dashboard:
     name: dashboard covers every proxied site
     runs-on: ubuntu-latest

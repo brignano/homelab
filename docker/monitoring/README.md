@@ -13,9 +13,43 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
 | cadvisor | Per-container metrics | internal |
 | pve-exporter | Proxmox VE API metrics | internal |
 | postgres-exporter | PostgreSQL metrics (read-only role) | internal + `core_core` |
-| blackbox-exporter | HTTP uptime probes | internal + `core`/`ai`/`proxy` |
+| blackbox-exporter | HTTP + DNS probes | internal + `core`/`ai`/`proxy` |
 | loki | Log store (30-day retention) | internal |
 | alloy | Ships Docker + journal logs → Loki | internal (`127.0.0.1:12345` UI) |
+
+node-exporter also serves whatever this repo's cron jobs write into
+`/var/lib/node_exporter/textfile` (see `scripts/metrics.sh`). That is how facts
+no exporter can see — did the backup run, is the repo behind, is a container
+missing, is a container reading a config file that has since been replaced —
+become metrics at all.
+
+## Dashboards
+
+Two folders, because the two kinds answer different questions.
+
+**Homelab** — written for this lab, committed, each panel there because
+something went wrong without it. Provisioned from `grafana/dashboards/homelab/`.
+
+| Dashboard | The question it answers |
+|---|---|
+| **Triage** | Is anything broken right now? Open this one first; if it is all green, nothing else here is urgent. |
+| **Deployment & Drift** | Is the lab running what git says? Tree behind GitHub, stack running old code, container serving a replaced config file. |
+| **Scheduled Jobs & Backups** | Did the scheduled work happen, and is what it produced any good? Cron entries, dump age, dump size. |
+| **Capacity & Headroom** | How much room is left — on the physical host *and* on CT 100, which is the one that actually fills up. |
+| **Endpoints & DNS** | What the prober can reach, including whether AdGuard is still resolving names. |
+| **PostgreSQL** | The handful of Postgres numbers worth having for a shared homelab database. |
+| **Logs** | Container logs and the host journal, filtered by container. |
+
+**Reference** — community dashboards pulled from grafana.com by
+`scripts/fetch-dashboards.sh` into `grafana/dashboards/reference/`: Node Exporter
+Full (140 panels), cAdvisor (92), Proxmox. Excellent once you know what you are
+looking for, useless as a place to start — hence their own folder. Nothing in
+them is maintained here; re-running the fetch script overwrites them wholesale,
+and the revisions it pins live in `reference/REVISIONS`.
+
+CI checks that every committed dashboard parses, carries a unique uid, uses no
+panel type Grafana has removed, and asks only for `homelab_*` metrics something
+actually writes (`scripts/check-observability.sh`).
 
 ## First-time setup
 
@@ -43,17 +77,26 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
    apt install prometheus-node-exporter
    ```
 
-6. **Fetch dashboards**
+6. **Install the scheduled jobs** (on CT 100, from the repo root). This also
+   creates `/var/lib/node_exporter/textfile`, which node-exporter bind-mounts
+   and the cron jobs write their metrics into — without it the Deployment and
+   Scheduled Jobs dashboards are empty:
+   ```bash
+   ./scripts/install-cron.sh
+   ./scripts/install-cron.sh --check    # report only, non-zero if any are missing
+   ```
+
+7. **Fetch the reference dashboards**
    ```bash
    ./scripts/fetch-dashboards.sh
    ```
 
-7. **Bring it up**
+8. **Bring it up**
    ```bash
    docker compose up -d
    ```
 
-8. **Discord webhook**: Server Settings → Integrations → Webhooks → New Webhook
+9. **Discord webhook**: Server Settings → Integrations → Webhooks → New Webhook
    → pick `#alerts` → Copy Webhook URL, and put it in `.env` as
    `DISCORD_ALERT_WEBHOOK`. This is required — with ntfy gone it is the only
    path an alert takes, so the stack will not start without it.
@@ -62,7 +105,18 @@ Observability for the homelab: metrics (Prometheus), logs (Loki), and dashboards
 
 - **Targets**: Prometheus → Status → Targets, every job `UP`
   (`curl -s localhost:9090/api/v1/targets`).
-- **Dashboards**: open each Homelab dashboard, confirm panels populate.
+- **Dashboards**: open **Homelab → Triage**. Every tile green means the rest is
+  optional reading.
+- **Job metrics are flowing** — the Deployment and Scheduled Jobs dashboards are
+  empty without them, and an empty dashboard looks exactly like a healthy one:
+  ```bash
+  ls -l /var/lib/node_exporter/textfile/          # heartbeat.prom, repo_sync.prom, pg_backup.prom
+  curl -s 'localhost:9090/api/v1/query?query=homelab_cron_job_installed' \
+    | python3 -c 'import json,sys; [print(r["metric"]["job"], r["value"][1]) for r in json.load(sys.stdin)["data"]["result"]]'
+  ```
+  A job reporting `0`, or missing entirely, is fixed with `./scripts/install-cron.sh`.
+  `heartbeat.prom` appears within 5 minutes; the other two only after their
+  first nightly run, so run them once by hand to avoid waiting.
 - **Logs**: Grafana → Drilldown → Logs, filter `{job="docker"}`.
 - **Alerts**: Grafana → Alerting → Contact points → test `homelab`; a message
   should land in Discord `#alerts`. Since this is now the only delivery path,
@@ -136,10 +190,24 @@ needs `docker compose restart grafana`, because provisioning is read at startup.
 
 ## Notes
 
-- **Capacity & Headroom** dashboard (`grafana/dashboards/homelab-capacity.json`) is a
-  custom, committed dashboard — a focused at-a-glance view of total CPU/RAM/disk
-  usage, free RAM headroom, and per-VM/LXC usage. Unlike the fetched community
-  dashboards (generated by `fetch-dashboards.sh`), it lives in git.
+- **Grafana runs on `:latest`, and that has already broken dashboards once.**
+  Grafana 11 disabled Angular panels by default and Grafana 12 removed them, so
+  three community dashboards here (blackbox 7587, postgresql 9628, loki-logs
+  13639) quietly stopped rendering — 10 of 11, 32 of 35 and 1 of 2 panels
+  respectively. Nothing errored; they just went blank, which reads like a quiet
+  lab. They have been replaced by committed dashboards, and
+  `scripts/check-observability.sh` now fails CI on any removed panel type.
+  Pinning the Grafana image would trade this for a different silence (an
+  unpatched version nobody upgrades), so the check is the fix, not the pin.
+- **A dashboard that is empty is not the same as a lab that is healthy**, and
+  the two look identical. That is the reasoning behind most of what is checked
+  in CI here: a panel querying a metric nobody writes, a dashboard using a panel
+  type Grafana no longer ships, and a probe pointed at a path that returns 404
+  all render as calm.
+- **Textfile metrics persist until their writer runs again.** `repo-sync.sh` is
+  daily, so a `homelab_config_drift` or `homelab_stack_deploy_drift_seconds`
+  alert keeps firing until the next 04:00 run even after you have fixed the
+  cause. Re-run `./scripts/repo-sync.sh` by hand to clear it immediately.
 - **Alerting is Discord-only.** ntfy previously ran here for phone push and was
   removed once Discord covered the same ground — see `docs/setup-log.md`. The
   box being *down* is still covered from off-box by `scripts/heartbeat.sh`,

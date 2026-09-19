@@ -53,10 +53,22 @@ services:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
       - /:/rootfs:ro
+      # Where this repo's cron jobs leave their results. A DIRECTORY mount, and
+      # it has to be: the .prom files inside are replaced by an atomic rename on
+      # every run, so a file mount would pin the first inode and serve one
+      # frozen scrape forever — the same trap that made Prometheus read a
+      # six-day-old config (see README, "restart and reload are not enough").
+      - /var/lib/node_exporter/textfile:/var/lib/node_exporter/textfile:ro
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
       - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)"
+      # Serves whatever scripts/metrics.sh has written, as ordinary series on
+      # the existing `node` job. This is how "did the backup run", "is the repo
+      # behind" and "is a container missing" become metrics at all — none of
+      # them are things an exporter can see, and all of them are things the
+      # cron jobs already knew and used to discard.
+      - "--collector.textfile.directory=/var/lib/node_exporter/textfile"
     networks:
       - monitoring
 

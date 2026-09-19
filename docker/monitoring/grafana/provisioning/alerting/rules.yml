@@ -97,6 +97,12 @@ groups:
                 - evaluator: { type: lt, params: [10] }
 
       # --- A probed service endpoint is unreachable ---
+      #
+      # Scoped to the HTTP job. The DNS probes have their own rule below, because
+      # "the house has no name resolution" and "an admin UI is 404ing" are not
+      # the same page, and both probe the same instance (adguard:53) — which the
+      # notification policy groups on, so without the split they would arrive as
+      # one indistinguishable message.
       - uid: hl-probe-down
         title: Service endpoint unreachable
         condition: C
@@ -113,7 +119,7 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: probe_success
+              expr: probe_success{job="blackbox"}
               instant: true
           - refId: C
             relativeTimeRange: { from: 300, to: 0 }
@@ -153,3 +159,342 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [1] }
+
+      # --- AdGuard is not resolving names ---
+      #
+      # The most consequential unmonitored thing in the lab until now. AdGuard is
+      # the household resolver; when it stops answering, every device loses name
+      # resolution and every tool you would reach for to diagnose it resolves
+      # through the thing that is down. repo-sync.sh already refuses to
+      # auto-restart the proxy stack for exactly this reason — the care taken not
+      # to break it was never matched by any way to learn that it had broken.
+      #
+      # `probe` distinguishes the two failures: `home-zone` is AdGuard itself or
+      # its *.home rewrite; `upstream` is AdGuard up but recursion broken. They
+      # look identical from a laptop and have different fixes.
+      - uid: hl-dns-down
+        title: DNS not resolving
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "AdGuard DNS failing the {{ $labels.probe }} check — the LAN may have no name resolution"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: probe_success{job=~"blackbox-dns-.*"}
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # --- A container that should be running is not ---
+      #
+      # cAdvisor reports on containers that exist; it has nothing to say about
+      # one that should exist and does not. Blackbox covers seven endpoints. This
+      # covers every container declared in docker/*/docker-compose.yml, including
+      # the ones with no port to probe — the assistant bot in particular had no
+      # monitoring of any kind. `required="no"` excludes the containers that are
+      # meant to be down (Sablier scales kali-linux to zero; cloudflared has
+      # never been deployed).
+      - uid: hl-container-missing
+        title: Container not running
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} ({{ $labels.stack }} stack) is not running"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_container_running{required="yes"}
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # --- A container is crash-looping ---
+      #
+      # Restarting four times in fifteen minutes is not a restart, it is a loop.
+      # Docker's `restart: unless-stopped` makes this completely silent: the
+      # container is always about to be up, so a probe catches it only if it
+      # happens to land in a down window, and `docker ps` looks fine.
+      - uid: hl-container-restarting
+        title: Container restart loop
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.name }} has restarted {{ printf \"%.0f\" $values.A.Value }} times in 15m"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: changes(container_start_time_seconds{name!=""}[15m])
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [3] }
+
+      # --- A scheduled job has no crontab entry ---
+      #
+      # This is the 2026-09-19 failure, stated as an alert. repo-sync.sh had
+      # never been installed on CT 100: the tree sat three weeks behind main, a
+      # merged change looked deployed because GitHub said so, and a job that only
+      # speaks when something is wrong cannot report never having run.
+      #
+      # noDataState is OK here and in every textfile-backed rule below, which is
+      # deliberate rather than an oversight. These series come from
+      # scripts/metrics.sh via the node_exporter textfile collector; NoData means
+      # the jobs are not publishing at all, which is "the box or cron is dead" —
+      # and that is already watched from OFF the box by Healthchecks, where
+      # silence is the signal. Alerting on it here too would only duplicate a
+      # weaker version of a check that already exists, and would page on every
+      # fresh install before install-cron.sh has run.
+      - uid: hl-cron-missing
+        title: Scheduled job not installed
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.job }} has no crontab entry — run ./scripts/install-cron.sh on CT 100"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_cron_job_installed
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # --- The repo sync has not run ---
+      #
+      # 26 hours, against an 04:00 daily schedule: one missed run plus two hours
+      # of slack, so a slow run or a clock skew does not page.
+      - uid: hl-repo-sync-stale
+        title: Repo sync has not run
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "repo-sync last ran {{ printf \"%.0f\" $values.A.Value }}h ago — the box may be running old code"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_repo_sync_timestamp_seconds) / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [26] }
+
+      # --- The nightly database dump is stale ---
+      #
+      # Measured from the last SUCCESSFUL run: pg-backup.sh deliberately does not
+      # move its timestamp on failure, so a job that runs and fails every night
+      # shows up here as an ageing backup rather than a fresh one.
+      #
+      # This is the lab's only protection against an accidental DROP, and until
+      # now it was the one scheduled job with no dead man's switch at all — which
+      # AGENTS.md has forbidden in writing the whole time.
+      - uid: hl-backup-stale
+        title: PostgreSQL backup is stale
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "Last good pg_dumpall was {{ printf \"%.0f\" $values.A.Value }}h ago"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_pg_backup_timestamp_seconds) / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [26] }
+
+      # --- A container is serving a config file the repo has replaced ---
+      #
+      # The six-day bug. A single-file bind mount is pinned to an inode at
+      # container create time and git replaces files rather than editing them, so
+      # a pull leaves the container reading an unlinked copy — while `git pull`
+      # says "Already up to date", `/-/reload` returns 200, and CI is green.
+      #
+      # Fixed with a RECREATE, never a restart:
+      #   docker compose -f docker/<stack>/docker-compose.yml up -d --force-recreate <service>
+      #
+      # One quirk worth knowing: textfile metrics persist until the job that
+      # wrote them runs again, and repo-sync.sh is daily. So this stays firing
+      # until the next 04:00 run even once you have fixed it — re-run
+      # ./scripts/repo-sync.sh by hand to clear it immediately.
+      - uid: hl-config-drift
+        title: Container config is stale
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} is serving an old copy of {{ $labels.path }} — needs --force-recreate, not restart"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_config_drift
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      # --- A stack has been running old code for two days ---
+      #
+      # repo-sync.sh restarts stale stacks automatically and reports the ones it
+      # will not touch (proxy, because it holds the household's DNS). This is the
+      # backstop for when that reporting goes unread: 48h means two nightly runs
+      # have failed to resolve it, which is no longer a thing to notice in a
+      # Discord scrollback.
+      - uid: hl-stack-drift
+        title: Stack running old code
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.stack }} is {{ printf \"%.0f\" $values.A.Value }}h behind the repo"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_stack_deploy_drift_seconds / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [48] }
+
+      # --- A filesystem will be full within four days ---
+      #
+      # The 85% rule says a disk IS nearly full. This says one is GOING to be,
+      # while there is still time to do something cheap about it. It matters most
+      # for CT 100, whose 400 GB rootfs sits on a ~348 GiB thin pool that cannot
+      # auto-extend — the guest can believe it has room the pool does not have.
+      #
+      # predict_linear over 6h is deliberately short-sighted: it catches a real
+      # leak (a log loop, a runaway volume) rather than slow organic growth, and
+      # it un-fires on its own once the slope flattens.
+      - uid: hl-disk-filling
+        title: Filesystem filling up
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.host }} {{ $labels.mountpoint }} is on course to be full within 4 days"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 21600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 4 * 24 * 3600)
+          - refId: C
+            relativeTimeRange: { from: 21600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [0] }
