@@ -30,3 +30,23 @@ Thumbs.db
 
 # Homepage writes its log file here if the config mount is ever made writable.
 docker/dashboard/config/logs/
+
+# Homepage also drops a 0-byte skeleton into config/ for every integration it
+# supports, including the three this lab does not use. Untracked and unignored,
+# they sit in `git status` forever — and the failure mode is not cosmetic: the
+# day a commit starts tracking one of these paths, `git pull` on the box refuses
+# to overwrite the local empty copy and EVERY stack stops updating, over a file
+# with nothing in it (repo-sync.sh clears that narrow case; AGENTS.md has the
+# story). Named individually on purpose: the config files this repo really does
+# track must not be swept up in a glob.
+docker/dashboard/config/docker.yaml
+docker/dashboard/config/kubernetes.yaml
+docker/dashboard/config/proxmox.yaml
+
+# Archives made by hand while working on the box. A Portainer data dump was
+# found sitting in the repo root — untracked, unignored, one `git add -A` from
+# being committed to a public repo. Nothing here is ever a deliberate artifact:
+# backups go to /opt/backups (`HL_BACKUP_DIR`), not into the working tree.
+*.tar.gz
+*.tgz
+*.zip
