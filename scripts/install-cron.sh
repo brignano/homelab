@@ -77,6 +77,7 @@ current=$(crontab -l 2>/dev/null || true)
 added=""
 relogged=""
 missing=""
+dupes=""
 
 # Build the new crontab in a temp file rather than by string-appending: a
 # crontab is line-oriented and a lost newline silently drops the last job.
@@ -97,6 +98,27 @@ for script in heartbeat.sh repo-sync.sh pg-backup.sh; do
   if [ ! -x "$path" ]; then
     echo "MISSING  $script is not executable at $path"
     missing="$missing $script"
+    continue
+  fi
+
+  # How many uncommented lines schedule this script. More than one and it runs
+  # that many times CONCURRENTLY — for repo-sync that is two `git pull`s and two
+  # `docker compose up -d` racing on the same tree and the same stacks, two
+  # Healthchecks pings, and two Discord reports.
+  #
+  # Structurally invisible until now: every lookup below takes `head -n1`, so a
+  # second copy was never printed and `--check` said ok. Found on CT 100 on
+  # 2026-09-19, and only because appending the redirection made the two lines
+  # identical in `crontab -l` — the check itself still passed.
+  #
+  # Reported, never removed. This script only ever ADDS to a crontab, which is
+  # worth keeping: it exists because a job was missing, and a tool that can
+  # delete a schedule can cause the exact failure it was written to prevent. The
+  # one-line fix is printed at the end instead.
+  count=$(printf '%s\n' "$current" | grep -v '^[[:space:]]*#' | grep -c "scripts/$script" || true)
+  if [ "${count:-0}" -gt 1 ]; then
+    echo "DUPLICATE $script has $count crontab entries — it will run $count times at once"
+    dupes="$dupes $script"
     continue
   fi
 
@@ -155,8 +177,23 @@ for script in heartbeat.sh repo-sync.sh pg-backup.sh; do
   added="$added $script"
 done
 
+# Printed once rather than after every offending job — they all take the same
+# fix. `!seen[$0]++` keeps the first occurrence of each identical line and drops
+# the rest, which is the accidental-duplicate case; entries that differ (a job
+# genuinely scheduled twice at different hours) survive and are still reported,
+# to be looked at by hand.
+report_dupes() {
+  [ -n "$dupes" ] || return 0
+  echo
+  echo "Duplicate entries:$dupes — each will run concurrently with itself." >&2
+  echo "This script never deletes a crontab line. To drop exact duplicates:" >&2
+  echo "  crontab -l > ~/crontab.before && crontab -l | awk '!seen[\$0]++' | crontab - && crontab -l" >&2
+}
+
 if [ -n "$check" ]; then
-  [ -z "$missing" ] || { echo; echo "Not scheduled:$missing — run $0 to install." >&2; exit 1; }
+  report_dupes
+  [ -z "$missing" ] || { echo; echo "Not scheduled:$missing — run $0 to install." >&2; }
+  if [ -n "$missing" ] || [ -n "$dupes" ]; then exit 1; fi
   echo "every job this repo expects is scheduled"
   exit 0
 fi
@@ -168,4 +205,6 @@ else
   echo "nothing to do"
 fi
 
-[ -z "$missing" ] || { echo; echo "Could not schedule:$missing" >&2; exit 1; }
+report_dupes
+[ -z "$missing" ] || { echo; echo "Could not schedule:$missing" >&2; }
+if [ -n "$missing" ] || [ -n "$dupes" ]; then exit 1; fi
