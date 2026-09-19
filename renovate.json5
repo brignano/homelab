@@ -1,0 +1,92 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+
+  // Renovate, confined to one stack on purpose.
+  //
+  // Why this exists
+  // ---------------
+  // Two images in this lab were PINNED and forgotten: sablier at 1.8.1 for 23
+  // months, homepage at v1.5.0 for 12. Pinning fixes the record and fixes the
+  // pull -- a tag that changes is a tag that is not on disk, so Compose fetches
+  // it -- but only if something is opening the PRs. Nothing was.
+  //
+  // Why not everywhere
+  // ------------------
+  // Twenty-odd images across actively released projects is a steady stream of
+  // PRs, most of them patch bumps nobody reads, and the realistic end state is a
+  // tab of unread Renovate PRs -- which is 1.8.1 again with more ceremony.
+  // Review only earns its keep where a bad version is expensive, and in this lab
+  // that is exactly one stack: `proxy` runs Caddy (every service's TLS) and
+  // AdGuard (the household's resolver, which every tool you would use to
+  // diagnose a DNS outage depends on). It is already on HL_NO_AUTOHEAL for the
+  // same reason.
+  //
+  // Everywhere else, scripts/repo-sync.sh reports images past
+  // HL_MAX_IMAGE_AGE_DAYS to Discord and you act on them. That watchdog is also
+  // what covers THIS file failing: a Renovate that is misconfigured, uninstalled
+  // or silently stopped shows up as proxy images ageing past the threshold, so
+  // the config being wrong cannot be quiet.
+  //
+  // See docs/design/tsd-dependency-updates.md.
+  extends: ["config:recommended"],
+
+  // The dashboard issue is a cheap second signal: it lists what Renovate can
+  // see, so an empty or absent one means it is not running.
+  dependencyDashboard: true,
+
+  // Weekly, not on every push. This stack is deployed by hand -- PRs arriving
+  // faster than they are deployed is how the tab of unread PRs starts.
+  schedule: ["before 6am on monday"],
+  prConcurrentLimit: 3,
+  labels: ["dependencies"],
+
+  // Nothing here merges itself. A proxy bump reaches the box only when a person
+  // runs the rebuild, which is the entire reason this stack is the one with
+  // review rather than automation.
+  automerge: false,
+
+  // custom.regex is for the xcaddy plugin below; without it that pin is
+  // invisible to every manager Renovate has.
+  enabledManagers: ["dockerfile", "docker-compose", "custom.regex"],
+
+  packageRules: [
+    {
+      description: "Out of scope by default. Order matters -- later rules win.",
+      matchFileNames: ["**/*"],
+      enabled: false,
+    },
+    {
+      description: "The proxy stack only: docker-compose.yml (AdGuard) and \
+Dockerfile (the Caddy builder and runtime bases). pinDigests because `2-alpine` \
+is a moving tag -- pinning the digest is what makes a rebuild reproducible, and \
+Renovate is then what keeps that digest from becoming the next 23-month-old image.",
+      matchFileNames: ["docker/proxy/**"],
+      enabled: true,
+      pinDigests: true,
+    },
+    {
+      description: "AdGuard is the household's DNS. Its bumps arrive alone \
+rather than grouped with Caddy's, so a resolver change is never something you \
+approve incidentally while reading about a TLS one.",
+      matchFileNames: ["docker/proxy/**"],
+      matchPackageNames: ["adguard/adguardhome"],
+      groupName: null,
+      addLabels: ["dns"],
+    },
+  ],
+
+  customManagers: [
+    {
+      description: "The Sablier Caddy plugin, compiled in by xcaddy. It is a Go \
+module pinned in a RUN line, so no built-in manager sees it -- and it is precisely \
+the shape of thing that rots unwatched (v1.0.2, while the Sablier server in \
+docker/desktops/ is its own separate version).",
+      customType: "regex",
+      managerFilePatterns: ["/^docker/proxy/Dockerfile$/"],
+      matchStrings: [
+        "--with\\s+(?<depName>github\\.com/[^\\s@]+)@(?<currentValue>v[^\\s\\\\]+)",
+      ],
+      datasourceTemplate: "go",
+    },
+  ],
+}

@@ -61,15 +61,36 @@ impossible to reach again.
   report, under the existing Healthchecks ping. Age, not availability —
   no registry calls, no credentials, works offline.
 - Added `--pull` to the `up -d --build` path, so a rebuild refreshes the base.
-- Report-only by design. Restarting a stale stack is safe; pulling an unreviewed
-  version at 4am onto the box that serves the household's DNS is not.
+- Then the other half, once the watchdog existed to catch it failing:
+  `repo-sync.sh` now also **pulls** for the stacks where a bad version is cheap,
+  recording each replaced image's digest to `HL_DIGEST_LOG` first — a floating
+  tag cannot be rolled back to, only forward.
+- `HL_NO_AUTOPULL` defaults to `proxy core monitoring`, which is **wider than
+  the TSD first proposed**, and the reason is the useful part. The draft argued
+  those stacks "fail visibly"; the Grafana Angular-panel incident recorded two
+  entries below is the counter-example — 10 of 11 and 32 of 35 panels blank for
+  months after an ordinary `:latest` restart, nothing errored. Invisible
+  breakage is the failure this design exists to prevent, so the design's own
+  criterion excludes monitoring. `core` is out because Portainer's migrations
+  are one-way: reverting the tag is not a rollback.
+- `renovate.json5` confines Renovate to `proxy`, weekly, no automerge, plus a
+  custom manager for the xcaddy Sablier plugin that no built-in manager sees.
+  AdGuard pinned to `v0.107.79` — Renovate cannot track `:latest`, so floating
+  the tag is precisely what keeps it out of the review loop.
+- CI validates `renovate.json5`. It earned that immediately: the first draft
+  used `"a" + "b"` to wrap a long description, which JSON5 does not support. A
+  broken config does not fail loudly, it just stops opening PRs — which looks
+  exactly like "nothing needed updating".
 
 **Notes / next steps:**
 - This is the third instance of the class that produced the uninstalled cron job
   and the three-week-stale tree — invisible because no signal existed that would
   ever have said so. Same fix each time: make silence the alarm.
-- Still open (§2 of the TSD): whether the low-risk stacks should pull
-  automatically, with Renovate confined to `proxy`.
+- AdGuard's pin is a version bump the box has not taken yet: `proxy` is on both
+  `HL_NO_AUTOHEAL` and `HL_NO_AUTOPULL`, so it lands only when someone runs the
+  rebuild. Do it while watching, with a second resolver configured.
+- Widening `HL_NO_AUTOPULL` back out is one word. Letting `monitoring` in wants
+  Grafana pinned to a major first, so a pull cannot cross one.
 - Out of scope and tracked in the TSD: Homepage v1 → v2, Portainer STS → LTS,
   the Sablier bump (coupled to `sablier-caddy-plugin@v1.0.2`), orphan images.
 

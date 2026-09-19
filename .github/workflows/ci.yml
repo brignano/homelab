@@ -233,3 +233,33 @@ jobs:
             -e CLOUDFLARE_API_TOKEN=ci \
             -v "$PWD/docker/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             homelab-caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
+
+  renovate:
+    name: renovate config is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: renovate-config-validator
+        # A broken renovate.json5 does not fail loudly — Renovate simply stops
+        # opening PRs, which looks exactly like "nothing needed updating". That
+        # is the same silence this repo has now been bitten by three times, and
+        # here it would rot the one stack deliberately excluded from automatic
+        # pulls, so the config is checked rather than trusted.
+        #
+        # This has already earned its place: the first draft of renovate.json5
+        # used `"a" + "b"` to wrap a long description, which JSON5 does not
+        # support. The file looked fine and parsed nowhere.
+        #
+        # Installed rather than run through `npx --package`, which resolves to a
+        # broken dependency tree for this package. No arguments: the validator
+        # discovers renovate.json5 itself and checks it as a REPOSITORY config,
+        # whereas passing the path makes it validate as a global config and
+        # apply the wrong schema.
+        run: |
+          npm install --no-save --no-audit --no-fund renovate
+          ./node_modules/.bin/renovate-config-validator
