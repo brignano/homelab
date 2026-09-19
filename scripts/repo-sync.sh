@@ -430,15 +430,21 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
 
   # A stack that builds its own image must be compared against the image.
   #
-  # `--pull` because `docker build` caches base images exactly the way `up -d`
-  # caches service images: `FROM caddy:2-alpine` is served from disk unless told
-  # otherwise. On 2026-09-19 caddy-sablier:local was 22 minutes old on a
-  # three-month-old Caddy, and this script called it fresh — it measures built
-  # stacks by image creation time, so a rebuild resets the clock while the base
-  # underneath keeps ageing. Without this flag the staleness check below is
-  # blind in the same place, since rebuilding is what it asks for.
+  # `--pull always` because `docker build` caches base images exactly the way
+  # `up -d` caches service images: `FROM caddy:2-alpine` is served from disk
+  # unless told otherwise. On 2026-09-19 caddy-sablier:local was 22 minutes old
+  # on a three-month-old Caddy, and this script called it fresh — it measures
+  # built stacks by image creation time, so a rebuild resets the clock while the
+  # base underneath keeps ageing. Without this the staleness check below is blind
+  # in the same place, since rebuilding is what it asks for.
+  #
+  # `always`, and the argument is not optional: `docker compose build --pull` is
+  # a boolean, but `docker compose up --pull` takes always|missing|never. Bare
+  # `--pull` on `up` fails with "flag needs an argument" — which this script
+  # shipped, and which would have failed every auto-rebuild of `assistant` (the
+  # other stack with a `build:` key, and unlike `proxy` not on HL_NO_AUTOHEAL).
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    basis="image"; hint="up -d --build --pull"
+    basis="image"; hint="up -d --build --pull always"
   else
     basis="start"; hint="up -d"
   fi
@@ -556,7 +562,7 @@ for dir in docker/*/; do
   [ -n "$cids" ] || continue
 
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    stale_cmd="docker compose -f $compose up -d --build --pull"
+    stale_cmd="docker compose -f $compose up -d --build --pull always"
   else
     stale_cmd="docker compose -f $compose pull && docker compose -f $compose up -d"
   fi
@@ -756,7 +762,11 @@ if [ -n "$STALE" ]; then
 Review before running — this pulls new versions nobody has reviewed:
 \`\`\`bash
 cd $REPO$STALE_CMDS
-\`\`\`"
+\`\`\`
+A pinned tag does not move on a pull, so for those this changes nothing — bump
+the tag in the compose file instead. That is the usual case for the oldest
+entries here: pinning is what let them get old. \`proxy\` is exempt, Renovate
+opens its bumps as PRs."
 fi
 
 # Nothing worth saying. Silence now means "nothing changed and nothing needs

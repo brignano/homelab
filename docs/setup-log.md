@@ -165,6 +165,19 @@ impossible to reach again.
 - AdGuard's pin is a version bump the box has not taken yet: `proxy` is on both
   `HL_NO_AUTOHEAL` and `HL_NO_AUTOPULL`, so it lands only when someone runs the
   rebuild. Do it while watching, with a second resolver configured.
+- **Shipped broken, caught on the first real report.** The rebuild command was
+  `up -d --build --pull`, which is invalid: `docker compose build --pull` is a
+  boolean but `docker compose up --pull` takes `always|missing|never`, so bare
+  `--pull` either swallows the next argument or fails with "flag needs an
+  argument". It reached Discord as a copy-paste command that cannot run, and
+  `assistant` — the other stack with a `build:` key, and not on
+  `HL_NO_AUTOHEAL` — would have had every auto-rebuild fail. Now `--pull
+  always`, verified against real `docker compose` rather than by reading.
+  `sh -n` cannot catch this class: the script is syntactically perfect and the
+  error lives inside a string it hands to another program.
+- The stale report also told you to `pull` images whose tags are pinned, where a
+  pull does nothing — and pinning is exactly why the oldest entries are old, so
+  it was useless precisely where it mattered. It now says so.
 - Widening `HL_NO_AUTOPULL` back out is one word. Letting `monitoring` in wants
   Grafana pinned to a major first, so a pull cannot cross one.
 - Out of scope and tracked in the TSD: Homepage v1 → v2, Portainer STS → LTS,
