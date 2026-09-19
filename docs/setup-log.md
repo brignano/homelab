@@ -96,6 +96,63 @@ impossible to reach again.
 
 ---
 
+## 2026-09-19 — `/deploy`, which works out what to recreate instead of being told
+
+**Goal:** Turn the deploy steps for the day's monitoring changes into a command,
+so the sequence stops living in a chat transcript.
+
+**Steps:**
+1. Wrote the obvious version first: pull, `install-cron.sh`, then
+   `up -d --force-recreate prometheus blackbox-exporter node-exporter`, restart
+   Grafana.
+2. Noticed that list was already wrong once. The deploy instructions given out
+   an hour earlier named `prometheus` and `node-exporter` and omitted
+   `blackbox-exporter`, whose `blackbox.yml` had also changed — which would have
+   left it serving a config without the new `dns_home` / `dns_upstream` modules,
+   scored both DNS probes as failures, and paged `#alerts` at critical severity
+   claiming the house had no name resolution. A false critical on the channel
+   the whole day was spent making trustworthy.
+
+**Issues encountered:**
+- **A hardcoded recreate list is a second copy of something Docker already
+  knows.** Same shape as the Caddyfile-vs-tiles and probe-vs-site-block drift
+  that `check-dashboard.sh` and `check-probes.sh` exist to guard, and it rotted
+  within a day of being written. Writing it down more carefully was not the fix.
+
+**Resolution:**
+- `/deploy` detects drift rather than reciting names: for every running
+  container, every bind mount whose source is a *file* inside this repo gets
+  copied out with `docker cp` and compared to the repo's copy. Whatever differs
+  is recreated, resolved back to its stack and service through Docker's own
+  compose labels, so nothing is typed by hand. The detection is re-run
+  afterwards and must come back empty.
+- `docker cp` rather than checksumming inside the container, for the reason
+  `repo-sync.sh` already uses it: half these images have no shell, and a check
+  that skips the containers it cannot run a binary in reports all-clear forever.
+- Directory mounts are excluded, since they do not go stale — but config read
+  only at *startup* still needs a restart, so the command diffs the pull against
+  the pre-pull HEAD and restarts Grafana when `grafana/provisioning/` changed.
+  It also flags a provisioning resource removed without a `deleteRules:` /
+  `deleteContactPoints:` directive, which upserts would otherwise leave behind.
+- `proxy` is excluded from unattended deploys, the same boundary
+  `HL_NO_AUTOHEAL=proxy` draws for `repo-sync.sh`: it holds AdGuard, and a
+  recreate that does not come back takes DNS down along with every tool you
+  would use to diagnose it. It is reported with the command to run, and
+  deploying it verifies `dig +short stats.home` before claiming success.
+- Generalised to any stack rather than monitoring-only, because the inode trap
+  is not specific to one.
+
+**Notes / next steps:**
+- The detection block was tested three ways against a stubbed `docker`: a stale
+  copy is flagged with its path, an identical copy is not, and a non-repo volume
+  mount is ignored.
+- Worth noticing the pattern across today: every fix that held was one that
+  asked the running system a question. Every one that needed fixing again was
+  one that asserted an answer — three guesses at a metric name, and a recreate
+  list written from memory.
+
+---
+
 ## 2026-09-19 — Two of the four new Grafana tiles were querying metrics that do not exist
 
 **Goal:** Confirm, against the running instance, that the self-scrape panels
