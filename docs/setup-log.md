@@ -143,6 +143,13 @@ that happens to run on it.
   jobs that exist; there is still **no image backup and no offsite copy**, so a
   green Scheduled Jobs dashboard means "the one backup we have ran", not "the
   lab is recoverable".
+- **The drift dashboard measures one axis of two.** It compares the repo against
+  what is deployed; it says nothing about what is deployed against upstream, so
+  a stack rebuilt an hour ago on a three-month-old cached base image reads as
+  perfectly fresh. `tsd-dependency-updates.md` (drafted the same day) covers
+  that second axis, and the textfile plumbing added here is the vehicle its
+  staleness watchdog would use — a `homelab_image_age_seconds` alongside the
+  rest. The panel says so rather than implying coverage it does not have.
 
 ---
 
