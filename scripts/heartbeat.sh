@@ -51,12 +51,19 @@ ENV_FILE="$REPO/docker/monitoring/.env"
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"
+# shellcheck source=scripts/healthchecks.sh
+. "$(dirname "$0")/healthchecks.sh"
 
 [ -f "$ENV_FILE" ] || { echo "heartbeat: $ENV_FILE not found" >&2; exit 1; }
 
-# Read only the key we need; avoids sourcing a file full of other secrets.
-URL=$(sed -n 's/^HEALTHCHECKS_PING_URL=//p' "$ENV_FILE" | tail -n1 | tr -d '"'"'"' \r')
-[ -n "$URL" ] || { echo "heartbeat: HEALTHCHECKS_PING_URL is unset in $ENV_FILE" >&2; exit 1; }
+# A placeholder, or a URL with no check id in it, counts as unset — see
+# healthchecks.sh for the night that rule was written on.
+hc_url HEALTHCHECKS_PING_URL "$ENV_FILE" || {
+  echo "heartbeat: $HC_REASON" >&2
+  hc_unarmed heartbeat
+  exit 1
+}
+URL=$HC_VALUE
 
 # The services whose death would otherwise go unreported.
 REQUIRED="grafana prometheus"
@@ -152,13 +159,14 @@ publish_metrics() {
 _running_now=$(docker ps --filter "status=running" --format '{{.Names}}' 2>/dev/null || true)
 publish_metrics
 
-# --retry rides out a brief network blip so a flaky uplink doesn't page you;
-# -m caps the whole attempt so this can never pile up under cron.
 if [ -n "$missing" ]; then
   echo "heartbeat: not running:$missing — signalling failure" >&2
-  curl -fsS -m 20 --retry 3 --retry-delay 5 \
-    --data-raw "monitoring stack down:$missing" "$URL/fail" >/dev/null || true
+  # `|| true`: the exit below is the verdict, and a /fail that could not be
+  # delivered must not mask which containers were missing.
+  hc_ping "$URL/fail" heartbeat "monitoring stack down:$missing" || true
   exit 1
 fi
 
-curl -fsS -m 20 --retry 3 --retry-delay 5 "$URL" >/dev/null
+# Not `|| true`: delivering this ping is the entire job. A failure exits
+# non-zero for cron, and hc_ping has already said why on stderr.
+hc_ping "$URL" heartbeat

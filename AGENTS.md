@@ -104,6 +104,15 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   without one; it now pings `HEALTHCHECKS_PG_BACKUP_URL`, and every job's
   crontab entry is a metric (`homelab_cron_job_installed`), so an uninstalled
   job alerts rather than waiting to be noticed.
+- **A dead man's switch has to prove it is armed.** `HEALTHCHECKS_PG_BACKUP_URL`
+  spent its first hours holding `https://hc-ping.com/your-uuid` — the
+  placeholder from `.env.example`. Non-empty, so the script's "unset" warning
+  never fired; pinged with `|| true`, so the 404 went nowhere; and no check
+  existed, so nothing was ever late. `scripts/healthchecks.sh` is the answer:
+  a value that is not a plausible ping URL counts as unset, a failed ping is
+  reported rather than swallowed, and both leave `homelab_healthchecks_ping_success`
+  behind for `hl-hc-ping-failing` to alert on. Read a ping URL through
+  `hc_url`, never with an ad-hoc `sed`.
 - **A job that detects something must leave the result behind, not just report
   it.** Discord answers "does this need me now" and is read once; a time series
   answers "is it still true", "how long has it been true" and "did the fix

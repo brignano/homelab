@@ -92,6 +92,8 @@ MAX_CHARS=3800
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"
+# shellcheck source=scripts/healthchecks.sh
+. "$(dirname "$0")/healthchecks.sh"
 
 # Stacks never restarted automatically — see "Self-healing" above.
 NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy}"
@@ -114,14 +116,21 @@ VERIFY_DELAY="${HL_VERIFY_DELAY:-10}"
 # every run pings, and silence past the grace period pages. Same shape as
 # heartbeat.sh, one level up — that one watches the box, this one watches the
 # thing that watches the box.
-HC_URL=$(sed -n 's/^HEALTHCHECKS_REPO_SYNC_URL=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r')
+# A placeholder counts as unset, and HC_REASON says which it was — the report
+# below repeats it, so the fix is named in the channel rather than inferred.
+if hc_url HEALTHCHECKS_REPO_SYNC_URL "$ENV_FILE"; then HC_URL=$HC_VALUE; else HC_URL=""; fi
 
 ping_healthchecks() {
   _code=$?
   if [ -n "$HC_URL" ]; then
     # /<exit code>: 0 records a success and anything else a failure, so "ran and
     # failed" stays distinguishable from "never ran".
-    curl -fsS -m 20 --retry 3 --retry-delay 5 "$HC_URL/$_code" >/dev/null 2>&1 || true
+    #
+    # `|| true` because this runs in an EXIT trap and the sync's own verdict is
+    # already decided; hc_ping reports a failed ping itself.
+    hc_ping "$HC_URL/$_code" repo-sync || true
+  else
+    hc_unarmed repo-sync
   fi
 }
 trap ping_healthchecks EXIT
@@ -845,7 +854,7 @@ if [ -z "$HC_URL" ]; then
   # rather than something that happened tonight.
   MSG="$MSG
 
-*No dead man's switch on this sync — set \`HEALTHCHECKS_REPO_SYNC_URL\` in \`docker/monitoring/.env\`, or nothing notices when it stops running.*"
+*No dead man's switch on this sync — $HC_REASON. Nothing notices when it stops running.*"
 fi
 
 # Nothing worth saying. Silence now means "nothing changed and nothing needs
