@@ -29,6 +29,18 @@
 # never matches the parent name, so home.<zone> resolves nowhere without an
 # explicit A record alongside it.
 {$HOMELAB_DOMAIN} {
+	# Safari's address bar, its suggestion list and its Favorites tiles probe
+	# these ROOT paths directly rather than parsing the page, so they never see
+	# the icon Homepage declares in its markup — they found its stock logo, or
+	# nothing, and fell back to a globe. The dashboard's own files live under
+	# /icons (docker/dashboard/icons, mounted into the container), so the probe
+	# is pointed at them here rather than by shadowing the image's /app/public.
+	# A query string a browser appends survives the rewrite and goes on working
+	# as its cache key.
+	rewrite /favicon.ico /icons/favicon.ico
+	rewrite /apple-touch-icon.png /icons/apple-touch-icon.png
+	rewrite /apple-touch-icon-precomposed.png /icons/apple-touch-icon.png
+
 	reverse_proxy dashboard:3000
 }
 

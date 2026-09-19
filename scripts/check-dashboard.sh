@@ -101,6 +101,7 @@ fi
 # Both look like nothing changed rather than like something is wrong.
 CONFIG_DIR="$REPO/docker/dashboard/config"
 CUSTOM_CSS="$CONFIG_DIR/custom.css"
+CUSTOM_JS="$CONFIG_DIR/custom.js"
 asset_err=""
 
 check_public_ref() {
@@ -142,6 +143,21 @@ if [ -f "$CUSTOM_CSS" ]; then
     check_public_ref "$ref" "custom.css"
   done
 fi
+
+# custom.js names the icon files Homepage will not declare on its own, and the
+# Caddyfile rewrites the root paths Safari probes onto the same directory. Both
+# are one edit away from pointing at a file nobody generated — and a favicon
+# that 404s is not an error anywhere, it is a browser quietly drawing a globe.
+if [ -f "$CUSTOM_JS" ]; then
+  for ref in $(grep -oE '"/(icons|assets)/[A-Za-z0-9._/-]+"' "$CUSTOM_JS" | tr -d '"' | sort -u); do
+    check_public_ref "$ref" "custom.js"
+  done
+fi
+
+for ref in $(grep -oE '^[[:space:]]*rewrite[[:space:]]+\S+[[:space:]]+/(icons|assets)/\S+' "$CADDYFILE" \
+             | awk '{print $NF}' | sort -u); do
+  check_public_ref "$ref" "Caddyfile"
+done
 
 if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
   echo >&2

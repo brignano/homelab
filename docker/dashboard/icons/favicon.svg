@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="homelab">
+  <!-- Three rack units, stacked. Inked in the design system's identity amber
+       (the `mark` token) in its one permitted use — inking a graphic.
+
+       NO GROUND, deliberately, and this file is the second attempt at that
+       lesson: the first homelab mark was an amber figure on a near-black tile,
+       which is exactly what `life` had already replaced for reading as nothing
+       against a dark tab strip. An open amber figure carries on white and on
+       near-black alike, and the light/dark pair mirrors the token's own.
+
+       Rectilinear, and horizontal on purpose. It shares a family with life's
+       three ascending steps and the trips range while staying tellable apart
+       from both at 16px, which is the whole job: these sites sit in the same
+       tab group. The last unit is short because three equal bars read as a
+       hamburger menu at tab size — checked at 16px, not assumed. -->
+  <style>
+    .unit { fill: #b4741f; }
+    @media (prefers-color-scheme: dark) { .unit { fill: #e0a44f; } }
+  </style>
+  <g class="unit" fill="#b4741f">
+    <rect x="3.5" y="4"  width="25" height="6" rx="1.6"/>
+    <rect x="3.5" y="13" width="25" height="6" rx="1.6"/>
+    <rect x="3.5" y="22" width="16.5" height="6" rx="1.6"/>
+  </g>
+</svg>
