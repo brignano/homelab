@@ -31,7 +31,7 @@ SOURCE_FILE="$ICONS/SOURCE"
 
 # Drawn in this repo, not fetched from anywhere. If one of these goes missing
 # it is a deleted file, not a missing download.
-LOCAL="homelab brignano"
+LOCAL="favicon icon-source brignano"
 
 # Marks whose default drawing is inked for a light background and vanishes on
 # this dashboard's dark card — Portainer's black P is invisible there today.

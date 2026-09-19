@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="homelab">
+  <!-- App-icon source: the same figure as favicon.svg with no media query,
+       because scripts/gen-dashboard-icons.py always composites it onto an ink
+       ground and the dark-ground amber step is the right one there. -->
+  <g fill="#e0a44f">
+    <rect x="3.5" y="4"  width="25" height="6" rx="1.6"/>
+    <rect x="3.5" y="13" width="25" height="6" rx="1.6"/>
+    <rect x="3.5" y="22" width="16.5" height="6" rx="1.6"/>
+  </g>
+</svg>

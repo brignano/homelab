@@ -27,6 +27,62 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The dashboard's mark was the design `life` had already thrown away
+
+**Goal:** Bring the dashboard's page icon onto the icon standard the `life`
+repo settled a few days ago, so the two sites read as one family in a tab
+group rather than as two unrelated experiments.
+
+**Steps:**
+1. Read what `life` actually does: `public/favicon.svg` is the real mark —
+   **no ground**, and a `prefers-color-scheme` pair using the `mark` token's
+   two amber steps — while `scripts/gen-icons.mjs` composites a separate
+   `icon-source.svg` onto an ink ground for every raster a platform probes.
+2. Redrew the homelab mark to match: three rack units, rectilinear and
+   horizontal, a sibling of life's three ascending steps and the trips range
+   and tellable apart from both at 16px.
+3. `scripts/gen-dashboard-icons.py` writes `apple-touch-icon.png` (180),
+   `favicon-32.png` and a 16/32/48 `favicon.ico`, all on the ink ground.
+4. `config/custom.js` repoints the apple-touch link at the raster and adds the
+   PNG and `.ico` fallbacks; the Caddyfile rewrites `/favicon.ico` and
+   `/apple-touch-icon.png` onto the same directory.
+
+**Issues encountered:**
+- **The first mark was the exact thing `life` had replaced.** An amber figure
+  on a near-black tile, which on a dark tab strip reads as nothing at all. It
+  was drawn from the tokens and still off-standard, because the standard is not
+  only which hue — it is that identity is an open figure, not a filled square.
+  The lesson was already written down one repo over.
+- **Homepage declares two tags and iOS wants a third thing.** `favicon:` emits
+  `rel="icon"` and `rel="apple-touch-icon"` from one path: an SVG is right for
+  the tab and useless for the home screen, a PNG the other way round. Safari
+  reads the live DOM when someone taps Add to Home Screen, so `custom.js`
+  repairing the link after hydration is honoured.
+- **Safari never sees that markup for half of what it draws.** Its address bar,
+  suggestion list and Favorites tiles probe `/favicon.ico` and
+  `/apple-touch-icon.png` at the root, which is Homepage's stock logo. Those
+  are rewritten in the proxy rather than by shadowing the image's
+  `/app/public`.
+
+**Resolution:**
+- Verified in a browser: the mark at 16px and 32px in both colour schemes
+  against life's and trips' marks (the three are tellable apart, which is the
+  job), every raster on its ink ground, and the four declared icon links
+  landing on the right files after `custom.js` runs.
+- `check-dashboard.sh` now also checks the paths named in `custom.js` and the
+  Caddyfile's rewrites, so a mark that never got generated fails the build
+  rather than 404ing quietly into a globe.
+
+**Notes / next steps:**
+- Three equal bars read as a hamburger menu at 16px; the last unit is short for
+  that reason. Checked, not assumed.
+- Favicon caches ignore `Cache-Control`. These files changed names, which is
+  its own cache bust — if one ever sticks, add `?v=2` in `settings.yaml`,
+  `custom.js` and the Caddyfile. An iOS home-screen icon is baked in at add
+  time and needs removing and re-adding.
+
+---
+
 ## 2026-09-19 — The box was three weeks behind main and nothing said so
 
 **Goal:** Deploy the dashboard changes, and then work out why deploying them

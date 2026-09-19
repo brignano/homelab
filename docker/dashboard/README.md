@@ -7,7 +7,7 @@ name is discoverable from it.
 | Directory | What it is | Served at |
 |---|---|---|
 | `config/` | The tile list, settings, and the CSS/JS that style the page. | — |
-| `icons/` | The dashboard's mark, and every tile icon. [README](icons/README.md) | `/icons/...` |
+| `icons/` | The dashboard's mark (SVG + rasters) and every tile icon. [README](icons/README.md) | `/icons/...` |
 | `assets/` | The design system: vendored tokens, generated palette, Geist. [README](assets/README.md) | `/assets/...` |
 
 Both `icons/` and `assets/` are **directory** mounts under `/app/public`, which
