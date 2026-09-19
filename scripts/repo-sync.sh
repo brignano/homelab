@@ -37,6 +37,27 @@
 # fresh. It is right about the case that actually happens — you pulled, and
 # forgot to restart.
 #
+# The second axis: is the image itself old
+# ----------------------------------------
+# Everything above measures the deployment against the REPO, which says nothing
+# about whether the repo is asking for a current image. A stack in perfect sync
+# with git, running something upstream built a year ago, passes every check
+# above. That is how every image in this lab reached 3-23 months old without a
+# word being said — see the block above the staleness loop for the full story,
+# and docs/design/tsd-dependency-updates.md for the design.
+#
+# So a second pass reports any running image older than HL_MAX_IMAGE_AGE_DAYS
+# (default 90).
+#
+# Who fixes it, per stack
+# -----------------------
+# Reporting is the floor, not the whole answer. Where a bad version is cheap,
+# this job now also PULLS — see the image-pull section. Where it is not
+# (HL_NO_AUTOPULL: proxy, core, monitoring) the report is all you get, and a
+# person decides; `proxy` additionally has Renovate opening PRs for it, see
+# renovate.json5. Every automatic pull writes the digest it is replacing to
+# HL_DIGEST_LOG first, because a floating tag cannot be rolled back to.
+#
 # Reports only when there is something to do. Silence means "up to date and
 # everything is running current code", the same discipline as heartbeat.sh.
 #
@@ -201,6 +222,147 @@ in_list() {
   return 1
 }
 
+# --- image pull ---------------------------------------------------------------
+#
+# Currency without a human in the loop, for the stacks where a bad version is
+# cheap. `docker compose up -d` does not pull — Compose's default pull policy is
+# `missing`, so it finds the tag on disk and stops — which is why `:latest` in
+# this lab produced the appearance of currency and three to nine months of
+# drift. This asks for the new image explicitly.
+#
+# Which stacks, and why the list is what it is
+# --------------------------------------------
+# HL_NO_AUTOPULL is the same judgement as HL_NO_AUTOHEAL, applied to versions
+# rather than restarts, and it starts wider than the TSD first proposed:
+#
+#   proxy       AdGuard is the household's resolver and Caddy holds every
+#               certificate. Already never auto-restarted; it is not going to be
+#               auto-upgraded either. Renovate opens PRs for it instead
+#               (renovate.json5) and a person runs the rebuild.
+#
+#   core        Portainer's database migrations are one-way. Once a newer
+#               version has opened that volume, the digest you wrote down above
+#               will not take you back, so "revert the tag" is not a rollback
+#               here. Postgres is in this stack too, and a patch bump means a
+#               database restart.
+#
+#   monitoring  The one the evidence changed. The TSD argued these stacks "fail
+#               visibly and recover cheaply" — and this repo already contains
+#               the counter-example. Grafana 11 disabled Angular panels and
+#               Grafana 12 removed them, which blanked 10 of 11 panels on one
+#               dashboard and 32 of 35 on another, for months, on some ordinary
+#               restart of a `:latest` image. Nothing errored. A blank dashboard
+#               reads like a quiet lab. That is invisible breakage, which is the
+#               failure this whole design exists to prevent, so monitoring does
+#               not get automatic major versions. Pinning Grafana to a major
+#               would let it back in; see the TSD.
+#
+# Everything else — ai, mcp, dashboard, desktops — pulls. Two of those are
+# version-pinned already, so a pull is a no-op for them until the pin moves,
+# which is the point: this is a mechanism, not a gamble.
+#
+# Stacks that build their own image are skipped entirely: there is no upstream
+# image to fetch, and `--pull` on their rebuild (below) refreshes the base.
+NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring}"
+AUTOPULL="${HL_AUTOPULL:-yes}"
+
+# Rollback insurance. Before anything is replaced, what is running is written
+# down as a pullable digest — because a floating tag cannot be rolled back to,
+# only forward. Degrades to a no-op on an unwritable path, the same discipline
+# metrics.sh uses: failing to record a digest must never fail the sync.
+DIGEST_LOG="${HL_DIGEST_LOG:-/var/lib/homelab/image-digests.log}"
+
+# What each tag USED BY a running container resolves to right now. Compared
+# either side of the pull: the container keeps running the old image until it is
+# recreated, so the container's own image ID cannot tell you a new one arrived —
+# only the tag's can.
+tag_ids() {
+  for _c in $(running_ids "$1"); do
+    _n=$(docker inspect -f '{{.Config.Image}}' "$_c" 2>/dev/null || true)
+    [ -n "$_n" ] || continue
+    printf '%s %s\n' "$_n" "$(docker image inspect -f '{{.Id}}' "$_n" 2>/dev/null || true)"
+  done | sort -u
+}
+
+record_digests() {
+  [ -n "$DIGEST_LOG" ] || return 0
+  _d=$(dirname "$DIGEST_LOG")
+  [ -d "$_d" ] || mkdir -p "$_d" 2>/dev/null || return 0
+  _ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  for _c in $(running_ids "$1"); do
+    _n=$(docker inspect -f '{{.Config.Image}}' "$_c" 2>/dev/null || true)
+    [ -n "$_n" ] || continue
+    # RepoDigests is what `docker pull` can take back; a locally-built image has
+    # none, so its ID is recorded instead and the note says rebuild, not pull.
+    _rd=$(docker image inspect \
+      -f '{{if .RepoDigests}}{{index .RepoDigests 0}}{{else}}{{.Id}} (local build){{end}}' \
+      "$_n" 2>/dev/null || true)
+    printf '%s\t%s\t%s\t%s\n' "$_ts" "$2" "$_n" "$_rd" >> "$DIGEST_LOG" 2>/dev/null || true
+  done
+}
+
+PULLED_NEW=""
+PULL_STACK_FAILED=""
+
+for dir in docker/*/; do
+  stack=$(basename "$dir")
+  compose="${dir}docker-compose.yml"
+  [ -f "$compose" ] || continue
+
+  # `if`, not `&&`: under `set -e` an AND-list whose test fails takes the whole
+  # script down, and the test failing is the normal case. Same reason the report
+  # section below is built the way it is.
+  if [ "$AUTOPULL" != "yes" ] || [ -n "$PULL_ERROR" ]; then continue; fi
+  if in_list "$stack" "$NO_AUTOPULL"; then continue; fi
+  if grep -qE '^[[:space:]]+build:' "$compose"; then continue; fi
+
+  abs=$(cd "$dir" && pwd)
+  cids=$(running_ids "$abs")
+  [ -n "$cids" ] || continue
+
+  before=$(tag_ids "$abs")
+  record_digests "$abs" "$stack"
+
+  if ! err=$(cd "$REPO" && docker compose -f "$compose" pull -q 2>&1); then
+    PULL_STACK_FAILED="$PULL_STACK_FAILED
+  $stack — pull failed, still on the old image
+    $(printf '%s' "$err" | tail -n 2 | tr '\n' ' ')"
+    continue
+  fi
+
+  after=$(tag_ids "$abs")
+  [ "$before" != "$after" ] || continue
+
+  # Only the tags that actually moved, so the report names images rather than
+  # just stacks. Done with a loop rather than `comm <(...)`: process
+  # substitution is a bashism and this runs under /bin/sh.
+  changed=""
+  for _t in $(printf '%s\n' "$after" | awk '{print $1}'); do
+    _a=$(printf '%s\n' "$after"  | awk -v t="$_t" '$1 == t { print $2 }')
+    _b=$(printf '%s\n' "$before" | awk -v t="$_t" '$1 == t { print $2 }')
+    # `if`, not `&&`, for the set -e reason above: a loop whose last iteration
+    # ends in a failed test exits the script.
+    if [ "$_a" != "$_b" ]; then changed="$changed $_t"; fi
+  done
+  [ -n "$changed" ] || continue
+
+  want=$(printf '%s\n' "$cids" | wc -l | tr -d ' ')
+  if ! err=$(cd "$REPO" && docker compose -f "$compose" up -d 2>&1); then
+    PULL_STACK_FAILED="$PULL_STACK_FAILED
+  $stack — new image pulled but recreate failed; previous containers likely still up
+    $(printf '%s' "$err" | tail -n 2 | tr '\n' ' ')"
+    continue
+  fi
+  if ! why=$(verify_stack "$abs" "$want"); then
+    PULL_STACK_FAILED="$PULL_STACK_FAILED
+  $stack — updated but did NOT come back: $why
+    roll back with the last digests in $DIGEST_LOG"
+    continue
+  fi
+  PULLED_NEW="$PULLED_NEW
+  $stack: $changed"
+done
+
 HEALED=""
 FAILED=""
 MANUAL=""
@@ -267,8 +429,16 @@ homelab_stack_running{$(metric_kv stack "$stack")} 0"
 homelab_stack_running{$(metric_kv stack "$stack")} 1"
 
   # A stack that builds its own image must be compared against the image.
+  #
+  # `--pull` because `docker build` caches base images exactly the way `up -d`
+  # caches service images: `FROM caddy:2-alpine` is served from disk unless told
+  # otherwise. On 2026-09-19 caddy-sablier:local was 22 minutes old on a
+  # three-month-old Caddy, and this script called it fresh — it measures built
+  # stacks by image creation time, so a rebuild resets the clock while the base
+  # underneath keeps ageing. Without this flag the staleness check below is
+  # blind in the same place, since rebuilding is what it asks for.
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    basis="image"; hint="up -d --build"
+    basis="image"; hint="up -d --build --pull"
   else
     basis="start"; hint="up -d"
   fi
@@ -334,6 +504,101 @@ $cmd"
   $stack ($basis, $age)"
 done
 
+# --- image staleness ----------------------------------------------------------
+#
+# The second drift axis, and the one the first could never have caught.
+#
+# Everything above asks "is the running container older than the commit". A
+# stack that matches git perfectly, running an image upstream built in January,
+# is reported as healthy by every check in this script — correctly, by its own
+# definition, and uselessly. On 2026-09-19 every image in this lab was between
+# 3 and 23 months old and nothing had ever mentioned it.
+#
+# The two worst were the two that were PINNED: sablier at 1.8.1 (23 months) and
+# homepage at v1.5.0 (12 months). Floating tags drifted because Compose's
+# default pull policy is `missing` and nothing here runs `docker compose pull`;
+# pinned tags drifted because nothing opened the PRs. Opposite mechanisms, same
+# root — no signal existed that would ever have said so. Same failure as the
+# cron job that was never installed, and it gets the same fix: make silence the
+# alarm.
+#
+# Age, not availability, deliberately. Asking a registry what is current needs
+# network, credentials for some of them, and fails per-registry; creation time
+# is already in the local metadata, always answers, and still works on the day
+# the internet is what broke. The cost is a false positive on a project that
+# genuinely has not shipped in 90 days. The error in the other direction is the
+# one that actually happened.
+#
+# Locally-built images are included rather than exempted: their age IS the build
+# time, so a stack nobody has rebuilt in 90 days is exactly what wants saying,
+# and `--pull` above makes the rebuild it asks for refresh the base too.
+#
+# REPORT ONLY, and that is a boundary rather than an unfinished edge. Restarting
+# a stale stack is safe — the image is on disk and CI gated the config. Pulling
+# a new one is a version change nobody reviewed, landing at 4am on the box that
+# serves the household's DNS. That decision belongs in a PR.
+# See docs/design/tsd-dependency-updates.md.
+MAX_IMAGE_AGE_DAYS="${HL_MAX_IMAGE_AGE_DAYS:-90}"
+STALE=""
+M_IMAGE_AGE=""
+STALE_CMDS=""
+NOW=$(date +%s)
+
+for dir in docker/*/; do
+  stack=$(basename "$dir")
+  compose="${dir}docker-compose.yml"
+  [ -f "$compose" ] || continue
+
+  abs=$(cd "$dir" && pwd)
+  cids=$(running_ids "$abs")
+  # Nothing running is already reported by the drift loop as NOT_RUNNING; a
+  # stopped stack has no image age worth acting on.
+  [ -n "$cids" ] || continue
+
+  if grep -qE '^[[:space:]]+build:' "$compose"; then
+    stale_cmd="docker compose -f $compose up -d --build --pull"
+  else
+    stale_cmd="docker compose -f $compose pull && docker compose -f $compose up -d"
+  fi
+
+  # Report per distinct image, not per container: one line per thing to update.
+  seen=""
+  hits=""
+  for cid in $cids; do
+    name=$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null || true)
+    [ -n "$name" ] || continue
+    # POSIX-safe dedupe — no arrays, and the spaces make it a whole-word match.
+    case " $seen " in *" $name "*) continue ;; esac
+    seen="$seen $name"
+
+    # The image the container is ACTUALLY running, by ID. Going via the tag
+    # would read whatever that tag points at now, which for `:latest` is a
+    # different image the moment anything pulls.
+    img=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
+    [ -n "$img" ] || continue
+    ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
+    [ -n "$ts" ] || continue
+
+    # Emitted for every image, not just the stale ones: a gauge that appears
+    # only when something is wrong cannot be graphed, and the flat line is the
+    # reassurance. Same reasoning as the deploy-drift gauge above.
+    M_IMAGE_AGE="$M_IMAGE_AGE
+homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
+
+    age_days=$(( (NOW - ts) / 86400 ))
+    [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
+    hits="$hits
+    $name ($(human $((NOW - ts))))"
+  done
+
+  if [ -n "$hits" ]; then
+    STALE="$STALE
+  $stack:$hits"
+    STALE_CMDS="$STALE_CMDS
+$stale_cmd"
+  fi
+done
+
 # --- stack metrics ------------------------------------------------------------
 metric_help homelab_stack_running gauge \
   "1 if any container is running for a stack declared in docker/"
@@ -341,6 +606,9 @@ metric_raw "$M_STACK_RUNNING"
 metric_help homelab_stack_deploy_drift_seconds gauge \
   "Seconds between a stack's newest deployable commit and what is running"
 metric_raw "$M_STACK_DRIFT"
+metric_help homelab_image_age_seconds gauge \
+  "Age in seconds of the image a running container was created from"
+metric_raw "$M_IMAGE_AGE"
 
 # --- config drift -------------------------------------------------------------
 #
@@ -391,7 +659,7 @@ metric homelab_repo_sync_timestamp_seconds "$(date +%s)"
 
 metric_help homelab_repo_sync_success gauge \
   "1 if the last repo-sync pulled cleanly and every restart it attempted came back"
-if [ -n "$PULL_ERROR" ] || [ -n "$FAILED" ]; then
+if [ -n "$PULL_ERROR" ] || [ -n "$FAILED" ] || [ -n "$PULL_STACK_FAILED" ]; then
   metric homelab_repo_sync_success 0
 else
   metric homelab_repo_sync_success 1
@@ -440,6 +708,22 @@ if [ -z "$HC_URL" ]; then
 **This sync has no dead man's switch.** Set \`HEALTHCHECKS_REPO_SYNC_URL\` in
 \`docker/monitoring/.env\` — without it, nothing notices when this stops running."
 fi
+if [ -n "$PULLED_NEW" ]; then
+  # Always reported, never silent: an automatic version change is the one thing
+  # here that happened without anyone asking for it, so the channel is also the
+  # record of what changed underneath you overnight.
+  MSG="$MSG
+**Updated to new upstream images:**
+\`\`\`$PULLED_NEW
+\`\`\`
+Previous digests: \`$DIGEST_LOG\`"
+fi
+if [ -n "$PULL_STACK_FAILED" ]; then
+  MSG="$MSG
+**IMAGE UPDATE FAILED:**
+\`\`\`$PULL_STACK_FAILED
+\`\`\`"
+fi
 if [ -n "$HEALED" ]; then
   MSG="$MSG
 **Restarted, now running current code:**
@@ -459,6 +743,19 @@ if [ -n "$MANUAL" ]; then
 \`\`\`
 \`\`\`bash
 cd $REPO$MANUAL_CMDS
+\`\`\`"
+fi
+# Last on purpose. MAX_CHARS truncates the tail, and this is the only section
+# that is slow-burn rather than about today — a 90-day-old image keeps until
+# tomorrow, a failed restart does not.
+if [ -n "$STALE" ]; then
+  MSG="$MSG
+**Images older than ${MAX_IMAGE_AGE_DAYS}d:**
+\`\`\`$STALE
+\`\`\`
+Review before running — this pulls new versions nobody has reviewed:
+\`\`\`bash
+cd $REPO$STALE_CMDS
 \`\`\`"
 fi
 
@@ -493,5 +790,7 @@ curl -fsS -m 20 --retry 3 --retry-delay 5 \
   -d "{\"content\":\"$PAYLOAD\"}" "$WEBHOOK" >/dev/null
 
 # Exit non-zero if anything actually went wrong, so cron surfaces it even when
-# Discord is unreachable. A stack merely *needing* a human is not an error.
-[ -z "$PULL_ERROR" ] && [ -z "$FAILED" ]
+# Discord is unreachable. A stack merely *needing* a human is not an error, and
+# neither is an image merely being old — but an image update that left a stack
+# down is exactly as wrong as a failed restart, so it counts here too.
+[ -z "$PULL_ERROR" ] && [ -z "$FAILED" ] && [ -z "$PULL_STACK_FAILED" ]

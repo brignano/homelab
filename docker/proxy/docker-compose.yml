@@ -32,7 +32,17 @@ services:
       - ai
 
   adguard:
-    image: adguard/adguardhome:latest
+    # Pinned, not `:latest`, for two reasons that pull in the same direction.
+    #
+    # This is the household's resolver: the version it runs should be a thing
+    # git records, not whatever the tag happened to mean on the day the image
+    # was last fetched. And Renovate cannot track `:latest` — there is no
+    # version to compare — so floating the tag is exactly what keeps this out
+    # of the review loop renovate.json5 sets up for this stack.
+    #
+    # Bumps arrive here as PRs. Nothing deploys them: `proxy` is on
+    # HL_NO_AUTOHEAL and HL_NO_AUTOPULL, so a person runs the rebuild.
+    image: adguard/adguardhome:v0.107.79
     container_name: adguard
     restart: unless-stopped
     ports:

@@ -1,6 +1,9 @@
 # TSD: Keeping images current, and noticing when they aren't
 
-**Status:** 📝 draft / proposed — not implemented
+**Status:** ✅ approved / shipped — §1–§4 live in
+[`scripts/repo-sync.sh`](../../scripts/repo-sync.sh) and
+[`renovate.json5`](../../renovate.json5). §2 shipped narrower than drafted; the
+reason is recorded in that section and is the most useful thing in this document.
 **Date:** 2026-09-19
 **Owner:** Anthony
 
@@ -120,21 +123,36 @@ diagnose it. That judgment transfers to updates unchanged.
 
 | Stacks | Tags | How they update |
 |---|---|---|
-| `monitoring`, `ai`, `core`, `mcp`, `dashboard`, `desktops` | floating | `repo-sync.sh` pulls, restarts, reports what changed |
+| `ai`, `mcp`, `dashboard`, `desktops` | floating or pinned | `repo-sync.sh` pulls, restarts, reports what changed |
 | `proxy` | pinned | Renovate opens a PR; a human deploys it |
-| `postgres` (in `core`) | pinned to major | never automatic — see below |
+| `core`, `monitoring` | floating | watchdog reports; a human pulls |
 
-Worst case in the first row is that Grafana looks wrong for an afternoon and a
-revert fixes it. These stacks fail visibly and recover cheaply, their image
-versions were never gated by CI anyway, and the status quo has already cost nine
-months on `blackbox-exporter` with nobody noticing.
+**This shipped narrower than it was designed, and the reason matters.**
+
+The first draft put `monitoring` in the top row, arguing those stacks "fail
+visibly and recover cheaply". This repo already contains the counter-example.
+Grafana 11 disabled Angular panels and Grafana 12 removed them, which blanked 10
+of 11 panels on the blackbox dashboard and 32 of 35 on the Postgres one — on some
+ordinary restart of a `:latest` image, for months. Nothing errored. *A blank
+dashboard reads like a quiet lab.* That is invisible breakage, which is the exact
+failure this whole design exists to prevent, so applying the design's own
+criterion honestly excludes `monitoring` rather than including it.
+
+`core` is excluded for a different reason: Portainer's database migrations are
+one-way. Once a newer version has opened that volume, the recorded digest will
+not take you back, so "revert the tag" is not a rollback. Postgres is in the same
+stack, pinned to `16-alpine` and staying there — patch releases within 16 are
+safe and arrive with the pull, a major is a dump-and-restore.
+
+What remains in the top row is genuinely cheap: `dashboard` and `desktops` are
+version-pinned, so a pull is a no-op until the pin moves, and `ai`/`mcp` hold
+nothing whose breakage is quiet. That is thinner than the original table, and
+deliberately so — the mechanism is general (`HL_NO_AUTOPULL`), so widening it
+later is one word, and each widening should be argued rather than assumed.
 
 `proxy` is the one place review earns its keep, and confining Renovate to it
 keeps the PR volume low enough to actually be read — which is the failure mode
 of putting Renovate everywhere (see rejected alternatives).
-
-Postgres is pinned to `16-alpine` and stays there. Patch releases within 16 are
-safe and arrive with the pull; a major is a dump-and-restore, never a tag change.
 
 ### 3. `--pull` on the built stacks
 

@@ -27,6 +27,75 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Every image was months to years old, and the drift report was silent about it
+
+**Goal:** Work out why `sablier` was still on `1.8.1`, and make the answer
+impossible to reach again.
+
+**Steps:**
+1. Listed image ages on CT 100. Every image was 3–23 months old. The two
+   **pinned** ones were the two **stalest** — `sablierapp/sablier:1.8.1` at 23
+   months, `ghcr.io/gethomepage/homepage:v1.5.0` at 12 — while nothing on
+   `:latest` was worse than 9.
+2. Traced both halves. Floating tags never moved because `:latest` is a name,
+   not an instruction: Compose's default pull policy is `missing`, so `up -d`
+   finds the tag on disk and stops, and nothing in this repo runs `docker
+   compose pull`. Pinned tags never moved because nothing opened the PRs.
+3. Found the same hole one level down in builds. `docker/proxy/Dockerfile` is
+   `FROM caddy:2-alpine`, and `up -d --build` serves a cached base —
+   `caddy-sablier:local` was 22 minutes old on a three-month-old Caddy.
+4. Wrote [`docs/design/tsd-dependency-updates.md`](design/tsd-dependency-updates.md)
+   (#67), then shipped its two mechanism-independent parts.
+
+**Issues encountered:**
+- `repo-sync.sh` is structurally blind to the build case: it measures built
+  stacks by image creation time, so a rebuild resets the clock while the base
+  underneath keeps ageing. It read 22 minutes and called `proxy` fresh.
+- The obvious fix — pin everything — is what produced the two worst offenders.
+  Pinning only beats floating when something is opening PRs; where nothing is,
+  it drifts *slower* to float. So the fix could not be a tagging convention.
+
+**Resolution:**
+- Added a second drift axis to `scripts/repo-sync.sh`: any running image older
+  than `HL_MAX_IMAGE_AGE_DAYS` (default 90) is named in the existing Discord
+  report, under the existing Healthchecks ping. Age, not availability —
+  no registry calls, no credentials, works offline.
+- Added `--pull` to the `up -d --build` path, so a rebuild refreshes the base.
+- Then the other half, once the watchdog existed to catch it failing:
+  `repo-sync.sh` now also **pulls** for the stacks where a bad version is cheap,
+  recording each replaced image's digest to `HL_DIGEST_LOG` first — a floating
+  tag cannot be rolled back to, only forward.
+- `HL_NO_AUTOPULL` defaults to `proxy core monitoring`, which is **wider than
+  the TSD first proposed**, and the reason is the useful part. The draft argued
+  those stacks "fail visibly"; the Grafana Angular-panel incident recorded two
+  entries below is the counter-example — 10 of 11 and 32 of 35 panels blank for
+  months after an ordinary `:latest` restart, nothing errored. Invisible
+  breakage is the failure this design exists to prevent, so the design's own
+  criterion excludes monitoring. `core` is out because Portainer's migrations
+  are one-way: reverting the tag is not a rollback.
+- `renovate.json5` confines Renovate to `proxy`, weekly, no automerge, plus a
+  custom manager for the xcaddy Sablier plugin that no built-in manager sees.
+  AdGuard pinned to `v0.107.79` — Renovate cannot track `:latest`, so floating
+  the tag is precisely what keeps it out of the review loop.
+- CI validates `renovate.json5`. It earned that immediately: the first draft
+  used `"a" + "b"` to wrap a long description, which JSON5 does not support. A
+  broken config does not fail loudly, it just stops opening PRs — which looks
+  exactly like "nothing needed updating".
+
+**Notes / next steps:**
+- This is the third instance of the class that produced the uninstalled cron job
+  and the three-week-stale tree — invisible because no signal existed that would
+  ever have said so. Same fix each time: make silence the alarm.
+- AdGuard's pin is a version bump the box has not taken yet: `proxy` is on both
+  `HL_NO_AUTOHEAL` and `HL_NO_AUTOPULL`, so it lands only when someone runs the
+  rebuild. Do it while watching, with a second resolver configured.
+- Widening `HL_NO_AUTOPULL` back out is one word. Letting `monitoring` in wants
+  Grafana pinned to a major first, so a pull cannot cross one.
+- Out of scope and tracked in the TSD: Homepage v1 → v2, Portainer STS → LTS,
+  the Sablier bump (coupled to `sablier-caddy-plugin@v1.0.2`), orphan images.
+
+---
+
 ## 2026-09-19 — Nothing was watching the watchman: Grafana now scrapes itself
 
 **Goal:** Decide whether any Grafana feature toggles were worth enabling. Ended
