@@ -142,6 +142,28 @@ if [ -f "$CUSTOM_CSS" ]; then
   for ref in $(grep -oE 'url\("[^"]+"\)' "$CUSTOM_CSS" | sed 's/^url("//; s/")$//'); do
     check_public_ref "$ref" "custom.css"
   done
+
+  # And the other direction. A mark upstream draws twice is split into
+  # `<name>-on-light.svg` and `<name>-on-dark.svg`, and nothing renders either
+  # one until custom.css names it: Homepage points the tile at `<name>.svg`,
+  # which still answers the OS rather than the dashboard's own theme. Composing
+  # a third such icon and forgetting the stylesheet would leave it looking
+  # exactly like the bug this replaced — a dark mark on a dark card, for anyone
+  # whose phone disagrees with the dashboard.
+  for variant in "$REPO"/docker/dashboard/icons/*-on-dark.svg; do
+    [ -f "$variant" ] || continue
+    name=$(basename "$variant")
+    pair="${name%-on-dark.svg}-on-light.svg"
+    if [ ! -f "$REPO/docker/dashboard/icons/$pair" ]; then
+      echo "MISSING  $name has no $pair — re-run ./scripts/update-tile-icons.sh"
+      asset_err=yes
+    elif ! grep -q "/icons/$name" "$CUSTOM_CSS" || ! grep -q "/icons/$pair" "$CUSTOM_CSS"; then
+      echo "MISSING  custom.css does not swap $name / $pair by data-theme"
+      asset_err=yes
+    else
+      echo "ok       $name / $pair are swapped by theme (custom.css)"
+    fi
+  done
 fi
 
 # custom.js names the icon files Homepage will not declare on its own, and the

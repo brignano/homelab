@@ -3,8 +3,13 @@
 
   portainer, from homarr-labs/dashboard-icons@6d16b7a795c0f6e41983ed09229ec22bba164b80: its default drawing and its
   portainer-dark variant in one file, switched by the viewer's colour
-  scheme. Homepage renders a tile icon as an <img>, so the file has to decide
-  this for itself.
+  scheme.
+
+  This is the FALLBACK. The dashboard normally swaps the tile between the two
+  -on-light / -on-dark files beside this one, from config/custom.css, by its own
+  theme. Only a browser that will not replace an <img> from CSS gets this file's
+  answer — and the OS is the wrong question: it is right only while the phone
+  and the dashboard agree, and settings.yaml pins the dashboard to dark.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0.72 0 168.18 218.62" role="img" aria-label="portainer">
   <style>
