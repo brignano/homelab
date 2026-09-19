@@ -141,6 +141,20 @@ own reporting is what broke.
   preserved, a commented job is reinstalled, and the whole thing stays idempotent.
 - Run `./scripts/install-cron.sh` on CT 100 to apply; it rewrites the two entries
   in place.
+- **Applying it exposed a third fault, and a worse one.** With the redirection
+  added, `crontab -l` showed `repo-sync.sh` scheduled **twice**, identically —
+  two `git pull`s and two `docker compose up -d` racing on the same tree and the
+  same stacks at 04:00, two Healthchecks pings, two Discord reports. `--check`
+  said `ok`, because every lookup in this script takes `head -n1`, so a second
+  copy is never printed. The duplicate predates all of this; verified that a
+  single entry stays single across repeated runs, so nothing here created it —
+  making the two lines identical is just what finally made it visible.
+- `install-cron.sh` now counts uncommented entries per job and reports more than
+  one, failing `--check`. It does **not** remove them: this script only ever adds
+  to a crontab, and a tool that can delete a schedule can cause the exact failure
+  it was written to prevent. It prints the one-line `awk '!seen[$0]++'` fix
+  instead, which drops exact duplicates and leaves genuinely different entries
+  alone to be looked at.
 
 ---
 
