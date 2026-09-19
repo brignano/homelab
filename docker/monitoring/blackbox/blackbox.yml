@@ -12,3 +12,54 @@ modules:
   tcp_connect:
     prober: tcp
     timeout: 5s
+
+  # --- AdGuard / DNS -----------------------------------------------------------
+  #
+  # AdGuard was the single most important unmonitored thing in the lab. It is the
+  # household's resolver: when it stops answering, every device loses name
+  # resolution, and every tool you would reach for to diagnose that resolves
+  # names through the thing that is down. repo-sync.sh already refuses to
+  # auto-restart the proxy stack for exactly this reason — but nothing was
+  # watching it either, so the care taken not to break it was not matched by any
+  # way to find out that it had broken.
+  #
+  # Probed with the DNS prober rather than HTTP on purpose. AdGuard's admin UI
+  # redirects to a login page when unauthenticated, so an http_2xx probe of it
+  # scores a healthy AdGuard as down — the precise failure mode that made
+  # `#alerts` untrustworthy in August and that scripts/check-probes.sh exists to
+  # prevent. DNS needs no auth, carries no Host header, and is the thing that
+  # actually matters anyway.
+  #
+  # Two modules because there are two distinct failures with the same symptom:
+
+  # AdGuard is answering for the local zone — its own rewrite, no upstream
+  # involved. Fails if AdGuard is down or has lost its *.home rewrite.
+  dns_home:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "stats.home"
+      query_type: "A"
+      transport_protocol: "udp"
+      preferred_ip_protocol: "ip4"
+      validate_answer_rrs:
+        # At least one A record in the answer. A NOERROR with an empty answer
+        # section is a rewrite that has gone missing, and rcode alone would
+        # happily call that a pass.
+        fail_if_not_matches_regexp:
+          - ".*IN\\s+A\\s+.*"
+
+  # AdGuard can still reach the internet. Distinguishes "the resolver is down"
+  # from "the resolver is up and recursion is broken", which look identical from
+  # a laptop and have completely different fixes.
+  dns_upstream:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: "one.one.one.one"
+      query_type: "A"
+      transport_protocol: "udp"
+      preferred_ip_protocol: "ip4"
+      validate_answer_rrs:
+        fail_if_not_matches_regexp:
+          - ".*IN\\s+A\\s+.*"

@@ -1,5 +1,22 @@
 apiVersion: 1
 
+# Two providers, two folders, because the two kinds of dashboard here answer
+# different questions and want different amounts of trust.
+#
+# `Homelab` holds dashboards written for this lab: few panels, each one there
+# because a real failure went unnoticed without it. These are the ones to open.
+#
+# `Reference` holds the community dashboards pulled from grafana.com by
+# scripts/fetch-dashboards.sh — 140 panels of Node Exporter Full, 92 of cAdvisor.
+# They are excellent once you already know what you are looking for and useless
+# as a place to start, which is exactly why they belong behind their own folder
+# rather than mixed in. Nothing in them is maintained here; re-running the fetch
+# script overwrites them wholesale.
+#
+# Splitting them was the cheapest half of fixing a set of dashboards that had
+# grown by accumulation: six of the original seven existed because a grafana.com
+# ID was pasted into a shell script, not because anyone needed them.
+
 providers:
   - name: homelab
     orgId: 1
@@ -7,7 +24,21 @@ providers:
     type: file
     disableDeletion: false
     updateIntervalSeconds: 30
+    # Dashboards edited in the UI are kept until the file on disk changes. Export
+    # the JSON back into this directory to keep an edit — otherwise the next file
+    # change silently reverts it.
     allowUiUpdates: true
     options:
-      path: /var/lib/grafana/dashboards
+      path: /var/lib/grafana/dashboards/homelab
+      foldersFromFilesStructure: false
+
+  - name: reference
+    orgId: 1
+    folder: Reference
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards/reference
       foldersFromFilesStructure: false

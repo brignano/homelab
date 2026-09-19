@@ -71,6 +71,48 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
+  # DNS probing via blackbox-exporter. Separate job rather than another target
+  # in `blackbox`, because the module differs per target and `params` is set per
+  # job — and because these two want their own alert wording: "the house has no
+  # DNS" is not the same page as "an admin UI is 404ing".
+  #
+  # Targets are DNS *servers*; the name being looked up lives in the module (see
+  # blackbox/blackbox.yml). The `probe` label is what tells the two apart on a
+  # dashboard, since both share the same instance.
+  - job_name: blackbox-dns-home
+    metrics_path: /probe
+    params:
+      module: [dns_home]
+    static_configs:
+      - targets:
+          - adguard:53
+        labels:
+          probe: home-zone
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  - job_name: blackbox-dns-upstream
+    metrics_path: /probe
+    params:
+      module: [dns_upstream]
+    static_configs:
+      - targets:
+          - adguard:53
+        labels:
+          probe: upstream
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   - job_name: loki
     static_configs:
       - targets: ["loki:3100"]

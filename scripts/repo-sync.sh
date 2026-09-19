@@ -68,6 +68,9 @@ ENV_FILE="$REPO/docker/monitoring/.env"
 # Discord's hard cap is 2000 characters; leave room for the code fences.
 MAX_CHARS=1800
 
+# shellcheck source=scripts/metrics.sh
+. "$(dirname "$0")/metrics.sh"
+
 # Stacks never restarted automatically — see "Self-healing" above.
 NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy}"
 # Set HL_AUTOHEAL=no for report-only behaviour.
@@ -204,6 +207,27 @@ MANUAL=""
 MANUAL_CMDS=""
 NOT_RUNNING=""
 
+# --- metrics ------------------------------------------------------------------
+#
+# Everything below is already computed to build the Discord report; this writes
+# it down as well. The distinction is worth stating because it decides what goes
+# where: Discord answers "does this need me *now*", and is read once. A time
+# series answers "is this still true", "how long has it been true", and "did the
+# restart actually fix it" — which is what you want at 9am when the 4am message
+# has scrolled away, and what nothing in this lab could answer before.
+#
+# The drift number in particular is the one that was missing on 2026-09-19. It
+# existed in the report the moment the job ran; it just never existed anywhere
+# you could look.
+#
+# Collected during the loop below and written out afterwards, grouped by family
+# — the text format needs each family's samples contiguous under its own
+# HELP/TYPE, and this loop produces two families at once. See metric_raw().
+M_STACK_RUNNING=""
+M_STACK_DRIFT=""
+
+metrics_open repo_sync
+
 for dir in docker/*/; do
   stack=$(basename "$dir")
   compose="${dir}docker-compose.yml"
@@ -235,8 +259,12 @@ for dir in docker/*/; do
   cids=$(running_ids "$abs")
   if [ -z "$cids" ]; then
     NOT_RUNNING="$NOT_RUNNING $stack"
+    M_STACK_RUNNING="$M_STACK_RUNNING
+homelab_stack_running{$(metric_kv stack "$stack")} 0"
     continue
   fi
+  M_STACK_RUNNING="$M_STACK_RUNNING
+homelab_stack_running{$(metric_kv stack "$stack")} 1"
 
   # A stack that builds its own image must be compared against the image.
   if grep -qE '^[[:space:]]+build:' "$compose"; then
@@ -259,6 +287,17 @@ for dir in docker/*/; do
     if [ -z "$oldest" ] || [ "$ts" -lt "$oldest" ]; then oldest=$ts; fi
   done
   [ -n "$oldest" ] || continue
+
+  # Emitted for every stack, including the ones that are in sync — a gauge that
+  # only appears when something is wrong cannot be graphed, and "0 for the last
+  # 30 days" is the reassurance the panel exists to give.
+  if [ "$commit_ts" -gt "$oldest" ]; then
+    drift=$((commit_ts - oldest))
+  else
+    drift=0
+  fi
+  M_STACK_DRIFT="$M_STACK_DRIFT
+homelab_stack_deploy_drift_seconds{$(metric_kv stack "$stack"),$(metric_kv basis "$basis")} $drift"
 
   [ "$commit_ts" -gt "$oldest" ] || continue
   age=$(human $((commit_ts - oldest)))
@@ -294,6 +333,77 @@ $cmd"
   HEALED="$HEALED
   $stack ($basis, $age)"
 done
+
+# --- stack metrics ------------------------------------------------------------
+metric_help homelab_stack_running gauge \
+  "1 if any container is running for a stack declared in docker/"
+metric_raw "$M_STACK_RUNNING"
+metric_help homelab_stack_deploy_drift_seconds gauge \
+  "Seconds between a stack's newest deployable commit and what is running"
+metric_raw "$M_STACK_DRIFT"
+
+# --- config drift -------------------------------------------------------------
+#
+# The six-day bug, as a metric. `prometheus.yml`, the Caddyfile and friends are
+# bind-mounted as single FILES, and Docker resolves a file mount to an inode
+# when the container is created. git replaces files rather than editing them, so
+# a pull gives the path a new inode and leaves the container reading the old,
+# now-unlinked copy — indefinitely, while `git pull` says "Already up to date",
+# `/-/reload` returns 200 and the repo looks correct. It cost three sessions of
+# re-diagnosing an alert that had already been fixed.
+#
+# probe-status.sh answers this on demand, on the box, for Prometheus. This
+# answers it for every container in the lab, every night, without being asked.
+#
+# Compared by copying the container's copy out with `docker cp` rather than by
+# checksumming inside it: half these images have no shell, let alone md5sum, and
+# a check that silently skips the containers it cannot run a binary in is the
+# kind of check that reports all-clear forever.
+#
+# Directory mounts are deliberately not checked — they do not have this problem,
+# which is exactly why the README recommends them for new config.
+metric_help homelab_config_drift gauge \
+  "1 if a container's bind-mounted config file differs from the repo's copy"
+_cfg_tmp=$(mktemp)
+for _c in $(docker ps --format '{{.Names}}' 2>/dev/null || true); do
+  docker inspect \
+    -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}{{end}}' \
+    "$_c" 2>/dev/null \
+  | while IFS='|' read -r _src _dest; do
+      [ -n "${_src:-}" ] && [ -n "${_dest:-}" ] || continue
+      # Only files this repo owns. A container's own data volume bind is not
+      # drift, it is storage.
+      case "$_src" in "$REPO"/*) ;; *) continue ;; esac
+      [ -f "$_src" ] || continue
+      docker cp "$_c:$_dest" "$_cfg_tmp" >/dev/null 2>&1 || continue
+      if cmp -s "$_cfg_tmp" "$_src"; then _drift=0; else _drift=1; fi
+      metric homelab_config_drift "$_drift" \
+        "$(metric_kv container "$_c")" \
+        "$(metric_kv path "${_src#"$REPO"/}")"
+    done
+done
+rm -f "$_cfg_tmp"
+
+# --- run metrics --------------------------------------------------------------
+metric_help homelab_repo_sync_timestamp_seconds gauge \
+  "Unix time of the last repo-sync run"
+metric homelab_repo_sync_timestamp_seconds "$(date +%s)"
+
+metric_help homelab_repo_sync_success gauge \
+  "1 if the last repo-sync pulled cleanly and every restart it attempted came back"
+if [ -n "$PULL_ERROR" ] || [ -n "$FAILED" ]; then
+  metric homelab_repo_sync_success 0
+else
+  metric homelab_repo_sync_success 1
+fi
+
+# Non-zero here means the box is knowingly behind GitHub — the pull failed, or
+# was never attempted. After a healthy run it is 0, which is the point: the
+# three-week gap would have shown as a line climbing off the top of a panel.
+metric_help homelab_repo_commits_behind gauge \
+  "Commits the working tree is behind its upstream branch"
+metric homelab_repo_commits_behind "$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)"
+metrics_close
 
 # --- report -------------------------------------------------------------------
 

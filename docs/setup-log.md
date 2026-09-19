@@ -27,6 +27,125 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The dashboards were watching the hardware; the failures were all in the deployment layer
+
+**Goal:** Review the Grafana dashboards, which had started to feel arbitrary,
+and work out whether they were actually monitoring this lab or just the software
+that happens to run on it.
+
+**Steps:**
+1. Audited all seven dashboards. Six of them existed because a `grafana.com` ID
+   had been pasted into `fetch-dashboards.sh` — the set was organised around
+   *which exporters we run*, not around *which questions we need answered*. Only
+   `homelab-capacity.json` had been written for this lab.
+2. Checked panel types against the Grafana version actually running. Three
+   dashboards were built at schemaVersion 16-26 on Angular panels:
+
+   | Dashboard | schema | Angular panels |
+   |---|---|---|
+   | blackbox (7587) | 16 | 10 of 11 |
+   | postgresql (9628) | 19 | 32 of 35 |
+   | loki-logs (13639) | 26 | 1 of 2 |
+
+3. Cross-checked the incident history in this log against what any dashboard
+   could show. The three-week deploy gap, the six-day stale config inode, the
+   never-installed cron entry: **none of them were visible in Grafana.** Every
+   one was found by hand, and every fix reports to Discord and then discards
+   what it computed.
+4. Checked coverage: AdGuard — the household's resolver, and the one service
+   `repo-sync.sh` deliberately refuses to auto-restart — had no probe and no
+   scrape of any kind. Nor did the assistant bot, which has no port to probe.
+
+**Issues encountered:**
+- **Grafana runs on `:latest`.** Grafana 11 disabled Angular by default and
+  Grafana 12 removed it, so those three dashboards had been blank since some
+  ordinary restart. Nothing errored. A blank dashboard reads exactly like a
+  quiet lab, which is why it went unnoticed for an unknown length of time.
+- **`loki-logs` was broken a second way, independent of Angular.** Its "App"
+  selector was `label_values(job)`, but `config.alloy` only ever sets `job` to
+  `docker` or `systemd-journal` — so the two choices on offer were "every
+  container in the lab at once" and "the journal". The `container` label Alloy
+  does set went unused.
+- **`fetch-dashboards.sh` pulled `revisions/latest`,** so re-running it
+  rewrote committed files with whatever upstream had published since. The JSON
+  in git described whenever the script last ran, not a version anyone chose.
+- **There was no way for a cron job to leave a metric behind** — node-exporter
+  had no `--collector.textfile.directory`, which is the standard plumbing for
+  exactly that.
+- **`pg-backup.sh` had no dead man's switch,** despite `AGENTS.md` requiring one
+  for anything scheduled. It is the lab's only protection against an accidental
+  `DROP`, and a silently uninstalled cron entry would have looked like a quiet,
+  healthy month.
+- **Caught while testing:** adding the Healthchecks read to `pg-backup.sh`
+  broke it outright on a box with no `.env`. That script runs under
+  `set -euo pipefail`, so `sed` exiting 2 on a missing file propagated through
+  the pipeline and killed the backup before it started — monitoring destroying
+  the job it was bolted onto. Fixed with `|| true`, and the failure path is now
+  the one that gets tested first.
+
+**Resolution:**
+- **Plumbing.** `scripts/metrics.sh`: a shared helper for writing Prometheus
+  textfile metrics from shell, where every function degrades to a no-op so
+  emitting a metric can never fail the job. node-exporter mounts
+  `/var/lib/node_exporter/textfile` (a *directory* mount — the .prom files are
+  replaced by atomic rename, so a file mount would pin one frozen scrape).
+- **The three cron jobs now publish what they already knew.** `heartbeat.sh`
+  every 5 minutes: every container declared in `docker/*/docker-compose.yml` and
+  whether it is running, plus whether each job has a crontab entry.
+  `repo-sync.sh` nightly: commits behind origin, per-stack deploy drift, and —
+  new — a `docker cp` comparison of every bind-mounted config file against the
+  repo's copy, which detects the six-day inode bug automatically for every
+  container in the lab. `pg-backup.sh`: dump age, size, count and result, all
+  measured from the files on disk so a failed run cannot erase the record of the
+  last good one.
+- **Dashboards, rebuilt around questions.** Four new committed dashboards —
+  **Triage** (is anything broken right now), **Deployment & Drift** (is the lab
+  running what git says), **Scheduled Jobs & Backups** (did the work happen, is
+  what it produced any good), and a rewritten **Logs** filtered by `container`.
+  **Capacity** was extended to cover CT 100, which is where the disk actually
+  fills and which the original omitted entirely. **Endpoints & DNS** and
+  **PostgreSQL** replace the two dead community dashboards with about six panels
+  each that someone will actually read. The community dashboards that still
+  render moved to a separate `Reference` folder, and `fetch-dashboards.sh` now
+  pins revisions in `reference/REVISIONS` (`--update` to bump).
+- **AdGuard is monitored.** Two blackbox DNS probes — one for the `*.home`
+  rewrite, one proving upstream recursion still works, since those look
+  identical from a laptop and have different fixes. Probed over DNS rather than
+  HTTP deliberately: AdGuard's admin UI redirects to a login page, so an
+  `http_2xx` probe would score a healthy AdGuard as down, which is the exact
+  failure that made `#alerts` untrustworthy in August.
+- **Nine new alert rules** for the failure modes that had none: DNS down,
+  container missing, container restart loop, cron job not installed, repo sync
+  stale, backup stale, config drift, stack running old code, and a
+  `predict_linear` warning for a filesystem heading for full.
+  `HEALTHCHECKS_PG_BACKUP_URL` closes the last unguarded job.
+- **CI.** `scripts/check-observability.sh` fails the build on a removed panel
+  type, a duplicate dashboard uid, an unresolved `${DS_*}` input, a `homelab_*`
+  metric no script writes, or the job lists in `heartbeat.sh` and
+  `install-cron.sh` drifting apart.
+
+**Notes / next steps:**
+- Deploy needs a recreate, not a restart: node-exporter has a new mount and a
+  new flag, and Grafana needs `restart` for the provisioning change.
+  `./scripts/install-cron.sh` creates the metrics directory and must run before
+  the new dashboards have anything to show.
+- `heartbeat.prom` appears within 5 minutes. `repo_sync.prom` and
+  `pg_backup.prom` only after their first nightly run — run both by hand once
+  rather than waiting a day to find out whether this works.
+- Textfile metrics persist until their writer runs again, so a `config_drift` or
+  `stack_drift` alert keeps firing until the next 04:00 sync even once fixed.
+  Re-run `./scripts/repo-sync.sh` to clear it.
+- Still not covered, and worth being explicit about: Homepage is not probed.
+  It rejects requests whose `Host` header it does not recognise, so a probe by
+  container name returns 400, and the real hostname is deliberately not in this
+  public repo. It is covered by `homelab_container_running` instead.
+- `tsd-backups-and-monitoring.md` remains parked. Everything above watches the
+  jobs that exist; there is still **no image backup and no offsite copy**, so a
+  green Scheduled Jobs dashboard means "the one backup we have ran", not "the
+  lab is recoverable".
+
+---
+
 ## 2026-09-19 — The dashboard's mark was the design `life` had already thrown away
 
 **Goal:** Bring the dashboard's page icon onto the icon standard the `life`
@@ -80,6 +199,7 @@ group rather than as two unrelated experiments.
   its own cache bust — if one ever sticks, add `?v=2` in `settings.yaml`,
   `custom.js` and the Caddyfile. An iOS home-screen icon is baked in at add
   time and needs removing and re-adding.
+
 
 ---
 

@@ -30,6 +30,10 @@ Detection ≠ prevention. The #1 cause of homelab data loss is a backup that ran
 
 > **Found on colocation:** ntfy and blackbox-exporter are **already deployed** in `docker/monitoring/`. So alerting reuses existing ntfy (`alerts.home`) — only Healthchecks is net-new. blackbox-exporter already covers uptime/cert-style checks, so those stay in Prometheus/Grafana, **not** heartbeats. (This correction came directly from having the spec next to the code.)
 
+> ✅ **Amended 2026-09-19 — the job-monitoring layer shipped ahead of the backups it was meant to watch.** A dashboard review found that the lab's scheduled jobs had no observable state at all: `pg-backup.sh` had no dead man's switch (in breach of the standing rule in `AGENTS.md`), and nothing anywhere could answer "did it run, and is what it produced any good". That half needed no hardware, so it was built now rather than waiting on the USB SSD: the dump pings `HEALTHCHECKS_PG_BACKUP_URL`, publishes age/size/count/result as Prometheus textfile metrics, and has a **Scheduled Jobs & Backups** dashboard plus a stale-backup alert. Job #3 in the table below is therefore monitored as well as done.
+>
+> This changes nothing about the parked status. Everything above watches *the job that exists* — there is still no vzdump, no offsite copy, and no restore test, so a green dashboard means "the one backup we have ran", not "the lab is recoverable". The dashboard says so in a panel, deliberately.
+
 > ⚠️ **Amended 2026-08-24 — the ntfy half of that colocation finding no longer holds.** ntfy was removed when alerting consolidated on Discord (`docs/setup-log.md`, 2026-08-24). Since this spec is parked, nothing was built on it; when it unparks, job alerts go to the **Discord `#alerts` webhook**, which is already wired and is what the live off-box heartbeat uses. blackbox-exporter is unaffected and the rest of the finding stands. This removes the only net-new *alerting* component either way — Healthchecks remains the one net-new piece.
 
 ## Architecture

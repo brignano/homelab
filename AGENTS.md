@@ -100,7 +100,26 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   been installed, and the box drifted three weeks behind `main` while every
   signal said fine. It now pings `HEALTHCHECKS_REPO_SYNC_URL` on every run, and
   `scripts/install-cron.sh` makes installing the schedule a command rather than
-  a ritual (`--check` reports what is missing).
+  a ritual (`--check` reports what is missing). `pg-backup.sh` was the last job
+  without one; it now pings `HEALTHCHECKS_PG_BACKUP_URL`, and every job's
+  crontab entry is a metric (`homelab_cron_job_installed`), so an uninstalled
+  job alerts rather than waiting to be noticed.
+- **A job that detects something must leave the result behind, not just report
+  it.** Discord answers "does this need me now" and is read once; a time series
+  answers "is it still true", "how long has it been true" and "did the fix
+  work", which is what you want when the 4am message has scrolled away. Every
+  scheduled script writes what it already computed to
+  `/var/lib/node_exporter/textfile` via `scripts/metrics.sh` — repo drift,
+  config drift, container inventory, backup age. Emitting a metric must never be
+  able to fail the job: every function there degrades to a no-op.
+- **An empty dashboard and a healthy lab look identical.** Three of the seven
+  dashboards here had been blank for an unknown length of time — they were built
+  on Angular panels that Grafana 12 removed, and nothing errors when a panel
+  plugin is missing. Same shape as a panel querying a metric nobody writes, or a
+  probe pointed at a 404. `scripts/check-observability.sh` fails CI on all
+  three, and anything the lab relies on is a committed dashboard in
+  `grafana/dashboards/homelab/`, not a grafana.com ID pasted into a fetch
+  script.
 - **Blackbox probes must target a path the service answers 2xx on.** The
   `http_2xx` module treats anything else — including a 404 or a redirect — as
   down. This matters most for Caddy, which routes by Host header and sees the
@@ -172,7 +191,7 @@ Two rules when extending it:
   when Ollama is down; unreadable data is reported, never rendered as "all clear".
 
 ## Planned / proposals (not yet deployed)
-- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). Monitoring would alert via the Discord `#alerts` webhook (the plan originally said ntfy, which has since been removed); only Healthchecks is net-new.
+- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). The **job monitoring** half of the spec shipped early on 2026-09-19 — the dump now pings Healthchecks and publishes age/size/result as metrics, with alerts on the Discord `#alerts` webhook — because it was cheap and did not need the hardware. The backup half is what is still parked: monitoring a job is not the same as having a backup you can restore.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
 
 ## Custom commands

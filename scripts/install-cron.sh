@@ -39,6 +39,13 @@ REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 # so the files stay small enough not to need rotating.
 LOG_DIR="${HL_LOG_DIR:-/var/log}"
 
+# Where the jobs write their Prometheus metrics (scripts/metrics.sh), and what
+# node-exporter bind-mounts read-only. Created here rather than left to Docker:
+# a bind mount to a missing path makes Docker create it root-owned, which works
+# by luck because cron runs as root. Doing it explicitly means the one place
+# that sets the box up is the place that says so.
+TEXTFILE_DIR="${HL_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+
 # <schedule>|<script>|<what it is>. The schedule here is the one each script's
 # own header documents; they are the same file, so keep them that way.
 JOBS="*/5 * * * *|heartbeat.sh|dead man's switch -> Healthchecks
@@ -53,6 +60,15 @@ case "${1:-}" in
 esac
 
 command -v crontab >/dev/null || { echo "install-cron: crontab not found" >&2; exit 1; }
+
+if [ -d "$TEXTFILE_DIR" ]; then
+  echo "ok       metrics directory exists: $TEXTFILE_DIR"
+elif [ -n "$check" ]; then
+  echo "MISSING  $TEXTFILE_DIR does not exist — the jobs will run but publish no metrics"
+else
+  mkdir -p "$TEXTFILE_DIR" && chmod 755 "$TEXTFILE_DIR"
+  echo "created  $TEXTFILE_DIR"
+fi
 
 current=$(crontab -l 2>/dev/null || true)
 added=""

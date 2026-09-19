@@ -89,7 +89,9 @@ homelab/
 │   ├── heartbeat.sh         # Dead man's switch -> Healthchecks (*/5 min)
 │   ├── repo-sync.sh         # Daily git pull, restart stale stacks, report
 │   ├── pg-backup.sh         # Nightly pg_dumpall, 14-day retention (02:00)
-│   └── check-dashboard.sh   # CI: every proxied site has a dashboard tile
+│   ├── metrics.sh           # Shared: jobs publish what they found to Prometheus
+│   ├── check-dashboard.sh   # CI: every proxied site has a dashboard tile
+│   └── check-observability.sh # CI: dashboards render, metrics have a writer
 ├── .github/
 │   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
 ├── docs/
@@ -112,6 +114,14 @@ had simply never been installed: the box sat three weeks behind `main` while
 GitHub said every change had shipped. `repo-sync.sh` now also pings a
 Healthchecks check on every run, so the *absence* of a sync pages you the same
 way the absence of a heartbeat does. A job cannot report its own death.
+
+Every job also writes what it found to `/var/lib/node_exporter/textfile`, which
+node-exporter serves — so "is the repo behind", "did the backup run", "is a
+container missing" and "is a container reading a config file the repo has since
+replaced" are metrics with panels and alerts, not lines in a Discord scrollback.
+Discord still answers *does this need me now*; Grafana answers *is it still
+true*, which is the question you have the next morning. See the **Deployment &
+Drift** and **Scheduled Jobs & Backups** dashboards.
 
 One stack is excluded by default and should stay that way: `proxy` contains
 AdGuard, which is the household's DNS. A 4am restart that does not come back
