@@ -69,6 +69,63 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The other two tiles, and the part CSS can do that a filter cannot
+
+**Goal:** Finish what the brignano.io tile started. Portainer and Open WebUI had
+the same disagreement — the file asks the OS, the dashboard answers to its own
+theme — and the entry below left them unfixed because inverting a colour logo is
+not a re-ink.
+
+**Steps:**
+1. Checked what CSS can actually do to an `<img>` before designing around it,
+   in headless Chromium against real files: `content: url(...)` **replaces** the
+   drawing (this is the element-level `content`, the one WebKit and Blink
+   shipped for real elements and Gecko later followed). That is the whole fix —
+   the page picks the file, the file stops guessing.
+2. `scripts/compose-icon.py` now writes three files per dual-drawing mark
+   instead of one: `<name>-on-light.svg`, `<name>-on-dark.svg`, and the combined
+   `<name>.svg` it already wrote. Named for the card the drawing lands *on*,
+   because upstream's own `-dark` / `-light` suffixes mean opposite things
+   across the set.
+3. `config/custom.css` swaps the tile between the two singles on `data-theme`,
+   the same key the monogram uses.
+4. Regenerated both icons at the pinned SOURCE ref — `rm` the two files and
+   re-run `update-tile-icons.sh`, which refetches only what is missing. The
+   combined files came back byte-identical apart from their comment header,
+   which is the reproducibility check worth having.
+
+**Issues encountered:**
+- **A four-line list of filenames in a stylesheet is a list, and lists rot.**
+  Composing a third of these and forgetting `custom.css` would leave it looking
+  exactly like the bug being fixed. `check-dashboard.sh` now fails both ways: a
+  `-on-dark.svg` not named in `custom.css`, or a path in `custom.css` with no
+  file. Verified by breaking it on purpose — the check exits 1 and names the
+  pair.
+- **Blink already propagates `color-scheme` into an embedded SVG.** So in
+  Chrome the combined file was often right, and the OS is not strictly the
+  question there. Not built on: one engine, and it needs `custom.js` to have
+  run. Written down in the icons README so the next person does not re-derive
+  it.
+- **Headless Chromium lies quietly.** `--blink-settings=preferredColorScheme`
+  is `0=dark, 1=light` (not 1/2 as first assumed), localhost goes through the
+  agent proxy unless `--no-proxy-server`, and a small `--window-size` with
+  `--force-device-scale-factor=2` screenshots a blank page. Every one of those
+  produced identical PNGs across cases that should have differed — the same
+  false all-clear an empty dashboard gives.
+
+**Resolution:**
+- Rendered the matrix: dark page and light page are each **pixel-identical
+  under a light OS and a dark OS** — the OS no longer changes anything. The
+  fallback page (no `data-theme`) still differs between the two, which is the
+  old behaviour, kept on purpose for a browser that will not swap.
+
+**Notes / next steps:**
+- Adding another mark upstream draws twice: `COMPOSITES` in
+  `update-tile-icons.sh`, then four lines in `custom.css`. CI names the second
+  step if it is missed.
+
+---
+
 ## 2026-09-19 — The brignano.io tile was invisible on the theme it ships with
 
 **Goal:** The dashboard's own site tile could not be seen. `theme: dark` is what

@@ -109,9 +109,42 @@ html[class*="theme-"] :focus-visible {
  * the substring is deliberately bare so it still matches if the src is ever
  * proxied and URL-encoded.
  *
- * The two generated composites (portainer.svg, open-webui.svg) still switch by
- * OS: each is two whole vendor drawings, and inverting a colour logo is not a
- * re-ink. See docker/dashboard/icons/README.md. */
+ * A vendor logo cannot be re-inked this way — inverting Portainer's mark would
+ * invent a colour it does not have — so those are swapped whole, below. */
 html[data-theme="dark"] img[src*="brignano"] {
   filter: invert(1);
+}
+
+/* Swap the two-drawing vendor icons by the page's theme, for the same reason.
+ *
+ * Upstream draws these marks twice, once per background, because the default is
+ * black on black here. scripts/compose-icon.py now writes each drawing out on
+ * its own as well as into the combined file, and `content: url(...)` replaces
+ * what the <img> draws — so the page picks the drawing, rather than the file
+ * guessing from the OS. Replacing an element's content this way is not the
+ * pseudo-element `content` everyone knows; it is the one WebKit and Blink
+ * shipped for real elements and Gecko later followed.
+ *
+ * A browser that declines still gets `<name>.svg` as loaded, which is the OS
+ * switch that was here before — wrong only where it was already wrong, never
+ * worse. That is why the combined file is still generated.
+ *
+ * These four lines name files, which is a list, and a list rots: adding a third
+ * dual-drawing icon and forgetting this file would leave it half-fixed and
+ * looking fine. scripts/check-dashboard.sh fails when a `-on-dark.svg` in
+ * icons/ is not named here, and when a path named here is not in icons/. */
+html[data-theme="light"] img[src*="portainer"] {
+  content: url("/icons/portainer-on-light.svg");
+}
+
+html[data-theme="dark"] img[src*="portainer"] {
+  content: url("/icons/portainer-on-dark.svg");
+}
+
+html[data-theme="light"] img[src*="open-webui"] {
+  content: url("/icons/open-webui-on-light.svg");
+}
+
+html[data-theme="dark"] img[src*="open-webui"] {
+  content: url("/icons/open-webui-on-dark.svg");
 }

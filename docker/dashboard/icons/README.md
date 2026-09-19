@@ -69,7 +69,8 @@ removing and re-adding.
 |---|---|
 | `brignano.svg` | The `A\|B` monogram, the mark brignano.io carries. Drawn here — one ink, re-inked from the page by `config/custom.css`. |
 | `grafana.svg`, `adguard-home.svg`, `kali-linux.svg` | Vendored verbatim from [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). |
-| `portainer.svg`, `open-webui.svg` | **Generated**: two upstream drawings in one file. |
+| `portainer-on-light.svg`, `portainer-on-dark.svg`, and the same pair for `open-webui` | **Generated**: each upstream drawing on its own. What the tiles actually show — `config/custom.css` picks one by the dashboard's theme. |
+| `portainer.svg`, `open-webui.svg` | **Generated**: both drawings in one file, switched by the OS. The name the tile still points at, and the fallback. |
 | `SOURCE` | The upstream repo and commit every vendored icon came from. |
 
 ```sh
@@ -91,6 +92,13 @@ and header toggle. Those two disagree by default: `theme: dark` is pinned, so a
 browser in light mode asks each icon for its light-ground drawing and puts it on
 a near-black card.
 
+Not *only* the OS, strictly. Blink resolves `prefers-color-scheme` inside an
+embedded SVG against the embedder's used `color-scheme`, which the tokens do set
+— measured here in headless Chromium, where a combined icon follows the page.
+Nothing is built on that: it is one engine, it depends on `custom.js` having run
+to put `color-scheme: dark` on `<html>`, and the mark that started all this was
+invisible on a real phone. The swap below works the same everywhere.
+
 `brignano.svg` is the icon we draw, so it does not guess. It carries one ink
 (`n-900`, as the site draws it) and `config/custom.css` inverts it when
 `data-theme` is `dark` — the attribute `custom.js` mirrors from Homepage, and the
@@ -98,19 +106,30 @@ one the tokens already read. The mark follows the dashboard; the phone does not
 get a vote. It only works on a single-colour mark, which is a reason to keep it
 one.
 
-Two are generated because their marks are black on a near-black card —
-Portainer's has been invisible since the tile was added. Upstream ships a
-second drawing of each for dark backgrounds, and Homepage renders a tile as an
-`<img>`, which is its own document and cannot see the page's theme. So
-`scripts/compose-icon.py` puts both drawings in one file, each in a nested
-`<svg>` keeping its own coordinate system, switched by a media query; ids are
-prefixed on the way in because the two drawings are usually the same file with
-different fills. That switch follows the OS, not Homepage's toggle — the limit
-above, and the one place it is still unfixed: each half is a whole vendor
-drawing in the vendor's colours, and inverting a colour logo is not a re-ink.
-On a light-mode OS with the dashboard in dark, those two are back to a dark mark
-on a dark card. Fixing it means two files per icon and a `src` swap in
-`custom.js`, which is a bigger change than the one mark we draw needed.
+Two vendor marks are black on a near-black card — Portainer's was invisible from
+the day the tile was added. Upstream draws each of those twice, once per
+background, so `scripts/compose-icon.py` writes three files from the pair:
+`<name>-on-light.svg` and `<name>-on-dark.svg`, each a single drawing with
+nothing in it that reads the viewer, plus `<name>.svg` with both nested and a
+media query between them. Ids are prefixed on the way in, because the two
+drawings are usually the same file with different fills and collide otherwise.
+Naming is by the card the drawing lands **on**: upstream's own `portainer-dark`
+is the drawing *for* a dark background and `open-webui-light` the one for a
+light background, so its suffixes mean opposite things across the set.
+
+`custom.css` swaps the tile between the two singles with `content: url(...)`,
+which replaces what an `<img>` draws — the element-level `content`, not the
+pseudo-element one, which WebKit and Blink shipped for real elements and Gecko
+followed. Same `data-theme` key as the monogram, so all three tiles answer to
+the dashboard.
+
+A browser that declines the swap still loads `<name>.svg` and gets the OS
+answer, which is what was here before: right while the phone and the dashboard
+agree, wrong exactly where it was already wrong. That is the whole reason the
+combined file is still generated. `scripts/check-dashboard.sh` fails if a
+`-on-dark.svg` here is not named in `custom.css`, or if `custom.css` names one
+that is not here — composing a third of these and forgetting the stylesheet
+would look precisely like the bug it replaced.
 
 ## Known limit
 
