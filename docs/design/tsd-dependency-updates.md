@@ -1,6 +1,8 @@
 # TSD: Keeping images current, and noticing when they aren't
 
-**Status:** 📝 draft / proposed — not implemented
+**Status:** 🚧 partially shipped — §1 (watchdog) and §3 (`--pull`) are live in
+[`scripts/repo-sync.sh`](../../scripts/repo-sync.sh); §2 (update policy) and §4
+(digest capture) are still proposed
 **Date:** 2026-09-19
 **Owner:** Anthony
 

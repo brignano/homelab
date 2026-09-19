@@ -27,6 +27,54 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Every image was months to years old, and the drift report was silent about it
+
+**Goal:** Work out why `sablier` was still on `1.8.1`, and make the answer
+impossible to reach again.
+
+**Steps:**
+1. Listed image ages on CT 100. Every image was 3–23 months old. The two
+   **pinned** ones were the two **stalest** — `sablierapp/sablier:1.8.1` at 23
+   months, `ghcr.io/gethomepage/homepage:v1.5.0` at 12 — while nothing on
+   `:latest` was worse than 9.
+2. Traced both halves. Floating tags never moved because `:latest` is a name,
+   not an instruction: Compose's default pull policy is `missing`, so `up -d`
+   finds the tag on disk and stops, and nothing in this repo runs `docker
+   compose pull`. Pinned tags never moved because nothing opened the PRs.
+3. Found the same hole one level down in builds. `docker/proxy/Dockerfile` is
+   `FROM caddy:2-alpine`, and `up -d --build` serves a cached base —
+   `caddy-sablier:local` was 22 minutes old on a three-month-old Caddy.
+4. Wrote [`docs/design/tsd-dependency-updates.md`](design/tsd-dependency-updates.md)
+   (#67), then shipped its two mechanism-independent parts.
+
+**Issues encountered:**
+- `repo-sync.sh` is structurally blind to the build case: it measures built
+  stacks by image creation time, so a rebuild resets the clock while the base
+  underneath keeps ageing. It read 22 minutes and called `proxy` fresh.
+- The obvious fix — pin everything — is what produced the two worst offenders.
+  Pinning only beats floating when something is opening PRs; where nothing is,
+  it drifts *slower* to float. So the fix could not be a tagging convention.
+
+**Resolution:**
+- Added a second drift axis to `scripts/repo-sync.sh`: any running image older
+  than `HL_MAX_IMAGE_AGE_DAYS` (default 90) is named in the existing Discord
+  report, under the existing Healthchecks ping. Age, not availability —
+  no registry calls, no credentials, works offline.
+- Added `--pull` to the `up -d --build` path, so a rebuild refreshes the base.
+- Report-only by design. Restarting a stale stack is safe; pulling an unreviewed
+  version at 4am onto the box that serves the household's DNS is not.
+
+**Notes / next steps:**
+- This is the third instance of the class that produced the uninstalled cron job
+  and the three-week-stale tree — invisible because no signal existed that would
+  ever have said so. Same fix each time: make silence the alarm.
+- Still open (§2 of the TSD): whether the low-risk stacks should pull
+  automatically, with Renovate confined to `proxy`.
+- Out of scope and tracked in the TSD: Homepage v1 → v2, Portainer STS → LTS,
+  the Sablier bump (coupled to `sablier-caddy-plugin@v1.0.2`), orphan images.
+
+---
+
 ## 2026-09-19 — Nothing was watching the watchman: Grafana now scrapes itself
 
 **Goal:** Decide whether any Grafana feature toggles were worth enabling. Ended

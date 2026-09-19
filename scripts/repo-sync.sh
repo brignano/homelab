@@ -37,6 +37,19 @@
 # fresh. It is right about the case that actually happens — you pulled, and
 # forgot to restart.
 #
+# The second axis: is the image itself old
+# ----------------------------------------
+# Everything above measures the deployment against the REPO, which says nothing
+# about whether the repo is asking for a current image. A stack in perfect sync
+# with git, running something upstream built a year ago, passes every check
+# above. That is how every image in this lab reached 3-23 months old without a
+# word being said — see the block above the staleness loop for the full story,
+# and docs/design/tsd-dependency-updates.md for the design.
+#
+# So a second pass reports any running image older than HL_MAX_IMAGE_AGE_DAYS
+# (default 90). Report-only: restarting a stale stack is safe, pulling a new
+# version at 4am is not.
+#
 # Reports only when there is something to do. Silence means "up to date and
 # everything is running current code", the same discipline as heartbeat.sh.
 #
@@ -267,8 +280,16 @@ homelab_stack_running{$(metric_kv stack "$stack")} 0"
 homelab_stack_running{$(metric_kv stack "$stack")} 1"
 
   # A stack that builds its own image must be compared against the image.
+  #
+  # `--pull` because `docker build` caches base images exactly the way `up -d`
+  # caches service images: `FROM caddy:2-alpine` is served from disk unless told
+  # otherwise. On 2026-09-19 caddy-sablier:local was 22 minutes old on a
+  # three-month-old Caddy, and this script called it fresh — it measures built
+  # stacks by image creation time, so a rebuild resets the clock while the base
+  # underneath keeps ageing. Without this flag the staleness check below is
+  # blind in the same place, since rebuilding is what it asks for.
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    basis="image"; hint="up -d --build"
+    basis="image"; hint="up -d --build --pull"
   else
     basis="start"; hint="up -d"
   fi
@@ -334,6 +355,101 @@ $cmd"
   $stack ($basis, $age)"
 done
 
+# --- image staleness ----------------------------------------------------------
+#
+# The second drift axis, and the one the first could never have caught.
+#
+# Everything above asks "is the running container older than the commit". A
+# stack that matches git perfectly, running an image upstream built in January,
+# is reported as healthy by every check in this script — correctly, by its own
+# definition, and uselessly. On 2026-09-19 every image in this lab was between
+# 3 and 23 months old and nothing had ever mentioned it.
+#
+# The two worst were the two that were PINNED: sablier at 1.8.1 (23 months) and
+# homepage at v1.5.0 (12 months). Floating tags drifted because Compose's
+# default pull policy is `missing` and nothing here runs `docker compose pull`;
+# pinned tags drifted because nothing opened the PRs. Opposite mechanisms, same
+# root — no signal existed that would ever have said so. Same failure as the
+# cron job that was never installed, and it gets the same fix: make silence the
+# alarm.
+#
+# Age, not availability, deliberately. Asking a registry what is current needs
+# network, credentials for some of them, and fails per-registry; creation time
+# is already in the local metadata, always answers, and still works on the day
+# the internet is what broke. The cost is a false positive on a project that
+# genuinely has not shipped in 90 days. The error in the other direction is the
+# one that actually happened.
+#
+# Locally-built images are included rather than exempted: their age IS the build
+# time, so a stack nobody has rebuilt in 90 days is exactly what wants saying,
+# and `--pull` above makes the rebuild it asks for refresh the base too.
+#
+# REPORT ONLY, and that is a boundary rather than an unfinished edge. Restarting
+# a stale stack is safe — the image is on disk and CI gated the config. Pulling
+# a new one is a version change nobody reviewed, landing at 4am on the box that
+# serves the household's DNS. That decision belongs in a PR.
+# See docs/design/tsd-dependency-updates.md.
+MAX_IMAGE_AGE_DAYS="${HL_MAX_IMAGE_AGE_DAYS:-90}"
+STALE=""
+M_IMAGE_AGE=""
+STALE_CMDS=""
+NOW=$(date +%s)
+
+for dir in docker/*/; do
+  stack=$(basename "$dir")
+  compose="${dir}docker-compose.yml"
+  [ -f "$compose" ] || continue
+
+  abs=$(cd "$dir" && pwd)
+  cids=$(running_ids "$abs")
+  # Nothing running is already reported by the drift loop as NOT_RUNNING; a
+  # stopped stack has no image age worth acting on.
+  [ -n "$cids" ] || continue
+
+  if grep -qE '^[[:space:]]+build:' "$compose"; then
+    stale_cmd="docker compose -f $compose up -d --build --pull"
+  else
+    stale_cmd="docker compose -f $compose pull && docker compose -f $compose up -d"
+  fi
+
+  # Report per distinct image, not per container: one line per thing to update.
+  seen=""
+  hits=""
+  for cid in $cids; do
+    name=$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null || true)
+    [ -n "$name" ] || continue
+    # POSIX-safe dedupe — no arrays, and the spaces make it a whole-word match.
+    case " $seen " in *" $name "*) continue ;; esac
+    seen="$seen $name"
+
+    # The image the container is ACTUALLY running, by ID. Going via the tag
+    # would read whatever that tag points at now, which for `:latest` is a
+    # different image the moment anything pulls.
+    img=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
+    [ -n "$img" ] || continue
+    ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
+    [ -n "$ts" ] || continue
+
+    # Emitted for every image, not just the stale ones: a gauge that appears
+    # only when something is wrong cannot be graphed, and the flat line is the
+    # reassurance. Same reasoning as the deploy-drift gauge above.
+    M_IMAGE_AGE="$M_IMAGE_AGE
+homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
+
+    age_days=$(( (NOW - ts) / 86400 ))
+    [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
+    hits="$hits
+    $name ($(human $((NOW - ts))))"
+  done
+
+  if [ -n "$hits" ]; then
+    STALE="$STALE
+  $stack:$hits"
+    STALE_CMDS="$STALE_CMDS
+$stale_cmd"
+  fi
+done
+
 # --- stack metrics ------------------------------------------------------------
 metric_help homelab_stack_running gauge \
   "1 if any container is running for a stack declared in docker/"
@@ -341,6 +457,9 @@ metric_raw "$M_STACK_RUNNING"
 metric_help homelab_stack_deploy_drift_seconds gauge \
   "Seconds between a stack's newest deployable commit and what is running"
 metric_raw "$M_STACK_DRIFT"
+metric_help homelab_image_age_seconds gauge \
+  "Age in seconds of the image a running container was created from"
+metric_raw "$M_IMAGE_AGE"
 
 # --- config drift -------------------------------------------------------------
 #
@@ -459,6 +578,19 @@ if [ -n "$MANUAL" ]; then
 \`\`\`
 \`\`\`bash
 cd $REPO$MANUAL_CMDS
+\`\`\`"
+fi
+# Last on purpose. MAX_CHARS truncates the tail, and this is the only section
+# that is slow-burn rather than about today — a 90-day-old image keeps until
+# tomorrow, a failed restart does not.
+if [ -n "$STALE" ]; then
+  MSG="$MSG
+**Images older than ${MAX_IMAGE_AGE_DAYS}d:**
+\`\`\`$STALE
+\`\`\`
+Review before running — this pulls new versions nobody has reviewed:
+\`\`\`bash
+cd $REPO$STALE_CMDS
 \`\`\`"
 fi
 
