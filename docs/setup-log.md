@@ -27,6 +27,68 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The dashboard was "down" for one browser, and the lab was fine
+
+**Goal:** `home.brignano.io` stopped loading and appeared not to resolve. Find
+out what broke.
+
+**Steps:**
+1. Checked the zone from off-box first: `home.brignano.io`,
+   `stats.home.brignano.io` and an invented wildcard name all resolved to
+   `10.0.0.201`, so the Cloudflare records — including the bare name's own `A`
+   record — were intact.
+2. From the laptop: `dig @1.1.1.1` and `dig @10.0.0.201` both answered, and
+   `ping 10.0.0.201` replied. Resolver, subnet route and host were all up.
+3. On the box: `curl --resolve home.brignano.io:443:10.0.0.201` returned `200`,
+   `dashboard` had been up for three hours, and Caddy was renewing certificates
+   on schedule.
+4. The same `curl` from the laptop also returned `200` — full dashboard HTML,
+   `via: 1.1 Caddy` — while Chrome on that same machine, at that same moment,
+   showed `ERR_ADDRESS_UNREACHABLE`. Safari loaded it.
+5. That narrowed it to Chrome. Ruled out `AAAA` records (none exist on any of
+   these names, so no happy-eyeballs fallback to a dead IPv6 address) and
+   Chrome's Secure DNS (turned off, still failed).
+6. **Privacy & Security → Local Network** listed *ten* `Google Chrome` entries,
+   all toggled on. Quitting Chrome fully and reopening it fixed the site.
+
+**Issues encountered:**
+- **Two failures that look identical from a browser.** A lab that is down and a
+  lab a browser cannot open render the same way, because `*.$HOMELAB_DOMAIN`
+  resolves publicly and points at a private address. The name looking up fine
+  and the page not loading is the *designed* behaviour off-LAN — so it carries
+  no information about whether the box is alive.
+- **macOS grants local-network access per application.** Chrome's auto-updater
+  creates a fresh TCC entry on each update, they accumulate, and the grant for
+  the binary actually running goes stale while every entry in the list still
+  reads "on". Chrome alone then cannot open connections to `10.x`; the kernel
+  returns host-unreachable and Chrome renders `ERR_ADDRESS_UNREACHABLE`. Public
+  sites keep working, so nothing else in the browser looks wrong. Safari is a
+  system app and is always allowed, and Terminal holds its own grant — which is
+  why `curl` and Safari worked side by side with a browser that could not.
+- **Diagnosis reached for the resolver and made things worse.** On the theory
+  that AdGuard was down, `docker compose up -d --force-recreate adguard` was
+  run — on evidence that already showed AdGuard answering. It takes a few
+  seconds to bind `:53`, the verification `dig` was fired immediately, and
+  `connection refused` came back. That reads exactly like a recreate that did
+  not come back. The household briefly had no DNS, caused entirely by the
+  attempt to fix DNS that was never broken.
+
+**Resolution:**
+- Nothing in `docker/` changed. Every stack was healthy throughout.
+- `.claude/commands/deploy.md` now retries the post-recreate DNS check instead
+  of querying once, and says outright that a `proxy` recreate must be justified
+  by evidence that something is actually broken.
+
+**Notes / next steps:**
+- **The split test is `curl` versus the browser, on the same machine.** It costs
+  one command and separates "the lab is down" from "this client cannot reach
+  it" — which is the first fork in the tree and the one that was skipped here.
+  Everything else follows from which way it goes.
+- A single failed query against `10.0.0.201` is not evidence of anything. Two,
+  seconds apart, are.
+
+---
+
 ## 2026-09-19 — The backup's dead man's switch was pinging `your-uuid`
 
 **Goal:** Wire up the two Healthchecks checks that had never been created, and
