@@ -199,10 +199,18 @@ These slash commands are available in `.claude/commands/`:
 
 | Command | Purpose |
 |---------|---------|
+| `/deploy` | Pull onto CT 100 and make the containers match, including the ones `up -d` leaves on stale config |
+| `/preflight` | Check `.env`, required vars, networks and Tailscale before bringing a stack up |
+| `/bootstrap-stack` | Bring every stack up in dependency order |
 | `/new-service` | Scaffold a new Docker Compose stack |
 | `/log-entry` | Write a dated entry to docs/setup-log.md |
 | `/debug-container` | Diagnose a failing or unhealthy container |
 | `/expose-service` | Add a service to the Cloudflare Tunnel config |
+
+`/deploy` detects which containers are serving a stale single-file bind mount
+rather than naming them, because a hardcoded recreate list is a second copy of
+something Docker already knows — and one was got wrong within a day of being
+written, in a way that would have paged `#alerts` about the house having no DNS.
 
 ## How to help me
 - When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.
