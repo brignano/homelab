@@ -3,20 +3,20 @@
   (public/favicon.svg there, verbatim path data). The tile used to show Vercel's
   logo, which names where the site is hosted rather than what it is.
 
-  The stroke flips with the *OS* colour scheme rather than with Homepage's
-  theme toggle: an SVG referenced by <img> is its own document and cannot see
-  the page's classes. The two agree unless the dashboard is pinned to a theme
-  the phone is not in, and the mark stays legible either way.
+  Ink from the design system: `n-900`, the same value the monogram is drawn in
+  on the site — and ONE value, with no `prefers-color-scheme` step, which is the
+  correction this file exists to record. It used to carry one, and a media query
+  here answers the wrong question: an SVG referenced by <img> is its own
+  document, so it sees the *OS* colour scheme, while the dashboard is whatever
+  Homepage's `theme:` setting and header toggle say. Those two disagree by
+  default — settings.yaml pins `theme: dark` — so a browser in light mode drew
+  the light-ground ink on a near-black card, which is nothing at all.
 
-  Ink from the design system: `n-900` in each scope, the same value the
-  monogram is drawn in on the site.
+  config/custom.css re-inks it from the page instead, keyed off the same
+  `data-theme` attribute the tokens read, so the mark follows the dashboard and
+  not the phone. That works because the mark is a single colour: keep it that
+  way, or the bridge has nothing to invert.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 15 15" fill="none" role="img" aria-label="brignano.io">
-  <style>
-    path { stroke: #111111; }
-    @media (prefers-color-scheme: dark) {
-      path { stroke: #f2f2f0; }
-    }
-  </style>
-  <path d="M1.5 11V6.5C1.5 5.39543 2.39543 4.5 3.5 4.5C4.60457 4.5 5.5 5.39543 5.5 6.5V11M1.5 8.5H5.5M12 7.5H9.5M12 7.5C12.8284 7.5 13.5 6.82843 13.5 6C13.5 5.17157 12.8284 4.5 12 4.5H9.5V7.5M12 7.5C12.8284 7.5 13.5 8.17157 13.5 9C13.5 9.82843 12.8284 10.5 12 10.5H9.5V7.5M7.5 1V14"/>
+  <path stroke="#111111" d="M1.5 11V6.5C1.5 5.39543 2.39543 4.5 3.5 4.5C4.60457 4.5 5.5 5.39543 5.5 6.5V11M1.5 8.5H5.5M12 7.5H9.5M12 7.5C12.8284 7.5 13.5 6.82843 13.5 6C13.5 5.17157 12.8284 4.5 12 4.5H9.5V7.5M12 7.5C12.8284 7.5 13.5 8.17157 13.5 9C13.5 9.82843 12.8284 10.5 12 10.5H9.5V7.5M7.5 1V14"/>
 </svg>

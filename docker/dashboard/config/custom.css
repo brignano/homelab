@@ -90,3 +90,28 @@ html[class*="theme-"] :focus-visible {
   outline: 2px solid var(--i-ink);
   outline-offset: 2px;
 }
+
+/* Re-ink our own tile icon from the page.
+ *
+ * A tile icon is an <img>, which is its own document: it cannot see this page's
+ * theme, and a `prefers-color-scheme` step inside it follows the OS instead.
+ * The dashboard does not — `theme: dark` in settings.yaml pins it — so the two
+ * disagree by default, and icons/brignano.svg spent that disagreement drawing
+ * #111111 ink on a near-black card. It is now one ink, and this is what moves
+ * it: `data-theme` is set by config/custom.js from whatever theme Homepage
+ * settled on, which is the same attribute the tokens read, so the mark tracks
+ * the dashboard and the header toggle rather than the phone.
+ *
+ * `invert(1)` rather than a token because a filter cannot take one. On the
+ * single ink the file draws it lands on #eeeeee — a hair off `--ink`'s dark
+ * step (#f2f2f0), measured 16.73:1 on `--card`, and not a colour anyone can
+ * pick out of a 32px monogram. Matching on `src` keeps this off class names;
+ * the substring is deliberately bare so it still matches if the src is ever
+ * proxied and URL-encoded.
+ *
+ * The two generated composites (portainer.svg, open-webui.svg) still switch by
+ * OS: each is two whole vendor drawings, and inverting a colour logo is not a
+ * re-ink. See docker/dashboard/icons/README.md. */
+html[data-theme="dark"] img[src*="brignano"] {
+  filter: invert(1);
+}
