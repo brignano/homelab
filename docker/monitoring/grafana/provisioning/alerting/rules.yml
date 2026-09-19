@@ -1,5 +1,31 @@
 apiVersion: 1
 
+# Grafana 13.2 exports no notification *delivery* failure counter.
+#
+# `hl-notifications-failing` was added on the assumption that it did — the
+# embedded Alertmanager's other upstream metrics all appear under the
+# `grafana_alerting_` prefix (`nflog_*`, `silences_*`, `dispatcher_*`, and
+# `notification_latency_seconds`), so the counters looked like a safe bet. They
+# are not there: `grafana_alerting_notifications_failed_total` does not exist,
+# and neither does the unprefixed `alertmanager_` form. Confirmed against the
+# running instance's full 695-metric list, not inferred.
+#
+# So the rule could never fire. It was not broken in any way Grafana would
+# report — it evaluated a query that matched nothing, stayed Normal forever, and
+# looked exactly like a delivery path in perfect health. Removing it is the
+# honest outcome; the Triage dashboard now shows notification *sends* against
+# active alerts instead, where a flat line under a rising one is the same signal
+# read off two curves.
+#
+# Deleting the rule from this file does NOT delete it from Grafana — file
+# provisioning upserts by uid, so a rule that simply stops being mentioned is
+# left in the database, and the UI will not delete a provisioned resource
+# either. This directive is what actually removes it. Safe to keep permanently:
+# a uid that is already gone deletes as a no-op, so it converges either way.
+deleteRules:
+  - orgId: 1
+    uid: hl-notifications-failing
+
 groups:
   - orgId: 1
     name: homelab-core
@@ -531,52 +557,6 @@ groups:
               refId: A
               instant: true
               expr: sum(increase(grafana_alerting_rule_evaluation_failures_total[15m]))
-          - refId: C
-            relativeTimeRange: { from: 1800, to: 0 }
-            datasourceUid: __expr__
-            model:
-              refId: C
-              type: threshold
-              expression: A
-              conditions:
-                - evaluator: { type: gt, params: [0] }
-
-      # --- Alert notifications are not being delivered ---
-      #
-      # Discord is the only delivery path in this lab — ntfy was removed, and
-      # DISCORD_ALERT_WEBHOOK is `:?required` so the stack cannot start unable to
-      # page you. None of that helps if the webhook starts rejecting sends: every
-      # rule here would fire correctly into nothing, and the first symptom is
-      # noticing you have not been paged in a while.
-      #
-      # The obvious objection is right — this alert is delivered by the channel
-      # it is watching, so a total outage silences it too. It is not useless for
-      # that: partial failures (rate limiting, one integration of several, a
-      # webhook rotated but still resolving) are the common case and do get
-      # through. The total case is heartbeat.sh's job, from off the box.
-      #
-      # The __name__ regex covers both names Grafana has used for the embedded
-      # Alertmanager's counters; collapse it once you have confirmed which one
-      # your version exports (see docker/monitoring/README.md, "Verify").
-      - uid: hl-notifications-failing
-        title: Alert notifications failing to send
-        condition: C
-        for: 10m
-        noDataState: OK
-        execErrState: Error
-        labels:
-          severity: critical
-        annotations:
-          summary: "Grafana cannot deliver notifications — alerts may be firing into nothing"
-        data:
-          - refId: A
-            relativeTimeRange: { from: 1800, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: A
-              instant: true
-              expr: >-
-                sum(increase({__name__=~"(grafana_alerting|alertmanager)_notifications_failed_total"}[15m]))
           - refId: C
             relativeTimeRange: { from: 1800, to: 0 }
             datasourceUid: __expr__

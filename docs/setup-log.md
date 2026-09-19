@@ -96,6 +96,76 @@ impossible to reach again.
 
 ---
 
+## 2026-09-19 — Two of the four new Grafana tiles were querying metrics that do not exist
+
+**Goal:** Confirm, against the running instance, that the self-scrape panels
+shipped an hour earlier actually query metrics this Grafana emits.
+
+**Steps:**
+1. `grafana version 13.2.2` — well past the Grafana 12 that removed Angular, so
+   the diagnosis behind the dashboard rebuild is confirmed rather than inferred.
+   Worth noting on its own: **nothing in this repo ever chose 13.x.** The
+   compose file says `:latest`, and a major version that removed a panel plugin
+   class arrived on an ordinary `up -d`.
+2. Dumped the full metric list off the box — 695 names — and checked each panel
+   expression against it.
+
+**Issues encountered:**
+- **`grafana_datasource_request_total` does not exist.** Datasource queries run
+  through the plugin path in 13.x; the real metric is `grafana_plugin_request_total`,
+  with labels `{endpoint, plugin_id, plugin_version, status, status_source, target}`.
+- **No notification delivery counter exists at all.** Neither
+  `grafana_alerting_notifications_failed_total` nor the unprefixed
+  `alertmanager_` form is present. The prefix theory was sound — every other
+  upstream Alertmanager metric appears under `grafana_alerting_` (`nflog_*`,
+  `silences_*`, `dispatcher_*`, `notification_latency_seconds`) — and still
+  wrong. `notification_latency_seconds_count` had already observed a send, so
+  the counters are not merely unregistered; 13.2 exports the histogram and not
+  the counters.
+- So `hl-notifications-failing` **could never fire**, and the tile beside it
+  could never leave zero. Neither was broken in any way Grafana reports: the
+  rule evaluated a query matching nothing, stayed Normal forever, and read as a
+  delivery path in perfect health. That is the exact failure the whole day's
+  work was about, shipped by me, inside the change arguing against it.
+- **The verification command was itself unsafe.** `docker exec grafana wget
+  -qO- .../metrics | grep …` returned empty, and `-q` silences connection
+  failures too — so a missing metric and a failed request are indistinguishable.
+  A check that cannot fail loudly is not a check.
+- A counter appeared to vanish between two runs. It was a Grafana restart:
+  `rule_evaluation_failures_total` registers once the scheduler has evaluated,
+  not at startup, so a fresh process briefly has no such series. **No rule had
+  been failing** — the earlier suspicion was wrong.
+
+**Resolution:**
+- Datasource tile moved to `grafana_plugin_request_total{status="error"}`.
+  `status="error"` rather than `!="ok"` on purpose: `cancelled` is someone
+  navigating away from a dashboard mid-query, not a fault.
+- The notification tile now shows **sends** (`notification_latency_seconds_count`),
+  coloured neutrally because there is nothing to threshold on, and the Alerting
+  pipeline panel gained `grafana_alerting_active_alerts` on a right axis.
+  Alerts climbing while sends stay flat is delivery being stuck — the same
+  signal, read off two curves, since no single counter carries it.
+- `hl-notifications-failing` removed, **with a `deleteRules:` directive**.
+  Dropping it from the file alone would have left it in Grafana's database
+  forever: file provisioning upserts, and the UI will not delete a provisioned
+  resource. This repo has been caught by that once already with the ntfy
+  receiver, and the Triage tile counting evaluating rules exists partly to
+  surface it.
+- README's Verify section now checks each metric name by count, from the host
+  with `curl`, so a zero is unambiguous.
+
+**Notes / next steps:**
+- `up{job="grafana"} = 1` — the scrape itself works.
+- The pattern to take from this: **three guesses at a metric name, two wrong.**
+  The `__name__` regex hedge felt like rigour and was not; it covered two names
+  when the real answer was "no such metric". Query the box before writing the
+  panel, not after.
+- Pinning Grafana is now clearly right rather than arguable. A major version
+  landed here unchosen and removed things; `repo-sync.sh` reports images past
+  90 days as of #69, so the objection that a pin would rot silently is gone.
+
+---
+
 ## 2026-09-19 — Nothing was watching the watchman: Grafana now scrapes itself
 
 **Goal:** Decide whether any Grafana feature toggles were worth enabling. Ended
