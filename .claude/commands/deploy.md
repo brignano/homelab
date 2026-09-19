@@ -189,11 +189,41 @@ report it with the exact command and let the user run it while watching:
 docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy
 ```
 
-Deploy it only when the user names it explicitly, and verify DNS resolves before
-declaring success:
+Deploy it only when the user names it explicitly.
+
+**And first, prove something is actually broken.** A recreate here is not a
+diagnostic step — it is the most destructive thing in this runbook, aimed at the
+household's resolver. Two commands settle it, and they cost nothing:
 
 ```bash
-dig +short stats.home @10.0.0.201
+dig +short stats.home @10.0.0.201   # AdGuard answering, rewrites loaded?
+ping -c 3 10.0.0.201                # box reachable?
+```
+
+If AdGuard answers, DNS is not the problem and recreating it can only make
+things worse. On 2026-09-19 exactly that happened: a dashboard that would not
+load in one browser was diagnosed as a DNS failure, AdGuard was recreated on
+evidence that already showed it answering, and the house lost DNS for the
+duration. The lab had been healthy the whole time — see `docs/setup-log.md`.
+
+Then verify DNS resolves before declaring success. **Retry — do not query
+once.** AdGuard takes a few seconds after the container starts to bind `:53`,
+and a query fired immediately answers `connection refused`, which is
+indistinguishable from a recreate that did not come back. That false alarm
+arrives on the household's resolver, at the one moment you are least inclined
+to doubt it:
+
+```bash
+for i in $(seq 1 10); do
+  if dig +short stats.home @10.0.0.201 | grep -q .; then
+    echo "dns ok (attempt $i)"; break
+  fi
+  if [ "$i" -eq 10 ]; then
+    echo "dns STILL down after 20s — docker logs --tail 50 adguard" >&2
+  else
+    sleep 2
+  fi
+done
 ```
 
 ## Output format
