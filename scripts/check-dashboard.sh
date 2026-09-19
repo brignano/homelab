@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 #
-# Every service reachable through Caddy must have a tile on the dashboard.
+# Every service reachable through Caddy must have a tile on the dashboard, and
+# every local file the dashboard's config names must exist and be mounted.
 #
 # Why this exists
 # ---------------
@@ -91,11 +92,63 @@ if [ -f "$COMPOSE" ]; then
   fi
 fi
 
-if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ]; then
+# Everything the dashboard serves out of its own directories: the tab icon
+# named in settings.yaml, and every file config/custom.css imports. Each one is
+# three files agreeing — the config names a path under /<dir>, the compose file
+# mounts that directory at /app/public/<dir>, and the file is in the repo. Break
+# any one and Homepage does not break with it: a missing icon silently becomes
+# its default logo, and a missing stylesheet silently becomes its default theme.
+# Both look like nothing changed rather than like something is wrong.
+CONFIG_DIR="$REPO/docker/dashboard/config"
+CUSTOM_CSS="$CONFIG_DIR/custom.css"
+asset_err=""
+
+check_public_ref() {
+  ref=$1
+  source=$2
+  # Anything that is not an absolute path is Homepage's own to resolve: a full
+  # URL, or a name from its bundled icon set.
+  case "$ref" in
+    /*) ;;
+    *) echo "ok       $ref is not a local file ($source)"; return 0 ;;
+  esac
+
+  dir=$(printf '%s' "${ref#/}" | cut -d/ -f1)
+  rest=$(printf '%s' "${ref#/}" | cut -d/ -f2-)
+
+  if [ ! -f "$REPO/docker/dashboard/$dir/$rest" ]; then
+    echo "MISSING  $source references $ref, which is not in docker/dashboard/$dir"
+    asset_err=yes
+  elif ! grep -q "\./$dir:/app/public/$dir" "$COMPOSE" 2>/dev/null; then
+    echo "MISSING  $ref cannot be served — docker-compose.yml does not mount ./$dir at /app/public/$dir"
+    asset_err=yes
+  else
+    echo "ok       $ref ($source)"
+  fi
+}
+
+# Every absolute path the YAML names: the page's `favicon:`, and each tile's
+# `icon:`. A bare `grafana.png` is not one of these — that is Homepage's own
+# CDN lookup, which is exactly what ./scripts/update-tile-icons.sh replaces.
+for f in "$CONFIG_DIR"/*.yaml; do
+  [ -f "$f" ] || continue
+  for ref in $(grep -oE '(icon|favicon):[[:space:]]+/[A-Za-z0-9._/-]+' "$f" | sed 's|.*:[[:space:]]*||' | sort -u); do
+    check_public_ref "$ref" "$(basename "$f")"
+  done
+done
+
+if [ -f "$CUSTOM_CSS" ]; then
+  for ref in $(grep -oE 'url\("[^"]+"\)' "$CUSTOM_CSS" | sed 's/^url("//; s/")$//'); do
+    check_public_ref "$ref" "custom.css"
+  done
+fi
+
+if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
   echo >&2
   [ -z "$missing" ] || echo "Add a tile to docker/dashboard/config/services.yaml for:$missing" >&2
   [ -z "$stale" ]   || echo "Remove or fix tiles pointing at:$stale" >&2
   [ -z "$mismatch" ] || echo "HOMEPAGE_ALLOWED_HOSTS must equal the site address Caddy serves the dashboard at." >&2
+  [ -z "$asset_err" ] || echo "Every /<dir>/... path in settings.yaml or custom.css must exist under docker/dashboard/<dir>, and that directory must be mounted at /app/public/<dir>." >&2
   echo "(If a site genuinely should have no tile, add it to EXEMPT in $0 with a reason.)" >&2
   exit 1
 fi

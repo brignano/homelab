@@ -27,6 +27,188 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Tile icons are vendored, and Portainer's had been invisible all along
+
+**Goal:** Decide what the design system does and does not get a vote on, now
+that the dashboard follows it — starting with the icons on the tiles and the
+favicons of the services behind them.
+
+**Steps:**
+1. Left every service's own favicon alone. Grafana's orange G, Portainer's
+   whale and AdGuard's shield are already unmistakable *from each other*, which
+   is the actual job in a tab group. Five marks in one house style would undo
+   that. The dashboard needed its own mark because it had none; these do not.
+2. `scripts/update-tile-icons.sh` vendors each tile icon from
+   [dashboard-icons](https://github.com/homarr-labs/dashboard-icons), pinned to
+   one commit in `docker/dashboard/icons/SOURCE`, and `services.yaml` now names
+   them as `/icons/...` paths.
+3. The brignano.io tile carries the `A|B` monogram from the site's own favicon
+   instead of Vercel's logo, which named the host rather than the site.
+4. `check-dashboard.sh` now checks every absolute path the dashboard's YAML
+   names, not just the favicon, so a service added without its icon fails CI.
+
+**Issues encountered:**
+- **Portainer's tile has been invisible since it was added.** Its mark is a
+  black P, the dashboard's card is near-black, and nobody notices a missing
+  icon the way they notice a wrong one. Open WebUI's black disc was the same
+  story in a milder form. Upstream ships a second drawing of each for dark
+  backgrounds, but Homepage renders a tile icon as an `<img>` — its own
+  document, which cannot see the page's theme — so it cannot pick between two
+  files.
+- **An SVG can see the colour scheme even when it cannot see the page.** So
+  both drawings go into one file, each in a nested `<svg>` keeping its own
+  coordinate system, switched by a media query
+  (`scripts/compose-icon.py`). Ids are prefixed on the way in, because the two
+  drawings are usually the same file with different fills and collide
+  otherwise. The switch follows the OS rather than Homepage's toggle — the
+  same `<img>` limit — and the tile still has its label when they disagree.
+- **The icons were being fetched from a CDN by the browser, on every load.**
+  For the page you open *because* the internet broke, and one AdGuard rule from
+  a grid of blank squares.
+
+**Resolution:**
+- Verified by rendering all seven icons in a real browser under both colour
+  schemes, on the card colours the dashboard actually uses: each one reads in
+  both, including the two composites and the monogram.
+- Deploy is `git pull` and a restart; `icons/` is a directory mount.
+
+**Notes / next steps:**
+- Adding a service is now: a Caddyfile block, a tile with `icon: /icons/<name>.svg`,
+  and `./scripts/update-tile-icons.sh`. CI fails on any of the three being missed.
+- Not done, and worth its own decision: the Grafana dashboards are imported
+  community JSON, so recolouring them to `tokens.chart.css` would be undone by
+  the next import. The custom one (`homelab-capacity.json`) is the only
+  candidate.
+
+---
+
+## 2026-09-19 — The dashboard now wears the design system, and pulls it from npm
+
+**Goal:** Make `home.$HOMELAB_DOMAIN` look like the rest of the brignano
+surfaces rather than like a Homepage install, and make that follow
+[`@brignano/design`](https://github.com/brignano/design) when the package moves
+— without the dashboard keeping a private copy of the palette.
+
+**Steps:**
+1. `scripts/update-design-tokens.sh` vendors `tokens.css` from the npm registry
+   into `docker/dashboard/assets/`, pinned to a version recorded beside it, and
+   vendors Geist (latin, variable) from `@fontsource-variable/geist`. Both are
+   committed: nothing on the box runs npm, so `git pull` is the install.
+2. The same script *generates* `assets/homepage-palette.css` from those tokens.
+3. `config/custom.css` imports both and bridges the rest — type, shape, state —
+   through Tailwind v4's own theme variables rather than through class names.
+4. `config/custom.js` mirrors Homepage's `light`/`dark` class onto
+   `<html data-theme>`, which is what the tokens key their dark values off.
+5. CI runs `./scripts/update-design-tokens.sh --check` (offline), and
+   `check-dashboard.sh` now verifies every local path named in `settings.yaml`
+   or `custom.css` exists in the repo and is mounted.
+
+**Issues encountered:**
+- **Homepage has no token layer, and the two can't be wired directly.** It
+  themes itself from ten variables holding *RGB channels* — `--color-800: 39 39
+  42` — while the design system ships hex. CSS cannot convert between them, so
+  something has to translate, and a translation done by hand is a second copy of
+  the palette that drifts silently. Hence the generator, and hence CI diffing
+  it: a hand edit to the generated file is the only drift left, and it fails the
+  build.
+- **The ramps run in opposite directions.** Homepage's goes light → dark in
+  *both* themes (in dark it takes the page background from `--color-800` and its
+  ink from `--color-200`); the design system's inverts between themes. A
+  step-for-step mapping would have put dark ink on a dark page, so each step is
+  mapped by what Homepage *does* with it. The reasoning is in the generator,
+  next to the values.
+- **Two theme systems that cannot see each other.** Homepage ignores the OS and
+  remembers its own toggle; the tokens key off `prefers-color-scheme` unless
+  told otherwise. A phone in light mode on a dashboard pinned to dark got the
+  light ramp painted on a dark page. `custom.js` mirrors one onto the other, so
+  Homepage stays the single source of truth for which theme is on.
+- **Geist had to come with it.** `--sans` names it first and nothing on a phone
+  has it installed, so without the file the dashboard fell back to the system
+  face — the same tokens, a different-looking family of site.
+
+**Resolution:**
+- Verified in a real browser before shipping, since no CI check covers the
+  cascade: Homepage's `theme.css` and the compiled form of the classes it
+  actually uses, served alongside this `custom.css`, driven through all four
+  combinations of Homepage dark/light against OS dark/light, asserting the
+  computed colours equal the token values. Also with the stylesheet order
+  reversed, because `custom.css` is a `<link>` in `_document` and nothing
+  guarantees it lands after Next's own CSS — the selectors carry an attribute
+  match (`html[class*="theme-"]`) so they win either way.
+- Deploy: `git pull` then a restart of the dashboard. `assets/` and `config/`
+  are directory mounts, so replacements inside them are visible without a
+  recreate — unlike the single-file mounts that caused 2026-08-30.
+
+**Notes / next steps:**
+- To move the look, bump the package and run the script. Editing a colour in
+  `custom.css` is the thing not to do; there are no colour values in it, only
+  token references, and that is deliberate.
+- IBM Plex Mono is deliberately not vendored — Homepage uses `font-mono` in four
+  minor places and the token's fallback chain lands on the platform mono face.
+- `color: zinc` in `settings.yaml` no longer decides anything visible, but it
+  still has to be *a* colour: it is what puts the `theme-` class on `<html>`
+  that the generated palette hangs off.
+
+---
+
+## 2026-09-19 — The dashboard got a mark, because a default favicon is unfindable in a tab group
+
+**Goal:** Make `home.$HOMELAB_DOMAIN` identifiable at 16px. The dashboard shipped
+with Homepage's stock logo, which is the tab you scroll past in a Safari tab
+group on a phone — the surface the dashboard is actually used from.
+
+**Steps:**
+1. Drew the mark to the shared design system
+   ([brignano/design](https://github.com/brignano/design)), which already names
+   `homelab` as a tool-tier consumer: its `mark` hue (larch amber `#e0a44f`,
+   identity only, and only ever inking a graphic) on its `n-900` neutral
+   (`#111111`). A house over a rack slot, sized so the silhouette and the colour
+   are all that has to survive the tab strip.
+2. Committed both `docker/dashboard/icons/homelab.svg` (source) and a 512×512
+   `homelab.png` (what is served). No build step runs on the box, so the render
+   is checked in.
+3. Pointed `settings.yaml` at it with `favicon: /icons/homelab.png`, and mounted
+   `./icons` at `/app/public/icons` — the only directory Homepage serves local
+   images from.
+4. Extended `scripts/check-dashboard.sh` (already run by CI) to fail if
+   `settings.yaml` names an icon that is not in the repo, or if the compose file
+   stops mounting the directory that serves it.
+
+**Issues encountered:**
+- **An SVG favicon would have broken the one platform this was for.** Setting
+  `favicon:` makes Homepage emit `rel="icon"` *and* `rel="apple-touch-icon"`
+  from the same path, and iOS will not take an SVG for the latter: Safari
+  substitutes a screenshot of the page for the home-screen icon. The fix for an
+  unidentifiable tile would have been an unidentifiable tile, visible only on a
+  phone.
+- **Rounded corners are Apple's to draw.** iOS masks its own radius onto a
+  home-screen icon, so a pre-rounded icon shows dark notches inside the mask.
+  The mark is full-bleed and square for that reason.
+- **The icons mount is a directory, deliberately.** A single-file bind mount
+  would repeat 2026-08-30: `git pull` gives the path a new inode, the container
+  keeps the old one, and the box serves the previous icon while the repo and CI
+  both look correct.
+
+**Resolution:**
+- Deploy is `git pull && docker compose up -d --force-recreate dashboard` in
+  `docker/dashboard/`. The force-recreate is needed once, to pick up the new
+  mount — not because of the icon.
+
+**Notes / next steps:**
+- The colours are literal hexes in the SVG. A standalone favicon has no
+  stylesheet to read tokens from, so that is the one place the design system's
+  "never hardcode a hex" rule cannot hold — if the mark hue moves there, it has
+  to be moved here by hand.
+- Homepage's `/site.webmanifest` is baked into the image and still lists its own
+  logo, so an Android "install app" would use that. iOS reads `apple-touch-icon`
+  first, so the phone this was drawn for is covered.
+- Still open: whether the dashboard's *page* should follow the design system too
+  (Homepage supports a `custom.css`, which is the only hook it gives). The tab
+  is fixed; the page is still Homepage's zinc dark theme — which is at least the
+  same cool-leaning neutral the system specifies.
+
+---
+
 ## 2026-08-30 — The Caddy probe fix had been on disk for six days and never reached the container
 
 **Goal:** Find out why `#alerts` was still firing about Caddy after two correct

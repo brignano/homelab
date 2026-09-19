@@ -1,0 +1,380 @@
+/* ─────────────────────────────────────────────────────────────────────────
+   tokens.css — the shared foundation for every brignano surface.
+
+   Consumers:
+     brignano.io   (Next / Tailwind v4)  — marketing tier
+     life          (Astro)               — tool tier
+     homelab, driftwood, future tools    — tool tier
+
+   ── ONE HUE, ONE MEANING ───────────────────────────────────────────────
+   Every colour here answers exactly one question, everywhere it appears,
+   on every surface. That is the whole design of this file.
+
+     NEUTRAL     the page. Most of every screen.
+     --i-*       "you can act on this"      cobalt
+     --success   "settled, confirmed, done" forest
+     --attention "this wants you"           larch amber
+     --danger    "this has gone wrong"      rust
+     --mark      identity — a drawn mark, not a UI colour
+
+   Two consequences worth stating out loud, because both were mistakes in
+   earlier drafts of this system:
+
+   1. ATTENTION IS ONE MEANING. A warning toast, the NEXT UP strip, and a
+      deposit closing in six days are the same message at different
+      volumes, so they are the same colour. There is no separate "warning"
+      hue and no separate "now/next" hue.
+
+   2. IDENTITY IS NOT A FILL. Amber used to be the brand colour AND the
+      warning colour, managed by a rule about scale. Rules enforced by
+      remembering get forgotten. So identity moved to the thing that was
+      always carrying it — the trail, the monogram, the type — and --mark
+      exists only to ink a graphic. It is never a button, chip, wash, or
+      border. The naming is the enforcement.
+
+   ── RULES THAT MAKE THIS FILE TRUSTWORTHY ──────────────────────────────
+   1. NEVER hardcode a hex outside this file. A literal survives a theme
+      change silently — that is how `life`'s status pills sat light grey in
+      dark mode for months.
+   2. Every colour is declared in BOTH theme scopes. CSS cannot share a
+      declaration block between a media query and a plain selector, so the
+      dark list is duplicated on purpose. Edit one, edit the other.
+   3. Ratios in the comments are MEASURED. Change a value, re-measure it.
+
+   See DESIGN.md for the rules that govern use, DECISIONS.md for why.
+   ───────────────────────────────────────────────────────────────────────── */
+
+:root {
+  color-scheme: light;
+
+  /* ── Neutral ramp ─────────────────────────────────────────────────────
+     Twelve steps, up from five. The gap that mattered most: there was no
+     hover or pressed background token, so every interactive surface in
+     both repos was improvising.
+
+     Deliberately COOL-leaning — a cool grey lets the warm mark and the
+     amber attention state read as warm, instead of muddying into them. */
+  --n-0: #ffffff;
+  --n-25: #fafafa;
+  --n-50: #f3f3f1;
+  --n-100: #ececea; /* hairline */
+  --n-200: #e2e2e0; /* hover surface */
+  --n-300: #cbcbce; /* strong border, pressed surface */
+  --n-400: #a9a9ae;
+  --n-500: #8a8a8f; /* muted label   3.44:1 — large text / UI marks only */
+  --n-600: #6b6b73; /*               5.28:1 */
+  --n-700: #52525b; /* secondary     7.73:1 */
+  --n-800: #33333a;
+  --n-900: #111111; /* primary      18.88:1 */
+
+  /* Semantic aliases. Components use THESE, not the raw steps. */
+  --bg: var(--n-25);
+  --card: var(--n-0);
+  --surface-hover: var(--n-100);
+  --surface-active: var(--n-200);
+  --ink: var(--n-900);
+  --ink-soft: var(--n-700);
+  --slate: var(--n-500);
+  --line: var(--n-100);
+  --line-soft: var(--n-50);
+  --line-strong: var(--n-300);
+  --on-dark: var(--n-25);
+
+  /* ── Interactive — cobalt ─────────────────────────────────────────────
+     Everything you can act on: links, buttons, focus, selection. Chosen to
+     be semantically INERT — it carries no inherited meaning the way amber,
+     green and red do — and complementary to the mark hue, so identity and
+     affordance never compete for the same attention.
+
+       --i          fill               5.17:1  (white label 5.17:1)
+       --i-ink      link/icon/focus    6.70:1  on #fff
+       --i-hover    hover fill        10.36:1
+       --i-pressed  pressed fill      12.65:1
+
+     DISABLED IS NEUTRAL, NEVER HUED — a greyed-out control must stop
+     signalling "click me". */
+  --i: #2563eb;
+  --i-ink: #1d4ed8;
+  --i-hover: #1e40af;
+  --i-pressed: #1e3a8a;
+  --i-surface: color-mix(in srgb, var(--i) 12%, transparent);
+  --i-line: color-mix(in srgb, var(--i) 32%, transparent);
+  --i-selection: color-mix(in srgb, var(--i) 26%, transparent);
+  --on-i: #ffffff;
+  --i-disabled-bg: var(--n-200);
+  --i-disabled-ink: var(--n-400);
+
+  /* ── State ────────────────────────────────────────────────────────────
+     Three hues, one meaning each, identical on every surface and both
+     tiers. Always shipped with an ICON AND A WORD — colour is never the
+     only signal.
+
+       --success    settled · confirmed · done · succeeded    6.29:1
+       --attention  now · next · warning · needs you          6.08:1
+       --danger     overdue · failed · invalid                6.10:1
+
+     `--info` is the interactive hue on purpose: an informational message
+     is the same "neutral, no action implied" register as a link.
+
+     `-ink` is the text-safe step; the bare token is for marks and fills.
+     `-surface` and `-line` are the wash and its edge. */
+  --success: #2f6b4f;
+  --success-ink: #245740;
+  --attention: #b4741f; /* 3.85:1 — mark/fill only, NOT text */
+  --attention-ink: #8a5714; /* 6.08:1 */
+  --danger: #a4442c;
+  --danger-ink: #8a3722;
+  --info: var(--i);
+  --info-ink: var(--i-ink);
+
+  --success-surface: color-mix(in srgb, var(--success) 12%, transparent);
+  --attention-surface: color-mix(in srgb, var(--attention) 12%, transparent);
+  --danger-surface: color-mix(in srgb, var(--danger) 12%, transparent);
+  --info-surface: var(--i-surface);
+  --success-line: color-mix(in srgb, var(--success) 32%, transparent);
+  --attention-line: color-mix(in srgb, var(--attention) 32%, transparent);
+  --danger-line: color-mix(in srgb, var(--danger) 32%, transparent);
+  --info-line: var(--i-line);
+
+  /* ── Mark — identity ──────────────────────────────────────────────────
+     Inks a GRAPHIC: the trail line, the A|B monogram, a hero rule. That is
+     the entire permitted use.
+
+     It is NOT a button, chip, badge, wash, border, or link. If you are
+     reaching for it to tint a UI element, the answer is a neutral or a
+     state colour — see DESIGN.md §3.
+
+     It shares larch amber with --attention deliberately: the identity and
+     the attention state are the same warmth, and because --mark never
+     appears as a UI surface the two can never be mistaken for each other
+     in the same context. */
+  --mark: #b4741f;
+  --mark-ink: #8a5714; /* when the mark carries a label, 6.08:1 */
+
+  /* ── Legacy aliases ───────────────────────────────────────────────────
+     Kept so existing `life` components keep compiling. Do not use in new
+     work — reach for the semantic tokens above.
+
+     --larch-deep is declared explicitly in BOTH themes rather than
+     aliased, because "deep" inverts: darker in light, BRIGHTER in dark. An
+     alias to either role silently changes one theme — it moved
+     .pill-active from #f0bd74 to #e0a44f before this was caught. */
+  --forest: var(--success);
+  --forest-deep: var(--success-ink);
+  --larch: var(--attention);
+  --larch-deep: #8a5714;
+  --rust: var(--danger);
+  --rust-deep: var(--danger-ink);
+  --gold: var(--slate);
+
+  /* ── Type ─────────────────────────────────────────────────────────────
+       --sans     Geist — body and headings, both tiers
+       --mono     IBM Plex Mono — data that must read precise
+       --display  Silkscreen — MARKETING TIER ONLY (monogram, hero eyebrows)
+
+     NOTE: Geist is not yet installed in `life` — only brignano.io
+     self-hosts it. Until added, the stack falls through to Inter and that
+     repo renders as before. Adding it is a deliberate separate change. */
+  --sans: 'Geist', 'Inter Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
+  --display: var(--sans);
+
+  /* ── Space ── 4px base. Tiers differ by which steps they reach for. */
+  --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
+  --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px;
+
+  /* ── Shape & elevation ────────────────────────────────────────────────
+     In LIGHT these are shadows; in DARK the surface lightens instead. */
+  --radius-sm: 6px;
+  --radius: 12px;
+  --radius-lg: 18px;
+  --shadow-1: 0 1px 2px rgba(17, 17, 17, 0.04);
+  --shadow-2: 0 2px 8px rgba(17, 17, 17, 0.07);
+  --shadow-3: 0 8px 24px rgba(17, 17, 17, 0.10);
+  --scrim: rgba(17, 17, 17, 0.55);
+  --shadow: var(--shadow-1); /* legacy alias */
+
+  /* ── Motion ───────────────────────────────────────────────────────────
+     Content is ALWAYS visible by default; motion is enhancement layered on
+     top, never the thing that makes content appear. brignano.io shipped a
+     homepage whose contact CTA was invisible on 100% of loads because an
+     animation library owned the visible state. See DESIGN.md §6. */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 150ms;
+  --dur: 250ms;
+  --dur-slow: 600ms;
+}
+
+/* ── Dark ───────────────────────────────────────────────────────────────
+   Selected, not inverted:
+   1. Not pure black. #0d0d0f — pure black behind bright text causes
+      halation and is fatiguing at night, which is when a personal tool
+      actually gets opened.
+   2. Surfaces LIGHTEN with elevation instead of gaining borders.
+   3. Accents lift in luminance rather than shifting hue, and washes carry
+      a higher mix — 12% over #0d0d0f is invisible where it reads on white.
+
+   Declared twice: the media query is the default and no-JS fallback;
+   [data-theme] is the in-app toggle and must WIN over the system.
+   `:not([data-theme='light'])` lets the toggle force light under a dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+
+    --n-0: #0d0d0f;
+    --n-25: #131316;
+    --n-50: #17171a;
+    --n-100: #202024;
+    --n-200: #2a2a2f;
+    --n-300: #3a3a41;
+    --n-400: #55555e;
+    --n-500: #8b8b93; /* 5.29:1 on card */
+    --n-600: #9c9ca4;
+    --n-700: #a8a8b0; /* 7.58:1 */
+    --n-800: #d0d0d2;
+    --n-900: #f2f2f0; /* 15.96:1 */
+
+    --bg: var(--n-0);
+    --card: var(--n-50);
+    --surface-hover: var(--n-100);
+    --surface-active: var(--n-200);
+    --on-dark: var(--n-0);
+
+    --i: #60a5fa; /* 7.04:1 */
+    --i-ink: #60a5fa;
+    --i-hover: #93c5fd;
+    --i-pressed: #bfdbfe;
+    --i-surface: color-mix(in srgb, var(--i) 20%, transparent);
+    --i-line: color-mix(in srgb, var(--i) 44%, transparent);
+    --i-selection: color-mix(in srgb, var(--i) 30%, transparent);
+    --on-i: #111111;
+
+    --success: #6fbf95;
+    --success-ink: #8fd4ae;
+    --attention: #e0a44f;
+    --attention-ink: #e0a44f; /* 8.17:1 — mark and label converge in dark */
+    --danger: #e07a5f;
+    --danger-ink: #ec9880;
+
+    --success-surface: color-mix(in srgb, var(--success) 20%, transparent);
+    --attention-surface: color-mix(in srgb, var(--attention) 20%, transparent);
+    --danger-surface: color-mix(in srgb, var(--danger) 20%, transparent);
+    --success-line: color-mix(in srgb, var(--success) 44%, transparent);
+    --attention-line: color-mix(in srgb, var(--attention) 44%, transparent);
+    --danger-line: color-mix(in srgb, var(--danger) 44%, transparent);
+
+    --mark: #e0a44f;
+    --mark-ink: #e0a44f;
+
+    --larch-deep: #f0bd74; /* brighter step in dark — see the light block */
+
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+    --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.55);
+    --shadow-3: 0 10px 28px rgba(0, 0, 0, 0.65);
+    --scrim: rgba(0, 0, 0, 0.68);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --n-0: #0d0d0f;
+  --n-25: #131316;
+  --n-50: #17171a;
+  --n-100: #202024;
+  --n-200: #2a2a2f;
+  --n-300: #3a3a41;
+  --n-400: #55555e;
+  --n-500: #8b8b93;
+  --n-600: #9c9ca4;
+  --n-700: #a8a8b0;
+  --n-800: #d0d0d2;
+  --n-900: #f2f2f0;
+
+  --bg: var(--n-0);
+  --card: var(--n-50);
+  --surface-hover: var(--n-100);
+  --surface-active: var(--n-200);
+  --on-dark: var(--n-0);
+
+  --i: #60a5fa;
+  --i-ink: #60a5fa;
+  --i-hover: #93c5fd;
+  --i-pressed: #bfdbfe;
+  --i-surface: color-mix(in srgb, var(--i) 20%, transparent);
+  --i-line: color-mix(in srgb, var(--i) 44%, transparent);
+  --i-selection: color-mix(in srgb, var(--i) 30%, transparent);
+  --on-i: #111111;
+
+  --success: #6fbf95;
+  --success-ink: #8fd4ae;
+  --attention: #e0a44f;
+  --attention-ink: #e0a44f;
+  --danger: #e07a5f;
+  --danger-ink: #ec9880;
+
+  --success-surface: color-mix(in srgb, var(--success) 20%, transparent);
+  --attention-surface: color-mix(in srgb, var(--attention) 20%, transparent);
+  --danger-surface: color-mix(in srgb, var(--danger) 20%, transparent);
+  --success-line: color-mix(in srgb, var(--success) 44%, transparent);
+  --attention-line: color-mix(in srgb, var(--attention) 44%, transparent);
+  --danger-line: color-mix(in srgb, var(--danger) 44%, transparent);
+
+  --mark: #e0a44f;
+  --mark-ink: #e0a44f;
+
+  --larch-deep: #f0bd74;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.55);
+  --shadow-3: 0 10px 28px rgba(0, 0, 0, 0.65);
+  --scrim: rgba(0, 0, 0, 0.68);
+}
+
+/* ── Marketing tier ─────────────────────────────────────────────────────
+   `class="tier-marketing"` on <html> (brignano.io). Unlocks the display
+   face and opens the type scale. COLOUR IS IDENTICAL ACROSS TIERS — that
+   is the point of this file. Tool tier is the default. */
+.tier-marketing {
+  --display: 'Silkscreen', var(--mono);
+  --text-xs: 0.75rem;
+  --text-sm: 0.875rem;
+  --text-base: 1.0625rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.5rem;
+  --text-2xl: 2rem;
+  --text-3xl: 2.75rem;
+  --text-4xl: clamp(2.75rem, 6vw, 4rem);
+  --section-gap: var(--s9);
+  --measure: 68ch;
+}
+
+:root {
+  /* Tool-tier scale — compact, because scanning beats reading. */
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --section-gap: var(--s6);
+  --measure: 780px;
+}
+
+::selection {
+  background: var(--i-selection);
+}
+
+/* Ships here so no surface can forget it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

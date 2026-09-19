@@ -13,18 +13,25 @@
 # widget would mean putting an admin password in this stack to render a number
 # you can see by clicking through.
 
+# Icons are local paths, served from docker/dashboard/icons. A bare name like
+# `grafana.png` would make the *browser* fetch it from a CDN on every load,
+# which is a poor dependency for the page you open when the internet is the
+# thing that broke. ./scripts/update-tile-icons.sh vendors them; they are the
+# projects' own marks, left as drawn, because recognising Grafana's G at a
+# glance is the whole job of a tile icon.
+
 - Monitoring:
     - Grafana:
         href: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
         description: Dashboards, metrics and alert rules
-        icon: grafana.png
+        icon: /icons/grafana.svg
 
     - Portainer:
         href: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
         description: Containers, images and volumes
-        icon: portainer.png
+        icon: /icons/portainer.svg
 
 # Not on this box, but externally reachable — so unlike a bookmark it can carry
 # a real status check, and "is my site up?" is worth answering at a glance.
@@ -36,26 +43,26 @@
         href: https://brignano.io
         siteMonitor: https://brignano.io
         description: Personal site
-        icon: si-vercel
+        icon: /icons/brignano.svg
 
 - AI:
     - Open WebUI:
         href: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
         description: Local model chat — slow by design, prefer Otto in Discord
-        icon: open-webui.png
+        icon: /icons/open-webui.svg
 
 - Network:
     - AdGuard Home:
         href: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
         description: DNS resolver and ad blocking for the house
-        icon: adguard-home.png
+        icon: /icons/adguard-home.svg
 
 - Desktops:
     - Kali:
         href: https://kali.{{HOMEPAGE_VAR_DOMAIN}}
         description: On-demand desktop — Sablier boots it on first request
-        icon: kali-linux.png
+        icon: /icons/kali-linux.svg
         # No siteMonitor on purpose: polling this URL would boot the container
         # every time the dashboard refreshes, which defeats scale-to-zero.
