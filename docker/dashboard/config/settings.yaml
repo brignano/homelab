@@ -3,6 +3,14 @@
 title: homelab
 description: Every service on the box, in one place.
 
+# The tab icon, and the icon iOS uses when the dashboard is added to the home
+# screen: Homepage points both `rel="icon"` and `rel="apple-touch-icon"` at
+# this one path. It has to be the PNG, not the SVG beside it — iOS ignores an
+# SVG apple-touch-icon and substitutes a screenshot of the page, which is the
+# same unidentifiable tab this replaces. Served out of docker/dashboard/icons,
+# which the compose file mounts at /app/public/icons.
+favicon: /icons/homelab.png
+
 # Sections render in this order regardless of where they appear in
 # services.yaml, so the file can stay grouped by meaning rather than by layout.
 layout:

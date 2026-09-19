@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
 #
-# Every service reachable through Caddy must have a tile on the dashboard.
+# Every service reachable through Caddy must have a tile on the dashboard,
+# and the dashboard's own icon must exist and be mounted.
 #
 # Why this exists
 # ---------------
@@ -91,11 +92,45 @@ if [ -f "$COMPOSE" ]; then
   fi
 fi
 
-if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ]; then
+# The tab icon is three files agreeing: settings.yaml names a path under
+# /icons, the compose file mounts the directory that serves it, and the icon is
+# actually in that directory. Break any one of the three and Homepage quietly
+# serves its own default logo instead — which looks like nothing changed, not
+# like something is wrong, and the dashboard goes back to being the tab you
+# cannot pick out of a tab group.
+SETTINGS="$REPO/docker/dashboard/config/settings.yaml"
+ICONS="$REPO/docker/dashboard/icons"
+icon_err=""
+favicon=$(sed -n 's/^favicon:[[:space:]]*//p' "$SETTINGS" | head -n1 | tr -d "\"' ")
+case "$favicon" in
+  "")
+    ;;
+  /icons/*)
+    if [ -f "$ICONS/${favicon#/icons/}" ]; then
+      echo "ok       favicon $favicon is in docker/dashboard/icons"
+    else
+      echo "MISSING  favicon: settings.yaml points at $favicon, which is not in docker/dashboard/icons"
+      icon_err=yes
+    fi
+    if grep -q ':/app/public/icons' "$COMPOSE" 2>/dev/null; then
+      echo "ok       icons directory is mounted"
+    else
+      echo "MISSING  icons mount: $favicon cannot be served without ./icons:/app/public/icons"
+      icon_err=yes
+    fi
+    ;;
+  *)
+    # A full URL, or a path into the image's own assets. Nothing local to check.
+    echo "ok       favicon $favicon is not a local icon"
+    ;;
+esac
+
+if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ] || [ -n "$icon_err" ]; then
   echo >&2
   [ -z "$missing" ] || echo "Add a tile to docker/dashboard/config/services.yaml for:$missing" >&2
   [ -z "$stale" ]   || echo "Remove or fix tiles pointing at:$stale" >&2
   [ -z "$mismatch" ] || echo "HOMEPAGE_ALLOWED_HOSTS must equal the site address Caddy serves the dashboard at." >&2
+  [ -z "$icon_err" ] || echo "The favicon named in settings.yaml must exist in docker/dashboard/icons and that directory must be mounted at /app/public/icons." >&2
   echo "(If a site genuinely should have no tile, add it to EXEMPT in $0 with a reason.)" >&2
   exit 1
 fi

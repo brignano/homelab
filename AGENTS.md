@@ -71,6 +71,7 @@ Planned Proxmox LXC container for Docker workloads:
 - Secrets that must exist use `${VAR:?required}` syntax so Compose fails loudly if unset.
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
+- **Anything with a visual choice in it follows [brignano/design](https://github.com/brignano/design)** — the shared design system, which already names `homelab` as a tool-tier consumer. Take colour from its tokens rather than picking one: identity is its `mark` hue (larch amber), and it only ever inks a graphic, never a control. `docker/dashboard/icons/` is the worked example, including why a favicon is the one place its "never hardcode a hex" rule cannot hold.
 - **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
 
 ## Alerting

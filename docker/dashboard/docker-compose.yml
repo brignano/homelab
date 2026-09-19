@@ -48,6 +48,17 @@ services:
       # container has no Docker socket and sits on one network, and CI is what
       # actually keeps this directory honest. logs/ is gitignored.
       - ./config:/app/config
+
+      # The mark, served at /icons/homelab.png. Homepage only serves local
+      # icons out of /app/public, which is the app's own static directory, so
+      # this mounts the one subdirectory rather than shadowing it.
+      #
+      # A directory mount, for the reason the file above is not one: Docker
+      # pins a *file* mount to an inode at create time and git replaces files
+      # rather than editing them, so a single-file mount would go stale on the
+      # next `git pull` and serve the old icon until the container was
+      # recreated. Read-only — nothing in the container writes here.
+      - ./icons:/app/public/icons:ro
     networks:
       # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
       # the tiles are plain links, and the up/down checks go through Caddy over

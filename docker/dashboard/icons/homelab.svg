@@ -1,0 +1,26 @@
+<!--
+  The dashboard's mark. Source of truth for homelab.png beside it: edit this,
+  then re-render (see README.md in this directory).
+
+  Drawn to the brignano design system (github.com/brignano/design):
+    #e0a44f   its `mark` token, dark step   identity, and only ever a graphic
+    #111111   its `n-900` neutral           the ground the mark is inked on
+
+  Both are literals here because a favicon is a standalone file with no
+  stylesheet to read tokens from: the one place that system's "never hardcode a
+  hex" rule cannot hold. If the mark hue moves there, it has to be moved here.
+
+  Drawn for 16px first. At the size a tab strip renders it, only the silhouette
+  and the colour survive, so: one amber shape, one slot, and no stroke thin
+  enough to disappear. Full-bleed and square on purpose, because iOS masks its
+  own rounded corners onto a home-screen icon and corners rounded here would
+  show as dark notches inside Apple's.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="512" height="512" role="img" aria-label="homelab">
+  <rect width="32" height="32" fill="#111111"/>
+  <!-- A house over a rack slot: the roof says which machine this is, the slot
+       says what is in it. The rounded corners come from stroking the fill
+       colour, so the geometry in the path itself stays readable. -->
+  <path d="M16 7.4 6.6 15.6V25.4h18.8V15.6z" fill="#e0a44f" stroke="#e0a44f" stroke-width="2.4" stroke-linejoin="round"/>
+  <rect x="11" y="19.2" width="10" height="3.2" rx="1.6" fill="#111111"/>
+</svg>

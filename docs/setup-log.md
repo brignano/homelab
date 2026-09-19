@@ -27,6 +27,64 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The dashboard got a mark, because a default favicon is unfindable in a tab group
+
+**Goal:** Make `home.$HOMELAB_DOMAIN` identifiable at 16px. The dashboard shipped
+with Homepage's stock logo, which is the tab you scroll past in a Safari tab
+group on a phone — the surface the dashboard is actually used from.
+
+**Steps:**
+1. Drew the mark to the shared design system
+   ([brignano/design](https://github.com/brignano/design)), which already names
+   `homelab` as a tool-tier consumer: its `mark` hue (larch amber `#e0a44f`,
+   identity only, and only ever inking a graphic) on its `n-900` neutral
+   (`#111111`). A house over a rack slot, sized so the silhouette and the colour
+   are all that has to survive the tab strip.
+2. Committed both `docker/dashboard/icons/homelab.svg` (source) and a 512×512
+   `homelab.png` (what is served). No build step runs on the box, so the render
+   is checked in.
+3. Pointed `settings.yaml` at it with `favicon: /icons/homelab.png`, and mounted
+   `./icons` at `/app/public/icons` — the only directory Homepage serves local
+   images from.
+4. Extended `scripts/check-dashboard.sh` (already run by CI) to fail if
+   `settings.yaml` names an icon that is not in the repo, or if the compose file
+   stops mounting the directory that serves it.
+
+**Issues encountered:**
+- **An SVG favicon would have broken the one platform this was for.** Setting
+  `favicon:` makes Homepage emit `rel="icon"` *and* `rel="apple-touch-icon"`
+  from the same path, and iOS will not take an SVG for the latter: Safari
+  substitutes a screenshot of the page for the home-screen icon. The fix for an
+  unidentifiable tile would have been an unidentifiable tile, visible only on a
+  phone.
+- **Rounded corners are Apple's to draw.** iOS masks its own radius onto a
+  home-screen icon, so a pre-rounded icon shows dark notches inside the mask.
+  The mark is full-bleed and square for that reason.
+- **The icons mount is a directory, deliberately.** A single-file bind mount
+  would repeat 2026-08-30: `git pull` gives the path a new inode, the container
+  keeps the old one, and the box serves the previous icon while the repo and CI
+  both look correct.
+
+**Resolution:**
+- Deploy is `git pull && docker compose up -d --force-recreate dashboard` in
+  `docker/dashboard/`. The force-recreate is needed once, to pick up the new
+  mount — not because of the icon.
+
+**Notes / next steps:**
+- The colours are literal hexes in the SVG. A standalone favicon has no
+  stylesheet to read tokens from, so that is the one place the design system's
+  "never hardcode a hex" rule cannot hold — if the mark hue moves there, it has
+  to be moved here by hand.
+- Homepage's `/site.webmanifest` is baked into the image and still lists its own
+  logo, so an Android "install app" would use that. iOS reads `apple-touch-icon`
+  first, so the phone this was drawn for is covered.
+- Still open: whether the dashboard's *page* should follow the design system too
+  (Homepage supports a `custom.css`, which is the only hook it gives). The tab
+  is fixed; the page is still Homepage's zinc dark theme — which is at least the
+  same cool-leaning neutral the system specifies.
+
+---
+
 ## 2026-08-30 — The Caddy probe fix had been on disk for six days and never reached the container
 
 **Goal:** Find out why `#alerts` was still firing about Caddy after two correct
