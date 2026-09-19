@@ -77,6 +77,30 @@ AUTOHEAL="${HL_AUTOHEAL:-yes}"
 VERIFY_TRIES="${HL_VERIFY_TRIES:-3}"
 VERIFY_DELAY="${HL_VERIFY_DELAY:-10}"
 
+# --- this script's own dead man's switch --------------------------------------
+#
+# heartbeat.sh proves the box is alive. Nothing proved *this* was still running,
+# and it only speaks when there is something to say — so a cron entry that was
+# never installed looks exactly like a run of quiet, healthy days. It stayed
+# that way for three weeks (2026-09-19), while a merged change sat undeployed
+# and `git log` on GitHub said everything had shipped.
+#
+# A job cannot report its own absence, so Healthchecks does it from outside:
+# every run pings, and silence past the grace period pages. Same shape as
+# heartbeat.sh, one level up — that one watches the box, this one watches the
+# thing that watches the box.
+HC_URL=$(sed -n 's/^HEALTHCHECKS_REPO_SYNC_URL=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r')
+
+ping_healthchecks() {
+  _code=$?
+  if [ -n "$HC_URL" ]; then
+    # /<exit code>: 0 records a success and anything else a failure, so "ran and
+    # failed" stays distinguishable from "never ran".
+    curl -fsS -m 20 --retry 3 --retry-delay 5 "$HC_URL/$_code" >/dev/null 2>&1 || true
+  fi
+}
+trap ping_healthchecks EXIT
+
 cd "$REPO" || { echo "repo-sync: $REPO not found" >&2; exit 1; }
 
 # --- pull ---------------------------------------------------------------------
@@ -84,13 +108,40 @@ cd "$REPO" || { echo "repo-sync: $REPO not found" >&2; exit 1; }
 BEFORE=$(git rev-parse HEAD)
 PULL_ERROR=""
 
+CLEARED=""
+
 if ! FETCH_ERR=$(git fetch --quiet origin 2>&1); then
   PULL_ERROR="git fetch failed: $FETCH_ERR"
-elif ! PULL_ERR=$(git pull --ff-only --quiet 2>&1); then
-  # --ff-only refuses to merge or rebase, so a diverged tree or a local edit
-  # stops here rather than being silently resolved. Reported, not swallowed:
-  # a cron job that fails quietly is worse than no cron job.
-  PULL_ERROR="git pull --ff-only failed: $PULL_ERR"
+else
+  # A container that owns a bind-mounted config directory writes its own
+  # skeletons into it. Homepage does exactly this: on start it drops an empty
+  # custom.css and custom.js into docker/dashboard/config/ when they are
+  # missing. The day the repo starts tracking such a file, every pull stops —
+  # "untracked working tree files would be overwritten" — for every stack at
+  # once, over a file that has nothing in it.
+  #
+  # So for each file an incoming commit ADDS, an untracked *empty* copy in the
+  # working tree is cleared out of the way. Deliberately narrow: anything with a
+  # byte in it is somebody's work and still stops the pull, to be looked at.
+  for f in $(git diff --name-only --diff-filter=A HEAD..@{u} 2>/dev/null || true); do
+    [ -e "$f" ] || continue
+    if [ -s "$f" ]; then
+      continue
+    fi
+    if git ls-files --error-unmatch -- "$f" >/dev/null 2>&1; then
+      continue
+    fi
+    rm -f "$f"
+    CLEARED="$CLEARED
+  $f"
+  done
+
+  if ! PULL_ERR=$(git pull --ff-only --quiet 2>&1); then
+    # --ff-only refuses to merge or rebase, so a diverged tree or a local edit
+    # stops here rather than being silently resolved. Reported, not swallowed:
+    # a cron job that fails quietly is worse than no cron job.
+    PULL_ERROR="git pull --ff-only failed: $PULL_ERR"
+  fi
 fi
 
 AFTER=$(git rev-parse HEAD)
@@ -261,9 +312,23 @@ if [ -n "$PULL_ERROR" ]; then
 $PULL_ERROR
 \`\`\`"
 fi
+if [ -n "$CLEARED" ]; then
+  MSG="$MSG
+**Cleared empty files a container had written, so the pull could apply:**
+\`\`\`$CLEARED
+\`\`\`"
+fi
 if [ -n "$PULLED" ]; then
   MSG="$MSG
 $PULLED"
+fi
+if [ -z "$HC_URL" ]; then
+  # Reported every run, deliberately: an unconfigured dead man's switch is
+  # exactly the silence this section exists to break, and it stops the moment
+  # the variable is set.
+  MSG="$MSG
+**This sync has no dead man's switch.** Set \`HEALTHCHECKS_REPO_SYNC_URL\` in
+\`docker/monitoring/.env\` — without it, nothing notices when this stops running."
 fi
 if [ -n "$HEALED" ]; then
   MSG="$MSG

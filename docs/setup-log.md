@@ -27,6 +27,72 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The box was three weeks behind main and nothing said so
+
+**Goal:** Deploy the dashboard changes, and then work out why deploying them
+needed a person at all.
+
+**Steps:**
+1. Checked the box before blaming the change: `git log` on CT 100 read
+   `aebfb68`, the merge of **#61**, from 2026-08-30. Twenty days of commits had
+   never been pulled — which is also why `/icons/homelab.png` 404ed and the
+   container still had only its `config` mount.
+2. `git pull --ff-only` then refused outright:
+   ```
+   error: The following untracked working tree files would be overwritten by merge:
+           docker/dashboard/config/custom.css
+           docker/dashboard/config/custom.js
+   ```
+3. Both were 0 bytes, and not ours: Homepage copies a skeleton into the config
+   directory for every config file it knows about — `custom.css` and
+   `custom.js` included — whenever one is missing. Removing them let the pull
+   through.
+4. Then fixed the three layers underneath, rather than the symptom:
+   `scripts/install-cron.sh` (schedule the jobs, idempotent, `--check`),
+   a Healthchecks ping in `repo-sync.sh` (`HEALTHCHECKS_REPO_SYNC_URL`), and
+   the empty-skeleton case cleared automatically before the pull.
+
+**Issues encountered:**
+- **The sync job had never been installed.** Its cron line lived in a comment
+  in its own header, so installing it was a ritual someone had to remember on a
+  box they were already busy fixing. Nothing referenced it — not the README,
+  not a script.
+- **And it could not report that.** `repo-sync.sh` speaks only when there is
+  something to say, which makes "never ran" indistinguishable from three weeks
+  of quiet, healthy days. `heartbeat.sh` cannot cover it either: the box is
+  alive the whole time. Same lesson as 2026-08-30 one level up — the thing that
+  would have told you was the thing that was not running.
+- **One empty file stopped every stack from updating.** Not just the dashboard:
+  a refused `git pull` is the whole box frozen, over a file containing nothing.
+  The container wrote it, the repo later started tracking the same path, and
+  git did exactly the right thing at exactly the wrong moment.
+
+**Resolution:**
+- `./scripts/install-cron.sh` installs `heartbeat.sh` (*/5), `repo-sync.sh`
+  (04:00) and `pg-backup.sh` (02:00), never rewriting an entry that is already
+  there, so a schedule someone moved on purpose stays moved.
+- `repo-sync.sh` pings Healthchecks with its exit code on every run, so "ran and
+  failed" and "never ran" are different signals. Until
+  `HEALTHCHECKS_REPO_SYNC_URL` is set it says so in every report — an
+  unconfigured switch is the same silence, and the nagging stops the moment it
+  is set.
+- Before pulling, it clears untracked *empty* files that an incoming commit
+  adds, and reports what it cleared. Anything with a byte in it still stops the
+  pull, which is the point: that one is somebody's work.
+- Exercised both paths against a throwaway repo: an empty skeleton is removed
+  and the pull applies; a file with content in it blocks the pull, is left
+  untouched, and is reported. `install-cron.sh` was run against a stub crontab
+  for the missing, fresh-install, already-present and no-trailing-newline cases.
+
+**Notes / next steps:**
+- Run `./scripts/install-cron.sh --check` on CT 100. That is the answer to "is
+  this box actually running what the repo thinks it runs".
+- The second Healthchecks check wants period 1d, grace 6h.
+- Worth considering later: `--check` from something that runs *off* the box, so
+  a missing crontab is caught the same way a missing heartbeat is.
+
+---
+
 ## 2026-09-19 — Tile icons are vendored, and Portainer's had been invisible all along
 
 **Goal:** Decide what the design system does and does not get a vote on, now
