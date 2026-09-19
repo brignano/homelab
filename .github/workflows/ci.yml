@@ -94,7 +94,7 @@ jobs:
           exit $status
 
   scripts:
-    name: shell scripts parse
+    name: scripts parse
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,6 +107,12 @@ jobs:
             if sh -n "$f"; then echo "ok    $f"; else echo "FAIL  $f"; status=1; fi
           done
           exit $status
+
+      - name: python helpers compile
+        # Two scripts reach for python where sh would be unreadable — the token
+        # palette and the composed icons. Same reasoning as above: a parse error
+        # in either is silent until someone runs an update.
+        run: python3 -m compileall -q scripts
 
   dashboard:
     name: dashboard covers every proxied site

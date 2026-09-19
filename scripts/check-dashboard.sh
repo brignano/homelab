@@ -99,8 +99,8 @@ fi
 # any one and Homepage does not break with it: a missing icon silently becomes
 # its default logo, and a missing stylesheet silently becomes its default theme.
 # Both look like nothing changed rather than like something is wrong.
-SETTINGS="$REPO/docker/dashboard/config/settings.yaml"
-CUSTOM_CSS="$REPO/docker/dashboard/config/custom.css"
+CONFIG_DIR="$REPO/docker/dashboard/config"
+CUSTOM_CSS="$CONFIG_DIR/custom.css"
 asset_err=""
 
 check_public_ref() {
@@ -127,8 +127,15 @@ check_public_ref() {
   fi
 }
 
-favicon=$(sed -n 's/^favicon:[[:space:]]*//p' "$SETTINGS" | head -n1 | tr -d "\"' ")
-[ -z "$favicon" ] || check_public_ref "$favicon" "settings.yaml"
+# Every absolute path the YAML names: the page's `favicon:`, and each tile's
+# `icon:`. A bare `grafana.png` is not one of these — that is Homepage's own
+# CDN lookup, which is exactly what ./scripts/update-tile-icons.sh replaces.
+for f in "$CONFIG_DIR"/*.yaml; do
+  [ -f "$f" ] || continue
+  for ref in $(grep -oE '(icon|favicon):[[:space:]]+/[A-Za-z0-9._/-]+' "$f" | sed 's|.*:[[:space:]]*||' | sort -u); do
+    check_public_ref "$ref" "$(basename "$f")"
+  done
+done
 
 if [ -f "$CUSTOM_CSS" ]; then
   for ref in $(grep -oE 'url\("[^"]+"\)' "$CUSTOM_CSS" | sed 's/^url("//; s/")$//'); do

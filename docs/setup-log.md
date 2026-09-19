@@ -27,6 +27,61 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — Tile icons are vendored, and Portainer's had been invisible all along
+
+**Goal:** Decide what the design system does and does not get a vote on, now
+that the dashboard follows it — starting with the icons on the tiles and the
+favicons of the services behind them.
+
+**Steps:**
+1. Left every service's own favicon alone. Grafana's orange G, Portainer's
+   whale and AdGuard's shield are already unmistakable *from each other*, which
+   is the actual job in a tab group. Five marks in one house style would undo
+   that. The dashboard needed its own mark because it had none; these do not.
+2. `scripts/update-tile-icons.sh` vendors each tile icon from
+   [dashboard-icons](https://github.com/homarr-labs/dashboard-icons), pinned to
+   one commit in `docker/dashboard/icons/SOURCE`, and `services.yaml` now names
+   them as `/icons/...` paths.
+3. The brignano.io tile carries the `A|B` monogram from the site's own favicon
+   instead of Vercel's logo, which named the host rather than the site.
+4. `check-dashboard.sh` now checks every absolute path the dashboard's YAML
+   names, not just the favicon, so a service added without its icon fails CI.
+
+**Issues encountered:**
+- **Portainer's tile has been invisible since it was added.** Its mark is a
+  black P, the dashboard's card is near-black, and nobody notices a missing
+  icon the way they notice a wrong one. Open WebUI's black disc was the same
+  story in a milder form. Upstream ships a second drawing of each for dark
+  backgrounds, but Homepage renders a tile icon as an `<img>` — its own
+  document, which cannot see the page's theme — so it cannot pick between two
+  files.
+- **An SVG can see the colour scheme even when it cannot see the page.** So
+  both drawings go into one file, each in a nested `<svg>` keeping its own
+  coordinate system, switched by a media query
+  (`scripts/compose-icon.py`). Ids are prefixed on the way in, because the two
+  drawings are usually the same file with different fills and collide
+  otherwise. The switch follows the OS rather than Homepage's toggle — the
+  same `<img>` limit — and the tile still has its label when they disagree.
+- **The icons were being fetched from a CDN by the browser, on every load.**
+  For the page you open *because* the internet broke, and one AdGuard rule from
+  a grid of blank squares.
+
+**Resolution:**
+- Verified by rendering all seven icons in a real browser under both colour
+  schemes, on the card colours the dashboard actually uses: each one reads in
+  both, including the two composites and the monogram.
+- Deploy is `git pull` and a restart; `icons/` is a directory mount.
+
+**Notes / next steps:**
+- Adding a service is now: a Caddyfile block, a tile with `icon: /icons/<name>.svg`,
+  and `./scripts/update-tile-icons.sh`. CI fails on any of the three being missed.
+- Not done, and worth its own decision: the Grafana dashboards are imported
+  community JSON, so recolouring them to `tokens.chart.css` would be undone by
+  the next import. The custom one (`homelab-capacity.json`) is the only
+  candidate.
+
+---
+
 ## 2026-09-19 — The dashboard now wears the design system, and pulls it from npm
 
 **Goal:** Make `home.$HOMELAB_DOMAIN` look like the rest of the brignano
