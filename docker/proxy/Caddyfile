@@ -41,6 +41,32 @@
 	rewrite /apple-touch-icon.png /icons/apple-touch-icon.png
 	rewrite /apple-touch-icon-precomposed.png /icons/apple-touch-icon.png
 
+	# And the surface that reads no markup at all: an INSTALLED app. Chrome
+	# draws the window titlebar, the taskbar entry and the install dialog from
+	# the web app MANIFEST's icons — `rel="icon"` is not consulted, so none of
+	# the work above reaches it. Homepage hard-codes
+	# `<link rel="manifest" href="/site.webmanifest?v=4">` in its _document and
+	# ships a manifest listing its own logo, baked into the image where no
+	# config setting reaches it.
+	#
+	# Rewriting the root path is how that gets overridden without shadowing
+	# /app/public with a single-file bind mount. Same technique as the probes
+	# above, and for once the `?v=4` Homepage appends is useful: the manifest
+	# changing identity is exactly when a cache bust is wanted.
+	rewrite /site.webmanifest /icons/site.webmanifest
+
+	# Explicit, rather than trusting the mime table inside whatever Next.js
+	# build the image happens to carry. Chrome will parse a manifest served as
+	# application/json, but it logs the wrong type as an error in the install
+	# path, and an install error is the thing this block exists to fix.
+	#
+	# Both paths, deliberately. Caddy sorts directives into its own order rather
+	# than running them top to bottom, so whether this matcher sees the request
+	# before or after the rewrite above is not decided here. Naming both spellings
+	# is one line and does not depend on knowing which.
+	@manifest path /site.webmanifest /icons/site.webmanifest
+	header @manifest Content-Type "application/manifest+json"
+
 	reverse_proxy dashboard:3000
 }
 

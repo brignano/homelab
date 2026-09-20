@@ -72,7 +72,7 @@ Planned Proxmox LXC container for Docker workloads:
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
 - **Anything with a visual choice in it follows [brignano/design](https://github.com/brignano/design)** — the shared design system, which already names `homelab` as a tool-tier consumer. Take colour from its tokens rather than picking one: identity is its `mark` hue (larch amber), and it only ever inks a graphic, never a control. `docker/dashboard/icons/` is the worked example, including why a favicon is the one place its "never hardcode a hex" rule cannot hold.
-- **Page icons follow the standard `life` sets** (`scripts/gen-icons.mjs` there, `scripts/gen-dashboard-icons.py` here): the SVG is the real mark — transparent ground, `prefers-color-scheme` step, because a filled tile disappears against a tab strip that matches it — and the rasters (`.ico`, `apple-touch`, 32px PNG) take an ink ground for the surfaces that put the icon somewhere we do not control. Safari probes `/favicon.ico` and `/apple-touch-icon.png` at the root without reading markup, so those paths have to answer; the Caddyfile points them at the mark.
+- **Page icons follow the standard `life` sets** (`scripts/gen-icons.mjs` there, `scripts/gen-dashboard-icons.py` here): the SVG is the real mark — transparent ground, `prefers-color-scheme` step, because a filled tile disappears against a tab strip that matches it — and the rasters (`.ico`, `apple-touch`, 32px PNG) take an ink ground for the surfaces that put the icon somewhere we do not control. Safari probes `/favicon.ico` and `/apple-touch-icon.png` at the root without reading markup, so those paths have to answer; the Caddyfile points them at the mark. **An installed app reads none of that** — Chrome draws its window titlebar, taskbar entry and install dialog from the web app *manifest*, never from `rel="icon"` — so `/site.webmanifest` is rewritten onto ours the same way, and it lists rasters only (192, 512, and a 512 inset 10% a side for `maskable`), for the same ink-ground reason. Fixing the tab icon and fixing the app window are two separate pieces of work; check both.
 - **Third-party marks stay as their projects draw them.** The dashboard's tile icons are vendored into `docker/dashboard/icons/` by `scripts/update-tile-icons.sh` rather than fetched from a CDN by the browser — a dashboard that needs the internet to render is useless on the day the internet is what broke. Adding a service means `icon: /icons/<name>.svg` and a run of that script; CI fails if the file is not there.
 - **The dashboard wears that system at runtime.** `scripts/update-design-tokens.sh` vendors `tokens.css` (and Geist) from npm into `docker/dashboard/assets/` and generates the RGB-channel palette Homepage themes itself from; `config/custom.css` bridges the rest through Tailwind v4's own theme variables, never through class names. Update it by re-running the script, not by editing generated files or typing a colour — CI diffs the generated palette against the vendored tokens.
 - **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
@@ -180,6 +180,19 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   `docker compose up -d --force-recreate <svc>`. Mounting a whole *directory*
   avoids this (that is why `grafana/provisioning/` only needs a restart), so
   prefer a directory mount for new config where the directory holds no secrets.
+- **A directory mount fixes the inode problem and nothing else — the process
+  still has to be replaced.** Compose decides recreates by hashing the *service
+  definition*; bytes behind a mount are not in that hash and cannot be, so
+  `up -d` on a pinned image with an unchanged compose file exits 0 having
+  replaced nothing. Whether that matters depends on when the service reads the
+  files: Grafana and Homepage read theirs once at boot, so a change is invisible
+  until the container restarts. Homepage is the sharpest case — Next.js
+  enumerates `/app/public` *once at startup* (`setupFsCheck`; the refresh path
+  is behind `if (opts.dev)`) and matches every later request against that frozen
+  list, so a **new filename** under `docker/dashboard/icons/` is a 404 no matter
+  how current the mount is, while an edit to a file already there is served
+  fine. That is how the dashboard's mark shipped, passed CI and was never served
+  once. Ask what reads the file and when, not just how it is mounted.
 
 ## Local LLM usage
 

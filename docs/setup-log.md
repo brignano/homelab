@@ -27,6 +27,104 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-19 — The mark was never served, and `up -d` had been lying about deploying it
+
+**Goal:** `home.brignano.io` showed a globe in a Chrome tab and a generic icon
+on the installed app window, a day after the mark was drawn, committed and
+passed CI. Find out why.
+
+**Steps:**
+1. Asked for one fact before touching anything: what does
+   `/icons/favicon.svg` return in a browser. **404.** That ended the favicon
+   investigation — nothing about markup, link order, SVG media queries or
+   favicon caches can explain a file that is not being served — and started a
+   serving one.
+2. Read Next.js 15.5 rather than guessing. `setupFsCheck`
+   (`server/lib/router-utils/filesystem.js`) walks `public/` **once at
+   startup** into `publicFolderItems` and matches every later request against
+   that Set. The refresh path exists and is behind `if (opts.dev)`. A file that
+   appears in the mount afterwards is a 404 no matter how current the mount is.
+3. Checked the timestamps, which settled it. `docker-compose.yml` last changed
+   at 19:48; `favicon.svg`, `favicon.ico`, `favicon-32.png` and
+   `apple-touch-icon.png` were all added at 20:27, the tile icons at 20:00 and
+   22:52. The running process enumerated the directory at 19:48 and has been
+   serving that list ever since.
+4. Found why the daily deploy never fixed it. `repo-sync.sh` heals a stale
+   bind-mount stack with `docker compose up -d`, and Compose recreates by
+   hashing the *service definition* — image, env, ports, mount source and
+   target. Bytes behind a mount are not in that hash and cannot be. With the
+   image pinned and the compose file unchanged, `up -d` found nothing to do and
+   exited 0. `verify_stack` then counted containers that had never stopped and
+   reported a successful heal. Now `up -d --force-recreate`, on both branches —
+   `proxy` has the same hole from the other direction: it bind-mounts the
+   Caddyfile, the Dockerfile does not `COPY` it, and a fully cached rebuild
+   yields the same image id, so `--build` does not rescue it. `proxy` is on
+   `HL_NO_AUTOHEAL`, which means the broken command was the one printed for a
+   human to run.
+5. Added the web app manifest, which is a second gap with the same symptom.
+   Chrome draws an installed app's titlebar, taskbar entry and install dialog
+   from the manifest and never from `rel="icon"`, so none of the previous day's
+   work reached that surface even once the files were served.
+
+**Issues encountered:**
+- **Every icon in the repo was a 404, not just the favicon.** The tile icons
+  landed after the same cutoff, so Grafana's G and the rest had been blank too.
+  Nobody reports a missing tile icon the way they report a missing one.
+- **The heal loop had never healed anything.** `StartedAt` never moved, so the
+  stack was flagged stale again the next day, "fixed" again, and
+  `homelab_stack_deploy_drift_seconds` climbed the whole time — the metric was
+  telling the truth and reading as noise next to a success line.
+- **The documented fix made the symptom worse.** `icons/README.md` said to
+  cache-bust by renaming. A new name is exactly what the frozen list cannot
+  serve, so the remedy for a stuck icon reliably produced no icon.
+- **The compose file asserted the opposite of what happens.** Its comment
+  argued for a directory mount so a `git pull` alone would pick up a new icon.
+  That is true of Docker and false of the application on top of it, and the
+  comment was confident enough that nobody looked past it.
+- **The manifest override cannot be a file mount.** Homepage hard-codes
+  `/site.webmanifest?v=4` in its `_document` and bakes its own logo into the
+  image. Rewriting the root path in Caddy is the same technique already used
+  for Safari's probes, and it avoids the stale-inode problem.
+- **Caddy sorts directives, so "after the rewrite" is not a thing.** `caddy
+  adapt` on the site block shows `headers` emitted ahead of every `rewrite`, so
+  a Content-Type matcher on `/icons/site.webmanifest` would never have fired.
+  The matcher names both spellings.
+
+**Resolution:**
+- `scripts/repo-sync.sh` adds `--force-recreate` to both heal commands, so a
+  config change that lives inside a bind mount is actually deployed.
+- `scripts/gen-dashboard-icons.py` also writes `icon-192.png`, `icon-512.png`
+  and `icon-maskable-512.png`; `icons/site.webmanifest` names them and the
+  Caddyfile rewrites `/site.webmanifest` onto it.
+- `check-dashboard.sh` now validates the manifest's JSON, checks every
+  `icons[].src` exists and is mounted, and fails if the Caddyfile stops
+  rewriting the root path — the last one matters because dropping it serves
+  Homepage's logo rather than a 404.
+- The `public/` startup-scan trap is written at the top of `icons/README.md`
+  and beside the mount in `docker-compose.yml`, with the one-request check
+  (open `/icons/favicon.svg`) that tells it apart from a cache.
+- Verified: `caddy adapt` accepts the site block and puts the rewrite in;
+  `check-dashboard.sh` passes and fails correctly when the manifest names a
+  file that is not there; every raster re-rendered and inspected.
+
+**Notes / next steps:**
+- The `.ico` was being built by handing Pillow one 48px render plus a `sizes=`
+  list, which downsamples that one image — so the 16px frame, the one a tab
+  actually draws, was a resampled 48 with its rounded corners smeared. The
+  original rendered all three sizes from the vector and then used only the
+  first; `append_images` passes the other two, which is what the dead code was
+  reaching for.
+- CI cannot catch this class of bug: the repo was correct the whole time. What
+  would catch it is asking the box what it serves — a probe on
+  `/icons/favicon.svg` belongs with the other check-probes.
+- Deploying this needs the recreate it describes, and the running container
+  predates the manifest:
+  `docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate`
+  plus `docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate`
+  for the Caddyfile.
+
+---
+
 ## 2026-09-19 — The dashboard was "down" for one browser, and the lab was fine
 
 **Goal:** `home.brignano.io` stopped loading and appeared not to resolve. Find

@@ -36,6 +36,16 @@ problem — but Grafana reads it once at boot. Editing a file under it does not
 change the container's config hash, so `up -d` reports `Running` and nothing
 happens.
 
+The dashboard's `icons/` and `assets/` are the same shape and worse, because the
+drift is invisible to step 4's detection: Homepage is Next.js, which enumerates
+`/app/public` **once at startup** and matches every later request against that
+frozen list. A file *edited* in place is served fine; a file with a **new name**
+is a 404 until the container is replaced — and a 404 favicon is not an error
+anywhere, the browser just draws a globe. Step 4 compares the bytes of files the
+container already has, so it cannot see a file the container does not know
+exists. That is how the dashboard's mark and every tile icon shipped, passed CI,
+and were never served once. Step 5 covers it.
+
 ## Steps
 
 ### 1. Confirm where you are
@@ -132,8 +142,32 @@ Grafana will not look at them until it boots:
 docker compose -f docker/monitoring/docker-compose.yml restart grafana
 ```
 
+Anything under `docker/dashboard/icons/` or `docker/dashboard/assets/` means the
+dashboard must be **recreated**, not restarted — see the third failure above:
+
+```bash
+docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate
+```
+
+Then confirm it from outside, because this is the failure that looks like
+success. Ask the server for one of the files the diff added, by name:
+
+```bash
+DOMAIN=$(grep -E '^HOMELAB_DOMAIN=' docker/proxy/.env | cut -d= -f2-)
+for p in /icons/favicon.svg /site.webmanifest; do
+  printf '%s ' "$p"
+  curl -s -o /dev/null -w '%{http_code} %{content_type}\n' "https://$DOMAIN$p"
+done
+```
+
+`200 image/svg+xml` and `200 application/manifest+json` are the deploy working.
+A `404` means the container is still serving a file list from before that name
+existed — do not reach for a favicon cache-bust, which renames files and so
+makes this exact symptom worse.
+
 Apply the same reasoning to any other config a service reads once at startup.
-Recreating is also fine here; a restart is just cheaper.
+Recreating is also fine here; a restart is just cheaper — except where a new
+*filename* has to become visible, where only a recreate will do.
 
 Note that **provisioning upserts**: a contact point, receiver or alert rule
 removed from a file is *not* deleted from Grafana's database. Deletion needs an

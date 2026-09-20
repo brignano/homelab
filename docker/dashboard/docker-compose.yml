@@ -49,15 +49,33 @@ services:
       # actually keeps this directory honest. logs/ is gitignored.
       - ./config:/app/config
 
-      # The mark, served at /icons/homelab.png. Homepage only serves local
-      # icons out of /app/public, which is the app's own static directory, so
-      # this mounts the one subdirectory rather than shadowing it.
+      # The mark and the tile icons, served at /icons/... . Homepage only serves
+      # local icons out of /app/public, which is the app's own static directory,
+      # so this mounts the one subdirectory rather than shadowing it.
       #
       # A directory mount, for the reason the file above is not one: Docker
       # pins a *file* mount to an inode at create time and git replaces files
       # rather than editing them, so a single-file mount would go stale on the
       # next `git pull` and serve the old icon until the container was
       # recreated. Read-only — nothing in the container writes here.
+      #
+      # ADDING A FILE HERE STILL NEEDS A RECREATE, and this cost a whole
+      # afternoon of looking at Docker for an application-layer problem.
+      # Homepage is Next.js, and a production Next server walks public/ ONCE at
+      # startup (setupFsCheck, in server/lib/router-utils/filesystem.js) into a
+      # Set it never refreshes — there is a watcher for this, and it is behind
+      # `if (opts.dev)`. Every request is then matched against that frozen list,
+      # so a path that was not on disk when the process booted is a 404 no
+      # matter what the bind mount says. Changed *contents* at a path that was
+      # already there are read from disk per request and are fine.
+      #
+      # Which is the exact shape of a favicon change: cache-busting by renaming
+      # is the recommended fix, new names are precisely what the frozen list
+      # does not have, and a 404 favicon is not an error anywhere — the browser
+      # just draws a globe. `docker compose up -d` will NOT do it either; with
+      # the image pinned and this file unchanged, Compose sees nothing to
+      # recreate and leaves the old process running. `--force-recreate` is what
+      # scripts/repo-sync.sh runs for exactly this reason.
       - ./icons:/app/public/icons:ro
 
       # The design system: the vendored tokens, the palette generated from
