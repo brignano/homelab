@@ -27,6 +27,62 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — Two verification instructions that could not verify what they claimed
+
+**Goal:** Deploying the previous two entries turned up two checks that look like
+proof and are not. Both were mine, written the same day.
+
+**Steps:**
+1. `templates.yml` said to verify with Alerting → Contact points → Test. The
+   test message's `alert rule ↗` went to `/alerting/list`, which reads exactly
+   like the bug the link was added to fix. It is not: Grafana's test
+   notification is a synthetic alert carrying `alertname=TestAlert` and
+   `instance=Grafana` and nothing else, so there is no `__alert_rule_uid__`
+   and no `GeneratorURL` — the template falls through to its last resort,
+   correctly. Documented in `templates.yml` and the monitoring README, with
+   the fingerprint that confirms it (no `silence ↗` beside it, since Grafana
+   builds SilenceURL from the same missing label).
+2. Taught `deploy-plan.sh` state mode to ask the **image** when it was built,
+   not only the container when it started, for stacks whose source is baked in.
+
+**Issues encountered:**
+- **A recreated container is not a rebuilt one, and start time cannot tell
+  them apart.** Adding `GRAFANA_URL` to the assistant's compose file changed
+  the *service definition*, so a plain `up -d` recreates the container — on
+  the old image. It comes up healthy, connects to Discord, reports a start
+  time newer than every file on disk, and runs last week's code. State mode
+  called that current, on the very deploy it was written for. It now compares
+  `docker image inspect .Created` against the files that go into an image
+  (`app/`, `tests/`, `Dockerfile`, `requirements.txt`) and emits `--build`.
+  Pulled images are never flagged: their stacks contain no such files.
+- **There is no way to fake a real alert.** Two attempts at posting one into
+  Grafana's Alertmanager failed differently — `bad request data`, because the
+  body must be an object keyed `PostableAlerts` (the Go binding uses the field
+  name; the swagger annotation advertises a bare array and is wrong), then
+  `data source not found`, because Grafana registers POST
+  `/api/alertmanager/{DatasourceUID}/api/v2/alerts` for **external**
+  Alertmanagers only. There is no POST route for the built-in one. Both were
+  guesses where the source was a fetch away; the third attempt read it.
+
+**Resolution:**
+- The deep link is confirmed as far as it can be without waiting: the URL form
+  resolves (`/alerting/grafana/hl-disk-full/view` opens the right rule), the
+  template is loaded (Grafana's rule page shows "Last updated 12:28:05", the
+  restart), and the fallback chain was already verified offline against
+  Alertmanager's real funcmap. The remaining branch — a live alert carrying
+  the uid label — is what the next real alert proves.
+- State mode's new branch was tested against a stubbed `docker` in three
+  configurations: image older than source (flags `--build`), both newer
+  (clean), both older (full plan).
+
+**Notes / next steps:**
+- The pattern under both: a check that cannot fail is not a check. The Test
+  button exercises the message shape and the template parsing, and nothing
+  about the links; a start time exercises the config and nothing about the
+  image. Write down what each one is blind to, next to the instruction.
+
+---
+
 ## 2026-09-20 — The deploy rules were a list in a runbook, so they became a script
 
 **Goal:** `/deploy` decides the treatment by reasoning about each changed path —
