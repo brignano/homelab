@@ -66,8 +66,42 @@ git pull --ff-only
 git --no-pager log --oneline "$BEFORE"..HEAD
 ```
 
-`$BEFORE` is used in step 5 to work out what actually changed. If nothing was
-pulled, still continue — the box can be behind in ways a pull does not fix.
+`$BEFORE` is used in step 2a and step 5 to work out what actually changed. If
+nothing was pulled, still continue — the box can be behind in ways a pull does
+not fix.
+
+**Already pulled without capturing it?** `git pull` writes the pre-pull
+revision to `ORIG_HEAD` for exactly this, and the reflog has it either way:
+
+```bash
+BEFORE=$(git rev-parse ORIG_HEAD)     # or: git rev-parse HEAD@{1}
+```
+
+Neither is needed for step 2a, which falls back to asking Docker.
+
+### 2a. Get the plan
+
+```bash
+./scripts/deploy-plan.sh "$BEFORE"    # or with no argument — see below
+```
+
+It prints the commands steps 4 and 5 would arrive at, derived from the changed
+paths rather than from remembering the rules: `--build` for a stack whose source
+is baked into an image, `restart grafana` for provisioning, `--force-recreate`
+for the dashboard's icons, and `proxy` reported rather than run. It also flags a
+provisioned uid the diff removed with nothing left naming it, which is the
+upsert trap in step 5's note.
+
+**With no argument it asks the running system instead of git** — each
+container's start time against the mtime of the files that stack owns. Use that
+when the pull already happened and nothing recorded where it started, or to
+answer "is what is running actually what is on disk" at any time.
+
+It does not replace step 4. This compares timestamps, which answers *did this
+container start before the file changed* — right for config read once at boot
+and for a filename that has to become visible, blind to a single-file bind mount
+that went stale on an inode, because `docker restart` updates the start time
+without re-resolving the mount. Run both.
 
 ### 3. Scheduled jobs and the metrics directory
 
@@ -129,6 +163,9 @@ reports drift after a recreate, stop and say so — that is a different bug, not
 deploy step to repeat.
 
 ### 5. Restart anything whose startup-only config changed
+
+Step 2a already worked this out; what follows is the reasoning behind each line
+it printed, and the verification that goes with it.
 
 ```bash
 git diff --name-only "$BEFORE" HEAD
@@ -265,6 +302,8 @@ done
 Report, in order:
 
 - commits pulled (`<short>..<short>`, count), or "already current"
+- the plan step 2a produced, if it differs from what you ended up running —
+  a divergence is either a bug in the script or a rule it does not know yet
 - cron jobs installed or already present
 - stacks brought up
 - **containers recreated for stale config, naming the file** — this is the part a

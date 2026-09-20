@@ -309,6 +309,13 @@ rather than naming them, because a hardcoded recreate list is a second copy of
 something Docker already knows — and one was got wrong within a day of being
 written, in a way that would have paged `#alerts` about the house having no DNS.
 
+[`scripts/deploy-plan.sh`](scripts/deploy-plan.sh) applies the same reasoning to
+the *treatment*: given the pulled range it prints which stacks need `--build`,
+which need a Grafana restart, which need a recreate, and what needs a human.
+Given no argument it asks Docker instead — each container's start time against
+the mtime of the files it reads — which is the answer when the pull already
+happened and nothing recorded where it started. It reports; it never deploys.
+
 ## How to help me
 - When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.
 - When I describe a problem with a container, check `docker logs`, `docker inspect`, and the compose file before suggesting fixes.

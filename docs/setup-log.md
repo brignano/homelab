@@ -27,6 +27,67 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — The deploy rules were a list in a runbook, so they became a script
+
+**Goal:** `/deploy` decides the treatment by reasoning about each changed path —
+`--build` for a stack baked into an image, a restart for Grafana's provisioning,
+a *recreate* for the dashboard's icons, a human for proxy. That reasoning is
+right, and it is the fourth hand-maintained copy of something the repo already
+knows, done at the end of a deploy when attention is lowest. Make it derivable.
+
+**Steps:**
+1. Added `scripts/deploy-plan.sh`. Range mode (`deploy-plan.sh <rev>`) reads
+   `git diff --name-only` and prints the commands. One rule table, used by both
+   modes, so they cannot drift.
+2. Added state mode (no argument), for the case that actually happens: you
+   pulled, you did not capture `$BEFORE`, and now nothing knows what changed.
+   It asks Docker when each container last started and compares that against
+   the mtime of the files that stack owns — git rewrites a changed file on
+   pull, so a file newer than the container reading it is a container on old
+   config. No reflog, no memory, no git at all.
+3. Taught it the upsert trap: a uid the diff removed from `provisioning/alerting/`
+   with nothing left naming it. Checking for an *added* `deleteRules:` key was
+   the obvious test and the wrong one — the normal fix adds a uid under a block
+   that already exists. It checks whether the uid still appears in the file.
+4. `/deploy` gains step 2a and an `ORIG_HEAD` recovery note in step 2; step 5
+   now reads as the reasoning behind what 2a printed.
+
+**Issues encountered:**
+- **`set -e` and a trailing false conditional.** `[ "$quiet" = 1 ] && say "..."`
+  as the last line of a function makes the function return 1 when the test is
+  false, and the caller then dies. Every run that hit the proxy branch silently
+  skipped the provisioning-deletion section. Found by running it, not by
+  reading it. Now `if`/`fi`, with an explicit `return 0`.
+- **Backticks inside double quotes are command substitution.** One status line
+  read ``say "# ORIG_HEAD mode (the revision `git pull` left behind)"`` — which
+  would have run `git pull` on the box, from a script whose entire promise is
+  that it only reports. Single-quoted now, and the comment says why.
+- **A fresh clone makes every file look new**, and `__pycache__` buried the two
+  lines that mattered. State mode filters through `git ls-files` — only files
+  git manages can change on a pull — and caps the listing at 15.
+- **Timestamps cannot see an inode.** `docker restart` updates `StartedAt`
+  without re-resolving a single-file bind mount, so state mode would report
+  clean on exactly the failure `/deploy` step 4 exists for. The script says so
+  in its output rather than leaving it to be inferred.
+
+**Resolution:**
+- Verified by hand across six scenarios, since CI only `sh -n`s it: two ranges
+  (one with icons + proxy in it, one without), the real 2026-09-19 ntfy removal
+  (fires), a synthetic removal *with* a delete directive (silent) and the same
+  removal without one (fires), and state mode against a stubbed `docker` — both
+  a container started after everything, and one started before.
+
+**Notes / next steps:**
+- CI parses it and nothing more. A functional test wants git history and a fake
+  Docker; `actions/checkout` fetches depth 1, so range mode has nothing to diff
+  against. Worth doing if the rule table grows.
+- The rule table is now the only copy of these rules, which is the point — but
+  it is also a thing that can fall behind a new stack. A stack whose source is
+  baked into an image and is not matched by `app/|tests/|Dockerfile|requirements.txt`
+  would get `up -d` instead of `--build`.
+
+---
+
 ## 2026-09-20 — The alert link goes to the alert now, and the digest stopped saying everything twice
 
 **Goal:** Two complaints about the same channel. The link at the bottom of every
