@@ -27,6 +27,57 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — The drift check could not fail, and two containers had been stale for a day
+
+**Goal:** `deploy-plan.sh` kept flagging `prometheus.yml` and the `Caddyfile`
+while `/deploy` step 4 said no container was serving stale config. One of them
+was wrong. It was step 4.
+
+**Steps:**
+1. Read what the containers are actually mapped to, through
+   `/proc/<pid>/root<dest>` — which resolves via the container's own mount
+   namespace rather than the host path:
+
+   ```
+   prometheus  prometheus.yml  host=19400439  seen=19400327  DIFFERENT
+   caddy       Caddyfile       host=19400601  seen=19400310  DIFFERENT
+   ```
+
+   Different inode **and** different content. `prometheus` had been running
+   since 19 Sep 21:23 on a config superseded at 21:59; `caddy` since 20 Sep
+   00:30 on a Caddyfile superseded by the 04:00 `repo-sync` pull — which is
+   why the favicon routes from *"the mark was never served"* still were not.
+2. Replaced `docker cp` with `/proc/<pid>/root` in step 4, and built the same
+   comparison into `deploy-plan.sh` for file mounts.
+
+**Issues encountered:**
+- **`docker cp` resolves a bind mount back to its host source.** So step 4 was
+  copying out the very file it then compared against, and `cmp` could only ever
+  say "identical". It had reported all-clear for weeks, including on the
+  morning two containers were provably stale. The check guarding this repo's
+  single most documented failure had never once been able to detect it.
+- **The two checks disagreeing is what exposed it**, and only because the
+  timestamp heuristic was noisy enough to argue with. Three rounds of chasing
+  its false positives ended in a true one.
+- **Same bytes, different inode is its own state.** A container pinned to an
+  unlinked copy is fine today and deaf to every future edit of that path.
+  `deploy-plan.sh` reports it separately — worth knowing, not worth a recreate.
+
+**Resolution:**
+- File mounts are compared by content and inode; directory mounts and image
+  build times stay timestamp-based, and both the script and the runbook now say
+  which lines are findings and which are prompts to look.
+- Tested with a stub pointing `.State.Pid` at a live process, one fixture whose
+  mapped copy differs and one identical-but-relinked.
+
+**Notes / next steps:**
+- `prometheus` recreated unattended; `caddy` by hand, watching, after `dig`
+  confirmed AdGuard was answering.
+- Worth asking of every check here: what would make this report a problem? If
+  nothing can, it is decoration. `docker cp` looked like evidence for weeks.
+
+---
+
 ## 2026-09-20 — The planner blamed cadvisor's uptime on Grafana's dashboards
 
 **Goal:** First real run of `deploy-plan.sh` after a pull that touched four

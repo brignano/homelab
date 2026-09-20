@@ -92,16 +92,24 @@ for the dashboard's icons, and `proxy` reported rather than run. It also flags a
 provisioned uid the diff removed with nothing left naming it, which is the
 upsert trap in step 5's note.
 
-**With no argument it asks the running system instead of git** — each
-container's start time against the mtime of the files that stack owns. Use that
-when the pull already happened and nothing recorded where it started, or to
-answer "is what is running actually what is on disk" at any time.
+**With no argument it asks the running system instead of git.** Use that when
+the pull already happened and nothing recorded where it started, or to answer
+"is what is running actually what is on disk" at any time. It asks two
+different questions depending on what it is looking at:
 
-It does not replace step 4. This compares timestamps, which answers *did this
-container start before the file changed* — right for config read once at boot
-and for a filename that has to become visible, blind to a single-file bind mount
-that went stale on an inode, because `docker restart` updates the start time
-without re-resolving the mount. Run both.
+- **A file mount** is compared by *content*, through `/proc/<pid>/root` — the
+  same mechanism as step 4, and definitive. It also reports a file whose bytes
+  still match but whose inode does not: pinned to an unlinked copy, harmless
+  today, deaf to every future edit.
+- **A directory mount, and an image's build time,** are compared by
+  *timestamp*, which is a proxy: it answers "did this start before that
+  changed", which is the right question for config read once at boot but says
+  nothing about content.
+
+Run step 4 as well. The two overlap on file mounts, and that overlap has
+already earned its cost twice — once when the two disagreed and the
+disagreement was what exposed a bug in this script, and once when they agreed
+and the agreement was wrong, because both were using `docker cp`.
 
 ### 3. Scheduled jobs and the metrics directory
 
@@ -127,25 +135,39 @@ a new command flag, a new image tag. It does nothing for the file-mount case, so
 now find those. This asks the running system rather than consulting a list:
 
 ```bash
-tmp=$(mktemp)
 for c in $(docker ps --format '{{.Names}}'); do
+  pid=$(docker inspect -f '{{.State.Pid}}' "$c")
   docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}{{end}}' "$c" 2>/dev/null \
   | while IFS='|' read -r src dest; do
       [ -n "$src" ] && [ -n "$dest" ] || continue
       case "$src" in "$PWD"/*) ;; *) continue ;; esac   # only files this repo owns
       [ -f "$src" ] || continue                          # files, not directories
-      docker cp "$c:$dest" "$tmp" >/dev/null 2>&1 || continue
-      cmp -s "$tmp" "$src" || echo "$c ${src#"$PWD"/}"
+      seen="/proc/$pid/root$dest"
+      [ -r "$seen" ] || { echo "?? $c $dest (cannot read mount namespace)"; continue; }
+      cmp -s "$src" "$seen" || echo "$c ${src#"$PWD"/}"
     done
 done | sort -u
-rm -f "$tmp"
 ```
 
 Each line is a container serving a different copy of a file than the repo has.
-Copying the container's copy out with `docker cp` rather than checksumming
-inside it is deliberate: half these images have no shell, let alone `md5sum`,
-and a check that silently skips the containers it cannot run a binary in reports
-all-clear forever.
+
+**Read it through `/proc/<pid>/root`, never with `docker cp`.** This block used
+`docker cp` for its first weeks and it never once reported a thing, including on
+2026-09-20 when `prometheus` and `caddy` were *both* demonstrably serving
+superseded configs — `docker cp` resolves a bind mount back to its host source,
+so it re-reads the very file you are comparing against and cannot fail. A check
+that cannot fail is not a check, and this one was guarding the failure this
+whole runbook exists for.
+
+`/proc/<pid>/root` resolves through the container's own mount namespace, so it
+shows the inode the process will actually read — the unlinked one, when git has
+replaced the file underneath it. It needs root (you are), and it needs no shell
+in the image, which matters because half of these have none.
+
+To see *why* rather than just *that*, compare inodes: `stat -c %i` on the source
+and on the `/proc` path. Different inode with identical bytes means the
+container is already pinned to an unlinked copy — harmless today, deaf to every
+future edit to that path.
 
 Recreate each one by asking Docker which stack and service it is, so nothing is
 typed by hand:
