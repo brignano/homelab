@@ -27,6 +27,17 @@ services:
       LOKI_URL: http://loki:3100
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
 
+      # The one URL here that is NOT an internal name, because it is the only
+      # one that gets clicked: the digest footer links to Grafana, and those
+      # links are read on a phone. `http://grafana:3000` resolves on this
+      # Docker network and nowhere else, so it must be the public name —
+      # the same `https://stats.$HOMELAB_DOMAIN` that GF_SERVER_ROOT_URL uses
+      # over in docker/monitoring, and for the same reasons (see the comment
+      # there: `.home` resolves only through AdGuard, so it dead-ends on
+      # cellular). Blank is fine and supported — the digest simply renders
+      # without links rather than with broken ones.
+      GRAFANA_URL: ${GRAFANA_URL:-}
+
       # Optional: enables conversational mode in one channel. Blank = off.
       DISCORD_CHAT_CHANNEL_ID: ${DISCORD_CHAT_CHANNEL_ID:-}
       CHAT_HISTORY_TURNS: ${CHAT_HISTORY_TURNS:-12}

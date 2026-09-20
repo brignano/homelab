@@ -217,6 +217,88 @@ def _():
     assert len(line) < 400, f"too long for a per-turn injection: {len(line)}"
 
 
+# --- digest -------------------------------------------------------------------
+
+def _facts(**kw):
+    from app.facts import Facts
+    return Facts(collected_at=dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc), **kw)
+
+
+@check("digest: a normal morning carries no marks and fits in one message")
+def _():
+    from app.digest import render
+    out = render(_facts(targets_up=22, targets_total=22, cpu_pct=11.0, mem_pct=61.0,
+                        disk_pct=38.0), "All quiet.")
+    assert out.startswith("## ✅ "), out.splitlines()[0]
+    # The point of marking only what's wrong: on a good day nothing is marked,
+    # so a mark anywhere is worth looking at.
+    assert "🔴" not in out and "🟠" not in out, out
+    assert "22/22 up" in out and "CPU 11%" in out
+    assert len(out) <= 2000, f"would be split across messages: {len(out)}"
+
+
+@check("digest: the marks and the verdict cannot disagree")
+def _():
+    from app.digest import render
+    # Every line is derived from the same thresholds as facts.concerns, so
+    # "needs attention" without a marked line (or the reverse) is a bug.
+    for kw in (
+        dict(targets_up=1, targets_total=2, targets_down=["loki (loki:3100)"]),
+        dict(cpu_pct=99.0),
+        dict(mem_pct=99.0),
+        dict(disk_pct=99.0),
+        dict(restarts=[("ollama", 3)]),
+    ):
+        facts = _facts(**kw)
+        out = render(facts, None)
+        assert facts.concerns, kw
+        assert out.startswith("## ⚠️ "), out.splitlines()[0]
+        assert "🔴" in out or "🟠" in out, out
+    # Log noise is explicitly not a concern in facts.py, so it must not be
+    # marked here either — that would claim a verdict the code never reached.
+    quiet = _facts(targets_up=2, targets_total=2, log_errors=[("caddy", 214)])
+    assert not quiet.concerns
+    out = render(quiet, None)
+    assert out.startswith("## ✅ ") and "🔴" not in out and "🟠" not in out, out
+
+
+@check("digest: every fact is stated once")
+def _():
+    from app.digest import render
+    out = render(_facts(targets_up=1, targets_total=2, targets_down=["loki (loki:3100)"],
+                        restarts=[("ollama", 3)]), None)
+    assert out.count("loki (loki:3100)") == 1, out
+    assert out.count("ollama") == 1, out
+
+
+@check("digest: footer links point at the dashboard for what was found")
+def _():
+    from app.digest import links
+    base = "https://stats.example.com"
+    quiet = [n for n, _ in links(_facts(targets_up=2, targets_total=2), base)]
+    assert quiet == ["Triage"], quiet
+    busy = dict(links(_facts(targets_up=1, targets_total=2, targets_down=["loki"],
+                             disk_pct=99.0, log_errors=[("caddy", 9)]), base))
+    assert list(busy) == ["Triage", "Endpoints", "Capacity", "Logs"], list(busy)
+    assert busy["Capacity"] == f"{base}/d/homelab-capacity"
+    # A base URL with a trailing slash must not produce a double slash.
+    assert dict(links(_facts(), "https://stats.example.com/"))["Triage"] == f"{base}/d/homelab-triage"
+
+
+@check("digest: no Grafana URL configured means no links, not broken ones")
+def _():
+    from app.digest import render
+    out = render(_facts(targets_up=2, targets_total=2), None, grafana_url=None)
+    assert "](" not in out and "http" not in out, out
+
+
+@check("digest: an unreadable backend is never rendered as all clear")
+def _():
+    from app.digest import render
+    out = render(_facts(problems=["could not read target health"]), None)
+    assert "Incomplete" in out and "could not read target health" in out
+
+
 # --- text ---------------------------------------------------------------------
 
 @check("text: oversized input and output are bounded")

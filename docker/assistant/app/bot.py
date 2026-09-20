@@ -361,7 +361,10 @@ class Assistant(discord.Client):
         now = dt.datetime.now(tz=self.cfg.tz)
         return await self.queue.submit(
             "digest",
-            lambda: build_digest(self.collector, self.ollama, now, self.cfg.digest_predict),
+            lambda: build_digest(
+                self.collector, self.ollama, now, self.cfg.digest_predict,
+                grafana_url=self.cfg.grafana_url,
+            ),
             priority=priority,
         )
 

@@ -55,6 +55,14 @@ contactPoints:
           # embed is left to do the two things it is good at — Grafana colours
           # it red or green, and this title is its one clickable element.
           # templates.yml has the reasoning in full.
-          title: 'Open in Grafana →'
+          #
+          # It used to read `Open in Grafana →`, which promised more than it
+          # delivers: Grafana's Discord notifier hardcodes the embed's URL to
+          # `/alerting/list` and the contact point cannot override it, so the
+          # one clickable thing on an alert has always landed on the list of
+          # every alert in the lab. The links that go to the *firing rule* are
+          # in the message body now (see templates.yml); this title says where
+          # it actually goes, and the list is still worth one click.
+          title: 'All alerts in Grafana →'
           message: '{{ template "homelab.message" . }}'
         disableResolveMessage: false

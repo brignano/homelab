@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
-from .facts import Facts
+from .facts import CPU_WARN, DISK_WARN, MEM_WARN, Facts
 
 log = logging.getLogger(__name__)
 
@@ -73,8 +73,94 @@ def facts_block(facts: Facts) -> str:
     return "\n".join(lines)
 
 
+# --- Discord rendering --------------------------------------------------------
+#
+# The digest is read once a day, usually on a phone, usually before coffee. Two
+# rules follow from that, and both are about where the ink goes:
+#
+#   Every fact appears exactly once. An earlier draft opened with a "Needs
+#   attention" block built from `facts.concerns` and then listed the same
+#   readings again below it — on a bad morning nearly every line was printed
+#   twice, which is when a reader starts skimming, which is the one failure
+#   mode a digest cannot afford. The readings ARE the attention list: concerns
+#   are derived from exactly these numbers, so marking the lines says the same
+#   thing in half the space.
+#
+#   Only the lines that are wrong get a mark. Five green ticks down the left
+#   margin is the same as none — the eye has nothing to land on. An unmarked
+#   line means "fine", and on a normal day the whole body is unmarked and the
+#   ✅ in the heading is the entire verdict.
+#
+# The marks are not a second opinion: they come from the thresholds in facts.py
+# that decide `concerns`, so a red line and a "needs attention" verdict can
+# never disagree. smoke.py asserts that.
+BAD = "🔴"
+WARN = "🟠"
+
+# Dashboard UIDs as provisioned in docker/monitoring/grafana/dashboards/homelab/.
+# `/d/<uid>` is enough — Grafana redirects to the slugged URL, so retitling a
+# dashboard does not break these. Changing a *uid* would, silently, on the one
+# morning the link gets clicked; check-observability.sh compares this list
+# against the committed dashboards for exactly that reason.
+DASH_TRIAGE = "homelab-triage"
+DASH_CAPACITY = "homelab-capacity"
+DASH_ENDPOINTS = "homelab-endpoints"
+DASH_LOGS = "homelab-logs"
+
+
 def _pct(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.0f}%"
+
+
+def _over(value: float | None, warn: float) -> bool:
+    return value is not None and value >= warn
+
+
+def _hot(value: float | None, warn: float) -> str:
+    """A reading, bolded when it's the one over the line.
+
+    The gauges share a line, so the line's mark alone can't say *which* of the
+    three tripped it. Bolding the number that did costs no space and removes
+    the need for a sentence saying so.
+    """
+    return f"**{_pct(value)}**" if _over(value, warn) else _pct(value)
+
+
+def _strained(facts: Facts) -> bool:
+    """Any of the three gauges over its threshold.
+
+    One definition, used by both the Load mark and the Capacity link — two
+    copies would eventually disagree, and the disagreement would show up as a
+    red line with nowhere to click.
+    """
+    return (
+        _over(facts.cpu_pct, CPU_WARN)
+        or _over(facts.mem_pct, MEM_WARN)
+        or _over(facts.disk_pct, DISK_WARN)
+    )
+
+
+def _line(mark: str, label: str, value: str) -> str:
+    return f"{mark + ' ' if mark else ''}**{label}** {value}"
+
+
+def links(facts: Facts, base: str) -> list[tuple[str, str]]:
+    """Where to go next, chosen by what the digest actually found.
+
+    Triage is always first — it's the front door, and on a normal day it's the
+    only one offered. The rest appear only when there is something on them
+    worth opening: a static row of four links is scenery, and scenery stops
+    being read within a week.
+    """
+    base = base.rstrip("/")
+    out = [("Triage", f"{base}/d/{DASH_TRIAGE}")]
+    if facts.targets_down:
+        out.append(("Endpoints", f"{base}/d/{DASH_ENDPOINTS}"))
+    if _strained(facts):
+        out.append(("Capacity", f"{base}/d/{DASH_CAPACITY}"))
+    if facts.log_errors:
+        out.append(("Logs", f"{base}/d/{DASH_LOGS}"))
+    return out
 
 
 def render(
@@ -84,11 +170,15 @@ def render(
     model: str | None = None,
     seconds: float | None = None,
     note: str | None = None,
+    grafana_url: str | None = None,
 ) -> str:
     """Build the Discord message. Numbers always present; prose only if we got it."""
-    heading = "⚠️ Homelab digest" if facts.concerns else "✅ Homelab digest"
+    # `##` is a real Discord heading, not bold text pretending to be one: it
+    # renders large, and it gives the channel a visible day boundary when a
+    # month of digests is scrolled back through.
+    mark = "⚠️" if facts.concerns else "✅"
     when = facts.collected_at.strftime("%a %d %b")
-    out = [f"**{heading} — {when}**", ""]
+    out = [f"## {mark} Homelab digest — {when}", ""]
 
     if narration:
         out += [narration.strip(), ""]
@@ -98,25 +188,43 @@ def render(
         if facts.targets_total
         else "n/a"
     )
-    out.append(f"**Services** {targets}")
+    # The down targets ride on the Services line rather than getting one of
+    # their own: naming them is the point, and a separate line said it twice.
     if facts.targets_down:
-        out.append("**Down** " + " · ".join(facts.targets_down))
-    out.append(
-        f"**Load** CPU {_pct(facts.cpu_pct)} · "
-        f"RAM {_pct(facts.mem_pct)} · disk / {_pct(facts.disk_pct)}"
-    )
-    out.append(
-        "**Restarts (24h)** "
-        + (" · ".join(f"{n} ×{c}" for n, c in facts.restarts) if facts.restarts else "none")
-    )
-    out.append(
-        "**Log errors (24h)** "
-        + (" · ".join(f"{n} {c}" for n, c in facts.log_errors) if facts.log_errors else "none")
-    )
+        targets += " — " + ", ".join(facts.targets_down)
+    out.append(_line(BAD if facts.targets_down else "", "Services", targets))
+
+    out.append(_line(
+        BAD if _strained(facts) else "",
+        "Load",
+        f"CPU {_hot(facts.cpu_pct, CPU_WARN)} · "
+        f"RAM {_hot(facts.mem_pct, MEM_WARN)} · "
+        f"disk / {_hot(facts.disk_pct, DISK_WARN)}",
+    ))
+    out.append(_line(
+        WARN if facts.restarts else "",
+        "Restarts (24h)",
+        " · ".join(f"{n} ×{c}" for n, c in facts.restarts) if facts.restarts else "none",
+    ))
+    # Deliberately never marked. facts.py does not count log noise as a
+    # concern — plenty of things here log an error a minute and are healthy —
+    # and a mark here would claim a verdict the code never reached.
+    out.append(_line(
+        "",
+        "Log errors (24h)",
+        " · ".join(f"{n} {c}" for n, c in facts.log_errors) if facts.log_errors else "none",
+    ))
 
     if facts.problems:
         out.append("")
         out.append("⚠️ _Incomplete: " + "; ".join(facts.problems) + "_")
+
+    out.append("")
+    if grafana_url:
+        # Masked links, which Discord renders for bot and webhook messages.
+        # A bare Grafana URL is ~50 characters of noise per link and would
+        # unfurl a preview card under every digest.
+        out.append("-# " + " · ".join(f"[{name} ↗]({url})" for name, url in links(facts, grafana_url)))
 
     footer_bits: list[str] = []
     if model and seconds is not None:
@@ -124,12 +232,18 @@ def render(
     elif note:
         footer_bits.append(note)
     footer_bits.append("facts from Prometheus + Loki")
-    out += ["", "-# " + " · ".join(footer_bits)]
+    out.append("-# " + " · ".join(footer_bits))
 
     return "\n".join(out)
 
 
-async def build(collector, ollama, now: datetime, num_predict: int = 180) -> str:
+async def build(
+    collector,
+    ollama,
+    now: datetime,
+    num_predict: int = 180,
+    grafana_url: str | None = None,
+) -> str:
     """Collect, narrate, render. Never raises for a narration failure."""
     facts = await collector.collect(now)
 
@@ -150,4 +264,6 @@ async def build(collector, ollama, now: datetime, num_predict: int = 180) -> str
     else:
         narration, model, seconds = completion.text, completion.model, completion.seconds
 
-    return render(facts, narration, model=model, seconds=seconds, note=note)
+    return render(
+        facts, narration, model=model, seconds=seconds, note=note, grafana_url=grafana_url
+    )

@@ -40,6 +40,46 @@ costs nothing either. Slow is only expensive when you're watching it.
 | `/digest` | interactive | Run the digest now instead of waiting |
 | `/status` | interactive | Model readiness, queue depth, next scheduled digest |
 
+## The digest
+
+```
+## ⚠️ Homelab digest — Sat 22 Aug
+
+A couple of targets are down and the box is running hot.
+
+🔴 **Services** 20/22 up — blackbox (kali-linux:3000), postgres-exporter (postgres-exporter:9187)
+🔴 **Load** CPU **92%** · RAM **93%** · disk / **88%**
+🟠 **Restarts (24h)** ollama ×3 · caddy ×1
+**Log errors (24h)** caddy 214 · open-webui 37 · loki 4
+
+-# [Triage ↗] · [Endpoints ↗] · [Capacity ↗] · [Logs ↗]
+-# llama3.2:3b · 34s · facts from Prometheus + Loki
+```
+
+It is read once a day, on a phone, before coffee. Three rules follow from that:
+
+**Every fact appears once.** An earlier draft opened with a "Needs attention"
+block built from `facts.concerns` and then listed the same readings below it; on
+a bad morning almost every line was printed twice, which is when a reader starts
+skimming. The readings *are* the attention list — concerns are derived from
+exactly these numbers — so the down targets ride on the Services line and the
+hot gauge is bolded in place.
+
+**Only what's wrong is marked.** Five green ticks down the left margin is the
+same as none. An unmarked line means fine, and on a normal day the whole body is
+unmarked and the ✅ in the heading is the entire verdict. The marks come from
+the same thresholds in [`app/facts.py`](app/facts.py) that decide the verdict,
+so a red line and an "all clear" can never disagree — `tests/smoke.py` asserts
+it. Log noise is deliberately never marked: `facts.py` does not count it as a
+concern, and a mark here would claim a verdict the code never reached.
+
+**The footer links to what was found.** Triage always; Endpoints, Capacity and
+Logs only when there is something on them worth opening. A static row of four
+links is scenery, and scenery stops being read within a week. Set `GRAFANA_URL`
+to the public name — these are clicked on a phone, so an internal
+`http://grafana:3000` would dead-end. Unset, the digest renders without links
+rather than with broken ones.
+
 ## Conversational mode
 
 Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —

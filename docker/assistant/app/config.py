@@ -112,6 +112,12 @@ class Config:
     ollama_model: str
     prometheus_url: str
     loki_url: str
+    # Public Grafana base URL, used only to build the links in the digest
+    # footer. Blank = no links, which is the right default: this is the one URL
+    # here that must work from OUTSIDE the Docker network, since it is clicked
+    # on a phone. An internal `http://grafana:3000` would render links that
+    # dead-end everywhere they are actually read.
+    grafana_url: str
 
     # --- Scheduling ---
     tz: ZoneInfo
@@ -165,6 +171,7 @@ class Config:
             ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
             prometheus_url=os.environ.get("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/"),
             loki_url=os.environ.get("LOKI_URL", "http://loki:3100").rstrip("/"),
+            grafana_url=os.environ.get("GRAFANA_URL", "").strip().rstrip("/"),
             tz=tz,
             digest_at=_hhmm("DIGEST_AT", "07:30"),
             digest_enabled=os.environ.get("DIGEST_ENABLED", "true").lower() != "false",
