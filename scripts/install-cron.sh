@@ -48,6 +48,11 @@ LOG_DIR="${HL_LOG_DIR:-/var/log}"
 # by luck because cron runs as root. Doing it explicitly means the one place
 # that sets the box up is the place that says so.
 TEXTFILE_DIR="${HL_TEXTFILE_DIR:-/var/lib/node_exporter/textfile}"
+# Where the assistant records its last scheduled digest, read back by
+# heartbeat.sh as homelab_digest_timestamp_seconds. Owned by the container's
+# uid because that container drops privileges — see the chown below.
+DIGEST_STATE_DIR="${HL_DIGEST_STATE_DIR:-/var/lib/homelab/assistant}"
+DIGEST_STATE_UID="${HL_DIGEST_STATE_UID:-10001}"
 
 # <schedule>|<script>|<what it is>. The schedule here is the one each script's
 # own header documents; they are the same file, so keep them that way.
@@ -71,6 +76,23 @@ elif [ -n "$check" ]; then
 else
   mkdir -p "$TEXTFILE_DIR" && chmod 755 "$TEXTFILE_DIR"
   echo "created  $TEXTFILE_DIR"
+fi
+
+# The assistant runs as uid 10001 (it drops privileges), so a root-owned mount
+# here means the bot cannot record anything and hl-digest-missing never has a
+# series to alert on — a silent hole in the thing that watches for silence.
+# Checked as well as created, because the ownership is the part that rots: a
+# `mkdir -p` by hand during some other fix leaves it root-owned and working
+# "except for that".
+if [ -d "$DIGEST_STATE_DIR" ] && [ "$(stat -c %u "$DIGEST_STATE_DIR" 2>/dev/null)" = "$DIGEST_STATE_UID" ]; then
+  echo "ok       digest state directory exists: $DIGEST_STATE_DIR (uid $DIGEST_STATE_UID)"
+elif [ -n "$check" ]; then
+  echo "MISSING  $DIGEST_STATE_DIR is absent or not owned by uid $DIGEST_STATE_UID — the digest timestamp cannot be written"
+else
+  mkdir -p "$DIGEST_STATE_DIR" \
+    && chown "$DIGEST_STATE_UID:$DIGEST_STATE_UID" "$DIGEST_STATE_DIR" \
+    && chmod 755 "$DIGEST_STATE_DIR"
+  echo "created  $DIGEST_STATE_DIR (uid $DIGEST_STATE_UID)"
 fi
 
 current=$(crontab -l 2>/dev/null || true)

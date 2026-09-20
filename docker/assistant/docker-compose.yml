@@ -51,15 +51,6 @@ services:
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
 
-      # Dead man's switch for the scheduled digest. `tasks.loop(time=...)` has
-      # no catch-up: a bot that was down at DIGEST_AT and back five minutes
-      # later skips that day silently, and a missing digest looks exactly like
-      # a quiet morning. The scheduled run pings this; Healthchecks alerts
-      # #alerts when it stops. Blank = no switch, reported by `/status` and at
-      # startup rather than assumed. NOT `:?required` — an unarmed switch must
-      # not stop the digest itself from posting.
-      HEALTHCHECKS_DIGEST_URL: ${HEALTHCHECKS_DIGEST_URL:-}
-
       OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-4096}
       # How long Ollama keeps the model resident after a request. Its own
       # default is 5m, which makes the first message after any pause pay a
@@ -72,6 +63,21 @@ services:
       MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-6000}
       MAX_QUEUE: ${MAX_QUEUE:-8}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # Where the bot records that a scheduled digest posted, for
+      # scripts/heartbeat.sh to publish as homelab_digest_timestamp_seconds.
+      # `tasks.loop(time=...)` has no catch-up, so a bot down at DIGEST_AT and
+      # back five minutes later skips that day in silence — this is what makes
+      # that visible, via hl-digest-missing.
+      #
+      # A host path rather than the container's /tmp, for two reasons: it
+      # survives `up -d --build`, and heartbeat.sh can read it while this
+      # container is STOPPED, which is exactly when the alert should still fire.
+      # A directory mount, so it has none of the single-file inode problem.
+      #
+      # Created (and chowned to this container's uid 10001) by
+      # scripts/install-cron.sh, alongside the node-exporter textfile dir.
+      - ${DIGEST_STATE_DIR:-/var/lib/homelab/assistant}:/state
     networks:
       - ai
       - monitoring

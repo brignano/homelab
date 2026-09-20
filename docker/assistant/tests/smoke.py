@@ -299,67 +299,36 @@ def _():
     assert "Incomplete" in out and "could not read target health" in out
 
 
-# --- healthchecks ---------------------------------------------------------------
+# --- digest timestamp ------------------------------------------------------------
 
-@check("healthchecks: a placeholder counts as unset, not as armed")
+@check("stamp: a round trip, and every unusable value reads as None")
 def _():
-    from app.healthchecks import read
-    # The exact value that cost this lab its pg_dumpall switch: non-empty,
-    # well-formed, and pinging nothing. Every one of these must be REJECTED.
-    for bad in (
-        "",
-        "   ",
-        "https://hc-ping.com/your-uuid",
-        "https://hc-ping.com",            # front page, answers 200 forever
-        "https://hc-ping.com/",           # no check id
-        "<paste-your-url>",
-        "https://hc-ping.com/changeme",
-        "https://example.com/abc123",
-        "hc-ping.com/abc123",             # no scheme
-        "ftp://hc-ping.com/abc123",
-    ):
-        url, reason = read(bad)
-        assert url is None, f"accepted {bad!r}"
-        assert reason, f"rejected {bad!r} with no reason"
-    good = "https://hc-ping.com/7f3a9c21-0e5b-4d88-9a1e-2b6c4f0d8e77"
-    url, reason = read(good)
-    assert url == good and reason == "", (url, reason)
+    import tempfile
+    from app import stamp
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "last-digest")
+        assert stamp.read(path) is None, "a fresh install has posted nothing"
+        assert stamp.write(path, 1789920000.7) is True
+        assert stamp.read(path) == 1789920000
+        # Garbage must not be published: something downstream subtracts this
+        # from time() and alerts on the result.
+        for junk in ("", "   ", "not-a-number", "0", "-5"):
+            open(path, "w").write(junk)
+            assert stamp.read(path) is None, junk
+        stamp.write(path, 1789920000)
+        stamp.clear(path)
+        assert stamp.read(path) is None, "clear must leave nothing to be stale about"
+        stamp.clear(path)  # idempotent — clearing twice is not an error
 
 
-@check("healthchecks: the ping URL is masked everywhere it is printed")
+@check("stamp: an unwritable mount is reported, never raised")
 def _():
-    from app.healthchecks import Switch, mask
-    secret = "https://hc-ping.com/7f3a9c21-0e5b-4d88-9a1e-2b6c4f0d8e77"
-    shown = mask(secret)
-    # Anyone holding the full URL can check the job in — that is exactly how
-    # you would hide a box that had stopped.
-    assert "7f3a9c21-" not in shown and shown.startswith("https://hc-ping.com/")
-    assert shown in Switch(None, secret).describe()
-    assert secret not in Switch(None, secret).describe()
-
-
-@check("healthchecks: an unarmed switch says so, and never pretends")
-def _():
-    from app.healthchecks import Switch
-    off = Switch(None, None, reason="HEALTHCHECKS_DIGEST_URL is unset")
-    assert not off.armed
-    assert "NOT ARMED" in off.describe() and "unset" in off.describe()
-    assert asyncio.run(off.ok()) is False, "an unarmed switch must not report success"
-
-
-@check("healthchecks: a ping that fails is reported, never raised")
-def _():
-    from app.healthchecks import Switch
-
-    class Boom:
-        def get(self, *a, **k):
-            raise OSError("network is down")
-
-    # The digest is the product; the ping is the proof. A switch that could
-    # take the digest down with it would be a worse bargain than no switch.
-    sw = Switch(Boom(), "https://hc-ping.com/abc12345", attempts=2, delay_s=0)
-    assert asyncio.run(sw.ok()) is False
-    assert asyncio.run(sw.fail()) is False
+    from app import stamp
+    # The real failure: the host directory exists but is root-owned, and this
+    # container runs as uid 10001. The digest is the product; the timestamp is
+    # only proof it happened, so this must degrade rather than take it down.
+    assert stamp.write("/proc/cannot/write/here", 1789920000) is False
+    assert stamp.read("/proc/cannot/write/here") is None
 
 
 # --- text ---------------------------------------------------------------------
@@ -534,8 +503,8 @@ def _():
 @check("all modules import cleanly")
 def _():
     import importlib
-    for mod in ("bot", "chat", "config", "digest", "facts", "healthchecks",
-                "jobqueue", "logs", "ollama", "provision", "text"):
+    for mod in ("bot", "chat", "config", "digest", "facts", "jobqueue",
+                "logs", "ollama", "provision", "stamp", "text"):
         importlib.import_module(f"app.{mod}")
 
 

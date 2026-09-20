@@ -27,58 +27,63 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
-## 2026-09-20 — The digest could not report not running
+## 2026-09-20 — The digest could not report not running, and the switch stayed in-lab
 
-**Goal:** The digest pushes, so nobody checks it — which means the failure that
-matters is not "I forgot to look", it is "nothing was posted and that looked
-identical to a quiet morning". Close it the way every other scheduled job here
-is closed.
+**Goal:** The digest pushes, so nobody checks it — the failure that matters is
+not "I forgot to look", it is "nothing arrived and that looked identical to a
+quiet morning". Close it without adding a fourth external check.
 
 **Steps:**
-1. Established what was already covered. A dead container is:
-   `heartbeat.sh` publishes `homelab_container_running{required="yes"}` for
-   every container declared in any compose file, only `kali-linux` and
-   `cloudflared` are optional, so `assistant` being down for 10m fires
-   `hl-container-missing`. A wedged gateway socket fails the container
-   healthcheck. What is **not** covered: bot up, healthy, connected, and 07:30
-   passes with nothing posted — `tasks.loop(time=...)` has no catch-up, so a
-   bot down at 07:30 and back at 07:35 skips that day in silence.
-2. Added `app/healthchecks.py` and `HEALTHCHECKS_DIGEST_URL`. The **scheduled**
-   run pings; a failed digest pings `/fail` rather than waiting out the grace
-   period.
-3. `/status` now reports the switch's armed state, masked.
+1. Established what was already covered. A dead container is: `heartbeat.sh`
+   publishes `homelab_container_running{required="yes"}` for everything
+   declared in a compose file, only `kali-linux` and `cloudflared` are
+   optional, so a missing `assistant` fires `hl-container-missing`. **Not**
+   covered: bot up, healthy, connected, and `DIGEST_AT` passing with nothing
+   posted — `tasks.loop(time=...)` has no catch-up.
+2. Built it as a Healthchecks ping first, matching the other three jobs. Then
+   changed approach: the ping needs a fourth check created by hand, and until
+   somebody does that the feature is a `NOT ARMED` line and nothing else.
+3. Kept it in-lab instead. The bot writes a timestamp after each **scheduled**
+   digest (`app/stamp.py`); `heartbeat.sh` reads it from the host into
+   `homelab_digest_timestamp_seconds`; `hl-digest-missing` alerts past 25h.
 
 **Issues encountered:**
+- **The usual argument for an external switch does not apply here.** Nothing on
+  CT 100 can report CT 100 being down — which is why `heartbeat.sh` exists and
+  pings from cron. But that case is *already* watched from outside. What was
+  left is narrower (bot up, schedule not firing) and entirely visible from
+  inside the lab, so an in-lab signal is sufficient and costs no new account,
+  no URL to paste, and nothing that can sit unarmed while looking configured.
 - **The obvious wiring would have hidden the failure it exists to catch.**
-  Pinging from `run_digest()` would mean `/digest` at three in the afternoon
-  checks the switch in — so a schedule that had stopped firing would look
-  perfectly healthy as long as somebody ran one by hand. Only
-  `scheduled_digest` pings.
-- **This container cannot write the metric.** The shell jobs leave
-  `homelab_healthchecks_ping_success` behind for `hl-hc-ping-failing`; the
-  assistant runs as uid 10001 and the textfile directory is root-owned, so that
-  would need a mount and a uid change for something the external check already
-  covers. Documented rather than bodged, and the Healthchecks check is the
-  alarm for this one.
-- **A switch has to prove it is armed**, and "I set that variable months ago"
-  is not proof — which is why the armed state is one `/status` away rather
-  than a thing you assume. The validation repeats `scripts/healthchecks.sh`'s
-  rules exactly (empty, then shape, then placeholder) instead of inventing its
-  own: `https://hc-ping.com/your-uuid` is the value that cost the `pg_dumpall`
-  switch its first day, and it satisfies every naive check.
+  Recording the timestamp in `run_digest()` would mean `/digest` at three in
+  the afternoon refreshes the clock — so a schedule that had stopped firing
+  would look healthy as long as somebody ran one by hand. Only
+  `scheduled_digest` records it.
+- **/tmp would have been wiped by every rebuild.** The stamp lives on a host
+  bind mount instead, which also means `heartbeat.sh` can read it while the
+  container is **stopped** — exactly when the alert should still be able to
+  fire. The container drops privileges to uid 10001, so `install-cron.sh`
+  creates the directory with that owner and `--check` reports it if the
+  ownership has rotted; a root-owned mount would be a silent hole in the thing
+  that watches for silence.
+- **Absent must not read as zero.** A fresh install has posted nothing, and
+  `DIGEST_ENABLED=false` clears the stamp deliberately. Publishing a 0 would
+  make `time() - 0` alert about a 490,000-hour-old digest, so the metric is
+  simply not emitted and `noDataState: OK` treats that as silence.
 
 **Resolution:**
-- Ten rejection cases in `tests/smoke.py`, including the bare host that answers
-  200 forever while arming nothing. Verified by mutation: deleting the
-  placeholder gate turns the suite red.
-- A failed ping is logged and never raised. The digest is the product; the ping
-  is the proof it happened, and a switch that could take the digest down with
-  it would be a worse bargain than no switch.
+- `hl-digest-missing` at 25h (daily plus an hour of grace), warning severity.
+- `/status` gained **Last digest** as a Discord relative timestamp, so "is the
+  schedule firing" is answerable without opening Grafana.
+- Round-trip and rejection tests in `tests/smoke.py`, including an unwritable
+  mount. Verified by mutation: accepting a zero turns the suite red.
 
 **Notes / next steps:**
-- Create the check at healthchecks.io (period 1 day, grace ~2h) pointed at the
-  same `#alerts` webhook, paste the URL into `docker/assistant/.env`, and
-  confirm with `/status` — it says `NOT ARMED` until you do.
+- `./scripts/install-cron.sh` must run on the box before the next
+  `up -d --build`, or the mount will be root-owned and the bot will log that it
+  cannot write the timestamp.
+- Worth a panel on the Scheduled Jobs dashboard eventually; the alert is the
+  part that matters and it is in.
 
 ---
 

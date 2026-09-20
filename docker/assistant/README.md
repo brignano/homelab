@@ -89,26 +89,37 @@ quiet morning". `tasks.loop(time=...)` has no catch-up: a bot that was down at
 
 The container being *gone* is already covered — `heartbeat.sh` publishes
 `homelab_container_running{required="yes"}` for every container declared in any
-compose file, and `hl-container-missing` alerts on it. `HEALTHCHECKS_DIGEST_URL`
-covers the rest: the **scheduled** run pings it, so silence becomes the signal,
-observed from outside the box.
+compose file, and `hl-container-missing` alerts on it. What was left is the
+narrower case: bot up, healthy, gateway connected, schedule not firing.
 
-Only the scheduled run pings. `/digest` at three in the afternoon would check
-the switch in and hide a schedule that has stopped firing, which is the one
-thing it is here to catch.
+So the bot writes a timestamp after each **scheduled** digest
+([`app/stamp.py`](app/stamp.py)), `heartbeat.sh` reads it from the host into
+`homelab_digest_timestamp_seconds`, and `hl-digest-missing` fires past 25h —
+daily, plus an hour of grace for a slow generation or a restart near 07:30.
+`/status` reports it too, so "is the schedule actually firing" is answerable
+without opening Grafana.
 
-A switch is armed only if it can be shown to be armed, so a value that is not a
-plausible ping URL — `https://hc-ping.com/your-uuid`, a bare host, anything
-still holding `<paste-me>` — counts as **unset**, is reported at startup, and
-shows as `NOT ARMED` in `/status`. That is the mistake that cost the
-`pg_dumpall` switch its first day ([`scripts/healthchecks.sh`](../../scripts/healthchecks.sh)
-has the full story); [`app/healthchecks.py`](app/healthchecks.py) repeats its
-rules rather than inventing new ones. Ping URLs are masked wherever they are
-printed — anyone holding one can check the job in.
+**Why in-lab rather than a fourth Healthchecks check.** The one thing nothing
+on CT 100 can report is CT 100 being down, and that already has an external
+switch in `heartbeat.sh`. What remains is narrow enough to watch from inside,
+and it costs no new account, no URL to paste, and nothing that can sit unarmed
+while looking configured.
 
-Unlike the shell jobs, this one leaves no `homelab_healthchecks_ping_success`
-behind: the container runs as uid 10001 and the textfile directory is
-root-owned, so the external check is the alarm here.
+**Only the scheduled run records it.** `/digest` at three in the afternoon would
+refresh the clock and hide a schedule that had stopped firing, which is the one
+thing this is here to catch. A digest that *failed* deliberately leaves the
+clock running, so the alert still fires if the next one fails too.
+
+The file lives on a host bind mount (`/var/lib/homelab/assistant`, created with
+the right owner by [`install-cron.sh`](../../scripts/install-cron.sh) — the bot
+runs as uid 10001), not in the container's `/tmp`. It survives `up -d --build`,
+and `heartbeat.sh` can still read it while the container is **stopped**, which
+is exactly when the alert should be able to fire.
+
+With `DIGEST_ENABLED=false` the timestamp is cleared at startup: no digests are
+expected, so there is nothing to be stale about, and an alert that fires forever
+because a feature is deliberately off is noise that teaches you to ignore the
+channel.
 
 ## Conversational mode
 
