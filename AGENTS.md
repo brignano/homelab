@@ -168,7 +168,15 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   a value that is not a plausible ping URL counts as unset, a failed ping is
   reported rather than swallowed, and both leave `homelab_healthchecks_ping_success`
   behind for `hl-hc-ping-failing` to alert on. Read a ping URL through
-  `hc_url`, never with an ad-hoc `sed`.
+  `hc_url`, never with an ad-hoc `sed`. The assistant's digest is watched
+  differently, and deliberately: it writes a timestamp
+  ([`app/stamp.py`](docker/assistant/app/stamp.py)) that `heartbeat.sh` reads
+  from the host into `homelab_digest_timestamp_seconds`, with
+  `hl-digest-missing` alerting past 25h. No fourth external check — the
+  box-being-down case is already watched from outside by `heartbeat.sh`
+  itself, and what is left (bot up, schedule not firing) is narrow enough to
+  see from inside. Only the **scheduled** run records it: an on-demand
+  `/digest` would refresh the clock and hide a schedule that had stopped.
 - **A job that detects something must leave the result behind, not just report
   it.** Discord answers "does this need me now" and is read once; a time series
   answers "is it still true", "how long has it been true" and "did the fix

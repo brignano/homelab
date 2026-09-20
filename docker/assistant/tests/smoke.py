@@ -299,6 +299,38 @@ def _():
     assert "Incomplete" in out and "could not read target health" in out
 
 
+# --- digest timestamp ------------------------------------------------------------
+
+@check("stamp: a round trip, and every unusable value reads as None")
+def _():
+    import tempfile
+    from app import stamp
+    with tempfile.TemporaryDirectory() as d:
+        path = os.path.join(d, "last-digest")
+        assert stamp.read(path) is None, "a fresh install has posted nothing"
+        assert stamp.write(path, 1789920000.7) is True
+        assert stamp.read(path) == 1789920000
+        # Garbage must not be published: something downstream subtracts this
+        # from time() and alerts on the result.
+        for junk in ("", "   ", "not-a-number", "0", "-5"):
+            open(path, "w").write(junk)
+            assert stamp.read(path) is None, junk
+        stamp.write(path, 1789920000)
+        stamp.clear(path)
+        assert stamp.read(path) is None, "clear must leave nothing to be stale about"
+        stamp.clear(path)  # idempotent — clearing twice is not an error
+
+
+@check("stamp: an unwritable mount is reported, never raised")
+def _():
+    from app import stamp
+    # The real failure: the host directory exists but is root-owned, and this
+    # container runs as uid 10001. The digest is the product; the timestamp is
+    # only proof it happened, so this must degrade rather than take it down.
+    assert stamp.write("/proc/cannot/write/here", 1789920000) is False
+    assert stamp.read("/proc/cannot/write/here") is None
+
+
 # --- text ---------------------------------------------------------------------
 
 @check("text: oversized input and output are bounded")
@@ -472,7 +504,7 @@ def _():
 def _():
     import importlib
     for mod in ("bot", "chat", "config", "digest", "facts", "jobqueue",
-                "logs", "ollama", "provision", "text"):
+                "logs", "ollama", "provision", "stamp", "text"):
         importlib.import_module(f"app.{mod}")
 
 

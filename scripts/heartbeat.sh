@@ -73,6 +73,8 @@ REQUIRED="grafana prometheus"
 # feature, not a fault — and `cloudflared` has never been deployed. Anything
 # else missing is worth an alert.
 OPTIONAL_CONTAINERS="${HL_OPTIONAL_CONTAINERS:-kali-linux cloudflared}"
+# Written by the assistant after each scheduled digest; see app/stamp.py.
+DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
 
 # Kept identical to the job list in install-cron.sh; CI fails if they drift
 # (scripts/check-observability.sh). Two lists of the same thing is exactly how
@@ -150,6 +152,25 @@ publish_metrics() {
     esac
     metric homelab_cron_job_installed "$_installed" "$(metric_kv job "$_job")"
   done
+
+  # When the assistant last posted a SCHEDULED digest. The bot writes this;
+  # this job only reads it, which is the point: the digest cannot report never
+  # having run, and a missing digest looks exactly like a quiet morning.
+  #
+  # Read from the host path rather than out of the container, so it still
+  # answers while the bot is stopped — which is precisely when the alert should
+  # be able to fire. Absent is a legitimate answer (a fresh install has posted
+  # nothing yet, and DIGEST_ENABLED=false clears it deliberately), so publish
+  # nothing rather than a zero: `hl-digest-missing` would read a zero as 1970
+  # and page about a 490,000-hour-old digest.
+  if [ -r "$DIGEST_STAMP" ]; then
+    _digest_ts=$(head -c 32 "$DIGEST_STAMP" 2>/dev/null | tr -dc '0-9' || true)
+    if [ -n "$_digest_ts" ] && [ "$_digest_ts" -gt 0 ] 2>/dev/null; then
+      metric_help homelab_digest_timestamp_seconds gauge \
+        "Unix time of the last scheduled homelab digest that posted"
+      metric homelab_digest_timestamp_seconds "$_digest_ts"
+    fi
+  fi
 
   metrics_close
 }

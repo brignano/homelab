@@ -34,6 +34,7 @@ from .digest import build as build_digest
 from .facts import FactCollector
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
+from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
 from .text import chunk, clamp_input
 
 log = logging.getLogger(__name__)
@@ -107,6 +108,14 @@ class Assistant(discord.Client):
             prometheus_url=self.cfg.prometheus_url,
             loki_url=self.cfg.loki_url,
         )
+
+        # With the schedule off there is nothing to be stale about, so drop
+        # any timestamp a previous run left behind. An alert that fires forever
+        # because a feature is deliberately disabled is noise that teaches you
+        # to ignore the channel.
+        if not self.cfg.digest_enabled:
+            clear_stamp(self.cfg.digest_stamp_path)
+
         self.queue.start()
 
         register_commands(self)
@@ -343,13 +352,23 @@ class Assistant(discord.Client):
         if channel is None:
             log.error("digest channel %s not found", self.cfg.digest_channel_id)
             return
+        ok = True
         try:
             message = await self.run_digest(priority=PRIORITY_SCHEDULED)
         except Exception as exc:  # noqa: BLE001 — a bad day must not kill the loop
             log.exception("scheduled digest failed")
             message = f"⚠️ Homelab digest failed to run: `{exc}`"
+            ok = False
         for part in chunk(message):
             await channel.send(part)
+
+        # Only the SCHEDULED run records this, and only when it worked.
+        # `/digest` at three in the afternoon would refresh the timestamp and
+        # hide a schedule that had stopped firing — the one thing this is here
+        # to catch. A digest that failed deliberately leaves the clock running,
+        # so `hl-digest-missing` fires if the next one fails too.
+        if ok:
+            write_stamp(self.cfg.digest_stamp_path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
 
     @scheduled_digest.before_loop
     async def _before_digest(self) -> None:
@@ -504,6 +523,11 @@ def register_commands(client: Assistant) -> None:
             nxt = client.scheduled_digest.next_iteration
             when = nxt.astimezone(cfg.tz).strftime("%a %d %b %H:%M %Z") if nxt else "pending"
             lines.append(f"**Next digest** {when}")
+            # The question "is the schedule actually firing" should be
+            # answerable without reading Grafana or the box.
+            last = read_stamp(cfg.digest_stamp_path)
+            when_last = f"<t:{last}:R>" if last else "never — no scheduled digest recorded yet"
+            lines.append(f"**Last digest** {when_last}")
         else:
             lines.append("**Next digest** disabled")
         await interaction.followup.send("\n".join(lines), ephemeral=True)

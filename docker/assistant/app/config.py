@@ -123,6 +123,12 @@ class Config:
     tz: ZoneInfo
     digest_at: tuple[int, int]
     digest_enabled: bool
+    # Where the bot records that a scheduled digest posted. Read from the host
+    # by scripts/heartbeat.sh, which turns it into
+    # homelab_digest_timestamp_seconds for `hl-digest-missing` to alert on.
+    # A host bind mount, not /tmp: it has to survive `up -d --build`, and
+    # heartbeat.sh has to be able to read it while this container is stopped.
+    digest_stamp_path: str
 
     # --- Inference budget (see README → "Why the caps") ---
     num_ctx: int
@@ -175,6 +181,7 @@ class Config:
             tz=tz,
             digest_at=_hhmm("DIGEST_AT", "07:30"),
             digest_enabled=os.environ.get("DIGEST_ENABLED", "true").lower() != "false",
+            digest_stamp_path=os.environ.get("DIGEST_STAMP_PATH", "/state/last-digest").strip(),
             num_ctx=_int("OLLAMA_NUM_CTX", 4096),
             ask_predict=_int("ASK_NUM_PREDICT", 400),
             summarize_predict=_int("SUMMARIZE_NUM_PREDICT", 300),
