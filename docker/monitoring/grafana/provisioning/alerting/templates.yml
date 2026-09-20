@@ -25,8 +25,37 @@ apiVersion: 1
 # the content rather than the embed.
 #
 # The embed keeps the two jobs it is actually good at: Grafana colours it red or
-# green, and its title is the one clickable element — so it says `Open in
-# Grafana →` and nothing else, rather than repeating the heading in blue.
+# green, and its title is the one clickable element — so it says what it links
+# to and nothing else, rather than repeating the heading in blue.
+#
+# Why the links are in the message and not the embed
+# --------------------------------------------------
+# Because the embed's link is not ours to set. Grafana's Discord notifier builds
+# the embed URL itself — `ExternalURL + "/alerting/list"`, hardcoded — and the
+# contact point exposes no setting for it. So the one clickable thing on an
+# alert has always landed on the list of every alert in the lab, where you then
+# have to find the one that just woke you. That is the whole reason the link
+# felt useless.
+#
+# The fix is to stop relying on the embed for navigation and put real links in
+# the message, as a `-#` subtext line:
+#
+#   alert rule  the rule's own page — its instances, its history, its query.
+#               `.GeneratorURL` is Grafana's own link to it, so it is correct by
+#               construction; the fallback builds the same URL from the
+#               `__alert_rule_uid__` label (a reserved label present on every
+#               Grafana-managed alert) for the case where it arrives empty, and
+#               the alert list is the last resort, which is no worse than today.
+#   silence     only on a single firing alert. SilenceURL is per alert, so
+#               offering one alert's link on a group of four is an invitation
+#               to silence the wrong thing — and a resolved alert has nothing
+#               left to silence.
+#
+# Masked links (`[text](url)`) render in message content for bots and webhooks,
+# which is what this is. If a future Discord change stops rendering them the
+# failure is visible and harmless — the URL is still there in plain sight — and
+# it is confined to the footer, because the alert lines themselves are
+# deliberately left as plain text so the lock-screen preview stays clean.
 #
 # What is deliberately NOT here
 # -----------------------------
@@ -77,5 +106,22 @@ templates:
       {{ range .Alerts }}{{ template "homelab.line" . }}
       {{ end }}
       {{- end }}
-      {{ if .Alerts }}{{ if eq .Status "firing" }}*started <t:{{ (index .Alerts 0).StartsAt.Unix }}:R>*{{ else }}*resolved <t:{{ (index .Alerts 0).EndsAt.Unix }}:R>*{{ end }}{{ end }}
+      {{ if .Alerts }}{{ if eq .Status "firing" }}*started <t:{{ (index .Alerts 0).StartsAt.Unix }}:R>*{{ else }}*resolved <t:{{ (index .Alerts 0).EndsAt.Unix }}:R>*{{ end }}
+      {{ template "homelab.links" . }}{{ end }}
+      {{- end }}
+
+      {{/* Where to go from here. See the header for why these are here rather
+           than on the embed. Three sources for the rule URL, in order of how
+           much we trust them: Grafana's own GeneratorURL, the same URL built
+           from the reserved rule-uid label, and the alert list — which is
+           where the embed lands anyway, so the worst case is today's
+           behaviour rather than a dead link. */}}
+      {{ define "homelab.links" -}}
+      {{ $alert := index .Alerts 0 -}}
+      {{ $base := reReplaceAll "/+$" "" .ExternalURL -}}
+      {{ $uid := index $alert.Labels "__alert_rule_uid__" -}}
+      {{ $rule := $alert.GeneratorURL -}}
+      {{ if and (eq $rule "") (ne $uid "") }}{{ $rule = printf "%s/alerting/grafana/%s/view" $base $uid }}{{ end -}}
+      {{ if eq $rule "" }}{{ $rule = printf "%s/alerting/list" $base }}{{ end -}}
+      -# [alert rule ↗]({{ $rule }}){{ if and (eq .Status "firing") (and (eq (len .Alerts) 1) (ne $alert.SilenceURL "")) }} · [silence ↗]({{ $alert.SilenceURL }}){{ end }}
       {{- end }}

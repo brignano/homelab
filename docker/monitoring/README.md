@@ -61,9 +61,9 @@ actually writes (`scripts/check-observability.sh`).
    # DISCORD_ALERT_WEBHOOK
    ```
    `HOMELAB_DOMAIN` is the same value as in `docker/proxy/.env`. Grafana builds
-   every link it sends out from it — the `Open in Grafana →` button on a Discord
-   alert, silence links, dashboard links — so a wrong value means alerts that
-   arrive but cannot be opened from the phone reading them.
+   every link it sends out from it — the alert rule and silence links in a
+   Discord alert, the embed button, dashboard links — so a wrong value means
+   alerts that arrive but cannot be opened from the phone reading them.
 
 2. **Create the Proxmox read-only token** (Datacenter → Permissions):
    - User `monitoring@pve`, API token `grafana` (disable privilege separation),
@@ -152,11 +152,17 @@ actually writes (`scripts/check-observability.sh`).
   should land in Discord `#alerts`. Since this is now the only delivery path,
   re-run this test after any change to the webhook.
 - **Alert messages read heading-first**: emoji + rule name in bold, a blank
-  line, one line per alert (the rule's `summary`), then an italic timing line,
-  with a small `Open in Grafana →` embed beneath. If a test instead produces a
-  wall of labels and URLs, Grafana is falling back to `default.message` — either
-  the restart has not happened or `templates.yml` failed to parse. Alerting →
-  Notification templates should list `homelab`.
+  line, one line per alert (the rule's `summary`), an italic timing line, then a
+  small `-#` line of links — `alert rule ↗`, and `silence ↗` when the group is a
+  single firing alert — with the `All alerts in Grafana →` embed beneath. If a
+  test instead produces a wall of labels and URLs, Grafana is falling back to
+  `default.message` — either the restart has not happened or `templates.yml`
+  failed to parse. Alerting → Notification templates should list `homelab`.
+- **The rule link goes to the rule, the embed goes to the list.** That split is
+  not a preference: Grafana's Discord notifier hardcodes the embed's URL to
+  `/alerting/list` and the contact point cannot override it, so the deep link
+  has to live in the message body. Check a real alert's `alert rule ↗` lands on
+  `/alerting/grafana/<uid>/view` for the rule that fired.
 - **Contact points are what the file says**: the list should show `homelab`
   with exactly one integration (Discord). A leftover marked "Unused" means a
   provisioning deletion did not apply — see the note below.

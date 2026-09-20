@@ -120,6 +120,10 @@ def _dry_run() -> int:
         problems=["could not read log errors"],
     )
 
+    # A stand-in domain, so the footer links render at their real width. The
+    # bot uses GRAFANA_URL; unset, the footer simply has no links.
+    grafana = os.environ.get("GRAFANA_URL", "").strip() or "https://stats.example.com"
+
     for name, facts in (("HEALTHY", healthy), ("DEGRADED", degraded)):
         print(f"\n{'=' * 70}\n{name} — prompt given to the model\n{'=' * 70}")
         print(facts_block(facts))
@@ -128,10 +132,10 @@ def _dry_run() -> int:
             facts,
             "Everything looks normal this morning." if not facts.concerns
             else "A couple of targets are down and the box is running hot.",
-            model="llama3.2:3b", seconds=34.0,
+            model="llama3.2:3b", seconds=34.0, grafana_url=grafana,
         ))
         print(f"\n{'-' * 70}\n{name} — rendered with the model unavailable\n{'-' * 70}")
-        print(render(facts, None, note="narration unavailable"))
+        print(render(facts, None, note="narration unavailable", grafana_url=grafana))
     return 0
 
 
@@ -146,6 +150,7 @@ async def _selftest_async() -> int:
     loki = os.environ.get("LOKI_URL", "http://loki:3100").rstrip("/")
     ourl = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
     model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
+    grafana = os.environ.get("GRAFANA_URL", "").strip().rstrip("/")
 
     print(f"prometheus : {prom}\nloki       : {loki}\nollama     : {ourl} ({model})\n")
 
@@ -159,7 +164,7 @@ async def _selftest_async() -> int:
         print(f"ollama has {model}: {'yes' if ok else 'NO — digest will post facts only'}\n")
 
         collector = FactCollector(session, prometheus_url=prom, loki_url=loki)
-        message = await build(collector, ollama, dt.datetime.now())
+        message = await build(collector, ollama, dt.datetime.now(), grafana_url=grafana)
 
     print("=" * 70)
     print(message)

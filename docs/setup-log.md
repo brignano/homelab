@@ -27,6 +27,87 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — The alert link goes to the alert now, and the digest stopped saying everything twice
+
+**Goal:** Two complaints about the same channel. The link at the bottom of every
+Discord alert opens the list of every alert in the lab, never the one that just
+fired. And the daily digest, read on a phone before coffee, is five bold lines
+of equal weight with nothing marking which one is the problem.
+
+**Steps:**
+1. Found where the alert link actually comes from. Not `templates.yml`, not
+   `contactpoints.yml`: Grafana's Discord notifier builds the embed's URL itself
+   as `ExternalURL + "/alerting/list"`, hardcoded, with no contact-point setting
+   to override it. The September 19 entry below fixed the *host* in that URL;
+   the path was never ours to set. So the embed was always going to land on the
+   list — the deep link has to go in the message body instead.
+2. Added a `homelab.links` template emitting a `-#` subtext line: `alert rule ↗`
+   to `/alerting/grafana/<uid>/view`, plus `silence ↗` when the group is a
+   single firing alert. Three sources for the rule URL in descending order of
+   trust — Grafana's own `.GeneratorURL`, the same URL rebuilt from the reserved
+   `__alert_rule_uid__` label, and the alert list as the last resort, which is
+   no worse than the old behaviour.
+3. Renamed the embed title `Open in Grafana →` → `All alerts in Grafana →`. It
+   goes where it goes; it should say so.
+4. Rewrote `digest.render()`. Marks (🔴/🟠) on the lines that are wrong and
+   nothing on the lines that are not, the down targets moved onto the Services
+   line, the over-threshold gauge bolded in place, a `##` heading so a month of
+   digests has visible day boundaries, and a footer of Grafana links chosen by
+   what the digest found — Triage always, Endpoints/Capacity/Logs only when
+   there is something on them.
+
+**Issues encountered:**
+- **The first digest draft printed everything twice.** It opened with a "Needs
+  attention" block built from `facts.concerns`, then listed the same readings
+  below. But concerns are *derived* from those readings — on a bad morning
+  nearly every line appeared in both halves, which is exactly when a reader
+  starts skimming. Marking the readings says the same thing in half the space.
+- **A green tick on every line is the same as none.** Five 🟢 down the margin
+  gives the eye nothing to land on. Unmarked now means fine.
+- **A mark must not out-run the verdict.** `facts.py` deliberately does not
+  count log noise as a concern — several containers here log an error a minute
+  and are healthy — so the log line is never marked. A mark there would be the
+  render claiming a conclusion the code never reached, which is the one rule
+  this assistant is built around.
+- **Grafana templates fail closed.** A template that does not parse takes the
+  whole notification with it, and CI only checks that the file is valid YAML.
+  So the template was parsed and rendered offline against Alertmanager's real
+  `template.DefaultFuncs` — the funcmap Grafana builds on — over six cases:
+  single firing, a group of three with one resolved, resolved, empty
+  `GeneratorURL`, neither `GeneratorURL` nor the uid label, and an
+  `ExternalURL` with a trailing slash (`reReplaceAll "/+$" ""` is what keeps
+  that from producing `//alerting`).
+
+**Resolution:**
+- `templates.yml` gains `homelab.links`; `contactpoints.yml` gains an honest
+  embed title; `digest.py` gains marks, inline detail and a `links()` helper;
+  `GRAFANA_URL` is new in the assistant's env — blank renders the digest with
+  no links rather than broken ones, since an internal `http://grafana:3000`
+  would dead-end on every phone that opened it.
+- Six checks in `tests/smoke.py`, including one asserting the marks and
+  `facts.concerns` can never disagree. Verified by mutation: dropping the
+  restart mark turns it red.
+
+**Notes / next steps:**
+- Masked links (`[text](url)`) render in Discord message content for bots and
+  webhooks. They are confined to the footer on purpose — if that ever stops
+  being true the alert lines themselves are still plain readable text, and the
+  lock-screen preview is unaffected.
+- Nothing in CI parses a Go template. The check above was run by hand; worth
+  wiring up if these templates grow.
+
+**On the box (apply after merge):**
+```bash
+cd ~/homelab && git pull
+# GRAFANA_URL=https://stats.<domain> in docker/assistant/.env
+docker compose -f docker/monitoring/docker-compose.yml restart grafana
+docker compose -f docker/assistant/docker-compose.yml up -d --build
+```
+Then: Alerting → Contact points → `homelab` → Test (exercises both the firing
+and resolved paths), and `/digest` in Discord.
+
+---
+
 ## 2026-09-20 — `/` on CT 100 is on a four-day slope, and nothing had a ceiling
 
 **Goal:** `hl-disk-filling` fired in `#alerts` — *docker-lxc / is on course to be

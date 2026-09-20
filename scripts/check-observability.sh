@@ -148,6 +148,27 @@ if unused:
     # is a decision rather than an accident.
     print("note  emitted but unused: %s" % ", ".join(unused))
 
+# --- the digest's dashboard links --------------------------------------------
+# Same shape again: the daily digest footer links to dashboards by uid, and
+# those uids are written down in app/digest.py, a stack away from the JSON that
+# defines them. A renamed dashboard would leave the links resolving to
+# Grafana's "Dashboard not found" — which nobody notices, because a link is only
+# clicked on the morning something is already wrong.
+digest = repo / "docker/assistant/app/digest.py"
+if not digest.exists():
+    bad("%s not found" % digest.relative_to(repo))
+else:
+    linked = set(re.findall(r'^DASH_[A-Z]+ = "([^"]+)"', digest.read_text(), re.M))
+    if not linked:
+        bad("no DASH_* dashboard uids found in %s" % digest.relative_to(repo))
+    else:
+        unknown = sorted(linked - set(uids))
+        if unknown:
+            for u in unknown:
+                bad("the digest links to dashboard uid %r, which no dashboard has" % u)
+        else:
+            print("ok    the digest's %d dashboard links resolve" % len(linked))
+
 # --- the two cron job lists --------------------------------------------------
 def first_match(path, pattern):
     text = (scripts / path).read_text()
