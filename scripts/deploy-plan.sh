@@ -36,14 +36,19 @@
 # With no argument and no reachable Docker, it falls back to ORIG_HEAD, which
 # `git pull` writes for exactly this purpose.
 #
-# What this does NOT replace
-# --------------------------
-# Step 4's content-based drift detection. This script compares *timestamps*,
-# which answers "did this container start before the file changed" — right for
-# config read once at boot, and for a filename that has to become visible. It
-# cannot see a single-file bind mount that went stale on an inode, because
-# `docker restart` updates StartedAt without re-resolving the mount. The two
-# checks are complementary and step 4 is still the one that catches that.
+# Two questions, not one
+# ----------------------
+# A FILE mount is compared by content, through /proc/<pid>/root — what the
+# container actually reads. That is definitive, and it is the only way to see a
+# mount that went stale on an inode.
+#
+# A DIRECTORY mount, and an image's build time, are compared by timestamp,
+# which is a proxy: it answers "did this start before that changed". Right for
+# config read once at boot; silent about content. Those lines are a prompt to
+# look, not a finding.
+#
+# Step 4 of /deploy overlaps this on file mounts, deliberately. Keep running
+# both: the first bug in this script was caught by the two disagreeing.
 #
 # Run by hand from the repo root:
 #   ./scripts/deploy-plan.sh
@@ -184,6 +189,8 @@ trap 'rm -f "$TRACKED"' EXIT INT TERM
 git ls-files > "$TRACKED"
 
 stale=""
+REMAPPED=""   # pinned to an unlinked copy: same bytes today, deaf to the next edit
+NO_PROC=""    # containers whose mount namespace could not be read
 for c in $(docker ps --format '{{.Names}}'); do
   dir=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$c" 2>/dev/null || true)
   [ -n "$dir" ] || continue
@@ -206,19 +213,69 @@ for c in $(docker ps --format '{{.Names}}'); do
   # it, which is a false alarm pointed at the household's DNS. A tool that
   # cries wolf about the resolver is worse than no tool: see the 2026-09-19
   # entry in docs/setup-log.md for what acting on bad DNS evidence costs.
+  #
+  # For a file mount, mtime is only a proxy for the question, and a poor one:
+  # `repo-sync.sh` pulls at 04:00, so a file's mtime is when the BOX received
+  # the commit, not when anything about it changed relative to the container.
+  # Three rounds of false positives came out of that — the last one on the
+  # Caddyfile, which is the worst possible place to be wrong.
+  #
+  # So for a file mount, ask the real question instead of a proxy for it:
+  # what is this container actually mapped to? `/proc/<pid>/root` resolves
+  # through the container's own mount namespace, so it shows the inode the
+  # process will read — the unlinked one, if git replaced the file underneath
+  # it. That needs no shell in the image (half of these have none) and no
+  # `docker cp`, which follows the bind mount back to the host and therefore
+  # cannot see this failure at all.
+  #
+  # Two outcomes, and they are not the same:
+  #   different content  the container is serving stale config NOW.
+  #   same content, different inode  it is pinned to an unlinked copy, so it
+  #                      will never see another edit to that path. Harmless
+  #                      today, guaranteed to bite later. Reported, not acted on.
+  pid=$(docker inspect -f '{{.State.Pid}}' "$c" 2>/dev/null || true)
   watched=""
   [ -f "$dir/docker-compose.yml" ] && watched="$dir/docker-compose.yml"
-  for src in $(docker inspect \
-        -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{"\n"}}{{end}}{{end}}' \
+  newer=""
+  for pair in $(docker inspect \
+        -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}|{{.Destination}}{{"\n"}}{{end}}{{end}}' \
         "$c" 2>/dev/null || true); do
+    src=${pair%%|*}
+    dest=${pair#*|}
     case "$src" in "$REPO"/*) ;; *) continue ;; esac
-    watched="$watched
+    rel=${src#"$REPO"/}
+
+    if [ ! -f "$src" ]; then
+      # A directory mount cannot go stale on an inode, and what matters is
+      # whether the process has read it since it changed — so mtime is the
+      # right question here, not the wrong one.
+      watched="$watched
 $src"
+      continue
+    fi
+
+    seen="/proc/$pid/root$dest"
+    if [ -n "$pid" ] && [ "$pid" != "0" ] && [ -r "$seen" ]; then
+      if ! cmp -s "$src" "$seen"; then
+        newer="$newer
+$rel"
+      elif [ "$(stat -c %i "$src" 2>/dev/null)" != "$(stat -c %i "$seen" 2>/dev/null)" ]; then
+        REMAPPED="$REMAPPED
+$c $rel"
+      fi
+    else
+      # No /proc (not root, or a stopped container) — fall back to the proxy,
+      # and say so rather than reporting a weaker answer as the strong one.
+      watched="$watched
+$src"
+      NO_PROC="$NO_PROC $c"
+    fi
   done
 
-  newer=$(printf '%s\n' "$watched" | grep -v '^$' | while read -r p; do
+  newer="$newer
+$(printf '%s\n' "$watched" | grep -v '^$' | while read -r p; do
             find "$p" -type f -newermt "@$epoch" 2>/dev/null || true
-          done | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" || true)
+          done | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" || true)"
 
   # The container's start time answers "is this process older than its config",
   # and for a stack whose source is baked into an image that is the wrong
@@ -257,12 +314,33 @@ done
 stale=$(printf '%s\n' "$stale" | grep -v '^$' | grep -vE "$IGNORE" | sort -u || true)
 if [ -n "$stale" ]; then
   n=$(printf '%s\n' "$stale" | wc -l)
-  say "files newer than the container or image serving them ($n):"
+  say "files the container or image serving them is behind ($n):"
   printf '%s\n' "$stale" | head -15 | sed 's/^/    /'
   if [ "$n" -gt 15 ]; then say "    ... and $((n - 15)) more"; fi
   say ""
 fi
 plan_for "$stale"
+
+REMAPPED=$(printf '%s\n' "$REMAPPED" | grep -v '^$' | sort -u || true)
+if [ -n "$REMAPPED" ]; then
+  say ""
+  say "--- pinned to an unlinked copy ---"
+  printf '%s\n' "$REMAPPED" | sed 's/^/    /'
+  say "    Same bytes as the repo today, so nothing is wrong right now — but the"
+  say "    mount points at a file git has already replaced, so these containers"
+  say "    will never see another edit to that path. Recreate at your convenience"
+  say "    (proxy by hand, watching); it is not urgent until that file changes."
+fi
+
+NO_PROC=$(printf '%s\n' "$NO_PROC" | tr ' ' '\n' | grep -v '^$' | sort -u | tr '\n' ' ' || true)
+if [ -n "$NO_PROC" ]; then
+  say ""
+  say "--- answered by timestamp, not by content ---"
+  say "    Could not read the mount namespace of: $NO_PROC"
+  say "    Those are mtime guesses. Run as root for the definitive answer."
+fi
+
 say ""
-say "Then run /deploy step 4's drift detection: this compares timestamps, which"
-say "cannot see a single-file bind mount that went stale on an inode."
+say "File mounts above are compared by content through /proc/<pid>/root, which is"
+say "what the container actually reads. Directory mounts and images are still"
+say "compared by timestamp, so those lines remain a proxy for the question."
