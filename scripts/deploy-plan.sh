@@ -28,6 +28,11 @@
 # container that reads it is a container running old config. That answer does
 # not depend on the reflog, on remembering, or on git at all.
 #
+# For a stack whose source is baked into an image it asks the IMAGE when it was
+# built as well, because the container's start time lies there: a compose-file
+# change recreates the container on the old image, and it comes up healthy with
+# a start time newer than every file while running last week's code.
+#
 # With no argument and no reachable Docker, it falls back to ORIG_HEAD, which
 # `git pull` writes for exactly this purpose.
 #
@@ -169,7 +174,7 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-say "# state mode: each container's start time vs the files it reads"
+say "# state mode: each container's start time, and its image's build time, vs the files it serves"
 say ""
 
 # Only files git manages can change on a pull. Without this the list is mostly
@@ -190,6 +195,31 @@ for c in $(docker ps --format '{{.Names}}'); do
   [ -n "$epoch" ] || continue
   newer=$(find "$dir" -type f -newermt "@$epoch" 2>/dev/null \
           | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" || true)
+
+  # The container's start time answers "is this process older than its config",
+  # and for a stack whose source is baked into an image that is the wrong
+  # question. Adding an env var to the compose file changes the *service
+  # definition*, so `up -d` recreates the container — on the old image. It comes
+  # up healthy, with a start time newer than everything, running last week's
+  # code. That happened on the very deploy this script was written for.
+  #
+  # So ask the image when it was built, not the container when it started, and
+  # only about the files that go INTO an image. Pulled images (grafana, loki)
+  # have an upstream build date from months ago and no such files in their
+  # stack, so they are never flagged by this.
+  img=$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)
+  built=$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)
+  if [ -n "$built" ]; then
+    bepoch=$(date -d "$built" +%s 2>/dev/null || true)
+    if [ -n "$bepoch" ]; then
+      newer="$newer
+$(find "$dir" -type f -newermt "@$bepoch" 2>/dev/null \
+        | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" \
+        | grep -E '^docker/[^/]+/(app/|tests/|Dockerfile$|requirements\.txt$)' || true)"
+    fi
+  fi
+
+  newer=$(printf '%s\n' "$newer" | grep -v '^$' || true)
   [ -n "$newer" ] || continue
   stale="$stale
 $newer"
@@ -198,7 +228,7 @@ done
 stale=$(printf '%s\n' "$stale" | grep -v '^$' | grep -vE "$IGNORE" | sort -u || true)
 if [ -n "$stale" ]; then
   n=$(printf '%s\n' "$stale" | wc -l)
-  say "files newer than the container that reads them ($n):"
+  say "files newer than the container or image serving them ($n):"
   printf '%s\n' "$stale" | head -15 | sed 's/^/    /'
   if [ "$n" -gt 15 ]; then say "    ... and $((n - 15)) more"; fi
   say ""

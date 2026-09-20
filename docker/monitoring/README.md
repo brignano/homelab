@@ -163,6 +163,14 @@ actually writes (`scripts/check-observability.sh`).
   `/alerting/list` and the contact point cannot override it, so the deep link
   has to live in the message body. Check a real alert's `alert rule ↗` lands on
   `/alerting/grafana/<uid>/view` for the rule that fired.
+- **A test notification's `alert rule ↗` going to `/alerting/list` is correct.**
+  The test alert has no rule behind it — no `__alert_rule_uid__`, no
+  `GeneratorURL` — so the template falls through to the alert list, and no
+  `silence ↗` appears beside it. Only a real alert exercises the deep link, and
+  it cannot be faked: Grafana has no POST route for its built-in Alertmanager
+  (only for external ones), so posting an alert answers "data source not
+  found". To check the URL form alone, open `/alerting/grafana/<uid>/view` for
+  any uid in `rules.yml`.
 - **Contact points are what the file says**: the list should show `homelab`
   with exactly one integration (Discord). A leftover marked "Unused" means a
   provisioning deletion did not apply — see the note below.

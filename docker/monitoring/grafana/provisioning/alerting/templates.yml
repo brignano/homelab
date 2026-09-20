@@ -72,12 +72,26 @@ apiVersion: 1
 # `repeat_interval: 4h` re-send, where the question is "how long has this been
 # broken", not "when did it start".
 #
-# Two things to know before editing:
+# Three things to know before editing:
 #   - Provisioning is read at startup, so changes need `docker compose restart
 #     grafana` like the rest of `grafana/provisioning/` — see README.md.
 #   - A template that fails to parse takes the notification with it. Verify with
 #     Alerting -> Contact points -> homelab -> Test, which exercises both the
 #     firing and resolved paths, before trusting it with a real alert.
+#   - **The Test button cannot exercise the links.** Grafana's test notification
+#     is a synthetic alert carrying only `alertname=TestAlert` and
+#     `instance=Grafana` — there is no rule behind it, so no
+#     `__alert_rule_uid__` label and no `GeneratorURL`. `homelab.links`
+#     therefore falls all the way through to `/alerting/list`, and no
+#     `silence ↗` appears beside it (Grafana builds SilenceURL from that same
+#     label). That is the fallback working, not the link broken. A real alert
+#     is the only thing that exercises the deep link, and there is no way to
+#     fake one: Grafana registers POST `/api/alertmanager/{DatasourceUID}/api/v2/alerts`
+#     for external Alertmanagers only — there is no POST route for the built-in
+#     one, so `.../alertmanager/grafana/...` answers "data source not found".
+#     What the Test button DOES prove is the message shape and that the
+#     template parses; open a rule page by hand
+#     (`/alerting/grafana/<uid>/view`) to confirm the URL form resolves.
 
 templates:
   - orgId: 1
