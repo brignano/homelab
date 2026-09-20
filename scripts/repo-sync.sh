@@ -699,21 +699,16 @@ for dir in docker/*/; do
   # stopped stack has no image age worth acting on.
   [ -n "$cids" ] || continue
 
-  if grep -qE '^[[:space:]]+build:' "$compose"; then
-    stale_cmd="docker compose -f $compose up -d --build --pull always"
-  else
-    stale_cmd="docker compose -f $compose pull && docker compose -f $compose up -d"
-  fi
-
   # Report per distinct image, not per container: one line per thing to update.
   seen=""
   hits=""
+  # The compose SERVICES behind those images, which is what the command needs —
+  # collected per container rather than per image, because two services can run
+  # the same image and updating only the first leaves the other behind.
+  stale_svcs=""
   for cid in $cids; do
     name=$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null || true)
     [ -n "$name" ] || continue
-    # POSIX-safe dedupe — no arrays, and the spaces make it a whole-word match.
-    case " $seen " in *" $name "*) continue ;; esac
-    seen="$seen $name"
 
     # The image the container is ACTUALLY running, by ID. Going via the tag
     # would read whatever that tag points at now, which for `:latest` is a
@@ -722,20 +717,59 @@ for dir in docker/*/; do
     [ -n "$img" ] || continue
     ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
     [ -n "$ts" ] || continue
-
-    # Emitted for every image, not just the stale ones: a gauge that appears
-    # only when something is wrong cannot be graphed, and the flat line is the
-    # reassurance. Same reasoning as the deploy-drift gauge above.
-    M_IMAGE_AGE="$M_IMAGE_AGE
-homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
-
     age_days=$(( (NOW - ts) / 86400 ))
-    [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
-    hits="$hits
+
+    # POSIX-safe dedupe — no arrays, and the spaces make it a whole-word match.
+    case " $seen " in
+      *" $name "*) ;;
+      *)
+        seen="$seen $name"
+        # Emitted for every image, not just the stale ones: a gauge that appears
+        # only when something is wrong cannot be graphed, and the flat line is
+        # the reassurance. Same reasoning as the deploy-drift gauge above.
+        M_IMAGE_AGE="$M_IMAGE_AGE
+homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
+        if [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ]; then
+          hits="$hits
     $name ($(human $((NOW - ts))))"
+        fi
+        ;;
+    esac
+
+    [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
+    svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' \
+      "$cid" 2>/dev/null || true)
+    [ -n "$svc" ] || continue
+    case " $stale_svcs " in *" $svc "*) continue ;; esac
+    stale_svcs="$stale_svcs $svc"
   done
 
   if [ -n "$hits" ]; then
+    # Scoped to the services actually named above, never the whole stack.
+    #
+    # `monitoring` is the case that forced this. The finding there is cadvisor
+    # and blackbox-exporter, but a bare `docker compose pull` on that stack takes
+    # grafana and prometheus with it — both on `:latest`, and both on
+    # HL_NO_AUTOPULL precisely because an unreviewed Grafana major once blanked
+    # 10 of 11 panels on one dashboard and 32 of 35 on another for months. So
+    # the report printed, under "review before running", the exact command the
+    # rest of this script exists to stop running unattended.
+    #
+    # A command that does more than the finding it is printed under cannot be
+    # pasted without re-deriving its blast radius, which is the work the report
+    # was supposed to have done. Naming the services keeps the two in step: what
+    # it says is stale is what the command updates.
+    #
+    # Falls back to the whole stack when no service label came back — containers
+    # this script did not see Compose create. `running_ids` filters on
+    # `com.docker.compose.project.working_dir`, so that should be unreachable;
+    # it degrades to the previous behaviour rather than emitting a command with
+    # no services on the end of it, which would mean something different.
+    if grep -qE '^[[:space:]]+build:' "$compose"; then
+      stale_cmd="docker compose -f $compose up -d --build --pull always$stale_svcs"
+    else
+      stale_cmd="docker compose -f $compose pull$stale_svcs && docker compose -f $compose up -d$stale_svcs"
+    fi
     STALE="$STALE
   $stack:$hits"
     STALE_CMDS="$STALE_CMDS
