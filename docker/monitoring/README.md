@@ -255,9 +255,14 @@ needs `docker compose restart grafana`, because provisioning is read at startup.
   type Grafana no longer ships, and a probe pointed at a path that returns 404
   all render as calm.
 - **Textfile metrics persist until their writer runs again.** `repo-sync.sh` is
-  daily, so a `homelab_config_drift` or `homelab_stack_deploy_drift_seconds`
-  alert keeps firing until the next 04:00 run even after you have fixed the
-  cause. Re-run `./scripts/repo-sync.sh` by hand to clear it immediately.
+  daily, so a `homelab_config_drift` alert keeps firing until the next 04:00 run
+  even after you have fixed the cause. Re-run `./scripts/repo-sync.sh` by hand
+  to clear it immediately. `homelab_stack_deploy_drift_seconds` used to behave
+  the same way and no longer does for a stack the sync heals itself: it is
+  recorded after the heal rather than before it, so a verified restart publishes
+  0 in the same run. A stack the sync will not touch — `proxy`, on
+  `HL_NO_AUTOHEAL` — still needs the manual re-run, because the fix happened
+  outside the job and nothing has re-measured since.
 - **Each layer is watched by the one outside it, and that is the whole design.**
   Grafana watches the lab. Prometheus scrapes Grafana, so a rule that stops
   evaluating and a notification that fails to send are visible rather than

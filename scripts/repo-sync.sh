@@ -413,6 +413,24 @@ NOT_RUNNING=""
 M_STACK_RUNNING=""
 M_STACK_DRIFT=""
 
+# Drift is recorded at every exit from the staleness loop rather than at the
+# point of measurement, because the measurement is not the answer yet — a
+# verified heal a few lines later resets the clock the number describes.
+#
+# Publishing it where it was measured is what kept `hl-stack-drift` firing over
+# stacks that had already been fixed. The loop measured 52 days, healed the
+# stack, said so in the report, and then wrote the 52 days it had just
+# invalidated. Textfile metrics persist until their writer runs again and this
+# writer is daily, so that dead number stood for another 24 hours — long enough
+# to fire a `for: 30m` alert, be read on a phone, and send someone looking for a
+# fault that no longer existed. A stale-until-tomorrow gauge next to a nightly
+# "healed" line is the metric contradicting the report, and the metric was the
+# one that got believed.
+record_drift() {
+  M_STACK_DRIFT="$M_STACK_DRIFT
+homelab_stack_deploy_drift_seconds{$(metric_kv stack "$1"),$(metric_kv basis "$2")} $3"
+}
+
 metrics_open repo_sync
 
 for dir in docker/*/; do
@@ -518,24 +536,21 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
   done
   [ -n "$oldest" ] || continue
 
-  # Emitted for every stack, including the ones that are in sync — a gauge that
+  # Recorded for every stack, including the ones that are in sync — a gauge that
   # only appears when something is wrong cannot be graphed, and "0 for the last
   # 30 days" is the reassurance the panel exists to give.
-  if [ "$commit_ts" -gt "$oldest" ]; then
-    drift=$((commit_ts - oldest))
-  else
-    drift=0
+  if [ "$commit_ts" -le "$oldest" ]; then
+    record_drift "$stack" "$basis" 0
+    continue
   fi
-  M_STACK_DRIFT="$M_STACK_DRIFT
-homelab_stack_deploy_drift_seconds{$(metric_kv stack "$stack"),$(metric_kv basis "$basis")} $drift"
-
-  [ "$commit_ts" -gt "$oldest" ] || continue
-  age=$(human $((commit_ts - oldest)))
+  drift=$((commit_ts - oldest))
+  age=$(human "$drift")
   cmd="docker compose -f $compose $hint"
 
   # Report-only: globally disabled, on the never-touch list, or the tree is in
   # an unknown state because the pull failed.
   if [ "$AUTOHEAL" != "yes" ] || in_list "$stack" "$NO_AUTOHEAL" || [ -n "$PULL_ERROR" ]; then
+    record_drift "$stack" "$basis" "$drift"
     MANUAL="$MANUAL
   $stack ($basis, $age)"
     MANUAL_CMDS="$MANUAL_CMDS
@@ -548,6 +563,7 @@ $cmd"
     # The build or the pull failed. `up -d --build` builds before recreating, so
     # the previous containers are almost certainly still serving — say so rather
     # than implying the stack is down.
+    record_drift "$stack" "$basis" "$drift"
     FAILED="$FAILED
   $stack ($basis, $age) — command failed, previous containers likely still up
     $(printf '%s' "$err" | tail -n 2 | tr '\n' ' ')"
@@ -555,11 +571,18 @@ $cmd"
   fi
 
   if ! why=$(verify_stack "$abs" "$want"); then
+    record_drift "$stack" "$basis" "$drift"
     FAILED="$FAILED
   $stack ($basis, $age) — restarted but did NOT come back: $why
     $cmd"
     continue
   fi
+  # Zero, and not a re-measure: `verify_stack` has just confirmed the containers
+  # this drift was measured against are gone and their replacements are up, and
+  # a container that started moments ago cannot be behind a commit that is
+  # already in the tree. Asking Docker again would cost a round-trip per service
+  # to arrive at the same 0 the next run computes.
+  record_drift "$stack" "$basis" 0
   HEALED="$HEALED
   $stack ($basis, $age)"
 done
