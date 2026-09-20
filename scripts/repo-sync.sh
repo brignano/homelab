@@ -735,9 +735,46 @@ fi
 # See docs/design/tsd-dependency-updates.md.
 MAX_IMAGE_AGE_DAYS="${HL_MAX_IMAGE_AGE_DAYS:-90}"
 STALE=""
+STALE_PINNED=""
 M_IMAGE_AGE=""
 STALE_CMDS=""
 NOW=$(date +%s)
+
+# Would `docker compose pull` actually move this image?
+#
+# The report used to print a pull command for every stale image and then explain
+# underneath that it does nothing for a pinned one. That is the same mismatch as
+# the whole-stack pull below, one level down: a copy-paste block whose lines do
+# not all do something is one you re-read before trusting, every night, for as
+# long as the pin stays old — and `homepage` has been old for a year.
+#
+# Worse, it points at the wrong fix. A pinned tag moves when the tag changes in
+# the compose file, which since renovate.json5 covers `dashboard` and `desktops`
+# is a PR someone merges, not a command someone runs. Printing a pull asks the
+# reader to do a thing that cannot work instead of waiting for the thing that
+# will.
+#
+# A digest is definitive: it cannot resolve to anything else. Otherwise the test
+# is whether the tag is a full three-part version, the convention for a release
+# tag nobody republishes — `v1.5.0` and `1.8.1` stay put, while `latest`, `main`
+# and a series tag like `16-alpine` all move under you on a pull. Anything else
+# falls through to movable, which is the safe direction: the worst case there is
+# exactly the command this printed before.
+moves_on_pull() {
+  case "$1" in
+    *@sha256:*) return 1 ;;
+  esac
+  _ref=${1##*/}
+  case "$_ref" in
+    *:*) _tag=${_ref#*:} ;;
+    # No tag at all is `:latest`.
+    *)   return 0 ;;
+  esac
+  case "$_tag" in
+    v[0-9]*.[0-9]*.[0-9]*|[0-9]*.[0-9]*.[0-9]*) return 1 ;;
+  esac
+  return 0
+}
 
 for dir in docker/*/; do
   stack=$(basename "$dir")
@@ -752,10 +789,14 @@ for dir in docker/*/; do
 
   # Report per distinct image, not per container: one line per thing to update.
   seen=""
+  # Split by what would actually fix the entry: `hits` is what a pull moves and
+  # gets a command, `phits` is what needs the tag changed in the compose file and
+  # gets none. A stack can have both — `proxy` builds caddy and pins adguard.
   hits=""
-  # The compose SERVICES behind those images, which is what the command needs —
-  # collected per container rather than per image, because two services can run
-  # the same image and updating only the first leaves the other behind.
+  phits=""
+  # The compose SERVICES behind the movable images, which is what the command
+  # needs — collected per container rather than per image, because two services
+  # can run the same image and updating only the first leaves the other behind.
   stale_svcs=""
   for cid in $cids; do
     name=$(docker inspect -f '{{.Config.Image}}' "$cid" 2>/dev/null || true)
@@ -781,19 +822,32 @@ for dir in docker/*/; do
         M_IMAGE_AGE="$M_IMAGE_AGE
 homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
         if [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ]; then
-          hits="$hits
+          if moves_on_pull "$name"; then
+            hits="$hits
     $name ($(human $((NOW - ts))))"
+          else
+            phits="$phits
+    $name ($(human $((NOW - ts))))"
+          fi
         fi
         ;;
     esac
 
     [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
+    # A pinned image contributes no service: the command below is a pull, and a
+    # pull is not what moves it.
+    moves_on_pull "$name" || continue
     svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' \
       "$cid" 2>/dev/null || true)
     [ -n "$svc" ] || continue
     case " $stale_svcs " in *" $svc "*) continue ;; esac
     stale_svcs="$stale_svcs $svc"
   done
+
+  if [ -n "$phits" ]; then
+    STALE_PINNED="$STALE_PINNED
+  $stack:$phits"
+  fi
 
   if [ -n "$hits" ]; then
     # Scoped to the services actually named above, never the whole stack.
@@ -923,6 +977,13 @@ count_entries() {
   printf '%s' "${1:-}" | awk '/^  [^ ]/ { n++ } END { print n + 0 }'
 }
 
+# The nested lines under those — the images themselves, four spaces in. The
+# stale-image sections group by stack, so counting entries there counts STACKS,
+# and "3 stale images" was printed over a list of four.
+count_images() {
+  printf '%s' "${1:-}" | awk '/^    [^ ]/ { n++ } END { print n + 0 }'
+}
+
 # "1 stack needs you" / "3 stacks need you". Worth the six lines: "1 stack(s)"
 # is how a report tells you it was written by a machine that did not care.
 plural() { # count singular plural
@@ -976,7 +1037,10 @@ if [ -n "$RECLAIMED" ]; then
   add_summary "reclaimed disk"
 fi
 if [ -n "$STALE" ]; then
-  add_summary "$(plural "$(count_entries "$STALE")" "stale image" "stale images")"
+  add_summary "$(plural "$(count_images "$STALE")" "stale image" "stale images")"
+fi
+if [ -n "$STALE_PINNED" ]; then
+  add_summary "$(plural "$(count_images "$STALE_PINNED")" "pin waiting" "pins waiting")"
 fi
 # The one run that says something without having done anything: the dead man's
 # switch nag, which is a standing condition rather than tonight's news.
@@ -1063,12 +1127,19 @@ $(as_bullets "$STALE")
 *review before running — this pulls versions nobody has looked at*
 \`\`\`bash
 cd $REPO$STALE_CMDS
-\`\`\`
-A pinned tag does not move on a pull, so for those this changes nothing — bump
-the tag in the compose file instead. That is the usual case for the oldest
-entries here: pinning is what let them get old. The pins are exempt, though:
-Renovate opens their bumps as PRs (\`proxy\`, \`dashboard\`, \`desktops\` — see
-renovate.json5), so an entry from one of those is waiting on a PR, not on you."
+\`\`\`"
+fi
+# Separate, and with no command, because a pull cannot move these and printing
+# one anyway is what made the block above something you had to read twice.
+if [ -n "$STALE_PINNED" ]; then
+  MSG="$MSG
+
+**Pinned and old — waiting on a tag bump, not on you**
+$(as_bullets "$STALE_PINNED")
+Pinning is what let these get old, and a pull does not move them: the tag has to
+change in the compose file. Renovate opens those as PRs for \`proxy\`,
+\`dashboard\` and \`desktops\` (see renovate.json5) — merge one, deploy it, and the
+entry goes. A stack Renovate does not cover needs the bump by hand."
 fi
 if [ -z "$HC_URL" ]; then
   # Reported every run, deliberately: an unconfigured dead man's switch is
