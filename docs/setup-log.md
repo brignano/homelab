@@ -27,6 +27,61 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — The digest could not report not running
+
+**Goal:** The digest pushes, so nobody checks it — which means the failure that
+matters is not "I forgot to look", it is "nothing was posted and that looked
+identical to a quiet morning". Close it the way every other scheduled job here
+is closed.
+
+**Steps:**
+1. Established what was already covered. A dead container is:
+   `heartbeat.sh` publishes `homelab_container_running{required="yes"}` for
+   every container declared in any compose file, only `kali-linux` and
+   `cloudflared` are optional, so `assistant` being down for 10m fires
+   `hl-container-missing`. A wedged gateway socket fails the container
+   healthcheck. What is **not** covered: bot up, healthy, connected, and 07:30
+   passes with nothing posted — `tasks.loop(time=...)` has no catch-up, so a
+   bot down at 07:30 and back at 07:35 skips that day in silence.
+2. Added `app/healthchecks.py` and `HEALTHCHECKS_DIGEST_URL`. The **scheduled**
+   run pings; a failed digest pings `/fail` rather than waiting out the grace
+   period.
+3. `/status` now reports the switch's armed state, masked.
+
+**Issues encountered:**
+- **The obvious wiring would have hidden the failure it exists to catch.**
+  Pinging from `run_digest()` would mean `/digest` at three in the afternoon
+  checks the switch in — so a schedule that had stopped firing would look
+  perfectly healthy as long as somebody ran one by hand. Only
+  `scheduled_digest` pings.
+- **This container cannot write the metric.** The shell jobs leave
+  `homelab_healthchecks_ping_success` behind for `hl-hc-ping-failing`; the
+  assistant runs as uid 10001 and the textfile directory is root-owned, so that
+  would need a mount and a uid change for something the external check already
+  covers. Documented rather than bodged, and the Healthchecks check is the
+  alarm for this one.
+- **A switch has to prove it is armed**, and "I set that variable months ago"
+  is not proof — which is why the armed state is one `/status` away rather
+  than a thing you assume. The validation repeats `scripts/healthchecks.sh`'s
+  rules exactly (empty, then shape, then placeholder) instead of inventing its
+  own: `https://hc-ping.com/your-uuid` is the value that cost the `pg_dumpall`
+  switch its first day, and it satisfies every naive check.
+
+**Resolution:**
+- Ten rejection cases in `tests/smoke.py`, including the bare host that answers
+  200 forever while arming nothing. Verified by mutation: deleting the
+  placeholder gate turns the suite red.
+- A failed ping is logged and never raised. The digest is the product; the ping
+  is the proof it happened, and a switch that could take the digest down with
+  it would be a worse bargain than no switch.
+
+**Notes / next steps:**
+- Create the check at healthchecks.io (period 1 day, grace ~2h) pointed at the
+  same `#alerts` webhook, paste the URL into `docker/assistant/.env`, and
+  confirm with `/status` — it says `NOT ARMED` until you do.
+
+---
+
 ## 2026-09-20 — The drift check could not fail, and two containers had been stale for a day
 
 **Goal:** `deploy-plan.sh` kept flagging `prometheus.yml` and the `Caddyfile`

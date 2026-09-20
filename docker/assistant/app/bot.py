@@ -32,6 +32,7 @@ from .chat import (
 from .config import Config
 from .digest import build as build_digest
 from .facts import FactCollector
+from .healthchecks import Switch, read as read_ping_url
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .text import chunk, clamp_input
@@ -107,6 +108,15 @@ class Assistant(discord.Client):
             prometheus_url=self.cfg.prometheus_url,
             loki_url=self.cfg.loki_url,
         )
+
+        # Say it at startup as well as in `/status`: an unarmed switch that
+        # nobody is told about is the exact failure this thing exists to
+        # prevent, one level up.
+        url, reason = read_ping_url(self.cfg.healthchecks_digest_url)
+        self.digest_switch = Switch(self._session, url, reason=reason)
+        if not self.digest_switch.armed and self.cfg.digest_enabled:
+            log.warning("digest dead man's switch: %s", reason)
+
         self.queue.start()
 
         register_commands(self)
@@ -343,13 +353,23 @@ class Assistant(discord.Client):
         if channel is None:
             log.error("digest channel %s not found", self.cfg.digest_channel_id)
             return
+        ok = True
         try:
             message = await self.run_digest(priority=PRIORITY_SCHEDULED)
         except Exception as exc:  # noqa: BLE001 — a bad day must not kill the loop
             log.exception("scheduled digest failed")
             message = f"⚠️ Homelab digest failed to run: `{exc}`"
+            ok = False
         for part in chunk(message):
             await channel.send(part)
+
+        # Only the SCHEDULED run pings. `/digest` at three in the afternoon
+        # would check the switch in and hide a schedule that has stopped
+        # firing — which is the one thing the switch is here to catch.
+        #
+        # Pinging /fail on a failure beats waiting out the grace period: this
+        # is a failure we already know about, so say so now.
+        await (self.digest_switch.ok() if ok else self.digest_switch.fail())
 
     @scheduled_digest.before_loop
     async def _before_digest(self) -> None:
@@ -504,6 +524,9 @@ def register_commands(client: Assistant) -> None:
             nxt = client.scheduled_digest.next_iteration
             when = nxt.astimezone(cfg.tz).strftime("%a %d %b %H:%M %Z") if nxt else "pending"
             lines.append(f"**Next digest** {when}")
+            # A dead man's switch has to prove it is armed, and "I set that
+            # variable months ago" is not proof. One command, from anywhere.
+            lines.append(f"**Digest switch** {client.digest_switch.describe()}")
         else:
             lines.append("**Next digest** disabled")
         await interaction.followup.send("\n".join(lines), ephemeral=True)

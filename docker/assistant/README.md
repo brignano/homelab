@@ -80,6 +80,36 @@ to the public name — these are clicked on a phone, so an internal
 `http://grafana:3000` would dead-end. Unset, the digest renders without links
 rather than with broken ones.
 
+### The digest cannot report not running
+
+It pushes, so you never go and check — which means the failure that matters is
+not "I forgot to look", it is "nothing was posted and that looked the same as a
+quiet morning". `tasks.loop(time=...)` has no catch-up: a bot that was down at
+`DIGEST_AT` and back five minutes later skips that day in silence.
+
+The container being *gone* is already covered — `heartbeat.sh` publishes
+`homelab_container_running{required="yes"}` for every container declared in any
+compose file, and `hl-container-missing` alerts on it. `HEALTHCHECKS_DIGEST_URL`
+covers the rest: the **scheduled** run pings it, so silence becomes the signal,
+observed from outside the box.
+
+Only the scheduled run pings. `/digest` at three in the afternoon would check
+the switch in and hide a schedule that has stopped firing, which is the one
+thing it is here to catch.
+
+A switch is armed only if it can be shown to be armed, so a value that is not a
+plausible ping URL — `https://hc-ping.com/your-uuid`, a bare host, anything
+still holding `<paste-me>` — counts as **unset**, is reported at startup, and
+shows as `NOT ARMED` in `/status`. That is the mistake that cost the
+`pg_dumpall` switch its first day ([`scripts/healthchecks.sh`](../../scripts/healthchecks.sh)
+has the full story); [`app/healthchecks.py`](app/healthchecks.py) repeats its
+rules rather than inventing new ones. Ping URLs are masked wherever they are
+printed — anyone holding one can check the job in.
+
+Unlike the shell jobs, this one leaves no `homelab_healthchecks_ping_success`
+behind: the container runs as uid 10001 and the textfile directory is
+root-owned, so the external check is the alarm here.
+
 ## Conversational mode
 
 Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —

@@ -123,6 +123,11 @@ class Config:
     tz: ZoneInfo
     digest_at: tuple[int, int]
     digest_enabled: bool
+    # Healthchecks ping URL for the digest's dead man's switch. Raw and
+    # unvalidated here on purpose: app/healthchecks.py owns the rules (and the
+    # reason a rejected value is reported rather than pinged), and `/status`
+    # needs the reason, not just the verdict. Blank = no switch.
+    healthchecks_digest_url: str
 
     # --- Inference budget (see README → "Why the caps") ---
     num_ctx: int
@@ -175,6 +180,7 @@ class Config:
             tz=tz,
             digest_at=_hhmm("DIGEST_AT", "07:30"),
             digest_enabled=os.environ.get("DIGEST_ENABLED", "true").lower() != "false",
+            healthchecks_digest_url=os.environ.get("HEALTHCHECKS_DIGEST_URL", "").strip(),
             num_ctx=_int("OLLAMA_NUM_CTX", 4096),
             ask_predict=_int("ASK_NUM_PREDICT", 400),
             summarize_predict=_int("SUMMARIZE_NUM_PREDICT", 300),

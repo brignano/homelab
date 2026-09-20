@@ -168,7 +168,14 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   a value that is not a plausible ping URL counts as unset, a failed ping is
   reported rather than swallowed, and both leave `homelab_healthchecks_ping_success`
   behind for `hl-hc-ping-failing` to alert on. Read a ping URL through
-  `hc_url`, never with an ad-hoc `sed`.
+  `hc_url`, never with an ad-hoc `sed`. The assistant's digest is the one
+  scheduled job that is not a shell script; it repeats those rules in
+  [`docker/assistant/app/healthchecks.py`](docker/assistant/app/healthchecks.py)
+  rather than inventing new ones, pings only on the **scheduled** run (an
+  on-demand `/digest` would check the switch in and hide a schedule that has
+  stopped firing), and reports its armed state in `/status` — it cannot write
+  the metric, since the container runs unprivileged and the textfile directory
+  is root-owned.
 - **A job that detects something must leave the result behind, not just report
   it.** Discord answers "does this need me now" and is read once; a time series
   answers "is it still true", "how long has it been true" and "did the fix
