@@ -23,6 +23,62 @@ Planned Proxmox LXC container for Docker workloads:
 
 **Rationale:** LXC RAM is a limit, not a hard carve-out, and the disk is thin-provisioned, leaving host headroom on a 16 GB / 512 GB box.
 
+## Disk
+
+**CT 100's free-space number is optimistic, and by design.** The rootfs is
+provisioned at 400 GB on a `pve/data` thin pool of roughly **348 GiB**, with
+~16 GiB free in the VG — so the pool cannot auto-extend. The guest can believe
+it has room the pool does not have, and the pool is the ceiling that actually
+exists. `node_filesystem_avail_bytes` (and therefore `hl-disk-full` and
+`hl-disk-filling`) measures the guest's view: treat every disk alert here as
+arriving **later** than it should, never earlier.
+
+The pool itself is watched by nothing. `pve-exporter` is in the monitoring
+stack and the PVE API does expose pool usage, so an alert is cheap — but name
+the metric from the running exporter, not from memory. See the note at the top
+of `rules.yml` about the alert that watched a metric that did not exist.
+
+```bash
+# pve-exporter publishes no host port — ask it from inside the network.
+docker exec prometheus wget -qO- \
+  'http://pve-exporter:9221/pve?module=default&target=10.0.0.200' \
+  | grep -i 'storage.*local-lvm'
+```
+
+**Three things grow. Two of them now have a ceiling:**
+
+- **Prometheus** — 30d (`--storage.tsdb.retention.time`), **Loki** — 30d
+  (`retention_period`). Both are at steady state.
+- **Images.** Every `docker compose pull` leaves the image it replaced on disk,
+  untagged and unreferenced. Nightly auto-pull (added 2026-09-19) turned that
+  into a ratchet. `repo-sync.sh` now runs `docker image prune -f` and a
+  week-old `builder prune` after its pulls, and reports what it freed.
+  **Never `image prune -a` on this box** — Sablier scales the Kali webtop to
+  zero, so `-a` deletes a GB-scale image that has no container on it by design.
+- **Container logs.** `json-file` is Docker's default driver and its default
+  max-size is *unlimited*; `restart: unless-stopped` means nothing truncates
+  them either. Capped daemon-wide at 10m x 3 in `/etc/docker/daemon.json`
+  (written by `bootstrap-docker.sh`), not per-stack, because the containers
+  that need it most are the ones no compose file of ours starts. Shipping logs
+  to Loki does **not** bound them: Alloy reads through the Docker API, which
+  does not truncate what it reads.
+
+**The log cap applies at container create time.** A daemon restart does not
+retro-fit a running container, and neither does `docker compose restart` —
+existing containers keep their unlimited driver and their existing log file
+until they are **recreated**, and the file on disk survives even that. On a
+box that predates the cap, the one-time apply is:
+
+```bash
+du -sh /var/lib/docker/containers/*/*-json.log | sort -h | tail
+systemctl restart docker
+for f in docker/*/docker-compose.yml; do docker compose -f "$f" up -d --force-recreate; done
+```
+
+`proxy` is on `HL_NO_AUTOHEAL` for a reason and a recreate of it takes the
+household's DNS down for a few seconds — do it deliberately and verify with two
+`dig`s, not one (see `.claude/commands/deploy.md`).
+
 ## Stack overview
 
 | Service | Stack file | Network exposure |

@@ -27,6 +27,100 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — `/` on CT 100 is on a four-day slope, and nothing had a ceiling
+
+**Goal:** `hl-disk-filling` fired in `#alerts` — *docker-lxc / is on course to be
+full within 4 days* — alongside `hl-stack-drift` for `proxy` (774h) and
+`monitoring` (1243h). Work out what is consuming the disk and give it a bound.
+
+**Steps:**
+1. Read the rule before reading the disk. `hl-disk-filling` is
+   `predict_linear(node_filesystem_avail_bytes[6h], 4d) < 0`, held for 30m: it
+   says the **last six hours** of slope, extended four days, reaches zero. It is
+   a statement about a *rate*, not about how full the disk is now —
+   `hl-disk-full` (>85%) is the one that says that, and it is not in this
+   batch. So: room left, and a leak.
+2. Went looking for what in this repo has no ceiling. Prometheus keeps 30d and
+   Loki keeps 30d, both configured, both long since at steady state. That left
+   two, and both turned out to be unbounded by construction.
+3. **Container logs.** `grep -rn "logging:" docker/` returns nothing across all
+   nine stacks, and `bootstrap-docker.sh` never wrote an `/etc/docker/daemon.json`.
+   `json-file` is Docker's default driver and its default `max-size` is
+   *unlimited*; `restart: unless-stopped` means nothing rotates them on restart
+   either. Every container in the lab has been appending to
+   `/var/lib/docker/containers/<id>/<id>-json.log` since June.
+4. **Images.** `docker image prune` appears nowhere in this repo — and did not
+   need to, until 2026-09-19. Auto-pull landed that day (`89207c1`, `fd8f5f9`):
+   four stacks now `compose pull` nightly and two rebuild with `--pull always`.
+   A floating tag that moves does not delete what it moved off, so every run
+   leaves the superseded image behind. The alert fired one day later.
+
+**Issues encountered:**
+- **Shipping logs to Loki looked like it already solved this, and does not.**
+  Alloy reads containers through the Docker API (`loki.source.docker`), which
+  does not truncate what it reads. The copy in Loki ages out at 30 days; the
+  original never does. Having a log pipeline made the unbounded file easier to
+  miss, not harder.
+- **The obvious cleanup is the dangerous one.** `docker image prune -a` removes
+  tagged images with no container on them — which on this box means the Kali
+  webtop, because Sablier's whole job is to scale it to zero. It would be
+  deleted nightly and re-pulled on the next visit. Bare `prune` (dangling only)
+  is exactly the set a `pull` creates, and nothing else.
+- **The alert is reporting the wrong ceiling, and always has.** CT 100's rootfs
+  is 400 GB on a `pve/data` thin pool of ~348 GiB that cannot auto-extend, so
+  the guest's free-space number is optimistic about the limit that actually
+  exists. Every disk alert here arrives later than it should. The pool is
+  watched by nothing — `pve-exporter` is in the stack and the API exposes it,
+  but no rule was written, and this is not the repo to guess a metric name in
+  (see the `hl-notifications-failing` note at the top of `rules.yml`).
+- **A daemon-level log cap does not retro-fit running containers.** The driver
+  and its options are fixed at container create time, so `systemctl restart
+  docker` changes nothing for anything already up, and the existing log files
+  survive a recreate too. Applying it is a recreate plus a deliberate look at
+  what is already on disk.
+
+**Resolution:**
+- `scripts/bootstrap-docker.sh` writes `/etc/docker/daemon.json` with
+  `json-file` at 10m x 3 — *before* installing Docker CE, so the daemon comes up
+  with it rather than needing a restart `systemctl enable --now` would not
+  perform. Daemon-level rather than per-stack `logging:` blocks, because the
+  containers that most need the cap are the ones no compose file of ours starts
+  (the Sablier-created webtop, anything run by hand). An existing `daemon.json`
+  is never rewritten — it prints the two keys to add, since merging JSON from
+  bash is how a config file gets corrupted.
+- `scripts/repo-sync.sh` runs `docker image prune -f` and
+  `docker builder prune -f --filter until=168h` after its pulls and rebuilds,
+  and reports what each freed. Both best-effort: a failed prune must not fail a
+  sync that has already deployed. Silent when it reclaims nothing, so the
+  channel does not learn a daily "0B" line to ignore. Build cache is kept a week
+  rather than dropped — `assistant` and `proxy` rebuild here, and a cold cache
+  turns the nightly run's cheap rebuild into a full one.
+- `AGENTS.md` gains a **Disk** section: the thin-pool ceiling and why the alert
+  under-reports it, what grows and what now bounds it, why `-a` is forbidden
+  here, and the one-time recreate that applies the log cap to a running lab.
+
+**Notes / next steps:**
+- **Run this on CT 100 before anything else** — the fixes bound future growth;
+  they do not say what is on the disk today:
+  ```bash
+  df -h / && docker system df
+  du -sh /var/lib/docker/containers/*/*-json.log | sort -h | tail
+  du -sh /var/lib/docker/volumes/* | sort -h | tail
+  ```
+  A single huge `-json.log` is a container in a loop, which is its own bug and
+  wants fixing at the source rather than capping. `docker system df` splitting
+  the total between *Images* and *reclaimable* confirms or kills the auto-pull
+  theory in one line.
+- The thin pool deserves an alert. Get the metric name off the running exporter
+  first, then write the rule — the command is in `AGENTS.md`.
+- The two `hl-stack-drift` alerts in the same batch are the 2026-09-19 bug, not
+  a new one: `proxy` (774h, `basis=image`) is on `HL_NO_AUTOHEAL` and has always
+  needed a human, and `monitoring` (1243h, `basis=start`) is a stack whose
+  containers `up -d` kept declining to replace. The `--force-recreate` fix
+  merged in #86 clears both, but only once the box runs it.
+
+---
+
 ## 2026-09-19 — The mark was never served, and `up -d` had been lying about deploying it
 
 **Goal:** `home.brignano.io` showed a globe in a Chrome tab and a generic icon
