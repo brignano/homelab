@@ -111,6 +111,10 @@ AUTOHEAL="${HL_AUTOHEAL:-yes}"
 VERIFY_TRIES="${HL_VERIFY_TRIES:-3}"
 VERIFY_DELAY="${HL_VERIFY_DELAY:-10}"
 
+# Reclaiming what the pulls and rebuilds below replace — see "Reclaim".
+PRUNE="${HL_PRUNE:-yes}"
+BUILD_CACHE_KEEP_HOURS="${HL_BUILD_CACHE_KEEP_HOURS:-168}"
+
 # --- this script's own dead man's switch --------------------------------------
 #
 # heartbeat.sh proves the box is alive. Nothing proved *this* was still running,
@@ -560,6 +564,67 @@ $cmd"
   $stack ($basis, $age)"
 done
 
+# --- reclaim ------------------------------------------------------------------
+#
+# Every pull above and every rebuild above leaves the image it replaced on disk.
+# A floating tag that moves does not delete what it moved off — the old layers
+# stay, untagged and unreferenced, forever. Nothing in this repo has ever
+# removed one.
+#
+# That was harmless while nothing pulled. Auto-pull landed on 2026-09-19 and
+# turned it into a nightly ratchet: four stacks pull, two rebuild with
+# `--pull always`, and the superseded copy of each is left behind every time.
+# The images involved are not small (the Kali webtop and Ollama are GB-scale),
+# and CT 100's rootfs is 400 GB on a thin pool that tops out around 348 GiB and
+# cannot auto-extend — so the guest's own free-space number is optimistic about
+# the only ceiling that matters. `hl-disk-filling` firing four days out is the
+# alert that catches this; reclaiming is what stops it recurring.
+#
+# `image prune` WITHOUT `-a`, and the distinction is the whole safety argument.
+# Bare `prune` removes dangling images only: untagged, and referenced by no
+# container, running or stopped. That is exactly the set a `pull` creates and
+# nothing else. `-a` would also take any tagged image with no container on it —
+# which here means the Kali webtop, since Sablier's entire job is to scale it to
+# zero. It would be deleted every night and re-pulled on the next visit, turning
+# an on-demand desktop into a multi-GB download.
+#
+# Build cache is kept for a week rather than dropped: `assistant` and `proxy`
+# rebuild here, and a cold cache turns a 20-second rebuild into a full one on
+# the nightly run that is meant to be cheap.
+#
+# Both are best-effort. A prune that fails must not fail the sync — the stacks
+# are already deployed by this point, and disk that was not reclaimed tonight is
+# a thing the next run and the disk alerts both still catch.
+RECLAIMED=""
+
+# `docker prune` ends with "Total reclaimed space: 1.234GB". Empty on anything
+# unexpected, which reads as "reclaimed nothing" and says nothing — the right
+# failure for a cleanup step that is not allowed to be load-bearing.
+reclaimed_from() {
+  printf '%s\n' "$1" | awk '
+    /Total reclaimed space:/ {
+      sub(/^.*Total reclaimed space:[[:space:]]*/, "")
+      print; exit
+    }'
+}
+
+if [ "$PRUNE" = "yes" ]; then
+  _img=$(reclaimed_from "$(docker image prune -f 2>/dev/null || true)")
+  _bld=$(reclaimed_from "$(docker builder prune -f --filter "until=${BUILD_CACHE_KEEP_HOURS}h" 2>/dev/null || true)")
+  # "0B" is the ordinary result on a night with no updates, and a report line
+  # saying so every day is how a channel teaches you to stop reading it.
+  case "$_img" in ""|0B|0b) _img="" ;; esac
+  case "$_bld" in ""|0B|0b) _bld="" ;; esac
+  if [ -n "$_img" ]; then
+    RECLAIMED="$RECLAIMED
+  $_img — image layers the pulls replaced"
+  fi
+  if [ -n "$_bld" ]; then
+    RECLAIMED="$RECLAIMED
+  $_bld — build cache older than ${BUILD_CACHE_KEEP_HOURS}h"
+  fi
+fi
+
 # --- image staleness ----------------------------------------------------------
 #
 # The second drift axis, and the one the first could never have caught.
@@ -799,6 +864,9 @@ fi
 if [ -n "$MANUAL" ]; then
   add_summary "$(plural "$(count_entries "$MANUAL")" "stack needs you" "stacks need you")"
 fi
+if [ -n "$RECLAIMED" ]; then
+  add_summary "reclaimed disk"
+fi
 if [ -n "$STALE" ]; then
   add_summary "$(plural "$(count_entries "$STALE")" "stale image" "stale images")"
 fi
@@ -856,6 +924,16 @@ if [ -n "$HEALED" ]; then
 
 **Restarted, now running current code**
 $(as_bullets "$HEALED")"
+fi
+if [ -n "$RECLAIMED" ]; then
+  # Only ever present when something was actually freed, so this is not a daily
+  # line. It will occasionally be the *only* line — the build cache ages past
+  # the cutoff on its own schedule, unrelated to whether anything deployed —
+  # and that is fine: the channel doubles as the record of what the box did.
+  MSG="$MSG
+
+**Reclaimed disk**
+$(as_bullets "$RECLAIMED")"
 fi
 if [ -n "$MANUAL" ]; then
   MSG="$MSG
