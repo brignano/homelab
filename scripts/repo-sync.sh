@@ -1015,8 +1015,9 @@ cd $REPO$STALE_CMDS
 \`\`\`
 A pinned tag does not move on a pull, so for those this changes nothing — bump
 the tag in the compose file instead. That is the usual case for the oldest
-entries here: pinning is what let them get old. \`proxy\` is exempt, Renovate
-opens its bumps as PRs."
+entries here: pinning is what let them get old. The pins are exempt, though:
+Renovate opens their bumps as PRs (\`proxy\`, \`dashboard\`, \`desktops\` — see
+renovate.json5), so an entry from one of those is waiting on a PR, not on you."
 fi
 if [ -z "$HC_URL" ]; then
   # Reported every run, deliberately: an unconfigured dead man's switch is
