@@ -193,8 +193,32 @@ for c in $(docker ps --format '{{.Names}}'); do
   # RFC3339 with nanoseconds; `date -d` handles it, and find wants an epoch.
   epoch=$(date -d "$started" +%s 2>/dev/null || true)
   [ -n "$epoch" ] || continue
-  newer=$(find "$dir" -type f -newermt "@$epoch" 2>/dev/null \
-          | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" || true)
+
+  # What this container actually reads from the repo — its own bind mounts,
+  # plus the compose file that defines it.
+  #
+  # NOT the whole stack directory, which is what the first version did and is
+  # wrong in the most damaging direction. `docker/monitoring` holds nine
+  # containers; cadvisor reads nothing from this repo and has been up for
+  # weeks, so it dragged in every file under that directory changed since it
+  # started — Grafana's dashboards included, which it has never read. The same
+  # arithmetic reported `docker/proxy changed` on a pull that did not touch
+  # it, which is a false alarm pointed at the household's DNS. A tool that
+  # cries wolf about the resolver is worse than no tool: see the 2026-09-19
+  # entry in docs/setup-log.md for what acting on bad DNS evidence costs.
+  watched=""
+  [ -f "$dir/docker-compose.yml" ] && watched="$dir/docker-compose.yml"
+  for src in $(docker inspect \
+        -f '{{range .Mounts}}{{if eq .Type "bind"}}{{.Source}}{{"\n"}}{{end}}{{end}}' \
+        "$c" 2>/dev/null || true); do
+    case "$src" in "$REPO"/*) ;; *) continue ;; esac
+    watched="$watched
+$src"
+  done
+
+  newer=$(printf '%s\n' "$watched" | grep -v '^$' | while read -r p; do
+            find "$p" -type f -newermt "@$epoch" 2>/dev/null || true
+          done | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" || true)
 
   # The container's start time answers "is this process older than its config",
   # and for a stack whose source is baked into an image that is the wrong
@@ -204,11 +228,16 @@ for c in $(docker ps --format '{{.Names}}'); do
   # code. That happened on the very deploy this script was written for.
   #
   # So ask the image when it was built, not the container when it started, and
-  # only about the files that go INTO an image. Pulled images (grafana, loki)
-  # have an upstream build date from months ago and no such files in their
-  # stack, so they are never flagged by this.
-  img=$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)
-  built=$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)
+  # only about the files that go INTO an image. Gated on the stack having a
+  # Dockerfile at all: a pulled image (grafana, loki) carries an upstream build
+  # date from months ago, and comparing repo files against that would flag the
+  # whole lab forever.
+  img=""
+  built=""
+  if [ -f "$dir/Dockerfile" ]; then
+    img=$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)
+    built=$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)
+  fi
   if [ -n "$built" ]; then
     bepoch=$(date -d "$built" +%s 2>/dev/null || true)
     if [ -n "$bepoch" ]; then
