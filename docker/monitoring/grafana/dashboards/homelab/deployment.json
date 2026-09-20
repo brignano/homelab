@@ -524,7 +524,7 @@
       ],
       "title": "Deployment drift per stack",
       "type": "bargauge",
-      "description": "How far behind the repo each stack's running code is. `basis=image` stacks are compared against when their image was built (a restart does not rebuild); `basis=start` stacks against when the container started, because they read bind-mounted config at boot.\n\n**Blind spot:** this measures the repo against what is deployed, not what is deployed against upstream. A stack rebuilt an hour ago on a three-month-old cached base image reads as 0 here and is not. `docs/design/tsd-dependency-updates.md` covers that second axis; it is not implemented yet."
+      "description": "How far behind the repo each stack's running code is. The basis is chosen per CONTAINER and the label names the one that set the number: `basis=image` is an image built here, compared against its build time (a restart does not rebuild); `basis=start` is an image pulled upstream, compared against when the container started, because those read bind-mounted config at boot and the image's own creation date is a vendor release date, not a fact about this box. A mixed stack like `proxy` has both and reports whichever is older.\n\n**Blind spot:** this measures the repo against what is deployed, not what is deployed against upstream. A stack rebuilt an hour ago on a three-month-old cached base image reads as 0 here and is not. `docs/design/tsd-dependency-updates.md` covers that second axis; it is not implemented yet."
     },
     {
       "datasource": {
