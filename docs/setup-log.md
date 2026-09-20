@@ -27,6 +27,53 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-09-20 — The planner blamed cadvisor's uptime on Grafana's dashboards
+
+**Goal:** First real run of `deploy-plan.sh` after a pull that touched four
+files reported 21 stale files across the whole monitoring stack — and
+`docker/proxy changed`, on a pull that did not touch `docker/proxy`.
+
+**Steps:**
+1. Listed every container's start time. `cadvisor` and `sablier` have been up
+   since **2026-07-30**; everything else restarted on the 19th or 20th.
+2. That is the whole bug. State mode compared each container's start time
+   against **every file under its stack directory**, and `docker/monitoring`
+   holds nine containers. cadvisor mounts nothing from this repo, so it was
+   charged with every monitoring file changed in the seven weeks since it
+   started — Grafana's dashboards included, which it has never read.
+3. Rewrote the comparison to use the files a container actually bind-mounts,
+   plus the compose file that defines it. The image-staleness check is now
+   gated on the stack having a `Dockerfile`, so a pulled image's upstream
+   build date can never flag anything.
+
+**Issues encountered:**
+- **The false positive pointed at the household's DNS.** `docker/proxy` holds
+  four tracked files and `git log --since` over the containers' start time
+  shows no commit touching any of them, yet the planner said proxy changed —
+  because caddy and adguard share a working directory with each other and
+  with every file under it. The 2026-09-19 entry below is what acting on bad
+  DNS evidence costs; a tool that manufactures that evidence is worse than no
+  tool, so this was fixed the hour it appeared rather than filed.
+- **It was reported as a deploy result, which is exactly how it should have
+  surfaced** — but the runbook's own content-based drift check (step 4) had
+  already come back empty, and the two answers disagreeing is what made it
+  obviously a bug rather than a finding. Two checks that overlap are worth
+  their cost.
+
+**Resolution:**
+- Per-container mounts, tested against a stub modelling the real shape: three
+  containers sharing `docker/monitoring` with different mounts and one
+  (cadvisor) mounting nothing of ours, plus caddy on `docker/proxy` and the
+  image-baked assistant. Only files a container actually reads are flagged.
+
+**Notes / next steps:**
+- A container that writes into its own bind-mounted config directory will
+  still look newer than itself forever. None of the tracked paths here are
+  written by their container, but Homepage's `config/` is the shape that
+  would do it — worth remembering before mounting a written-to directory.
+
+---
+
 ## 2026-09-20 — Two verification instructions that could not verify what they claimed
 
 **Goal:** Deploying the previous two entries turned up two checks that look like
