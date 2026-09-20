@@ -12,20 +12,48 @@
   //
   // Why not everywhere
   // ------------------
-  // Twenty-odd images across actively released projects is a steady stream of
-  // PRs, most of them patch bumps nobody reads, and the realistic end state is a
-  // tab of unread Renovate PRs -- which is 1.8.1 again with more ceremony.
-  // Review only earns its keep where a bad version is expensive, and in this lab
-  // that is exactly one stack: `proxy` runs Caddy (every service's TLS) and
-  // AdGuard (the household's resolver, which every tool you would use to
-  // diagnose a DNS outage depends on). It is already on HL_NO_AUTOHEAL for the
-  // same reason.
+  // Twenty-odd images across actively released projects would be a steady
+  // stream of PRs, most of them patch bumps nobody reads, and the realistic end
+  // state is a tab of unread Renovate PRs -- which is 1.8.1 again with more
+  // ceremony. Review only earns its keep where a bad version is expensive, and
+  // the stack where it is most expensive is `proxy`: Caddy holds every
+  // service's TLS and AdGuard is the household's resolver, which every tool you
+  // would use to diagnose a DNS outage depends on. It is already on
+  // HL_NO_AUTOHEAL for the same reason.
+  //
+  // Why the two pinned images as well
+  // ---------------------------------
+  // The "twenty-odd images" above is a count of images, not of things Renovate
+  // can act on, and those are very different numbers here. Outside `proxy`,
+  // every image in this lab is `:latest`, `:main`, or built locally -- tags
+  // with no version to compare, which Renovate cannot bump and does not open
+  // PRs for. The exceptions are exactly two:
+  //
+  //   ghcr.io/gethomepage/homepage:v1.5.0   (dashboard)
+  //   sablierapp/sablier:1.8.1              (desktops)
+  //
+  // Which are the same two images named at the top of this file as the reason
+  // it exists. They were pinned and forgotten for 12 and 23 months, and until
+  // now this config watched neither of them. So the flood the paragraph above
+  // is guarding against is not on the other side of this door: enabling these
+  // two stacks admits at most two PRs, and they are the two the original
+  // argument was about.
+  //
+  // Not grouped, for the same reason AdGuard's bumps arrive alone -- a dashboard
+  // change and a desktops change are unrelated, and bundling them means
+  // approving one while reading about the other.
+  //
+  // `postgres:16-alpine` in docker/core/ is deliberately still out. `16-alpine`
+  // is a series tag that moves, so its patches arrive on a pull rather than in a
+  // PR, and the only thing Renovate could offer is the 17 major -- a one-way
+  // data migration that is a project someone schedules, not a PR that sits open
+  // going stale. The image-age watchdog already covers it ageing.
   //
   // Everywhere else, scripts/repo-sync.sh reports images past
   // HL_MAX_IMAGE_AGE_DAYS to Discord and you act on them. That watchdog is also
   // what covers THIS file failing: a Renovate that is misconfigured, uninstalled
-  // or silently stopped shows up as proxy images ageing past the threshold, so
-  // the config being wrong cannot be quiet.
+  // or silently stopped shows up as images ageing past the threshold, so the
+  // config being wrong cannot be quiet.
   //
   // See docs/design/tsd-dependency-updates.md.
   extends: ["config:recommended"],
@@ -72,6 +100,18 @@ approve incidentally while reading about a TLS one.",
       matchPackageNames: ["adguard/adguardhome"],
       groupName: null,
       addLabels: ["dns"],
+    },
+    {
+      description: "The two images that are pinned outside `proxy` -- homepage \
+and sablier, the 12- and 23-month pins this config was written because of. No \
+pinDigests: these are deployed by the nightly sync rather than rebuilt by hand, \
+so a readable tag in the compose file is worth more here than a reproducible \
+build, and the digest would only be one more string nobody reads. Neither stack \
+holds DNS or TLS, so these are ordinary bumps -- they just have to be SEEN.",
+      matchFileNames: ["docker/dashboard/**", "docker/desktops/**"],
+      enabled: true,
+      groupName: null,
+      addLabels: ["pinned-image"],
     },
   ],
 
