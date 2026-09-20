@@ -19,19 +19,26 @@
 # turns a visible gap into an invisible one. Pulling without reporting would be
 # a downgrade, so this does both or neither.
 #
-# What "stale" means, per stack
-# -----------------------------
-# The right question differs by how the stack gets its code, so the check does
-# too — decided by whether the compose file has a `build:` key:
+# What "stale" means, per container
+# ---------------------------------
+# The right question differs by how the code got there, so the check does too —
+# decided per CONTAINER, by whether the image it runs was built here or pulled:
 #
-#   builds locally (assistant, proxy)  ->  compare against the IMAGE's creation
-#       time. A restart does not rebuild, so container start time would report
-#       fresh while the image is stale — exactly the case worth catching, since
-#       a host reboot restarts everything without rebuilding anything.
+#   built here (caddy, assistant)  ->  compare against the IMAGE's creation
+#       time, which is the build time. A restart does not rebuild, so container
+#       start time would report fresh while the image is stale — exactly the
+#       case worth catching, since a host reboot restarts everything without
+#       rebuilding anything.
 #
-#   pulls upstream images (everything else)  ->  compare against the CONTAINER's
+#   pulled upstream (everything else)  ->  compare against the CONTAINER's
 #       start time. These read their config from the repo via bind mounts, so
-#       replacing the process is what picks a change up.
+#       replacing the process is what picks a change up — and the image's own
+#       creation date is a vendor release date that says nothing about this box.
+#
+# Per container and not per stack, which is what this originally did: `proxy`
+# mixes the two (caddy is built, adguard is pinned upstream), and measuring
+# adguard by AdGuard's release date pinned the stack permanently stale. See the
+# staleness loop.
 #
 # What it does about a stale stack is `--force-recreate`, on both branches, and
 # that flag is load-bearing rather than belt-and-braces: every stack here keeps
@@ -515,24 +522,68 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
   #
   # Recreating when nothing needed it is not a cost worth guarding against:
   # this line is only reached for a stack already measured as stale.
+  # The COMMAND is a property of the stack: a compose file with a `build:` key
+  # anywhere in it needs `--build --pull always`, whichever service turns out to
+  # be the stale one.
   if grep -qE '^[[:space:]]+build:' "$compose"; then
-    basis="image"; hint="up -d --build --pull always --force-recreate"
+    hint="up -d --build --pull always --force-recreate"
   else
-    basis="start"; hint="up -d --force-recreate"
+    hint="up -d --force-recreate"
   fi
 
-  # The oldest container is what limits the stack's freshness.
+  # The BASIS is a property of each container, and conflating the two is what
+  # made `proxy` permanently stale.
+  #
+  # `proxy` is a mixed stack: `caddy` is built here from the Dockerfile, and
+  # `adguard` is a pinned upstream image. Deciding the basis per STACK meant one
+  # `build:` key put every container in it on image-creation time — so adguard
+  # was measured by when AdGuard's maintainers built v0.107.79. That is a vendor
+  # release date. It is not a fact about this lab at all, nothing done on this
+  # box can move it, and `oldest` takes the minimum, so it pinned the stack's
+  # drift at 32 days through a correct rebuild that reset everything else.
+  #
+  # An alert nothing can clear is worse than no alert: `proxy` is the one stack
+  # whose staleness only a human ever acts on, and this taught that human the
+  # line was furniture.
+  #
+  # So ask what the container's code actually came from:
+  #
+  #   built here      -> the image's creation time IS the build time, which is
+  #                      the number that matters: a restart does not rebuild, and
+  #                      a host reboot restarts everything without rebuilding
+  #                      anything.
+  #   pulled upstream -> its creation time says when a vendor built it and
+  #                      nothing about this deploy. What picked up the repo's
+  #                      config is the container START, bind mounts being read at
+  #                      boot — the same basis a pure-pull stack already uses.
+  #
+  # Detected by RepoDigests rather than by parsing the compose file for which
+  # service owns the `build:` key: a locally built image has never been pulled
+  # from or pushed to a registry, so its RepoDigests list is empty. That is a
+  # fact Docker already holds about the image the container is actually running,
+  # which beats re-deriving it from YAML in `sh`. An image inspect that fails
+  # falls back to `start`, the conservative direction — a missed staleness is
+  # caught by tomorrow's run, an unclearable alert is forever.
+  #
+  # Pure stacks are unaffected: every image in one is either all built (assistant)
+  # or all pulled (everything else), so they measure exactly as before.
   oldest=""
+  basis=""
   for cid in $cids; do
-    if [ "$basis" = "image" ]; then
-      img=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
-      [ -n "$img" ] || continue
+    img=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
+    [ -n "$img" ] || continue
+    if [ "$(docker image inspect -f '{{len .RepoDigests}}' "$img" 2>/dev/null || echo 1)" = "0" ]; then
+      cbasis="image"
       ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
     else
+      cbasis="start"
       ts=$(epoch "$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)")
     fi
     [ -n "$ts" ] || continue
-    if [ -z "$oldest" ] || [ "$ts" -lt "$oldest" ]; then oldest=$ts; fi
+    # The oldest container is what limits the stack's freshness, and the basis
+    # reported is that container's — the report names why THIS number is what it
+    # is, not what the rest of the stack happens to be measured by.
+    if [ -z "$oldest" ] || [ "$ts" -lt "$oldest" ]; then oldest=$ts; basis=$cbasis; fi
   done
   [ -n "$oldest" ] || continue
 
