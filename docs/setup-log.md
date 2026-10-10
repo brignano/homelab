@@ -79,6 +79,14 @@ page.
   docker compose -f docker/monitoring/docker-compose.yml restart grafana
   ./scripts/probe-status.sh
   ```
+  **By hand, on merge day, before 04:00.** `repo-sync.sh` recreates
+  `monitoring` but never `proxy` (`NO_AUTOHEAL`). An unattended sync therefore
+  starts the probe against a caddy without the alias, and `hl-ha-route-down`
+  pages at about 04:02. That page would be accurate, since caddy is stale,
+  and the fix is the caddy recreate above. The caddy recreate is required
+  here even though `dig` answers. `deploy-plan.sh`'s "if it answers, a
+  recreate can only make things worse" is about drift, not about an
+  intentional Caddyfile change.
   `caddy` alone, never the whole proxy stack, because AdGuard lives there too.
   The two `dig`s check that DNS came back. Grafana is restarted for the new
   rule.
