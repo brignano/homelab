@@ -102,6 +102,7 @@ jobs:
       CLOUDFLARE_TUNNEL_TOKEN: ci
       ANTHROPIC_API_KEY: ci
       CONCIERGE_TOKEN: ci
+      RENDER_GID: "993"
     steps:
       - uses: actions/checkout@v4
 

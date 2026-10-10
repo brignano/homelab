@@ -66,6 +66,13 @@
         description: Doors, locks, sensors and cameras — read by the digest
         icon: /icons/home-assistant.svg
 
+- Media:
+    - Jellyfin:
+        href: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Movies, shows and home videos — LAN and tailnet only
+        icon: /icons/jellyfin.svg
+
 - Desktops:
     - Kali:
         href: https://kali.{{HOMEPAGE_VAR_DOMAIN}}

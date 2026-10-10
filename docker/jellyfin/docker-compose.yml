@@ -1,0 +1,79 @@
+services:
+  # Jellyfin — the media server. See docs/design/tsd-jellyfin.md.
+  #
+  #   Caddy → https://jellyfin.$HOMELAB_DOMAIN   (LAN + tailnet, never the tunnel)
+  #
+  # Three things here exist to protect the rest of the lab, not Jellyfin:
+  #
+  #   1. cpus / mem_limit. Library scans, thumbnail generation and any transcode
+  #      that falls back to the CPU stay inside two of CT 100's six cores, so
+  #      Ollama's four (`num_thread 4`, AGENTS.md → Ollama) are never taken.
+  #
+  #   2. The media mounts refuse to create their own source directories
+  #      (`create_host_path: false`). The library and cache live on the 5 TB
+  #      drive, mounted into CT 100 at /media with backup=0. If that drive is
+  #      missing, Docker would otherwise quietly create /media/jellyfin/... on
+  #      CT 100's rootfs, i.e. on the thin pool and inside every nightly vzdump,
+  #      and a transcode cache would fill it. Failing to start is the right
+  #      outcome; `docker compose up` says exactly which path is missing.
+  #
+  #   3. Joining `proxy_proxy` rather than giving this stack a network for Caddy
+  #      to join. Caddy attaches to other stacks' networks as `external`, and an
+  #      external network that does not exist stops the proxy stack from
+  #      starting, and the household's DNS (AdGuard) with it. This way round,
+  #      the dependency points at the stack that is always up.
+  #
+  # The iGPU (VA-API transcoding) is passed in as a device. It has to be in CT
+  # 100 first: on the Proxmox host,
+  #   pct set 100 -dev0 /dev/dri/renderD128,gid=<host render gid>
+  # (docs/design/tsd-jellyfin.md, phase 1). Without it this container will not
+  # start, which is also deliberate: CPU-only transcoding is the failure this
+  # design exists to avoid.
+  #
+  # Version: pinned by tag AND digest. Renovate proposes bumps as PRs
+  # (renovate.json5), and repo-sync's nightly auto-pull cannot move a digest.
+  # Jellyfin migrates its database one way on upgrade, so an update is a
+  # decision, not a side effect of a night passing.
+  jellyfin:
+    image: jellyfin/jellyfin:12.2@sha256:357724bf0ae27a672c7cbaa899db2d9abeb13dbd8657ccce750258a4c059d037
+    container_name: jellyfin
+    restart: unless-stopped
+    cpus: 2
+    mem_limit: 2g
+    environment:
+      TZ: ${TZ:-UTC}
+    devices:
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    # The group that owns /dev/dri/renderD128 inside CT 100, so the process can
+    # open it. Find it with:  stat -c %g /dev/dri/renderD128
+    group_add:
+      - "${RENDER_GID:?set RENDER_GID in docker/jellyfin/.env (stat -c %g /dev/dri/renderD128)}"
+    volumes:
+      # Users, watch history, settings, metadata. Small; in the nightly vzdump.
+      - config:/config
+      - type: bind
+        source: /media/jellyfin/cache
+        target: /cache
+        bind:
+          create_host_path: false
+      # Read-only: Jellyfin has no reason to write to the library, so it can't
+      # damage it.
+      - type: bind
+        source: /media/jellyfin/library
+        target: /media
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - proxy
+    # No ports. Everything goes through Caddy, as Open WebUI does. Client
+    # auto-discovery (UDP 7359) is deliberately not exposed: apps are given the
+    # URL once.
+
+volumes:
+  config:
+
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy

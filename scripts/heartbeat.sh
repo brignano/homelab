@@ -196,6 +196,29 @@ publish_metrics() {
     fi
   done
 
+  # Whether the iGPU Jellyfin transcodes with is still in CT 100. A host kernel
+  # update or a lost `dev0` line in /etc/pve/lxc/100.conf takes the device away
+  # without stopping anything; the next time Jellyfin restarts it either fails
+  # to start or, worse, would have to transcode on the CPU.
+  #
+  # Checked in CT 100, not inside the container, on purpose. A container keeps
+  # the device node it was started with, so an in-container test stays green
+  # after the passthrough is gone, and a `docker exec` here could hang this run
+  # before the Healthchecks ping, which is the one thing that must not happen.
+  #
+  # Only once the stack has been set up on this box (its .env exists): before
+  # phase 1 there is no GPU to expect, and a 0 would page for a plan.
+  # See docs/design/tsd-jellyfin.md.
+  if [ -f "$REPO/docker/jellyfin/.env" ]; then
+    metric_help homelab_jellyfin_gpu_present gauge \
+      "1 if /dev/dri/renderD128 (the iGPU Jellyfin uses for VA-API) exists in CT 100"
+    if [ -c /dev/dri/renderD128 ]; then
+      metric homelab_jellyfin_gpu_present 1
+    else
+      metric homelab_jellyfin_gpu_present 0
+    fi
+  fi
+
   metrics_close
 }
 

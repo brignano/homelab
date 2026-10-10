@@ -592,6 +592,41 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [26] }
 
+      # --- Jellyfin lost the GPU ---
+      #
+      # heartbeat.sh checks every 5 minutes that /dev/dri/renderD128 exists in
+      # CT 100 (once docker/jellyfin/.env exists there). Without it, the next
+      # Jellyfin restart fails or transcodes on the CPU. Usual causes: a host
+      # kernel update, or the dev0 line gone from /etc/pve/lxc/100.conf.
+      # docker/jellyfin/README.md §1 has the fix.
+      - uid: hl-jellyfin-gpu-missing
+        title: Jellyfin GPU missing from CT 100
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "The iGPU (/dev/dri/renderD128) is missing from CT 100, so Jellyfin cannot hardware-transcode; check dev0 in /etc/pve/lxc/100.conf"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_jellyfin_gpu_present
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- The newest Postgres dump did not restore ---
       #
       # pg-backup.sh proves a dump was written; scripts/pg-restore-test.sh

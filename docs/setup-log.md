@@ -49,6 +49,52 @@ Chronological record of significant configuration steps, decisions, and issues.
 - Docs only so far. Subscribing, exposing entities and linking the skill are
   manual steps in the README. Locks, garage and alarm stay unexposed.
 
+---
+
+## 2026-10-10 — Jellyfin stack built, ready for drive day
+
+**Goal:** Build phase 2 of `docs/design/tsd-jellyfin.md` while the drives ship,
+so deploying is mechanical when they arrive.
+
+**Steps:**
+1. `docker/jellyfin/`: `jellyfin/jellyfin:12.2`, pinned by tag and digest.
+   Capped at `cpus: 2` and `mem_limit: 2g`, so Ollama's four cores are never
+   taken. `/dev/dri/renderD128` is passed in with `group_add: RENDER_GID`. The
+   library is mounted read-only and the cache is on the media drive, both with
+   `create_host_path: false`. No ports; it joins `proxy_proxy`.
+2. Added the Caddy route `jellyfin.{$HOMELAB_DOMAIN}`, a blackbox probe of
+   `http://jellyfin:8096/health` (`service="jellyfin"`), a *Media* tile with
+   a vendored icon, and a Renovate rule for `docker/jellyfin/**`.
+3. `heartbeat.sh` publishes `homelab_jellyfin_gpu_present`, and the new alert
+   `hl-jellyfin-gpu-missing` fires if the container loses the GPU and
+   transcodes drop to the CPU.
+
+**Issues encountered:**
+- The TSD had Caddy joining a new `jellyfin` network. Caddy joins other stacks'
+  networks as `external`, and a missing external network stops `proxy` from
+  starting, taking the house's DNS with it. Reversed: Jellyfin joins
+  `proxy_proxy`.
+- A bind mount to a missing path makes Docker create it. Before the drive is
+  mounted that would put the library and transcode cache on CT 100's rootfs,
+  which is the thin pool and inside every vzdump. The long-form mounts now
+  refuse instead.
+
+**Resolution:**
+- Tested in a real Docker daemon. The stack refused to start without
+  `RENDER_GID` and without the media directories, and created nothing. With
+  them present it was healthy, `/health` answered 200 over `proxy_proxy`, the
+  caps applied, no port was published, and the library was read-only.
+  `check-observability`, `check-probes`, `check-dashboard` and the
+  design-token check all pass.
+
+**Notes / next steps:**
+- **Merge on drive day.** Once merged, the container inventory expects
+  `jellyfin` running and the probe expects it answering.
+- Phase 1 (GPU passthrough) can be done now: `docker/jellyfin/README.md` §1.
+  It needs one `pct reboot 100`, which takes DNS down for about a minute.
+
+---
+
 ## 2026-10-10 — MCP: "403 forbidden: host not allowed" behind Caddy
 
 **Goal:** Get Claude Code's `homelab` MCP server connecting again.
