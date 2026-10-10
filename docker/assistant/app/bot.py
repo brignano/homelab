@@ -30,6 +30,10 @@ from .chat import (
     CHAIN, SINGLE, THREAD, Turn, build_messages, build_system, clean_bot_text,
     context_mode, is_ignorable,
 )
+from .concierge import (
+    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, fact_of,
+    footer as concierge_footer, render_proposal, usable_memories,
+)
 from .config import Config
 from .day import SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
 from .digest import build as build_digest
@@ -80,9 +84,12 @@ class Assistant(discord.Client):
         #
         # The intent is server-wide, so the narrowing is done in code: on_message
         # returns immediately unless the message is from an allowlisted user in
-        # the one configured channel (or a thread under it). See _should_handle.
+        # the configured channels (or threads under them). See _route.
+        #
+        # #ask needs the same intent, for the same reason, and is narrowed the
+        # same way. #memory is read with it too: you can post a memory by hand.
         intents = discord.Intents.default()
-        if cfg.chat_channel_id is not None:
+        if cfg.chat_channel_id is not None or cfg.ask_enabled:
             intents.message_content = True
         super().__init__(intents=intents)
         self.cfg = cfg
@@ -94,6 +101,7 @@ class Assistant(discord.Client):
         self.ollama: Ollama | None = None
         self.collector: FactCollector | None = None
         self.day: DayCollector | None = None
+        self.concierge: Concierge | None = None
         self._guild = discord.Object(id=cfg.guild_id)
 
     # --- lifecycle ---
@@ -155,6 +163,12 @@ class Assistant(discord.Client):
         if not self.cfg.digest_enabled:
             clear_stamp(self.cfg.digest_stamp_path)
 
+        # The act lane. Not on the job queue: that queue exists to serialize
+        # Ollama, and the concierge never touches Ollama. It serializes its own
+        # work, one task at a time.
+        if self.cfg.ask_enabled:
+            self.concierge = Concierge(self._session, self.cfg.concierge_url, self.cfg.concierge_token)
+
         self.queue.start()
 
         register_commands(self)
@@ -182,31 +196,40 @@ class Assistant(discord.Client):
         log.info("connected as %s (guild %s)", self.user, self.cfg.guild_id)
         if self.cfg.chat_channel_id:
             log.info("conversational mode active in channel %s", self.cfg.chat_channel_id)
+        if self.cfg.ask_enabled:
+            log.info("concierge (#ask) active in channel %s via %s",
+                     self.cfg.ask_channel_id, self.cfg.concierge_url)
 
-    # --- conversational channel ---
+    # --- conversational channels (#chat: local model; #ask: concierge) ---
 
-    def _should_handle(self, message: discord.Message) -> bool:
-        """Narrow the server-wide intent down to one channel and one person.
+    def _route(self, message: discord.Message) -> str | None:
+        """Narrow the server-wide intent down to two channels and one person.
 
-        The first check is the important one: without it the bot would answer
-        its own replies and spin forever.
+        Returns "chat", "ask" or None. The first check is the important one:
+        without it the bot would answer its own replies and spin forever.
         """
         if message.author.bot or message.author.id == (self.user.id if self.user else None):
-            return False
-        if self.cfg.chat_channel_id is None:
-            return False
+            return None
         if message.author.id not in self.cfg.allowed_user_ids:
-            return False
-        # Threads started under the chat channel count as their own conversations.
+            return None
+        if is_ignorable(message.content or ""):
+            return None
+        # Threads started under a channel count as their own conversations.
         channel = message.channel
-        parent_id = getattr(channel, "parent_id", None)
-        if channel.id != self.cfg.chat_channel_id and parent_id != self.cfg.chat_channel_id:
-            return False
-        return not is_ignorable(message.content or "")
+        here = {channel.id, getattr(channel, "parent_id", None)}
+        if self.cfg.chat_channel_id is not None and self.cfg.chat_channel_id in here:
+            return "chat"
+        if self.cfg.ask_enabled and self.cfg.ask_channel_id in here:
+            return "ask"
+        return None
 
     def _to_turn(self, message: discord.Message) -> Turn | None:
         """One Discord message as a conversation turn, or None if it's noise."""
         content = message.content or ""
+        if getattr(message, "components", None):
+            # An approval prompt. It is the bot's own rendering of a proposal,
+            # not something the assistant said, so it is not conversation.
+            return None
         if message.author.id == (self.user.id if self.user else None):
             content = clean_bot_text(content)
             role = "assistant"
@@ -331,7 +354,11 @@ class Assistant(discord.Client):
         )
 
     async def on_message(self, message: discord.Message) -> None:
-        if not self._should_handle(message):
+        route = self._route(message)
+        if route == "ask":
+            await self._handle_ask(message)
+            return
+        if route != "chat":
             return
 
         channel = message.channel
@@ -365,6 +392,67 @@ class Assistant(discord.Client):
                 await channel.send(part)
         except discord.HTTPException as exc:
             log.warning("could not post reply: %s", exc)
+
+    # --- #ask: the concierge (act lane) ---
+
+    async def _memories(self) -> list[str]:
+        """Every approved memory in #memory, oldest first. Empty if unreadable:
+        a missing memory makes a worse answer, not a wrong action."""
+        channel = self.get_channel(self.cfg.memory_channel_id)
+        if channel is None:
+            log.warning("memory channel %s not found", self.cfg.memory_channel_id)
+            return []
+        me = self.user.id if self.user else None
+        rows: list[tuple[bool, str]] = []
+        try:
+            async for msg in channel.history(limit=MEMORY_SCAN):
+                trusted = msg.author.id == me or msg.author.id in self.cfg.allowed_user_ids
+                rows.append((trusted, msg.content or ""))
+        except discord.HTTPException as exc:
+            log.warning("could not read #memory: %s", exc)
+            return []
+        return usable_memories(rows)
+
+    async def _handle_ask(self, message: discord.Message) -> None:
+        channel = message.channel
+        try:
+            async with channel.typing():
+                turns, mode = await self._context_for(message)
+                if not turns:
+                    return
+                history = [{"role": t.role, "content": t.content} for t in turns[:-1]]
+                prompt, _ = clamp_input(turns[-1].content, self.cfg.max_input_chars)
+                memories = await self._memories()
+                log.info("ask: %s context, %d earlier turn(s), %d memories",
+                         mode, len(history), len(memories))
+                reply = await self.concierge.ask(prompt, history, memories)
+        except ConciergeError as exc:
+            await message.reply(f"Concierge unavailable: {exc}", mention_author=False)
+            return
+        except Exception:  # noqa: BLE001 — a bad reply must not kill the handler
+            log.exception("ask failed")
+            await message.reply("Concierge request failed — see `docker logs assistant`.", mention_author=False)
+            return
+
+        # The answer can quote an email or an event, so it may hold text a
+        # stranger wrote: never let it ping anyone.
+        quiet = discord.AllowedMentions.none()
+        parts = chunk(reply.answer + "\n" + concierge_footer(reply))
+        try:
+            await message.reply(parts[0], mention_author=False, allowed_mentions=quiet)
+            for part in parts[1:]:
+                await channel.send(part, allowed_mentions=quiet)
+            for proposal in reply.proposals:
+                view = ApprovalView(self, proposal) if fact_of(proposal) else None
+                sent = await channel.send(
+                    render_proposal(proposal), view=view,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                if view is not None:
+                    view.message = sent
+                log.info("proposal shown: tool=%s approvable=%s", proposal.tool, view is not None)
+        except discord.HTTPException as exc:
+            log.warning("could not post ask reply: %s", exc)
 
     # --- background loops ---
 
@@ -425,6 +513,81 @@ class Assistant(discord.Client):
             ),
             priority=priority,
         )
+
+
+# --- approval prompts ---------------------------------------------------------
+
+class ApprovalView(discord.ui.View):
+    """✅/❌ under one proposal. Only an allowlisted user's ✅ carries it out.
+
+    Lives in memory only. A bot restart, or 15 minutes without an answer, ends
+    it as ❌: an unanswered prompt never turns into a yes (Decision 2). Once
+    decided, the buttons stay on the message but disabled, labelled with the
+    outcome, which is also what keeps the prompt out of conversation history
+    (_to_turn skips messages with components).
+    """
+
+    def __init__(self, client: "Assistant", proposal: Proposal) -> None:
+        super().__init__(timeout=APPROVAL_TIMEOUT_S)
+        self.client = client
+        self.proposal = proposal
+        self.message: discord.Message | None = None
+        self._done = False
+
+    async def _finish(self, outcome: str, interaction: discord.Interaction | None) -> None:
+        self._done = True
+        self.stop()
+        self.clear_items()
+        self.add_item(discord.ui.Button(label=outcome, disabled=True, style=discord.ButtonStyle.secondary))
+        try:
+            if interaction is not None:
+                await interaction.response.edit_message(view=self)
+            elif self.message is not None:
+                await self.message.edit(view=self)
+        except discord.HTTPException as exc:
+            log.warning("could not update approval prompt: %s", exc)
+
+    async def _allowed(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id in self.client.cfg.allowed_user_ids:
+            return True
+        log.warning("approval click ignored: user %s is not allowlisted (tool=%s)",
+                    interaction.user.id, self.proposal.tool)
+        await interaction.response.send_message("Not authorised to approve this.", ephemeral=True)
+        return False
+
+    @discord.ui.button(label="Approve", emoji="✅", style=discord.ButtonStyle.success)
+    async def approve(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._done or not await self._allowed(interaction):
+            return
+        # Before the first await: a double-click must not save it twice.
+        self._done = True
+        fact = fact_of(self.proposal)
+        channel = self.client.get_channel(self.client.cfg.memory_channel_id)
+        if fact is None or channel is None:
+            log.error("approved proposal could not be carried out (tool=%s, memory channel=%s)",
+                      self.proposal.tool, self.client.cfg.memory_channel_id)
+            await self._finish("Approved, but #memory is missing — not saved", interaction)
+            return
+        try:
+            await channel.send(fact, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException as exc:
+            log.error("could not write to #memory: %s", exc)
+            await self._finish("Approved, but saving failed", interaction)
+            return
+        log.info("proposal approved by %s: tool=%s", interaction.user.id, self.proposal.tool)
+        await self._finish("Approved — saved to #memory", interaction)
+
+    @discord.ui.button(label="Decline", emoji="❌", style=discord.ButtonStyle.secondary)
+    async def decline(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        if self._done or not await self._allowed(interaction):
+            return
+        log.info("proposal declined by %s: tool=%s", interaction.user.id, self.proposal.tool)
+        await self._finish("Declined", interaction)
+
+    async def on_timeout(self) -> None:
+        if not self._done:
+            log.info("proposal expired unanswered: tool=%s", self.proposal.tool)
+            await self._finish("Expired — not saved", None)
 
 
 # --- command registration -----------------------------------------------------

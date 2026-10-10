@@ -124,6 +124,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
+| concierge (Claude Agent SDK) | `docker/concierge/` | **outbound only** — no ports, no Caddy route; reached only by the assistant over `assistant_concierge` (bearer token) |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
@@ -219,7 +220,7 @@ injection) and the two rules for extending it are in
 ## Planned / proposals (not yet deployed)
 - [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). The **job monitoring** half of the spec shipped early on 2026-09-19 — the dump now pings Healthchecks and publishes age/size/result as metrics, with alerts on the Discord `#alerts` webhook — because it was cheap and did not need the hardware. The backup half is what is still parked: monitoring a job is not the same as having a backup you can restore.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
-- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–2 built** (calendar, mail metadata and Home Assistant states in the digest; see `docker/assistant/README.md` → "Today" and `docker/homeassistant/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot's `/ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
+- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–3 built** (calendar, mail metadata and Home Assistant states in the digest; the concierge answering in `#ask` with read tools only; see `docker/assistant/README.md` → "Today", `docker/homeassistant/README.md` and `docker/concierge/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot in `#ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
 
 ## Custom commands
 These slash commands are available in `.claude/commands/`:

@@ -301,11 +301,22 @@ and a 3B degrades fast when that drifts.
 > No approval is needed under 100 servers.
 >
 > It is a genuine widening: the bot can now read message text server-wide. It's
-> narrowed in code rather than by Discord — `_should_handle` returns immediately
-> unless the message is from an allowlisted user in the one configured channel
-> (or a thread under it), and it ignores bots including itself, which is what
+> narrowed in code rather than by Discord — `_route` returns immediately
+> unless the message is from an allowlisted user in #chat or #ask
+> (or a thread under one), and it ignores bots including itself, which is what
 > stops it replying to its own replies forever. Leave `DISCORD_CHAT_CHANNEL_ID`
-> blank and the intent is never requested at all.
+> and `DISCORD_ASK_CHANNEL_ID` blank and the intent is never requested at all.
+
+### #ask — Claude, through the concierge
+
+`#ask` works like `#chat` (same thread/reply/one-off scope, same allowlist),
+but this bot only forwards the message to `docker/concierge/` and renders the
+answer. The agent, its Anthropic key and its Google and Home Assistant tokens
+all live in that stack. The bot also reads `#memory` for each request, and it
+renders any proposed memory under ✅/❌ from the proposal's arguments
+(`app/concierge.py`). Only an allowlisted ✅ within 15 minutes posts it.
+Setup, costs and the audit trail are in
+[`docker/concierge/README.md`](../concierge/README.md).
 
 ### Live homelab readings in the conversation
 

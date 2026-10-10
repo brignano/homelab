@@ -1,0 +1,72 @@
+services:
+  # The act lane: Claude Agent SDK, read tools only (phase 3). See
+  # docs/design/tsd-personal-assistant.md and README.md here.
+  #
+  # No `ports:` and no Caddy route. The assistant bot is the only front door: it
+  # takes a message in #ask, POSTs it here over the assistant_concierge network,
+  # and renders the answer and any approval prompts. This container has no
+  # Discord connection of its own. Outbound only: api.anthropic.com, Google,
+  # and Home Assistant on the host.
+  concierge:
+    build: .
+    image: homelab-concierge:latest
+    # heartbeat.sh reads container_name from every compose file and reports it
+    # as homelab_container_running{required="yes"}, so this alerts when down.
+    container_name: concierge
+    restart: unless-stopped
+    environment:
+      # Workspace-scoped key from the `homelab` workspace in the Claude Console,
+      # which has its own monthly spend limit under the org cap. This repo is
+      # public: the key lives only in docker/concierge/.env.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?required}
+      # Shared with docker/assistant/.env. Without a matching token the bot is
+      # refused, and so is anything else that ever lands on this network.
+      CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:?required}
+
+      CONCIERGE_MODEL: ${CONCIERGE_MODEL:-claude-opus-5-5}
+      # Per-request ceilings. The workspace limit is the monthly backstop; these
+      # stop one runaway question from spending a meaningful part of it.
+      CONCIERGE_MAX_TURNS: ${CONCIERGE_MAX_TURNS:-12}
+      CONCIERGE_MAX_BUDGET_USD: ${CONCIERGE_MAX_BUDGET_USD:-0.50}
+      CONCIERGE_TIMEOUT_S: ${CONCIERGE_TIMEOUT_S:-300}
+      CONCIERGE_MAX_QUEUE: ${CONCIERGE_MAX_QUEUE:-3}
+      CONCIERGE_MAX_PROPOSALS: ${CONCIERGE_MAX_PROPOSALS:-3}
+
+      # Optional, and NOT `:?required`, for the same reason as the assistant's
+      # digest channel: `--google-auth` is the command that produces the refresh
+      # token, and Compose would refuse to run it if the token were required.
+      # config.py refuses a half-set Google config at startup. Blank = the
+      # calendar and mail tools are not registered at all.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+      GOOGLE_CALENDAR_IDS: ${GOOGLE_CALENDAR_IDS:-primary}
+
+      # Optional: the `concierge` HA user's token. Blank = no home_overview tool.
+      # Reads HA's MCP server, which only reports entities exposed to Assist —
+      # locks, alarm and garage are never exposed. See app/home.py.
+      HA_URL: ${HA_URL:-http://host.docker.internal:8123}
+      HA_TOKEN: ${HA_TOKEN:-}
+
+      TZ: ${TZ:-UTC}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      # The bundled Claude Code CLI: no telemetry, error reporting or update
+      # checks. Its only network peer should be the API.
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+      DISABLE_AUTOUPDATER: "1"
+    # A ceiling so a misbehaving agent process cannot crowd out Ollama. The
+    # TSD asks for `docker stats` to be measured with Ollama loaded; raise this
+    # if a real task gets near it.
+    mem_limit: 1g
+    # Home Assistant runs on host networking: this name resolves to the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - assistant
+
+# Created by the assistant stack, which is the front door. Bring that up first:
+# Compose will not create an external network.
+networks:
+  assistant:
+    external: true
+    name: assistant_concierge

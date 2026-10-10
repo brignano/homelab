@@ -1,0 +1,11 @@
+# Pinned for reproducible rebuilds on the LXC. Bump deliberately, not by drift.
+#
+# The Agent SDK wheel bundles the Claude Code CLI it drives (~100 MB, a native
+# binary — no Node.js in the image). Pinned to a release at least two weeks old.
+claude-agent-sdk==0.2.160
+# The SDK allows mcp>=1.23,<3. Pinned to 1.x: app/home.py uses
+# `streamable_http_client`, and 2.x is a major version nobody has read yet.
+mcp==1.30.0
+aiohttp==3.14.3
+# zoneinfo needs a tz database; python:*-slim doesn't ship one.
+tzdata==2024.2

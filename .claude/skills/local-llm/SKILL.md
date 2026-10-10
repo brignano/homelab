@@ -35,7 +35,7 @@ message is a one-off, a reply walks its reply chain, and a message in a thread
 reads the whole thread. Threads (and forum posts, which are threads) are the
 persistence unit for a named conversation. It needs the Message
 Content intent, narrowed in code to one channel and the user allowlist; the
-first check in `_should_handle` ignores bots (including itself), which is what
+first check in `_route` (bot.py) ignores bots (including itself), which is what
 prevents an infinite self-reply loop.
 
 `#chat` is given live homelab readings by **injection**, not by tool-calling: the
