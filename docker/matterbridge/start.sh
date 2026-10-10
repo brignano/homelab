@@ -82,6 +82,9 @@ fs.renameSync(path + ".tmp", path);
 matterbridge --add matterbridge-hass --no-ansi >/dev/null
 
 # --bridge: one Matter bridge with every exposed entity behind it, so Alexa
-# pairs once. --frontend 8283 is the default, named so the README, the
-# healthcheck and prometheus.yml have something to agree with.
-exec matterbridge --docker --bridge --bind "$BIND" --frontend 8283 --no-ansi
+# pairs once. --frontend 8283 is the default, named so the README and the
+# healthcheck have something to agree with.
+# --novirtual: without it Matterbridge adds its own Restart and Update
+# switches to the bridge, and Alexa would offer them. "Update" runs npm inside
+# the container, around the versions the Dockerfile pins.
+exec matterbridge --docker --bridge --novirtual --bind "$BIND" --frontend 8283 --no-ansi
