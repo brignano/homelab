@@ -27,6 +27,56 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Concierge: Claude in #ask with read tools (personal assistant, phase 3)
+
+**Goal:** Build the act lane from `docs/design/tsd-personal-assistant.md`:
+Claude, through the Agent SDK, answering in Discord with read access to the
+calendar, mail and home. It writes nothing, and a memory is saved only on an
+approved ✅.
+
+**Steps:**
+1. New stack `docker/concierge/`: an aiohttp server on the internal
+   `assistant_concierge` network with no published port, a bearer token
+   shared with the bot, and one Agent SDK task at a time. Model
+   `claude-opus-5-5`, capped at 12 turns and $0.50 per request.
+2. Tools: `calendar_events`, `mail_search`, `mail_read` (own Google sign-in,
+   `gmail.readonly` + `calendar.events.readonly`), `home_overview` (HA's
+   `GetLiveContext` only), and `remember`, which records a proposal and
+   nothing more.
+3. Tiers in `app/tiers.py`, enforced in a `PreToolUse` hook and in
+   `can_use_tool`, with `tools=[]`, nothing pre-approved,
+   `permission_mode="default"` and no settings files.
+4. Bot: `#ask` (open) and `#memory` (bot-only) in `guild.yml`. #ask uses the
+   same thread/reply/one-off scope as #chat and forwards to the concierge
+   (`app/concierge.py`). Proposals render from their arguments under ✅/❌,
+   and only an allowlisted ✅ within 15 minutes posts to #memory. The
+   assistant stack owns the new network.
+5. CI job `concierge` installs the real SDK and runs `tests/smoke.py`.
+
+**Issues encountered:**
+- `can_use_tool` alone is not a boundary. The SDK consults it only when no
+  allow rule or permission mode has already approved the call.
+- HA's MCP server publishes its write intents next to `GetLiveContext`.
+  Connected directly, they would have been registered with the agent and
+  refused only by the tier check.
+
+**Resolution:**
+- The tier check also runs in a `PreToolUse` hook, which runs before every
+  other step.
+- The agent gets our own `home_overview`, which calls only `GetLiveContext`.
+  The TSD has both amendments.
+
+**Notes / next steps:**
+- Not deployed. Waiting on the `homelab` Console workspace and key (setup is in
+  `docker/concierge/README.md`). Once merged, `heartbeat.sh` requires the
+  `concierge` container, so `hl-container-missing` fires about 10 minutes
+  after the box pulls until the stack is up.
+- On deploy: the assistant is recreated (new network and env) **before** the
+  concierge; then `--selftest`, then `docker stats` with Ollama loaded.
+- Phase 4 (write tools behind the mid-run approval gate) is next in the TSD.
+
+---
+
 ## 2026-10-10 — Home Assistant probed through Caddy
 
 **Goal:** The HA probe reached `host.docker.internal:8123` directly, around

@@ -70,6 +70,15 @@ services:
       HA_TOKEN: ${HA_TOKEN:-}
       HA_ENTITIES: ${HA_ENTITIES:-}
 
+      # Optional: #ask, the act lane (docs/design/tsd-personal-assistant.md,
+      # phase 3). All blank = off. The bot only forwards and renders; the agent
+      # and its Anthropic key live in docker/concierge/, reached over the
+      # `concierge` network below. CONCIERGE_TOKEN must match that stack's.
+      DISCORD_ASK_CHANNEL_ID: ${DISCORD_ASK_CHANNEL_ID:-}
+      DISCORD_MEMORY_CHANNEL_ID: ${DISCORD_MEMORY_CHANNEL_ID:-}
+      CONCIERGE_URL: ${CONCIERGE_URL:-http://concierge:8080}
+      CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:-}
+
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
@@ -107,6 +116,7 @@ services:
     networks:
       - ai
       - monitoring
+      - concierge
 
 # Joins the ai stack (ollama) and the monitoring stack (prometheus, loki).
 # Bring both of those up first — Compose will not create external networks.
@@ -117,3 +127,8 @@ networks:
   monitoring:
     external: true
     name: monitoring_monitoring
+  # Owned HERE, not by docker/concierge: the bot is the front door, and the
+  # watch lane must come up whether or not the act lane exists. The concierge
+  # joins it as external, so it is the one that waits. Nothing else joins it.
+  concierge:
+    name: assistant_concierge

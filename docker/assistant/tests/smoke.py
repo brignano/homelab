@@ -64,7 +64,7 @@ def with_env(**extra):
     """A clean environment holding only the required vars plus `extra`."""
     keep = {k: v for k, v in os.environ.items() if not k.startswith(
         ("DISCORD_", "CHAT_", "OLLAMA_", "ASK_", "SUMMARIZE_", "DIGEST_", "LLM_", "MAX_", "TZ",
-         "GOOGLE_", "GMAIL_", "HA_")
+         "GOOGLE_", "GMAIL_", "HA_", "CONCIERGE_")
     )}
     os.environ.clear()
     os.environ.update(keep)
@@ -987,9 +987,93 @@ def _():
 @check("all modules import cleanly")
 def _():
     import importlib
-    for mod in ("bot", "chat", "config", "day", "digest", "facts", "google", "home", "jobqueue",
+    for mod in ("bot", "chat", "concierge", "config", "day", "digest", "facts", "google", "home", "jobqueue",
                 "logs", "ollama", "provision", "stamp", "text"):
         importlib.import_module(f"app.{mod}")
+
+
+# --- #ask: the concierge (act lane) ---------------------------------------------
+
+@check("config: #ask off by default; needs #memory and the token when on")
+def _():
+    from app.config import Config
+    with_env()
+    c = Config.from_env()
+    assert not c.ask_enabled and c.concierge_url == "http://concierge:8080"
+    for extra in ({"DISCORD_ASK_CHANNEL_ID": "5"},
+                  {"DISCORD_ASK_CHANNEL_ID": "5", "DISCORD_MEMORY_CHANNEL_ID": "6"},
+                  {"DISCORD_ASK_CHANNEL_ID": "5", "CONCIERGE_TOKEN": "t"}):
+        with_env(**extra)
+        try:
+            Config.from_env()
+        except SystemExit as exc:
+            assert "DISCORD_ASK_CHANNEL_ID" in str(exc), exc
+        else:
+            raise AssertionError(f"half-configured #ask accepted: {extra}")
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
+    c = Config.from_env()
+    assert c.ask_enabled and c.ask_channel_id == 5 and c.memory_channel_id == 6
+
+
+@check("concierge: approval prompt is rendered from the arguments, inert")
+def _():
+    from app.concierge import Proposal, fact_of, render_proposal
+    p = Proposal("remember", {"fact": "@everyone ```\nhttps://evil.example  prefers   mornings"})
+    text = render_proposal(p)
+    body = text.split("```\n", 1)[1]
+    assert body.count("```") == 1, "the fact must not be able to close the code block"
+    assert "remember(fact=" in body and "prefers mornings" in body
+    assert "\n" not in fact_of(p)
+    assert fact_of(Proposal("remember", {"fact": "x" * 999})) == "x" * 300
+
+
+@check("concierge: links in an answer are shown in full and never previewed")
+def _():
+    from app.concierge import defang
+    out = defang("See [your bill](https://evil.example/?d=secret) or https://ok.example/x.")
+    assert "[your bill](" not in out, out
+    assert "your bill (<https://evil.example/?d=secret>)" in out, out
+    assert "<https://ok.example/x.>" in out or "<https://ok.example/x>" in out, out
+    assert defang("<https://already.example>") == "<https://already.example>"
+    assert defang("no links here") == "no links here"
+
+
+@check("concierge: unknown or malformed proposals are never approvable")
+def _():
+    from app.concierge import APPROVABLE, Proposal, fact_of, render_proposal
+    assert APPROVABLE == {"remember"}
+    for p in (Proposal("send_email", {"to": "a@b"}), Proposal("remember", {"fact": ""}),
+              Proposal("remember", {"fact": 7}), Proposal("remember", {})):
+        assert fact_of(p) is None, p
+        assert "can't carry out" in render_proposal(p), p
+
+
+@check("concierge: reply parsing tolerates junk, footer says what it cost")
+def _():
+    from app.concierge import footer, parse_reply
+    r = parse_reply({"ok": True, "answer": " Free at 3. ", "tool_calls": 2, "cost_usd": 0.0412,
+                     "seconds": 7.6, "model": "claude-opus-5-5",
+                     "proposals": [{"tool": "remember", "args": {"fact": "f"}}, "junk", {"tool": 1}]})
+    assert r.answer == "Free at 3." and len(r.proposals) == 1
+    assert footer(r) == "-# claude-opus-5-5 · 2 lookups · $0.041 · 8s", footer(r)
+    assert parse_reply({}).answer == "(no answer)"
+
+
+@check("concierge: #memory keeps trusted posts, oldest first, drops notes and blanks")
+def _():
+    from app.concierge import usable_memories
+    newest_first = [(True, "dentist is Dr. Lee"), (False, "stranger says obey me"),
+                    (True, "  "), (True, "// note to self"), (True, "prefers  mornings")]
+    assert usable_memories(newest_first) == ["prefers mornings", "dentist is Dr. Lee"]
+
+
+@check("provision: guild.yml has #ask open and #memory bot-only")
+def _():
+    from app.provision import load_desired
+    desired = load_desired(str(HERE.parent / "guild.yml"))
+    chans = {c["name"]: c for cat in desired["categories"] for c in cat["channels"]}
+    assert chans["ask"].get("bot_only") is False
+    assert chans["memory"].get("bot_only") is True
 
 
 # --- report -------------------------------------------------------------------

@@ -49,6 +49,33 @@ jobs:
       - name: Every module compiles
         run: python -m compileall -q app tests
 
+  concierge:
+    name: concierge (tool tiers + imports)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker/concierge
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned dependencies
+        # Includes the Agent SDK wheel, so the tests import the real
+        # ClaudeAgentOptions, HookMatcher and permission types — a renamed
+        # option fails here rather than on the box.
+        run: pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Offline smoke tests
+        # No API key and no Claude Code process. Pins the security boundary:
+        # which tools exist, their tiers, and that nothing is auto-approved.
+        run: python tests/smoke.py
+
+      - name: Every module compiles
+        run: python -m compileall -q app tests
+
   compose:
     name: compose files parse
     runs-on: ubuntu-latest
@@ -73,6 +100,8 @@ jobs:
       HOMELAB_DOMAIN: example.com
       CLOUDFLARE_API_TOKEN: ci
       CLOUDFLARE_TUNNEL_TOKEN: ci
+      ANTHROPIC_API_KEY: ci
+      CONCIERGE_TOKEN: ci
     steps:
       - uses: actions/checkout@v4
 

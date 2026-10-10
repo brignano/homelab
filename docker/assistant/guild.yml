@@ -66,3 +66,26 @@ categories:
           (right-click any message -> Create Thread). Prefix a line with // to
           leave a note without getting a reply. Slash commands work here too.
         bot_only: false
+
+      # The act lane: Claude, with read access to calendar, mail and the house.
+      # Same scope rules as #chat. Routed to docker/concierge/, never to Ollama.
+      # See docs/design/tsd-personal-assistant.md, phase 3.
+      - name: ask
+        topic: >-
+          Ask Claude about your calendar, email or home — it looks things up
+          before answering. Read-only: it cannot change anything, and a memory
+          is saved only when you press Approve. Same scope as #chat: a thread is
+          one conversation, a reply follows its chain, anything else is a
+          one-off. Costs a few cents per question.
+        bot_only: false
+
+      # One message per remembered fact, read by the concierge before every
+      # #ask task. Bot-only so nothing lands here unapproved — the bot posts a
+      # fact when you press Approve. As server owner you can still post one by
+      # hand or delete one; editing means delete and re-post.
+      - name: memory
+        topic: >-
+          What #ask remembers about you, one fact per message, read before every
+          question. Added only when you approve one. Delete a message to make it
+          forget that fact.
+        bot_only: true
