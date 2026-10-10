@@ -67,7 +67,7 @@
 # -----------------------
 # Reporting is the floor, not the whole answer. Where a bad version is cheap,
 # this job now also PULLS — see the image-pull section. Where it is not
-# (HL_NO_AUTOPULL: proxy, core, monitoring, homeassistant) the report is all you get, and a
+# (HL_NO_AUTOPULL: proxy, core, monitoring, homeassistant, desktops) the report is all you get, and a
 # person decides; `proxy` additionally has Renovate opening PRs for it, see
 # renovate.json5. Every automatic pull writes the digest it is replacing to
 # HL_DIGEST_LOG first, because a floating tag cannot be rolled back to.
@@ -295,13 +295,27 @@ in_list() {
 #               did not choose is one you cannot back out of. Update it by hand
 #               after reading the release notes.
 #
-# Everything else — ai, mcp, dashboard, desktops — pulls. Two of those are
-# version-pinned already, so a pull is a no-op for them until the pin moves,
-# which is the point: this is a mechanism, not a gamble.
+#   desktops    Added 2026-10-10, after it failed this job on and off for two
+#               weeks. The stack holds lscr.io/linuxserver/kali-linux:latest, a
+#               multi-GB desktop rebuilt upstream every few days, and pulling its
+#               layers trips the registry's per-minute limit ("retry-after: …,
+#               allowed: 44000/minute"), so most nights the whole stack's pull
+#               failed and Healthchecks went DOWN. That failure was also hiding a
+#               second problem: Renovate had bumped Sablier 1.8.1 → 1.18.0, and
+#               the first night the pull succeeded would have recreated it
+#               unattended, ten minor versions on, against a Caddy plugin pinned
+#               separately in docker/proxy/Dockerfile. Kali scaled to zero gains
+#               nothing from a nightly multi-GB pull, and Sablier is coupled to
+#               proxy, which is never auto-upgraded either. Both are now updated
+#               by hand; the report's "older than 90d" section says when.
+#
+# Everything else — ai, mcp, dashboard, jellyfin — pulls. dashboard and jellyfin
+# are version-pinned (jellyfin by digest), so a pull is a no-op for them until
+# the pin moves, which is the point: this is a mechanism, not a gamble.
 #
 # Stacks that build their own image are skipped entirely: there is no upstream
 # image to fetch, and `--pull` on their rebuild (below) refreshes the base.
-NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring homeassistant}"
+NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring homeassistant desktops}"
 AUTOPULL="${HL_AUTOPULL:-yes}"
 
 # Rollback insurance. Before anything is replaced, what is running is written
