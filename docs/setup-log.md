@@ -53,6 +53,13 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Notes / next steps:**
 - The host crontab entry is not tracked anywhere `health.sh` can see. If the
   pool climbs well above the guest again, check that entry first.
+- Correction, same day: `crontab -e` had not saved anything (`crontab -l`
+  printed "no crontab for root"). The job now lives in
+  `/etc/cron.d/fstrim-ct100` on `m5`, which one `echo` writes and one `cat`
+  checks. AGENTS.md "Disk" has the commands.
+- `docker restart grafana && ./scripts/health.sh` reported Grafana as dead,
+  because it was still starting. `health.sh` now retries refused connections
+  and 5xx responses for ~30s before calling it a FAIL.
 - Later the same day: added `hl-thinpool-full` to `rules.yml`. It fires when
   `local-lvm` is above 80% for 15m. The threshold is 80%, not 85%, because a
   full pool fails writes for every volume on it, and the VG has too little free

@@ -32,6 +32,12 @@ GRAFANA_URL="${GRAFANA_URL:-http://localhost:3000}"
 # Same list, same reason as heartbeat.sh: Sablier scales kali to zero by
 # design, and cloudflared has never been deployed.
 OPTIONAL_CONTAINERS="${HL_OPTIONAL_CONTAINERS:-kali-linux cloudflared}"
+# Grafana and Prometheus take a few seconds to answer after a restart, and
+# `docker restart grafana && ./scripts/health.sh` is the natural thing to type
+# after a deploy. Without this, that reads as "Grafana is dead". Refused
+# connections and 5xx are retried for ~30s; anything still failing after that
+# is real. Each attempt is still capped by -m.
+RETRY="--retry 6 --retry-delay 5 --retry-connrefused"
 DISK_WARN=75
 DISK_FAIL=85
 
@@ -52,7 +58,7 @@ in_words() {
 # series. Same shallow parse as probe-status.sh, for the same reason: the shape
 # is fixed and flat, and jq is not on the box.
 prom() {
-  _resp=$(curl -fsS -m 10 -G "$PROM_URL/api/v1/query" --data-urlencode "query=$1" 2>/dev/null) || return 1
+  _resp=$(curl -fsS -m 10 $RETRY -G "$PROM_URL/api/v1/query" --data-urlencode "query=$1" 2>/dev/null) || return 1
   printf '%s' "$_resp" \
     | sed 's/}[[:space:]]*,[[:space:]]*{[[:space:]]*"metric"/\n{"metric"/g' \
     | awk -v lbl="$2" '
@@ -122,7 +128,7 @@ if [ -z "$pw" ]; then
 else
   # Credentials on stdin, not argv, so they do not show up in `ps`.
   resp=$(printf 'user = "%s:%s"\n' "$user" "$pw" \
-    | curl -fsS -m 10 -K - \
+    | curl -fsS -m 10 $RETRY -K - \
         "$GRAFANA_URL/api/alertmanager/grafana/api/v2/alerts?active=true&silenced=false&inhibited=false" \
         2>/dev/null) || resp=""
   if [ -z "$resp" ]; then
