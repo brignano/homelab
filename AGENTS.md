@@ -142,10 +142,11 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 
 - Ollama auto-detects the **host's** logical CPU count (16), not the LXC's **6-core cgroup quota**. Left at its default it oversubscribes the quota, the kernel CFS-throttles the inference threads, and generation collapses to ~0.5 tok/s.
 - **Every model must pin `num_thread` ≤ the LXC core count** via a Modelfile in `docker/ai/models/`. Use `num_thread 4` (matches 6's ~16 tok/s while leaving 2 cores for other stacks).
-- Apply all tuned models at once with `docker/ai/load-models.sh` (runs `ollama create` for every `models/*.Modelfile`, rebuilding each tag in place — no Open WebUI change needed). For a single model: `ollama create <tag> -f docker/ai/models/<name>.Modelfile`.
-- There is no global Ollama thread env var, so this is per-model: adding a model means dropping a Modelfile in `docker/ai/models/` and re-running the loader.
 - **Never send `num_thread` as a request-time option.** Options passed on `/api/generate` override the Modelfile, so doing so silently undoes the pin above. The `assistant` stack deliberately omits it.
 - **One generation at a time.** `num_thread 4` of the 6-core quota means concurrent generations contend for the same cores and memory bandwidth — both crawl and the other stacks starve. Anything driving Ollama must serialize its requests; `docker/assistant/app/jobqueue.py` is the reference implementation (single worker, interactive prioritised over scheduled).
+
+Adding or reloading a model (`docker/ai/load-models.sh`) is in
+[`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
 
 ## Repo conventions
 - Each Docker stack lives in its own `docker/<name>/` directory with its own `docker-compose.yml` and `.env.example`.
@@ -210,34 +211,9 @@ through the Discord bot in `docker/assistant/` (push) rather than Open WebUI
 (pull). See [`docs/ai-strategy.md`](docs/ai-strategy.md) and
 [`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
 
-The Discord server layout is declarative: `docker/assistant/guild.yml` holds the
-categories/channels/permissions and `--provision` converges the server to it
-(idempotent, additive, never deletes — `#digest` is a log whose history matters).
-Creating the server, creating the bot, and restricting a command to a channel
-all require a *user* login and stay manual; everything else is in git.
-
-Conversational `#chat` keeps its memory **in Discord** — the bot re-reads
-messages as context rather than holding state, so it is restart-safe and what you
-see is exactly what the model sees. *Where* you type decides the scope: a plain
-message is a one-off, a reply walks its reply chain, and a message in a thread
-reads the whole thread. Threads (and forum posts, which are threads) are the
-persistence unit for a named conversation. It needs the Message
-Content intent, narrowed in code to one channel and the user allowlist; the
-first check in `_should_handle` ignores bots (including itself), which is what
-prevents an infinite self-reply loop.
-
-`#chat` is given live homelab readings by **injection**, not by tool-calling: the
-facts are collected deterministically before every reply, so the model never
-decides whether to look. Tool-calling is unreliable on a 3B — adding tools is the
-thing this repo has already tried and reverted twice. If collection fails the
-readings are omitted rather than served stale.
-
-Two rules when extending it:
-- **Python decides what's true; the model only writes prose.** Facts are queried
-  and thresholded in code — a 3B is not reliable at tool calling or at staying
-  faithful to retrieved sources.
-- **A model failure must degrade, not delete.** The digest posts its numbers even
-  when Ollama is down; unreadable data is reported, never rendered as "all clear".
+How the bot works (`guild.yml`, `#chat` memory and scope, live readings by
+injection) and the two rules for extending it are in
+[`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
 
 ## Planned / proposals (not yet deployed)
 - [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). The **job monitoring** half of the spec shipped early on 2026-09-19 — the dump now pings Healthchecks and publishes age/size/result as metrics, with alerts on the Discord `#alerts` webhook — because it was cheap and did not need the hardware. The backup half is what is still parked: monitoring a job is not the same as having a backup you can restore.
@@ -266,6 +242,7 @@ when the task matches.
 |-------|--------------|
 | [`alerting`](.claude/skills/alerting/SKILL.md) | Adding or changing an alert, probe, dashboard, textfile metric or scheduled job |
 | [`dashboard-visuals`](.claude/skills/dashboard-visuals/SKILL.md) | Touching `docker/dashboard/`, an icon, a colour, or any visual choice |
+| [`local-llm`](.claude/skills/local-llm/SKILL.md) | Touching `docker/ai/`, a Modelfile, `docker/assistant/`, or anything that calls Ollama |
 
 `/deploy` detects which containers are serving a stale single-file bind mount
 rather than naming them, because a hardcoded recreate list is a second copy of
