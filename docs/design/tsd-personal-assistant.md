@@ -275,10 +275,55 @@ earlier ones.
 | **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
 | **5. Car** | Tesla through HA's Tesla integration: battery, location, climate; "send destination to car" as a write | Yes, approved |
 
+### Status and next up
+
+The working checklist. A new session starts here: "read this TSD and do the
+next unchecked item". Tick items in the PR that finishes them. Items marked
+**(you)** are done in a UI or on the box, and nothing in git can do them.
+
+**Done**
+- [x] Phase 1 deployed and verified live (calendar, overlaps, mail; `source-*`
+      metrics in Prometheus).
+- [x] Phase 2 stack deployed. HA on host networking (brignano/homelab#116),
+      reverse-proxy trust set in the UI.
+- [x] Tesla Fleet integration added in HA (key served from brignano.io).
+- [x] iCloud calendar added to HA through the CalDAV integration.
+
+**Setup left on the box (you)**
+- [ ] IP banning on, threshold 10+ (Settings → System → Network). See
+      `docker/homeassistant/README.md` → "Exposure" for why not 5.
+- [ ] Pair the Honeywell T6 Pro thermostat: **HomeKit Device**, code from its
+      label. Remove it from Apple Home first if it is there.
+- [ ] Non-admin `digest` HA user and token; `HA_TOKEN` and `HA_ENTITIES` in
+      `docker/assistant/.env`; `--selftest` shows a **Home** line. Steps in
+      `docker/homeassistant/README.md` → "Connect the digest".
+- [ ] Tuya/Smart Life switches: pair by scanning HA's QR code from inside the
+      Smart Life app, not the phone camera.
+
+**Next to build**
+- [ ] **Digest: thermostat and iCloud calendar.** Needs the `climate.…` and
+      `calendar.…` entity IDs from the steps above. `climate` gets a rule in
+      `app/home.py`'s `notable()` (current temperature below 55 °F or above
+      85 °F, or HVAC mode `off`). iCloud events come from HA's
+      `calendar.*` entities and merge with Google's in `app/day.py`, still
+      rendered by code and never shown to the model.
+- [ ] **Phase 3, concierge with read tools.** Before it starts **(you)**:
+      create a `homelab` workspace in the Claude Console with its own spend
+      limit (e.g. $20, alert at $10), and a workspace-scoped key with a
+      1-year expiry, kept only in `docker/concierge/.env`. Also settle the
+      `/ask` open question below.
+- [ ] **Probe through Caddy.** Today's HA probe goes to HA through the host,
+      so a broken Caddy → HA route (`ha.` answering 502) pages nobody.
+- [ ] **Matter Server**, only once a Matter device is bought. HA's host
+      networking is in place, and the Matter Server container also needs host
+      networking and IPv6.
+
 ## Security
 
 - **Inbound:** none added. The concierge has no published port and joins only
-  the internal network it shares with the bot, plus the network HA is on.
+  the internal network it shares with the bot. It reaches HA, which runs on
+  host networking, as `host.docker.internal:8123` via `extra_hosts`, like the
+  assistant does.
   Home Assistant's UI goes behind Caddy on the tailnet like every other admin UI,
   and is **never** exposed through Cloudflare Tunnel.
 - **Injection:** assume every tool result is hostile. The watch lane has no
