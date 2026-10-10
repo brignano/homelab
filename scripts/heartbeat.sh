@@ -73,6 +73,9 @@ REQUIRED="grafana prometheus"
 # feature, not a fault — and `cloudflared` has never been deployed. Anything
 # else missing is worth an alert.
 OPTIONAL_CONTAINERS="${HL_OPTIONAL_CONTAINERS:-kali-linux cloudflared}"
+# Stacks that only become required once they are set up on this box, i.e. once
+# docker/<stack>/.env exists. See the inventory loop below.
+SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin}"
 # Written by the assistant after each scheduled digest; see app/stamp.py.
 DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
 
@@ -131,6 +134,15 @@ publish_metrics() {
       "$_compose" 2>/dev/null || true)
     for _name in $_declared; do
       if in_words "$_name" "$OPTIONAL_CONTAINERS"; then _req=no; else _req=yes; fi
+      # A stack that is committed but not yet set up on this box (no .env) is
+      # not expected to be running. Jellyfin merged ahead of the drive it needs;
+      # without this it would page every five minutes until drive day. Its .env
+      # appearing is the moment it becomes required, and the same signal the GPU
+      # check below waits for. Listed by name, not inferred for every stack, so
+      # a running stack that loses its .env still pages.
+      if in_words "$_stack" "$SETUP_GATED_STACKS" && [ ! -f "$REPO/docker/$_stack/.env" ]; then
+        _req=no
+      fi
       if in_words "$_name" "$_running_now"; then _up=1; else _up=0; fi
       metric homelab_container_running "$_up" \
         "$(metric_kv container "$_name")" \
