@@ -1,7 +1,7 @@
 services:
   # On-demand engine: starts/stops desktop containers based on request traffic.
   sablier:
-    image: sablierapp/sablier:1.8.1
+    image: sablierapp/sablier:1.18.0
     container_name: sablier
     command: ["start", "--provider.name=docker"]
     volumes:
