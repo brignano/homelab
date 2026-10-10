@@ -27,6 +27,60 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Matterbridge: Alexa controls Home Assistant, free and local
+
+**Goal:** Voice control through Alexa without paying for Home Assistant Cloud,
+and without putting HA on the internet.
+
+**Steps:**
+1. `docker/matterbridge/`: `luligu/matterbridge` 3.10.13 (tag and digest) with
+   `matterbridge-hass` 1.5.0 installed at build time. Host networking, since
+   Matter is mDNS on IPv6. `start.sh` refuses to start without IPv6, binds the
+   web UI to 127.0.0.1, writes the plugin config from `.env` on every start,
+   and registers the plugin. `stop_grace_period: 60s`, so the Matter storage is
+   written out before a stop.
+2. What Alexa sees: entities with the HA label `Alexa`, minus the lock, cover,
+   valve, alarm, button, remote and media_player domains, which are dropped
+   even when labelled. A non-admin `matterbridge` HA user holds the token.
+3. Wiring: `SETUP_GATED_STACKS` gains `matterbridge`, so it pages only once
+   `.env` exists. `HL_NO_AUTOHEAL` gains `matterbridge`, so a Renovate bump is
+   never rebuilt unattended at 04:00. A Renovate group covers the base image
+   and the plugin together. `HA_TOKEN` is added to CI's throwaway env. There is
+   no blackbox probe: the UI is on loopback, and a Docker healthcheck asks
+   `/health` instead.
+4. `docker/homeassistant/README.md`: the Alexa section now points here.
+   Nabu Casa is kept as a paid alternative in one paragraph.
+
+**Issues encountered:**
+- Home Assistant Matter Hub, the bridge most guides use, was archived in
+  January 2026. Matterbridge is maintained.
+- The web UI authenticates by client IP, has no password by default, shows
+  the HA token, and can install npm packages as root. Behind Caddy, one login
+  would unlock it for the whole LAN and tailnet. The first draft bound it to
+  docker0, but every container could reach that, and so could a LAN host with
+  a route to 172.17.0.1. It is on 127.0.0.1 now, opened over SSH, with "set a
+  password" as a deploy step before pairing.
+- The plugin reads `reconnectRetries: 0` as never reconnect. It is set to
+  effectively forever, since HA restarts on every update.
+- Matterbridge's own Docker image installs plugins at runtime from the UI, so
+  their version is outside git and a recreate loses it. Built here instead.
+
+**Resolution:**
+- Tested in a sandbox Docker daemon without IPv6: the image builds; `start.sh`
+  stops with its IPv6 message; the config is written mode 600 from `.env` (a token with quotes and
+  backslashes survives); the plugin registers once and is a no-op after; and
+  the frontend binds only 127.0.0.1. Matter itself could not start
+  without IPv6, so pairing with an Echo is untested.
+
+**Notes / next steps:**
+- Before deploying, check IPv6 on CT 100 (`docker/matterbridge/README.md` →
+  Before you start), then create the HA user and label, deploy, and pair
+  using the code in the logs.
+- Not verified: that a non-admin HA user can read the device, entity and label
+  registries the plugin lists. If the logs show `unauthorized`, that is why.
+
+---
+
 ## 2026-10-10 — Jellyfin phase 1: iGPU passed through to CT 100
 
 **Goal:** Give CT 100 the Ryzen's Radeon iGPU so Jellyfin can transcode on it

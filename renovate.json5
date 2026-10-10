@@ -77,8 +77,8 @@
   // review rather than automation.
   automerge: false,
 
-  // custom.regex is for the xcaddy plugin below; without it that pin is
-  // invisible to every manager Renovate has.
+  // custom.regex is for the xcaddy plugin and the Matterbridge HA plugin below;
+  // without it those pins are invisible to every manager Renovate has.
   enabledManagers: ["dockerfile", "docker-compose", "custom.regex"],
 
   packageRules: [
@@ -103,6 +103,16 @@ read, never as a side effect of the nightly auto-pull.",
       matchFileNames: ["docker/jellyfin/**"],
       enabled: true,
       pinDigests: true,
+    },
+    {
+      description: "Matterbridge (docker/matterbridge/): the base image, pinned \
+by tag and digest, and the matterbridge-hass plugin in the Dockerfile's ARG. One \
+group, because each plugin release names the Matterbridge it needs -- bumped \
+apart, the rebuilt image can fail to load the plugin and Alexa loses the house.",
+      matchFileNames: ["docker/matterbridge/**"],
+      enabled: true,
+      pinDigests: true,
+      groupName: "matterbridge",
     },
     {
       description: "AdGuard is the household's DNS. Its bumps arrive alone \
@@ -149,6 +159,18 @@ docker/desktops/ is its own separate version).",
         "--with\\s+(?<depName>github\\.com/[^\\s@]+)@(?<currentValue>v[^\\s\\\\]+)",
       ],
       datasourceTemplate: "go",
+    },
+    {
+      description: "The Home Assistant plugin, installed with npm in \
+docker/matterbridge/Dockerfile. Pinned in an ARG, which no built-in manager \
+reads. Grouped with the base image by the packageRule above.",
+      customType: "regex",
+      managerFilePatterns: ["/^docker/matterbridge/Dockerfile$/"],
+      matchStrings: [
+        "ARG MATTERBRIDGE_HASS_VERSION=(?<currentValue>\\S+)",
+      ],
+      depNameTemplate: "matterbridge-hass",
+      datasourceTemplate: "npm",
     },
   ],
 }

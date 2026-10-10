@@ -18,7 +18,7 @@ the read-only half of it. The digest reads the states you choose and puts a
 | State | the `homeassistant_config` volume (users, tokens, integrations, history) |
 | Owned by git | `config/configuration.yaml` only, mounted read-only. Reverse-proxy trust is a UI setting now: see "Fresh volume" |
 | Networking | `network_mode: host`, for HomeKit, Matter and discovery. See "Host networking" |
-| Voice | Alexa, through Home Assistant Cloud (Nabu Casa). Outbound only: see "Alexa". Echos as speakers through Alexa Media Player (HACS): see "Echos as speakers"
+| Voice | Alexa, through Matterbridge over the LAN ([`../matterbridge/`](../matterbridge/README.md)). Echos as speakers through Alexa Media Player (HACS): see "Echos as speakers" |
 | Updates | by hand. On `HL_NO_AUTOPULL`, because HA's database migrations are one-way |
 
 ## Bring it up
@@ -214,61 +214,26 @@ their pairings, so switching back to host mode later restores them.
 
 ## Alexa
 
-Alexa reaches HA through **Home Assistant Cloud** (Nabu Casa), a paid
-subscription. HA keeps an **outbound** connection open to Nabu Casa, and Alexa's
-requests come back down it. Nothing on the box accepts a connection from the
-internet, so `ha.` stays off the Cloudflare Tunnel. That is why this was picked
-over the two free routes:
+Alexa controls HA through **[Matterbridge](../matterbridge/README.md)**. It
+offers the entities you label **Alexa** to an Echo as Matter devices, over the
+LAN. It's free, and HA stays off the internet. Setup, what Alexa may see, and
+pairing are all in that README.
 
-- **A self-built Alexa skill (AWS Lambda)** needs HA on public HTTPS for both
-  the Lambda and Alexa's account linking. That means putting `ha.` on the
-  tunnel, which this stack rules out.
+Why not the other routes:
+
+- **Home Assistant Cloud (Nabu Casa)** works and needs no container, but it
+  is a paid subscription and relays every command through Nabu Casa. If you
+  ever switch to it, unlink Matterbridge first, or every device shows up twice.
+- **A self-built Alexa skill (AWS Lambda)** needs HA on public HTTPS for the
+  Lambda and for Alexa's account linking. That means putting `ha.` on the
+  Cloudflare Tunnel, which this stack rules out.
 - **`emulated_hue`** stays on the LAN, but newer Echos only look for a Hue
   bridge on port 80, which Caddy holds. It also only does on/off and dimming.
-
-### Set it up
-
-1. **Settings → Home Assistant Cloud.** Create a Nabu Casa account (or sign
-   in) and start the subscription.
-2. On the same page, turn on **Alexa**. Leave **Remote control** off: Alexa
-   does not need it, and it would make HA's login page reachable from the
-   internet through Nabu Casa.
-3. **Settings → Voice assistants → Expose.** Turn off **Expose new entities**
-   for Alexa first, then add only what Alexa should see. See "What to expose".
-4. In the **Alexa app: More → Skills & Games**, find **Home Assistant**,
-   enable it and sign in with the **Nabu Casa** account. The account linking
-   is to Nabu Casa, not to an HA user, so no HA token is handed out.
-5. Say "Alexa, discover devices", or tap **Devices → + → Add device → Other →
-   Discover devices** in the app.
-
-After exposing something new later, run discovery again. Renaming an entity in
-HA renames it in Alexa too, which can break Alexa routines that used the old
-name.
-
-### What to expose
-
-Lights, switches, scenes, scripts, the thermostat and read-only sensors. **Not
-locks, the garage door or the alarm panel.** HA cannot narrow what Alexa does
-with an exposed entity, and anyone in earshot of an Echo, or a TV playing the
-right phrase, is a user. It is the same line the concierge draws
-(`docs/design/tsd-personal-assistant.md`). If you want the garage closed by
-voice, expose a **script** that only closes it, never the cover itself.
-
-### What it changes
-
-- **Nabu Casa sees the exposed entities' states and every command Alexa
-  sends.** Unexposed entities never leave the box.
-- **The subscription lives in the volume** (`.storage/cloud`). On a fresh
-  volume, sign in to Home Assistant Cloud again and redo the Expose list.
-  The Alexa app's link to Nabu Casa survives.
-- **If HA is down, Alexa says the device is not responding.** No alert covers
-  the cloud link itself: the blackbox probes watch HA
-  (`host.docker.internal:8123`) and the `ha.` route, not Nabu Casa.
 
 ### Echos as speakers: Alexa Media Player
 
 The section above is Alexa controlling HA. This is the other direction: HA
-making an Echo speak ("garage has been open 2h"). Nabu Casa cannot do that.
+making an Echo speak ("garage has been open 2h"). Matter cannot do that.
 [Alexa Media Player](https://github.com/alandtse/alexa_media_player) can. It is
 a **community integration on Amazon's unofficial API**, installed through
 HACS. Amazon can break it without notice, so nothing that matters may depend
@@ -386,8 +351,7 @@ until `tsd-backups-and-monitoring.md` lands.
 | Digest says **Home** `_not read_ (token rejected (401))` | The `digest` user's token was deleted or the user was removed. Make a new token, update `HA_TOKEN`, recreate the assistant, then `/digest`. |
 | An entity shows **not found** | The entity ID in `HA_ENTITIES` is wrong, or the device was renamed in HA. |
 | `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
-| Alexa: "device is not responding" | HA is down, or its cloud link is. **Settings → Home Assistant Cloud** shows whether it is connected; sign in again if it logged out. |
-| Alexa does not know a device | It is not in **Settings → Voice assistants → Expose → Alexa**, or discovery has not run since it was added. Expose it, then "Alexa, discover devices". |
+| Alexa: "device is unresponsive", or does not know a device | Alexa goes through Matterbridge: see its [troubleshooting](../matterbridge/README.md#troubleshooting). |
 | Echos are `unavailable` | Alexa Media Player lost its Amazon session. Look for a notification asking for a CAPTCHA or a new login, then **Settings → Devices & services → Alexa Media Player → Reconfigure**. Right after an HA update, check HACS for an update first. |
 | An announcement runs with no error and nothing plays | **Communications** is off for that Echo in the Alexa app, or it is on Do Not Disturb. |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |

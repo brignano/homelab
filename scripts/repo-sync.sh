@@ -93,6 +93,12 @@
 # resolves names through the thing that is down. CI validating the Caddyfile
 # reduces that risk; it cannot know whether AdGuard comes back.
 #
+# `matterbridge` is there too. It builds its own image, so a 4am heal is a
+# rebuild with whatever Renovate last bumped, and a Matterbridge release the
+# plugin cannot load leaves Alexa unable to reach the house with nobody awake
+# to notice. Its pairing lives in a volume a bad start can corrupt, and the
+# fix for that is re-pairing by hand. Rebuild it when you are there to check.
+#
 # Auto-healing is also skipped entirely when the pull failed — a tree in an
 # unknown state is not one to deploy from.
 #
@@ -110,7 +116,7 @@ MAX_CHARS=3800
 . "$(dirname "$0")/healthchecks.sh"
 
 # Stacks never restarted automatically — see "Self-healing" above.
-NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy}"
+NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy matterbridge}"
 # Set HL_AUTOHEAL=no for report-only behaviour.
 AUTOHEAL="${HL_AUTOHEAL:-yes}"
 # Verification after a restart: attempts x delay. Compose needs a few seconds to

@@ -123,11 +123,13 @@ Discord still answers *does this need me now*; Grafana answers *is it still
 true*, which is the question you have the next morning. See the **Deployment &
 Drift** and **Scheduled Jobs & Backups** dashboards.
 
-One stack is excluded by default and should stay that way: `proxy` contains
+Two stacks are excluded by default and should stay that way. `proxy` contains
 AdGuard, which is the household's DNS. A 4am restart that does not come back
 takes the network down until someone notices, and every tool you would reach for
-to diagnose it resolves names through the thing that is down. It is reported
-instead, with the command to run. Adjust with `HL_NO_AUTOHEAL`, or set
+to diagnose it resolves names through the thing that is down. `matterbridge`
+rebuilds its own image, and a bad rebuild leaves Alexa unable to reach the
+house, with re-pairing as the fix. Both are reported instead, with the command
+to run. Adjust with `HL_NO_AUTOHEAL`, or set
 `HL_AUTOHEAL=no` for report-only.
 
 ## Quick start

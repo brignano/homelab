@@ -1,0 +1,52 @@
+services:
+  # Matterbridge — Home Assistant entities, offered to Alexa as Matter devices.
+  # See README.md. The free, local replacement for Home Assistant Cloud's Alexa
+  # skill: an Echo pairs with this bridge over the LAN, and nothing reaches in
+  # from the internet.
+  #
+  # Host networking, for the same reason as homeassistant: Matter discovery is
+  # mDNS multicast on the LAN (and on IPv6), which a Docker bridge does not
+  # carry. What that opens on CT 100's interfaces:
+  #
+  #   UDP 5540  Matter itself. Every message is authenticated and encrypted
+  #             to a paired controller. Until Alexa pairs, anyone on the LAN
+  #             with the pairing code (only in this container's logs) could
+  #             pair instead, so pair soon after the first start.
+  #   UDP 5353  mDNS, shared with Home Assistant (both use SO_REUSEADDR).
+  #   TCP 8283  The web UI, on 127.0.0.1 only. No Caddy route, no probe.
+  #             README → "The web UI" says why and how to open it.
+  #
+  #   HA        ← ws://127.0.0.1:8123, as the non-admin `matterbridge` user
+  #
+  # Watched by heartbeat.sh's container inventory (homelab_container_running),
+  # setup-gated (SETUP_GATED_STACKS): not must-be-running until
+  # docker/matterbridge/.env exists on the box. On HL_NO_AUTOHEAL: repo-sync
+  # reports it stale but never rebuilds it unattended (scripts/repo-sync.sh).
+  matterbridge:
+    build: .
+    image: homelab-matterbridge:latest
+    container_name: matterbridge
+    restart: unless-stopped
+    # Matterbridge flushes the Matter fabric storage on shutdown. Compose's 10s
+    # then SIGKILL can cut that write short, and corrupt storage means pairing
+    # Alexa again. Upstream's own Docker docs use 60s.
+    stop_grace_period: 60s
+    network_mode: host
+    cpus: 1
+    mem_limit: 512m
+    environment:
+      TZ: ${TZ:-UTC}
+      HA_TOKEN: ${HA_TOKEN:?set HA_TOKEN in docker/matterbridge/.env (README → Home Assistant user)}
+      # Both on host networking, so HA is on this container's loopback.
+      HA_URL: ${HA_URL:-ws://127.0.0.1:8123}
+      # The HA label that opts an entity in. Nothing without it reaches Alexa.
+      HA_LABEL: ${HA_LABEL:-Alexa}
+    volumes:
+      # Matterbridge's home directory: the Matter fabric (Alexa's pairing),
+      # device identities, and the frontend password. Losing it means removing
+      # the bridge from the Alexa app and pairing again. No backups yet
+      # (AGENTS.md → Planned).
+      - data:/root
+
+volumes:
+  data:
