@@ -27,6 +27,36 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Matterbridge first deploy: admin user, no virtual switches
+
+**Goal:** Get `matterbridge` talking to Home Assistant and ready to pair.
+
+**Steps:**
+1. With the IPv6 check fixed it started, connected to HA 2026.10.1 and read
+   every registry, then logged `Error subscribing to Home Assistant events:
+   Unauthorized`.
+2. The `matterbridge` HA user is now an administrator. The README said
+   non-admin, and was wrong.
+3. `start.sh` passes `--novirtual`.
+
+**Issues encountered:**
+- matterbridge-hass 1.5.0 subscribes to every event (`subscribe_events` with no
+  `event_type`). HA allows that for admins only, so a non-admin connects,
+  fetches, and then never sees a state change. That was the open question from
+  the first entry.
+- The log showed Matterbridge's own `RestartMatterbridge` and
+  `UpdateMatterbridge` switches on the bridge. Alexa would have offered both,
+  and Update runs npm inside the container, around the pinned versions.
+
+**Resolution:**
+- Admin token accepted. It already could operate every entity; it now can also
+  change HA's config. It stays on CT 100 only (`.env`, a mode-600 file in the
+  volume, the loopback UI).
+- Pairing code appears. Pair after this is deployed, so Alexa never sees the
+  virtual switches.
+
+---
+
 ## 2026-10-11 — Matterbridge: the IPv6 check refused every host
 
 **Goal:** First deploy of `docker/matterbridge/`.

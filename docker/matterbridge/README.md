@@ -13,7 +13,7 @@ Alexa's commands stay on the LAN instead of going through a cloud relay.
 |---|---|
 | Image | built here: `luligu/matterbridge` 3.10.13 + `matterbridge-hass` 1.5.0, both pinned (`Dockerfile`) |
 | Networking | `network_mode: host` (Matter needs LAN multicast and IPv6) |
-| Talks to | Home Assistant at `ws://127.0.0.1:8123`, as the non-admin `matterbridge` user |
+| Talks to | Home Assistant at `ws://127.0.0.1:8123`, as the `matterbridge` user (an administrator: see "Home Assistant user") |
 | Exposes | Matter on UDP 5540 (LAN and tailnet) and mDNS on 5353 (LAN). The web UI on `127.0.0.1:8283` only |
 | What Alexa sees | entities with the HA label **Alexa**, minus locks, covers (garage), valves and the alarm, always |
 | State | the `data` volume: Alexa's pairing, device identities, the web UI password |
@@ -48,13 +48,21 @@ Alexa's commands stay on the LAN instead of going through a cloud relay.
 
 ## Home Assistant user
 
-Like the digest, Matterbridge gets an HA user of its own, as narrow as HA
-allows. HA has no read-only or per-entity token: this token can operate
-anything in the house. What keeps the locks out of Alexa is the label filter and
-the domain blacklist in `start.sh`, not the token.
+Matterbridge gets an HA user of its own, and it has to be an
+**administrator**. The plugin subscribes to every HA event (`subscribe_events`
+with no event type), and HA only lets admins do that. A non-admin user
+connects and reads the registries fine, then fails with `Error subscribing to
+Home Assistant events: Unauthorized` and never sees a state change. Found on
+the first deploy, 2026-10-10.
 
-1. **Settings → People → Users → Add user.** Name it `matterbridge`, leave
-   **Administrator** off, and turn on **Can only log in from the local
+So this token can do anything in HA, configuration included. It lives in
+`.env` and in a mode-600 file in the `data` volume, both on CT 100 only, and
+the web UI that would show it is on loopback behind a password. What keeps
+the locks out of Alexa is the label filter and the domain blacklist in
+`start.sh`, not the token.
+
+1. **Settings → People → Users → Add user.** Name it `matterbridge`, turn
+   **Administrator** on, and turn on **Can only log in from the local
    network**.
 2. Log in as `matterbridge` once (a private window is easiest). Open **Profile →
    Security → Long-lived access tokens → Create token**, name it `matterbridge`,
@@ -162,6 +170,8 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 |---|---|
 | Exits at once: "this host has no IPv6" | `grep eth0 /proc/net/if_inet6` prints nothing on CT 100: IPv6 is off. See "Before you start" step 2. (Before 2026-10-11, `start.sh` said this on every host, even with IPv6 on. `git pull` and rebuild.) |
 | Alexa: "device is unresponsive" for everything | Matterbridge or HA is down. `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. |
+| `Error subscribing to Home Assistant events: Unauthorized` | The `matterbridge` user is not an administrator. Turn it on in **Settings → People → Users**. The token keeps working, then `docker restart matterbridge`. |
+| `Label "Alexa" not found in Home Assistant` | No HA label named exactly `Alexa` (case matters). Create it, label some entities, `docker restart matterbridge`. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
 | An entity is not in Alexa | It lacks the `Alexa` label, its domain is blacklisted (lock, cover, valve, alarm, button, remote, media player), or it is hidden in HA. Fix it, then `docker restart matterbridge`. |
 | Alexa cannot find the bridge while pairing | The phone and the Echo must be on the same LAN as CT 100, not the tailnet. Check `docker logs matterbridge` for mDNS errors. |

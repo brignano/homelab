@@ -16,7 +16,7 @@ services:
   #   TCP 8283  The web UI, on 127.0.0.1 only. No Caddy route, no probe.
   #             README → "The web UI" says why and how to open it.
   #
-  #   HA        ← ws://127.0.0.1:8123, as the non-admin `matterbridge` user
+  #   HA        ← ws://127.0.0.1:8123, as the `matterbridge` user (an HA admin: README)
   #
   # Watched by heartbeat.sh's container inventory (homelab_container_running),
   # setup-gated (SETUP_GATED_STACKS): not must-be-running until
