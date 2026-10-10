@@ -592,6 +592,56 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [26] }
 
+      # --- The newest Postgres dump did not restore ---
+      #
+      # pg-backup.sh proves a dump was written; scripts/pg-restore-test.sh
+      # restores the newest one into a throwaway server every Sunday and proves
+      # it can be read back. This fires when the last test failed: a truncated
+      # dump, a statement that errors on replay, or counts that do not match.
+      # Whether the test still RUNS is Healthchecks' job
+      # (HEALTHCHECKS_PG_RESTORE_TEST_URL), because a test that never runs
+      # leaves no metric behind to alert on.
+      #
+      # Re-run by hand once fixed: ./scripts/pg-restore-test.sh
+      - uid: hl-restore-test-failed
+        title: PostgreSQL restore test failed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "The newest Postgres dump failed its restore test; {{ if lt $values.B.Value 0.0 }}it has never passed{{ else }}last pass was {{ printf \"%.0f\" $values.B.Value }}d ago{{ end }}"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_pg_restore_test_success
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              # `or vector(-1)`: the timestamp exists only once a test has passed.
+              # Without a value here, a failing FIRST run (right after deploy, the
+              # likeliest time) would put the rule in NoData, which is OK, i.e.
+              # silent. -1 means "never passed" to the summary.
+              expr: (time() - homelab_pg_restore_test_timestamp_seconds) / 86400 or on() vector(-1)
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- A container is serving a config file the repo has replaced ---
       #
       # The six-day bug. A single-file bind mount is pinned to an inode at

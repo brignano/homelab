@@ -1,7 +1,7 @@
 # TSD — Backups, restore testing & job monitoring
 
-**Status:** 📝 revised draft (2026-10-10), awaiting approval. Phase 0 needs no
-hardware; Phase 1 is still blocked on the backup drive.
+**Status:** 🚧 Phase 0 built (2026-10-10). Phases 1–3 approved in outline; Phase 1
+waits on the backup drive (ordered 2026-10-10).
 **Goal:** Give the lab backups that can actually be restored. Today it has none
 that cover the data that matters. Then prove they restore on a schedule, and
 make every backup job report from off the box when it stops running.
@@ -65,10 +65,14 @@ marked ❌ that are not "acceptable" — a few GB at most.
 
 ### Phase 0 — now, no hardware
 
-1. **Prove the dump we have restores.** A weekly job in CT 100 (`scripts/pg-restore-test.sh`):
-   newest dump → `psql` into a scratch container → sanity query → tear down.
-   Pings its own Healthchecks check, writes `homelab_restore_test_*` via
-   `metrics.sh`, added to `install-cron.sh`. This is the "tier B" restore test
+1. ✅ **Prove the dump we have restores.** Built: `scripts/pg-restore-test.sh`,
+   Sundays 03:00. `gzip -t` → a scratch container from the core stack's own
+   image (no network, 1 CPU, 512 MB) → replay → databases, roles and tables
+   compared with the dump → removed. Any error other than the one
+   `role "postgres" already exists` that every pg_dumpall replay produces
+   fails it. Pings `HEALTHCHECKS_PG_RESTORE_TEST_URL` (period 7d, grace 1d),
+   writes `homelab_pg_restore_test_*`, alerts as `hl-restore-test-failed`,
+   and is in `install-cron.sh`. This is the "tier B" restore test
    from June, shipped early for the same reason the job monitoring was: it
    needs no hardware, and a backup never restored is a hope.
 2. **Settle the decisions below**, so SSD day is mechanical.
@@ -201,7 +205,7 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
    few GB, which likely fits in B2's free 10 GB, so the cost is about $0 to
    $1 a month. Without it, a fire or a theft takes the lab and its only backup
    together.
-4. **Approve Phase 0** (the Postgres restore test) to build now.
+4. ~~Approve Phase 0~~ — built 2026-10-10.
 
 ## Rejected alternatives
 
