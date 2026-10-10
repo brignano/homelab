@@ -60,6 +60,15 @@ services:
       GOOGLE_CALENDAR_IDS: ${GOOGLE_CALENDAR_IDS:-primary}
       GMAIL_LABELS: ${GMAIL_LABELS:-INBOX,UNREAD,CATEGORY_PERSONAL}
 
+      # Optional: the "Home" line in Today — Home Assistant states for the
+      # entities you list. Both blank = off. The token is a dedicated non-admin
+      # HA user's long-lived token; HA cannot make a token read-only, so the
+      # read-only promise is in app/home.py (GET only, these entities only).
+      # See docker/homeassistant/README.md. Reached over the proxy network.
+      HA_URL: ${HA_URL:-http://homeassistant:8123}
+      HA_TOKEN: ${HA_TOKEN:-}
+      HA_ENTITIES: ${HA_ENTITIES:-}
+
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
@@ -94,9 +103,14 @@ services:
     networks:
       - ai
       - monitoring
+      - proxy
 
-# Joins the ai stack (ollama) and the monitoring stack (prometheus, loki).
-# Bring both of those up first — Compose will not create external networks.
+# Joins the ai stack (ollama), the monitoring stack (prometheus, loki), and the
+# proxy stack's network, which is where Home Assistant is reachable by name.
+# Bring those up first — Compose will not create external networks. The proxy
+# network is joined even with Home Assistant off: it always exists (it is the
+# household's DNS), and a network that depends on whether a feature is enabled
+# would make the compose file depend on .env.
 networks:
   ai:
     external: true
@@ -104,3 +118,6 @@ networks:
   monitoring:
     external: true
     name: monitoring_monitoring
+  proxy:
+    external: true
+    name: proxy_proxy

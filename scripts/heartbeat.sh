@@ -172,22 +172,23 @@ publish_metrics() {
     fi
   fi
 
-  # When the digest last READ each Google source (the "Today" section), for
-  # hl-google-stale. Same rules as the digest stamp, for the same reasons. The
+  # When the digest last READ each of its sources (the "Today" section: Google
+  # calendar and mail, Home Assistant), for hl-google-stale, whose uid predates
+  # Home Assistant. Same rules as the digest stamp, for the same reasons. The
   # bot writes one file per enabled source, armed at startup so a sign-in that
   # never worked still ages into an alert. An absent file means the source is
   # off, and publishes nothing.
   # See docker/assistant/app/day.py and docs/design/tsd-personal-assistant.md.
   _state_dir=$(dirname "$DIGEST_STAMP")
   _source_help=0
-  for _source in calendar mail; do
+  for _source in calendar mail home; do
     _f="$_state_dir/source-$_source"
     [ -r "$_f" ] || continue
     _ts=$(head -c 32 "$_f" 2>/dev/null | tr -dc '0-9' || true)
     if [ -n "$_ts" ] && [ "$_ts" -gt 0 ] 2>/dev/null; then
       if [ "$_source_help" -eq 0 ]; then
         metric_help homelab_assistant_source_timestamp_seconds gauge \
-          "Unix time the digest last read this Google source successfully"
+          "Unix time the digest last read this source (Google, Home Assistant) successfully"
         _source_help=1
       fi
       metric homelab_assistant_source_timestamp_seconds "$_ts" "$(metric_kv source "$_source")"

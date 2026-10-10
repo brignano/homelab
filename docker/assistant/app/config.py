@@ -127,6 +127,30 @@ def _google() -> tuple[str, str, str]:
 GOOGLE_SOURCES = ("calendar", "mail")
 
 
+def _home() -> tuple[str, tuple[str, ...]]:
+    """HA_TOKEN and HA_ENTITIES together, or neither.
+
+    The entity list is required, not a filter with an "everything" default.
+    The digest reads only what you named. A token alone would mean either
+    reading every entity in the house or reading none, and neither is what
+    someone who set a token meant.
+    """
+    token = os.environ.get("HA_TOKEN", "").strip()
+    entities = _list("HA_ENTITIES", "")
+    if token and not entities:
+        raise SystemExit(
+            "config error: HA_TOKEN is set but HA_ENTITIES is empty.\n"
+            "  List the entity IDs the digest should watch, e.g. "
+            "HA_ENTITIES=cover.garage_door,lock.front_door"
+        )
+    if entities and not token:
+        raise SystemExit("config error: HA_ENTITIES is set but HA_TOKEN is not — see docker/homeassistant/README.md")
+    bad = [e for e in entities if "." not in e]
+    if bad:
+        raise SystemExit(f"config error: HA_ENTITIES has {', '.join(bad)} — entity IDs look like domain.name")
+    return token, entities
+
+
 @dataclass(frozen=True)
 class Config:
     # --- Discord ---
@@ -191,6 +215,13 @@ class Config:
     # gmail.metadata scope does not allow `q`.
     gmail_labels: tuple[str, ...] = ("INBOX", "UNREAD", "CATEGORY_PERSONAL")
 
+    # --- Home Assistant (the digest's "Home" line; blank = off) ---
+    # See docs/design/tsd-personal-assistant.md, phase 2, and app/home.py for
+    # why this token is read-only by code, not by capability.
+    ha_url: str = "http://homeassistant:8123"
+    ha_token: str = ""
+    ha_entities: tuple[str, ...] = ()
+
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
     @classmethod
@@ -209,6 +240,7 @@ class Config:
             )
 
         g_id, g_secret, g_refresh = _google()
+        ha_token, ha_entities = _home()
         sources = _list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES))
         unknown = [x for x in sources if x not in GOOGLE_SOURCES]
         if unknown:
@@ -253,8 +285,21 @@ class Config:
             google_calendar_ids=_list("GOOGLE_CALENDAR_IDS", "primary") or ("primary",),
             gmail_labels=_list("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL")
             or ("INBOX", "UNREAD"),
+            ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://homeassistant:8123",
+            ha_token=ha_token,
+            ha_entities=ha_entities,
         )
 
     @property
     def google_enabled(self) -> bool:
         return bool(self.google_refresh_token and self.google_sources)
+
+    @property
+    def home_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_entities)
+
+    @property
+    def day_sources(self) -> tuple[str, ...]:
+        """Every source the Today section reads, in render order."""
+        return (self.google_sources if self.google_enabled else ()) + (
+            ("home",) if self.home_enabled else ())

@@ -289,13 +289,19 @@ in_list() {
 #               not get automatic major versions. Pinning Grafana to a major
 #               would let it back in; see the TSD.
 #
+#   homeassistant
+#               Same shape as core. HA migrates its recorder database one way
+#               on upgrade and ships breaking changes monthly, so a version you
+#               did not choose is one you cannot back out of. Update it by hand
+#               after reading the release notes.
+#
 # Everything else — ai, mcp, dashboard, desktops — pulls. Two of those are
 # version-pinned already, so a pull is a no-op for them until the pin moves,
 # which is the point: this is a mechanism, not a gamble.
 #
 # Stacks that build their own image are skipped entirely: there is no upstream
 # image to fetch, and `--pull` on their rebuild (below) refreshes the base.
-NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring}"
+NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring homeassistant}"
 AUTOPULL="${HL_AUTOPULL:-yes}"
 
 # Rollback insurance. Before anything is replaced, what is running is written

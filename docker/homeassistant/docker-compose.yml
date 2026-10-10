@@ -1,0 +1,84 @@
+services:
+  # Home Assistant — the hub for everything physical in the house: doors, locks,
+  # sensors, cameras, presence, and later the car. One integration here instead
+  # of a separate MCP server per vendor. See docs/design/tsd-personal-assistant.md
+  # (phase 2: read-only, into the digest).
+  #
+  # No `ports:`. It is reached two ways, both over Docker networks:
+  #   Caddy  → https://ha.$HOMELAB_DOMAIN   (LAN + tailnet, never the tunnel)
+  #   assistant → http://homeassistant:8123 (reads states for the digest)
+  #
+  # Bridge networking, not `network_mode: host`, decided in the TSD's open
+  # question. Host mode gives HA mDNS/SSDP auto-discovery, but it cannot join a
+  # Docker network, so Caddy and the assistant would have to reach it through
+  # the host's address, and every LAN device could hit :8123 directly. Cloud
+  # integrations (most cameras, locks, alarm systems, Tesla) work fine on a
+  # bridge. Local ones are added by IP instead of being discovered. Revisit if
+  # one you need truly requires discovery.
+  #
+  # On HL_NO_AUTOPULL (scripts/repo-sync.sh): HA ships breaking changes monthly
+  # and migrates its database one way on upgrade, so a version rollback is not
+  # a rollback. Same reasoning as `core`. Update it deliberately:
+  #   docker compose -f docker/homeassistant/docker-compose.yml pull && ... up -d
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    depends_on:
+      homeassistant-init:
+        condition: service_completed_successfully
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      # HA's own state — .storage (users, auth tokens, integration
+      # credentials), the recorder database, logs. A named volume, never a
+      # bind mount into the repo: the directory holds secrets, and HA writes to
+      # it constantly. NOTE: the lab has no backups yet (AGENTS.md → Planned),
+      # so losing this volume means redoing onboarding and every integration.
+      - homeassistant_config:/config
+      # The one file git owns. Read-only, and a single-file mount, which is the
+      # exception AGENTS.md → "Config mounts" allows when the directory holds
+      # secrets. The cost is the usual one: after a `git pull` that changes it,
+      # the container must be RECREATED (`up -d --force-recreate homeassistant`),
+      # not restarted. /deploy and scripts/deploy-plan.sh detect that.
+      - ./config/configuration.yaml:/config/configuration.yaml:ro
+    networks:
+      - homeassistant
+      - proxy
+
+  # One-shot: create the files configuration.yaml includes, if they are missing.
+  #
+  # HA's UI editors write automations.yaml, scripts.yaml and scenes.yaml, so git
+  # must not track them (a UI edit would dirty the tree, and repo-sync's pull
+  # would stop). But HA refuses to load an `!include` whose target does not
+  # exist, and on a fresh volume none of them do. This touches only what is
+  # absent, so it never overwrites anything you built in the UI.
+  #
+  # Deliberately no `container_name`: heartbeat.sh's container inventory counts
+  # every container_name as "must be running", and this one is supposed to exit.
+  homeassistant-init:
+    image: busybox:1.36
+    restart: "no"
+    command:
+      - sh
+      - -c
+      # The same contents HA writes for a fresh install: an empty list for
+      # automations, empty files for the other two.
+      - |
+        [ -e /config/automations.yaml ] || { echo '[]' > /config/automations.yaml; echo created automations.yaml; }
+        for f in scripts scenes; do [ -e "/config/$$f.yaml" ] || { : > "/config/$$f.yaml"; echo "created $$f.yaml"; }; done
+    volumes:
+      - homeassistant_config:/config
+    network_mode: none
+
+volumes:
+  homeassistant_config:
+
+networks:
+  homeassistant:
+    driver: bridge
+  # Caddy's network, so ha.$HOMELAB_DOMAIN can be proxied by container name.
+  # The assistant joins it too, to read states. Bring the proxy stack up first.
+  proxy:
+    external: true
+    name: proxy_proxy

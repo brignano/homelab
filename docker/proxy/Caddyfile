@@ -90,6 +90,16 @@ dns.{$HOMELAB_DOMAIN} {
 	reverse_proxy adguard:80
 }
 
+# Home Assistant — the home hub (docs/design/tsd-personal-assistant.md, phase 2).
+# LAN + tailnet only, like every admin UI here: never route this through the
+# Cloudflare Tunnel. HA trusts Caddy's X-Forwarded-For because of the
+# `trusted_proxies` block in docker/homeassistant/config/configuration.yaml;
+# without it this site answers 400. WebSockets (which the HA frontend lives on)
+# need nothing extra: reverse_proxy upgrades them by default.
+ha.{$HOMELAB_DOMAIN} {
+	reverse_proxy homeassistant:8123
+}
+
 # Grafana MCP server — read-only metrics/logs/alerts for Claude Code.
 # Tailscale is the network boundary; this bearer check is the app-layer guard
 # (mcp-grafana has no built-in endpoint auth). The Viewer-scoped Grafana service

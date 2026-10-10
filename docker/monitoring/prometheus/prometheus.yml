@@ -89,6 +89,11 @@ scrape_configs:
           - http://portainer:9000/
           - http://open-webui:8080/
           - http://ollama:11434/
+          # /manifest.json, not /: the root redirects to onboarding or the
+          # login page depending on state, and this file is served 200 to
+          # anyone before either. Reached over the proxy network, which
+          # blackbox-exporter already joins.
+          - http://homeassistant:8123/manifest.json
           # /health, not /, and the path matters: a bare / carries the Host
           # header `caddy`, which matches no site block and gets a 404 — a
           # failed probe against a healthy proxy. docker/proxy/Caddyfile
