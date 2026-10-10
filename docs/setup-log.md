@@ -51,6 +51,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Jellyfin merged before its drive: stopped it paging
+
+**Goal:** `docker/jellyfin/` reached `main` before the 5 TB drive. Stop the
+overnight `repo-sync.sh` pull from making `#alerts` page about a stack that
+can't start yet.
+
+**Steps:**
+1. `heartbeat.sh` gained `SETUP_GATED_STACKS` (default `jellyfin`). A container
+   in a listed stack is `required="no"` until `docker/<stack>/.env` exists on
+   the box, which is the moment it is set up. The stack is listed by name
+   rather than every stack being gated on `.env`, so a running stack that
+   loses its `.env` still pages.
+2. `hl-probe-down` stands a probe down while its container is optional and not
+   running, matching the probe's `service` label to the container name. Probes
+   without a `service` label page exactly as before.
+
+**Resolution:**
+- `promtool test rules`: optional-and-down Jellyfin stays quiet while a Caddy
+  probe in the same evaluation still fires, and Jellyfin required-and-down
+  fires. Heartbeat tested both ways: `required="no"` without `.env`,
+  `required="yes"` with it, and other stacks unchanged.
+
+**Notes / next steps:**
+- Must be on `main` before 04:00, when `repo-sync.sh` pulls #125 onto the box.
+
+---
+
 ## 2026-10-10 — Jellyfin stack built, ready for drive day
 
 **Goal:** Build phase 2 of `docs/design/tsd-jellyfin.md` while the drives ship,

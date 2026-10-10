@@ -150,7 +150,15 @@ groups:
             datasourceUid: prometheus
             model:
               refId: A
-              expr: probe_success{job="blackbox"}
+              # A probe whose container is optional and not running stays quiet:
+              # that container is down on purpose (not set up yet, or scaled to
+              # zero), and homelab_container_running already says so. Matched on
+              # the probe's `service` label against the container name, so only
+              # probes that carry one can be stood down; the rest page as before.
+              expr: |
+                probe_success{job="blackbox"}
+                  unless on(service)
+                  label_replace(homelab_container_running{required="no"} == 0, "service", "$1", "container", "(.*)")
               instant: true
           - refId: C
             relativeTimeRange: { from: 300, to: 0 }
