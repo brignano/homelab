@@ -153,10 +153,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 - Secrets that must exist use `${VAR:?required}` syntax so Compose fails loudly if unset.
 - Document every significant change in `docs/setup-log.md` using the template at the top of that file.
 - New services default to `127.0.0.1:<port>` bindings. Bind to all interfaces only when the service must be reached over LAN/tailnet, and prefer fronting it with Caddy for a `*.home` name rather than exposing a raw port.
-- **Anything with a visual choice in it follows [brignano/design](https://github.com/brignano/design)** — the shared design system, which already names `homelab` as a tool-tier consumer. Take colour from its tokens rather than picking one: identity is its `mark` hue (larch amber), and it only ever inks a graphic, never a control. `docker/dashboard/icons/` is the worked example, including why a favicon is the one place its "never hardcode a hex" rule cannot hold.
-- **Page icons follow the standard `life` sets** (`scripts/gen-icons.mjs` there, `scripts/gen-dashboard-icons.py` here): the SVG is the real mark — transparent ground, `prefers-color-scheme` step, because a filled tile disappears against a tab strip that matches it — and the rasters (`.ico`, `apple-touch`, 32px PNG) take an ink ground for the surfaces that put the icon somewhere we do not control. Safari probes `/favicon.ico` and `/apple-touch-icon.png` at the root without reading markup, so those paths have to answer; the Caddyfile points them at the mark. **An installed app reads none of that** — Chrome draws its window titlebar, taskbar entry and install dialog from the web app *manifest*, never from `rel="icon"` — so `/site.webmanifest` is rewritten onto ours the same way, and it lists rasters only (192, 512, and a 512 inset 10% a side for `maskable`), for the same ink-ground reason. Fixing the tab icon and fixing the app window are two separate pieces of work; check both.
-- **Third-party marks stay as their projects draw them.** The dashboard's tile icons are vendored into `docker/dashboard/icons/` by `scripts/update-tile-icons.sh` rather than fetched from a CDN by the browser — a dashboard that needs the internet to render is useless on the day the internet is what broke. Adding a service means `icon: /icons/<name>.svg` and a run of that script; CI fails if the file is not there.
-- **The dashboard wears that system at runtime.** `scripts/update-design-tokens.sh` vendors `tokens.css` (and Geist) from npm into `docker/dashboard/assets/` and generates the RGB-channel palette Homepage themes itself from; `config/custom.css` bridges the rest through Tailwind v4's own theme variables, never through class names. Update it by re-running the script, not by editing generated files or typing a colour — CI diffs the generated palette against the vendored tokens.
+- **Anything with a visual choice in it follows [brignano/design](https://github.com/brignano/design)** — never pick a colour. The rules for icons, favicons, the app manifest, tile icons and design tokens are in [`.claude/skills/dashboard-visuals/SKILL.md`](.claude/skills/dashboard-visuals/SKILL.md); read it before touching `docker/dashboard/` or adding a service tile.
 - **Docs vs. design specs:** `docs/` holds operational/reference docs (`setup-log.md`, strategy, runbooks — *how the system works now*). Design specs/TSDs live in `docs/design/` (`tsd-*.md`, all lifecycle stages — the `Status:` field tracks maturity; files are not moved when shipped). Homelab-specific specs live here, not in the `ideas` repo (which is greenfield products/apps only).
 
 ## Alerting
@@ -170,119 +167,40 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
 - `#alerts` in Discord is fed by **webhooks only** (Grafana + Healthchecks),
   never by the assistant bot — routing through the bot would reintroduce the
   dependency the design removes.
-- **Discord is the only delivery path.** ntfy was removed once Discord covered
-  the same ground; `DISCORD_ALERT_WEBHOOK` is therefore `:?required` in
-  `docker/monitoring/docker-compose.yml` so the stack cannot start unable to
-  page you.
-- When adding an alert path, ask which failures it can *not* report, and where
-  that one is observed from.
 - **Anything scheduled needs a dead man's switch, including the scheduler.** A
-  job that only speaks when something is wrong cannot report never having run:
-  `repo-sync.sh` was silent for three weeks because its cron entry had never
-  been installed, and the box drifted three weeks behind `main` while every
-  signal said fine. It now pings `HEALTHCHECKS_REPO_SYNC_URL` on every run, and
-  `scripts/install-cron.sh` makes installing the schedule a command rather than
-  a ritual (`--check` reports what is missing). `pg-backup.sh` was the last job
-  without one; it now pings `HEALTHCHECKS_PG_BACKUP_URL`, and every job's
-  crontab entry is a metric (`homelab_cron_job_installed`), so an uninstalled
-  job alerts rather than waiting to be noticed.
-- **A dead man's switch has to prove it is armed.** `HEALTHCHECKS_PG_BACKUP_URL`
-  spent its first hours holding `https://hc-ping.com/your-uuid` — the
-  placeholder from `.env.example`. Non-empty, so the script's "unset" warning
-  never fired; pinged with `|| true`, so the 404 went nowhere; and no check
-  existed, so nothing was ever late. `scripts/healthchecks.sh` is the answer:
-  a value that is not a plausible ping URL counts as unset, a failed ping is
-  reported rather than swallowed, and both leave `homelab_healthchecks_ping_success`
-  behind for `hl-hc-ping-failing` to alert on. Read a ping URL through
-  `hc_url`, never with an ad-hoc `sed`. The assistant's digest is watched
-  differently, and deliberately: it writes a timestamp
-  ([`app/stamp.py`](docker/assistant/app/stamp.py)) that `heartbeat.sh` reads
-  from the host into `homelab_digest_timestamp_seconds`, with
-  `hl-digest-missing` alerting past 25h. No fourth external check — the
-  box-being-down case is already watched from outside by `heartbeat.sh`
-  itself, and what is left (bot up, schedule not firing) is narrow enough to
-  see from inside. Only the **scheduled** run records it: an on-demand
-  `/digest` would refresh the clock and hide a schedule that had stopped.
-- **A job that detects something must leave the result behind, not just report
-  it.** Discord answers "does this need me now" and is read once; a time series
-  answers "is it still true", "how long has it been true" and "did the fix
-  work", which is what you want when the 4am message has scrolled away. Every
-  scheduled script writes what it already computed to
-  `/var/lib/node_exporter/textfile` via `scripts/metrics.sh` — repo drift,
-  config drift, container inventory, backup age. Emitting a metric must never be
-  able to fail the job: every function there degrades to a no-op.
-- **An empty dashboard and a healthy lab look identical.** Three of the seven
-  dashboards here had been blank for an unknown length of time — they were built
-  on Angular panels that Grafana 12 removed, and nothing errors when a panel
-  plugin is missing. Same shape as a panel querying a metric nobody writes, or a
-  probe pointed at a 404. `scripts/check-observability.sh` fails CI on all
-  three, and anything the lab relies on is a committed dashboard in
-  `grafana/dashboards/homelab/`, not a grafana.com ID pasted into a fetch
-  script.
-- **Blackbox probes must target a path the service answers 2xx on.** The
-  `http_2xx` module treats anything else — including a 404 or a redirect — as
-  down. This matters most for Caddy, which routes by Host header and sees the
-  container name `caddy` from inside Docker: it serves `/health` for the probe
-  and 404s everything else, and `scripts/check-probes.sh` keeps the two files in
-  step.
-- **Group notifications by `instance`, not by `alertname` alone.** Grouping is
-  what decides how loud `#alerts` is: a notification group is re-sent whenever
-  its membership changes, throttled to `group_interval`, so coarse grouping
-  means one flapping probe re-announces every other firing alert alongside it.
-  See `grafana/provisioning/alerting/policies.yml`.
-- **The `summary` annotation is the alert.** Every rule gets one, written as a
-  sentence with the value already interpolated ("docker-lxc /var is 87% full"),
-  because that is the whole Discord message — `templates.yml` renders a heading,
-  those sentences, and one line of timing, and drops Grafana's default dump of
-  every label, value and URL. A rule with no summary falls back to its own name,
-  which is readable but says nothing; write the sentence.
-- **A Discord message's content renders ABOVE its embeds.** Grafana's Discord
-  notifier puts `message` in the content and `title` in an embed, so a title set
-  there arrives *under* the body — which is why the heading is the first line of
-  the message and the embed title is left to be the one clickable element.
-  Anything this repo sends itself (`repo-sync.sh`) uses an embed for the whole
-  report instead, where title and description render in the order written.
-- **`instance` is not identity.** Every alert derived from a textfile metric —
-  stack drift, config drift, backup age, cron — carries
-  `instance=node-exporter:9100`, because that is only where the metric was
-  scraped. It is also what `policies.yml` groups on, so those alerts share a
-  group and arrive as one message listing each subject. Name the subject in the
-  summary (`{{ $labels.stack }}`, `{{ $labels.container }}`), never rely on
-  `instance` to say what broke.
-- **Before re-diagnosing an alert you already fixed, check it is deployed.**
-  `prometheus.yml`, the Caddyfile and `grafana/provisioning/` are all
-  bind-mounted, so `git pull` changes the files while the containers keep
-  serving the old config — the repo looks right, CI is green, and Discord keeps
-  firing. `scripts/probe-status.sh` answers this from the box in one command.
-- **A container that owns a bind-mounted config directory writes to it.**
-  Homepage drops 0-byte skeletons (`custom.css`, `custom.js`, `docker.yaml`, …)
-  into `docker/dashboard/config/` whenever they are missing. The day the repo
-  starts tracking one of those paths, `git pull` refuses to overwrite the empty
-  local copy and the box stops pulling *entirely* — every stack, over a file
-  with nothing in it. `repo-sync.sh` clears that narrow case (untracked, empty,
-  and added by an incoming commit) and reports it; anything with content in it
-  still stops the pull.
-- **A config bind-mounted as a single file needs the container *recreated*, not
-  restarted or reloaded.** Docker pins a file mount to an inode at container
-  creation, and git replaces files rather than editing them, so after a
-  `git pull` the container is mapped to the old unlinked copy — and a reload
-  returns 200 while changing nothing. Use
-  `docker compose up -d --force-recreate <svc>`. Mounting a whole *directory*
-  avoids this (that is why `grafana/provisioning/` only needs a restart), so
-  prefer a directory mount for new config where the directory holds no secrets.
-- **A directory mount fixes the inode problem and nothing else — the process
-  still has to be replaced.** Compose decides recreates by hashing the *service
-  definition*; bytes behind a mount are not in that hash and cannot be, so
-  `up -d` on a pinned image with an unchanged compose file exits 0 having
-  replaced nothing. Whether that matters depends on when the service reads the
-  files: Grafana and Homepage read theirs once at boot, so a change is invisible
-  until the container restarts. Homepage is the sharpest case — Next.js
-  enumerates `/app/public` *once at startup* (`setupFsCheck`; the refresh path
-  is behind `if (opts.dev)`) and matches every later request against that frozen
-  list, so a **new filename** under `docker/dashboard/icons/` is a 404 no matter
-  how current the mount is, while an edit to a file already there is served
-  fine. That is how the dashboard's mark shipped, passed CI and was never served
-  once. Ask what reads the file and when, not just how it is mounted.
+  job that only speaks when something is wrong cannot report never having run.
+  Ping Healthchecks through `scripts/healthchecks.sh`, write results through
+  `scripts/metrics.sh`, and install the schedule with `scripts/install-cron.sh`.
+
+The rest — arming a ping URL, metrics, dashboards, probes, grouping, the
+`summary` annotation, how Discord renders a message — is in
+[`.claude/skills/alerting/SKILL.md`](.claude/skills/alerting/SKILL.md). Read it
+before adding or changing an alert, probe, dashboard, metric or scheduled job.
+
+## Config mounts
+
+**A config bind-mounted as a single file needs the container *recreated*, not
+restarted or reloaded.** Docker pins a file mount to an inode at container
+creation, and git replaces files rather than editing them, so after a
+`git pull` the container is mapped to the old unlinked copy — and a reload
+returns 200 while changing nothing. Use
+`docker compose up -d --force-recreate <svc>`. Mounting a whole *directory*
+avoids this (that is why `grafana/provisioning/` only needs a restart), so
+prefer a directory mount for new config where the directory holds no secrets.
+
+**A directory mount fixes the inode problem and nothing else — the process
+still has to be replaced.** Compose decides recreates by hashing the *service
+definition*; bytes behind a mount are not in that hash and cannot be, so
+`up -d` on a pinned image with an unchanged compose file exits 0 having
+replaced nothing. Whether that matters depends on when the service reads the
+files: Grafana and Homepage read theirs once at boot, so a change is invisible
+until the container restarts. Homepage is the sharpest case — Next.js
+enumerates `/app/public` *once at startup* (`setupFsCheck`; the refresh path
+is behind `if (opts.dev)`) and matches every later request against that frozen
+list, so a **new filename** under `docker/dashboard/icons/` is a 404 no matter
+how current the mount is, while an edit to a file already there is served
+fine. That is how the dashboard's mark shipped, passed CI and was never served
+once. Ask what reads the file and when, not just how it is mounted.
 
 ## Local LLM usage
 
@@ -338,6 +256,16 @@ These slash commands are available in `.claude/commands/`:
 | `/log-entry` | Write a dated entry to docs/setup-log.md |
 | `/debug-container` | Diagnose a failing or unhealthy container |
 | `/expose-service` | Add a service to the Cloudflare Tunnel config |
+
+Rules that only matter for some tasks live in `.claude/skills/` rather than
+here, so they load when the task needs them instead of in every session. Claude
+picks them up from their descriptions; any other agent should open the file
+when the task matches.
+
+| Skill | Read it when |
+|-------|--------------|
+| [`alerting`](.claude/skills/alerting/SKILL.md) | Adding or changing an alert, probe, dashboard, textfile metric or scheduled job |
+| [`dashboard-visuals`](.claude/skills/dashboard-visuals/SKILL.md) | Touching `docker/dashboard/`, an icon, a colour, or any visual choice |
 
 `/deploy` detects which containers are serving a stale single-file bind mount
 rather than naming them, because a hardcoded recreate list is a second copy of
