@@ -16,7 +16,7 @@ the read-only half of it. The digest reads the states you choose and puts a
 | UI | `https://ha.$HOMELAB_DOMAIN`. LAN + tailnet only, never the Cloudflare Tunnel |
 | Read by | the assistant, at `http://homeassistant:8123`, over the `proxy` network |
 | State | the `homeassistant_config` volume (users, tokens, integrations, history) |
-| Owned by git | `config/configuration.yaml` only, mounted read-only |
+| Owned by git | `config/configuration.yaml` only, mounted read-only. Reverse-proxy trust is a UI setting now: see "Fresh volume" |
 | Updates | by hand. On `HL_NO_AUTOPULL`, because HA's database migrations are one-way |
 
 ## Bring it up
@@ -46,6 +46,41 @@ container that should be there.
    Cloud integrations (most cameras, smart locks, alarm systems) just need a
    sign-in, and local ones need the device's IP. See "Why not host networking"
    below.
+
+That works on the volume this lab already has. **On a fresh volume, step 1
+answers 400 instead.** See below.
+
+### Fresh volume: setting the reverse-proxy trust
+
+HA must trust Caddy's `X-Forwarded-For` header, or every request through
+`ha.$HOMELAB_DOMAIN` is a **400 Bad Request**. HA used to read that from an
+`http:` block in `configuration.yaml`. It has since moved the setting to the
+UI and stops reading the YAML in 2027.2, so the block was removed here. The
+existing volume keeps the imported values. A new one (say, after losing the
+volume, since there are no backups yet) starts without them, and the UI that
+sets them is only reachable through Caddy. `docker-compose.bootstrap.yml`
+breaks that loop by publishing HA on the box's **loopback** for one visit:
+
+```bash
+# on CT 100
+docker compose -f docker/homeassistant/docker-compose.yml \
+               -f docker/homeassistant/docker-compose.bootstrap.yml up -d
+
+# on your laptop
+ssh -L 8123:127.0.0.1:8123 root@10.0.0.201      # then open http://localhost:8123
+```
+
+1. Onboard (create the owner account).
+2. **Settings → System → Network**, in the reverse proxy / HTTP section: turn
+   on **Use X-Forwarded-For** and set **Trusted proxies** to `172.16.0.0/12`
+   and `192.168.0.0/16`. These are Docker's default address pools: the proxy
+   network's subnet is not pinned, and nothing outside Docker can reach HA
+   directly, so no LAN device can spoof its way in.
+3. Bring it back up **without** the bootstrap file, which removes the port:
+   ```bash
+   docker compose -f docker/homeassistant/docker-compose.yml up -d
+   ```
+4. `https://ha.$HOMELAB_DOMAIN` now answers. Continue with "First run" step 2.
 
 ## Connect the digest
 
@@ -142,7 +177,7 @@ until `tsd-backups-and-monitoring.md` lands.
 
 | Symptom | Likely cause |
 |---|---|
-| `ha.` answers **400 Bad Request** | The `http:` block in `config/configuration.yaml` is missing or not loaded. Recreate the container (it is a single-file mount). |
+| `ha.` answers **400 Bad Request** | HA does not trust Caddy's `X-Forwarded-For`: the reverse-proxy settings are missing (a fresh volume) or were changed in **Settings → System → Network**. Set them as in "Fresh volume" above. |
 | HA starts in recovery mode | A YAML error in `configuration.yaml`, or an `!include` target missing from the volume. `docker compose ... up -d` reruns `homeassistant-init`, which recreates the missing ones. |
 | Digest says **Home** `_not read_ (token rejected (401))` | The `digest` user's token was deleted or the user was removed. Make a new token, update `HA_TOKEN`, recreate the assistant, then `/digest`. |
 | An entity shows **not found** | The entity ID in `HA_ENTITIES` is wrong, or the device was renamed in HA. |
