@@ -84,7 +84,7 @@ H.264 and HEVC and hardware encoding. Set scheduled tasks (scans, trickplay) to
 
 | Signal | Where |
 |---|---|
-| Container stopped | `homelab_container_running{container="jellyfin"}`, automatic from this compose file |
+| Container stopped | `homelab_container_running{container="jellyfin"}`, automatic from this compose file. **Required only once `docker/jellyfin/.env` exists** (`SETUP_GATED_STACKS` in `heartbeat.sh`): until then it is expected to be down and nothing pages, including its probe. |
 | App not answering | blackbox probe `http://jellyfin:8096/health` (`hl-probe-down`) |
 | GPU passthrough lost from CT 100 | `homelab_jellyfin_gpu_present`, checked in CT 100 once `.env` exists (`hl-jellyfin-gpu-missing`) |
 
