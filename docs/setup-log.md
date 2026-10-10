@@ -27,6 +27,39 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — An invariants-reviewer agent, and a skill that was half-loaded
+
+**Goal:** Check a diff against the rules this repo learned the hard way before it
+is pushed, not after it pages `#alerts`.
+
+**Steps:**
+1. Added `.claude/agents/invariants-reviewer.md`, a read-only subagent. It runs
+   the fast CI checks (`check-observability.sh`, `check-probes.sh`,
+   `check-dashboard.sh`, `update-design-tokens.sh --check`), then walks a
+   checklist of the rules CI cannot see: Ollama thread pinning, dead man's
+   switches, alert summaries, bind-mount redeploys, port exposure, secrets, and
+   the `image prune -a` ban. It ends with what the deploy needs beyond
+   `git pull`.
+2. The checklist names each rule and the `AGENTS.md` section or skill it lives
+   in, rather than restating it. The agent reads the source before judging, and
+   the source wins if they disagree. A second copy of the rules would drift.
+3. Listed it in `AGENTS.md` under Custom commands.
+
+**Issues encountered:**
+- The `local-llm` skill's description had been cut off since it shipped: YAML
+  reads ` #` as the start of a comment, so everything from `#chat` onward was
+  dropped. Claude saw a description that ended before "Use when touching
+  docker/ai/…", which is the half that decides when it loads.
+
+**Resolution:**
+- Quoted the description. All skill and agent frontmatter in this repo and in
+  `ai-tools` now parses to the full sentence.
+
+**Notes / next steps:**
+- Any frontmatter value containing ` #` or `: ` needs quotes.
+
+---
+
 ## 2026-10-10 — Ollama and assistant-bot details moved into a skill
 
 **Goal:** Finish the split started below: move the parts of "Ollama / AI

@@ -1,6 +1,6 @@
 ---
 name: local-llm
-description: How this homelab runs its local model — adding or reloading an Ollama model, and how the Discord assistant bot in docker/assistant/ works (guild.yml provisioning, #chat memory and scope, live readings by injection, the digest). Use when touching docker/ai/, a Modelfile, docker/assistant/, or anything that calls Ollama.
+description: "How this homelab runs its local model — adding or reloading an Ollama model, and how the Discord assistant bot in docker/assistant/ works (guild.yml provisioning, #chat memory and scope, live readings by injection, the digest). Use when touching docker/ai/, a Modelfile, docker/assistant/, or anything that calls Ollama."
 ---
 
 # Local LLM
