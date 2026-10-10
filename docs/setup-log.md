@@ -36,24 +36,30 @@ and without putting HA on the internet.
 1. `docker/matterbridge/`: `luligu/matterbridge` 3.10.13 (tag and digest) with
    `matterbridge-hass` 1.5.0 installed at build time. Host networking, since
    Matter is mDNS on IPv6. `start.sh` refuses to start without IPv6, binds the
-   web UI to docker0, writes the plugin config from `.env` on every start, and
-   registers the plugin.
+   web UI to 127.0.0.1, writes the plugin config from `.env` on every start,
+   and registers the plugin. `stop_grace_period: 60s`, so the Matter storage is
+   written out before a stop.
 2. What Alexa sees: entities with the HA label `Alexa`, minus the lock, cover,
    valve, alarm, button, remote and media_player domains, which are dropped
    even when labelled. A non-admin `matterbridge` HA user holds the token.
-3. Wiring: blackbox probe `service="matterbridge"` on `/health`;
-   `SETUP_GATED_STACKS` gains `matterbridge`, so it pages only once `.env`
-   exists; a Renovate group for the base image and plugin together; `HA_TOKEN`
-   added to CI's throwaway env.
+3. Wiring: `SETUP_GATED_STACKS` gains `matterbridge`, so it pages only once
+   `.env` exists. `HL_NO_AUTOHEAL` gains `matterbridge`, so a Renovate bump is
+   never rebuilt unattended at 04:00. A Renovate group covers the base image
+   and the plugin together. `HA_TOKEN` is added to CI's throwaway env. There is
+   no blackbox probe: the UI is on loopback, and a Docker healthcheck asks
+   `/health` instead.
 4. `docker/homeassistant/README.md`: the Alexa section now points here.
    Nabu Casa is kept as a paid alternative in one paragraph.
 
 **Issues encountered:**
 - Home Assistant Matter Hub, the bridge most guides use, was archived in
   January 2026. Matterbridge is maintained.
-- The web UI authenticates by client IP. Behind Caddy every user is Caddy's IP,
-  so one login would unlock it for the whole LAN and tailnet, and it can
-  install npm packages as root. No Caddy route: docker0 only, opened over SSH.
+- The web UI authenticates by client IP, has no password by default, shows
+  the HA token, and can install npm packages as root. Behind Caddy, one login
+  would unlock it for the whole LAN and tailnet. The first draft bound it to
+  docker0, but every container could reach that, and so could a LAN host with
+  a route to 172.17.0.1. It is on 127.0.0.1 now, opened over SSH, with "set a
+  password" as a deploy step before pairing.
 - The plugin reads `reconnectRetries: 0` as never reconnect. It is set to
   effectively forever, since HA restarts on every update.
 - Matterbridge's own Docker image installs plugins at runtime from the UI, so
@@ -61,10 +67,9 @@ and without putting HA on the internet.
 
 **Resolution:**
 - Tested in a sandbox Docker daemon without IPv6: the image builds; `start.sh`
-  stops with its IPv6 message, and with its docker0 message when there is no
-  docker0; the config is written mode 600 from `.env` (a token with quotes and
+  stops with its IPv6 message; the config is written mode 600 from `.env` (a token with quotes and
   backslashes survives); the plugin registers once and is a no-op after; and
-  the frontend binds only the given address. Matter itself could not start
+  the frontend binds only 127.0.0.1. Matter itself could not start
   without IPv6, so pairing with an Echo is untested.
 
 **Notes / next steps:**

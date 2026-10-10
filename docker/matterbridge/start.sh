@@ -5,8 +5,7 @@
 #   1. Refuses to start without IPv6. Matter runs on IPv6 (mDNS on [::]:5353),
 #      and without it Matterbridge dies with "MdnsService unavailable ...
 #      EAFNOSUPPORT", which does not say what to fix.
-#   2. Works out where to bind the web UI: docker0's address (172.17.0.1 by
-#      default), not every interface. See README → "The web UI".
+#   2. Binds the web UI to loopback only. See README → "The web UI".
 #   3. Writes the Home Assistant plugin's config from the environment. Git owns
 #      it: the token comes from .env, and the label filter and domain
 #      blacklist come from here. Edits made in the web UI are overwritten on
@@ -22,16 +21,9 @@ if [ ! -s /proc/net/if_inet6 ]; then
   exit 1
 fi
 
-BIND="${MATTERBRIDGE_BIND:-}"
-if [ -z "$BIND" ]; then
-  BIND=$(node -e "const i=require('os').networkInterfaces().docker0||[];const a=i.find(x=>x.family==='IPv4');process.stdout.write(a?a.address:'')")
-fi
-if [ -z "$BIND" ]; then
-  echo "matterbridge: no docker0 IPv4 address to bind the web UI to." >&2
-  echo "  Set MATTERBRIDGE_BIND in docker/matterbridge/.env. Never 0.0.0.0: see README → The web UI." >&2
-  exit 1
-fi
-printf '%s\n' "$BIND" > /tmp/frontend-addr
+# Loopback, and deliberately not configurable: the UI can install npm packages
+# as root on host networking and shows the HA token. Reach it over SSH.
+BIND=127.0.0.1
 
 CONFIG_DIR=/root/.matterbridge
 mkdir -p "$CONFIG_DIR"

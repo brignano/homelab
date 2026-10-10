@@ -13,19 +13,24 @@ services:
   #             with the pairing code (only in this container's logs) could
   #             pair instead, so pair soon after the first start.
   #   UDP 5353  mDNS, shared with Home Assistant (both use SO_REUSEADDR).
-  #   TCP 8283  The web UI, bound to docker0 (172.17.0.1), NOT every interface.
-  #             No Caddy route. README → "The web UI" says why and how to open it.
+  #   TCP 8283  The web UI, on 127.0.0.1 only. No Caddy route, no probe.
+  #             README → "The web UI" says why and how to open it.
   #
-  #   blackbox  → http://host.docker.internal:8283/health   (service="matterbridge")
   #   HA        ← ws://127.0.0.1:8123, as the non-admin `matterbridge` user
   #
-  # Setup-gated (heartbeat.sh → SETUP_GATED_STACKS): not counted as must-be-
-  # running until docker/matterbridge/.env exists on the box.
+  # Watched by heartbeat.sh's container inventory (homelab_container_running),
+  # setup-gated (SETUP_GATED_STACKS): not must-be-running until
+  # docker/matterbridge/.env exists on the box. On HL_NO_AUTOHEAL: repo-sync
+  # reports it stale but never rebuilds it unattended (scripts/repo-sync.sh).
   matterbridge:
     build: .
     image: homelab-matterbridge:latest
     container_name: matterbridge
     restart: unless-stopped
+    # Matterbridge flushes the Matter fabric storage on shutdown. Compose's 10s
+    # then SIGKILL can cut that write short, and corrupt storage means pairing
+    # Alexa again. Upstream's own Docker docs use 60s.
+    stop_grace_period: 60s
     network_mode: host
     cpus: 1
     mem_limit: 512m
@@ -36,8 +41,6 @@ services:
       HA_URL: ${HA_URL:-ws://127.0.0.1:8123}
       # The HA label that opts an entity in. Nothing without it reaches Alexa.
       HA_LABEL: ${HA_LABEL:-Alexa}
-      # Empty = docker0's address, worked out at start. Never 0.0.0.0.
-      MATTERBRIDGE_BIND: ${MATTERBRIDGE_BIND:-}
     volumes:
       # Matterbridge's home directory: the Matter fabric (Alexa's pairing),
       # device identities, and the frontend password. Losing it means removing

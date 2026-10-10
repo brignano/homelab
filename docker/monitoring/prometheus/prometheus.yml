@@ -111,15 +111,6 @@ scrape_configs:
           - http://host.docker.internal:8123/manifest.json
         labels:
           service: home-assistant
-      # Matterbridge (docker/matterbridge/), on host networking like HA. Its
-      # web UI is bound to docker0 only, so this goes through the host the same
-      # way. /health answers 200 with no login. `service` matches the container
-      # name, so hl-probe-down stays quiet until the stack is set up
-      # (heartbeat.sh → SETUP_GATED_STACKS).
-      - targets:
-          - http://host.docker.internal:8283/health
-        labels:
-          service: matterbridge
     relabel_configs:
       - source_labels: [__address__]
         target_label: __param_target

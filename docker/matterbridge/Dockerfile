@@ -15,12 +15,11 @@ RUN npm install -g --no-fund --no-audit "matterbridge-hass@${MATTERBRIDGE_HASS_V
 COPY start.sh /usr/local/bin/homelab-start
 RUN chmod 0755 /usr/local/bin/homelab-start
 
-# /health on the frontend answers 200 with no login (the frontend password, if
-# set, guards the API and the WebSocket, not this). start.sh writes the address
-# it bound to, since that is only known at runtime. start-period covers
-# Matterbridge's own startup delay: within 5 minutes of a host boot it waits
-# 120s before starting.
-HEALTHCHECK --interval=60s --timeout=10s --start-period=180s --retries=3 \
-  CMD ["node", "-e", "const a=require('fs').readFileSync('/tmp/frontend-addr','utf8').trim();fetch('http://'+a+':8283/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+# /health on the frontend answers 200 with no login (the frontend password
+# guards the API and the WebSocket, not this). The frontend is on loopback
+# (start.sh), which on host networking is CT 100's loopback, so `docker ps`
+# shows healthy/unhealthy and nothing else can ask.
+HEALTHCHECK --interval=60s --timeout=10s --start-period=60s --retries=3 \
+  CMD ["node", "-e", "fetch('http://127.0.0.1:8283/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
 
 ENTRYPOINT ["/usr/local/bin/homelab-start"]
