@@ -1,7 +1,8 @@
 # TSD: Jellyfin, with the iGPU doing the transcoding
 
-**Status:** 📝 draft, awaiting approval. Phases 1–2 need no drive; phase 3 waits
-on the 5 TB drive (ordered 2026-10-10).
+**Status:** ✅ approved 2026-10-10; 🚧 stack built (`docker/jellyfin/`), deployed on
+drive day. Phase 1 (GPU) can be done now. See [Revisions](#revisions) for what
+building it changed.
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -52,12 +53,14 @@ flowchart LR
     CFG[("jellyfin_config<br/>in vzdump")]
     C["caddy<br/>jellyfin.&lt;domain&gt;"]
     BB["blackbox<br/>probe /health"]
+    PN(("proxy_proxy<br/>network"))
   end
   GPU -->|"dev0 passthrough"| JF
   DRV -->|"mp0 … backup=0"| JF
   JF --- CFG
-  C --> JF
-  BB -->|"Host: jellyfin.caddy"| C
+  C --- PN
+  BB --- PN
+  JF --- PN
   TV["Apple TV · phone · laptop<br/>(LAN or Tailscale)"] --> C
 ```
 
@@ -109,7 +112,11 @@ should list H.264 and HEVC encode profiles.
   The cache lives on the media drive so transcodes never land in the nightly
   vzdump or on the thin pool. The library is mounted read-only: Jellyfin has no
   reason to write there, so it can't damage it.
-- **Network:** its own `jellyfin` network, which Caddy and blackbox join.
+- **Network:** Jellyfin **joins the existing `proxy_proxy` network**, where
+  Caddy and blackbox already are. Not the other way round: Caddy attaches to
+  other stacks' networks as `external`, and a missing external network stops
+  the `proxy` stack from starting, taking AdGuard and the house's DNS with it.
+  This way the dependency points at the stack that is always up.
   **No published ports**: everything goes through Caddy, as Open WebUI does.
   Client auto-discovery (UDP 7359) is not exposed; apps are given the URL once.
 - **Accounts:** Jellyfin's own users. One admin, plus a user per person.
@@ -138,9 +145,7 @@ and `Show/Season 01/Show S01E01.mkv`, so metadata matches without editing.
 
 ### 4. Access
 
-- **Caddy:** `jellyfin.{$HOMELAB_DOMAIN}, http://jellyfin.caddy { reverse_proxy jellyfin:8096 }`.
-  The second address is for the probe, the same pattern as `ha.`, and
-  `check-probes.sh` enforces it.
+- **Caddy:** `jellyfin.{$HOMELAB_DOMAIN} { reverse_proxy jellyfin:8096 }`.
 - **Clients:** the official Jellyfin apps on iPhone and Android, and
   **Swiftfin** or **Infuse** on Apple TV. Infuse direct-plays the most formats,
   so it transcodes least. On the road, Tailscale on the phone is all that's
@@ -153,10 +158,13 @@ and `Show/Season 01/Show S01E01.mkv`, so metadata matches without editing.
 
 Per the `alerting` skill:
 
-- **Blackbox probe** of `http://jellyfin.caddy/health` through Caddy (Jellyfin
-  answers `Healthy`, 200). That one probe tests the route and the app.
-- **Heartbeat:** `jellyfin` is added to `REQUIRED` in `heartbeat.sh`, so a
-  stopped container alerts.
+- **Blackbox probe** of `http://jellyfin:8096/health` (Jellyfin answers
+  `Healthy`, 200), in the generic `blackbox` job, so `hl-probe-down` pages for
+  it by name.
+- **Container stopped:** automatic. `heartbeat.sh` reads every
+  `container_name` from the compose files into `homelab_container_running`, so
+  Jellyfin is watched the moment its compose file is committed. (`REQUIRED` is
+  only for the monitoring stack itself.)
 - **Dashboard tile** under a new *Media* group, with the vendored Jellyfin icon
   (`scripts/update-tile-icons.sh`).
 - **GPU in use:** a metric for whether `/dev/dri/renderD128` is present inside
@@ -170,8 +178,8 @@ Per the `alerting` skill:
 | Phase | Needs | What |
 |---|---|---|
 | 1 | nothing | GPU passthrough to CT 100; prove it with `vainfo`. One `pct reboot 100`, at a quiet time. |
-| 2 | Phase 1 | `docker/jellyfin/` stack, Caddy route, probe, heartbeat, tile, GPU metric. Jellyfin runs with an empty library; set up users and clients. |
-| 3 | 5 TB drive | Mount with `backup=0`, create the folder layout, point the libraries at it, test a transcode over Tailscale on mobile data. |
+| 2 | built | `docker/jellyfin/` stack, Caddy route, probe, tile, GPU metric and alert, Renovate rule. **Merged and started on drive day:** the stack refuses to start without the drive (see Revisions), and once merged the container inventory expects it running. |
+| 3 | 5 TB drive + phases 1–2 | Mount with `backup=0`, create the folder layout, start the stack, recreate `caddy`, set up users, libraries and VA-API, test a transcode over Tailscale on mobile data. Steps in `docker/jellyfin/README.md`. |
 
 ## Rejected alternatives
 
@@ -194,3 +202,26 @@ Per the `alerting` skill:
       doesn't suit sharing beyond that.
 - [ ] **Music in Jellyfin too, or not?** It changes nothing in this design;
       it's one more library folder.
+
+## Revisions
+
+Building phase 2 changed three things in this design (2026-10-10):
+
+1. **Network direction.** The draft had Caddy and blackbox joining a new
+   `jellyfin` network. That would have made the `proxy` stack fail to start
+   whenever Jellyfin's network didn't exist, taking the house's DNS with it.
+   Jellyfin joins `proxy_proxy` instead.
+2. **No empty-library phase.** The media mounts use `create_host_path: false`,
+   so the stack refuses to start until the 5 TB drive is mounted. Otherwise
+   Docker would quietly create `/media/jellyfin` on CT 100's rootfs, on the thin
+   pool and inside every vzdump, and the transcode cache would grow there. Users
+   and clients are set up on drive day instead.
+3. **Monitoring.** The probe goes straight to `jellyfin:8096/health` rather
+   than through a `jellyfin.caddy` alias. Stopped-container alerting comes
+   from the existing container inventory, not from `REQUIRED`.
+
+Tested against `jellyfin/jellyfin:12.2` in a real Docker daemon. The stack
+refused to start without `RENDER_GID` and without the media directories, and
+did not create them. With them present it came up healthy, `/health` answered
+200 over `proxy_proxy`, the CPU and memory caps applied, no host port was
+published, and the library was read-only.

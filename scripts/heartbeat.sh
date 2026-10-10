@@ -196,6 +196,23 @@ publish_metrics() {
     fi
   done
 
+  # Whether Jellyfin can still see the iGPU it transcodes with. A host kernel
+  # update or a lost `dev0` line in CT 100's config takes the device away
+  # without stopping anything: Jellyfin keeps serving, every transcode drops to
+  # the CPU, and the first symptom is a slow lab rather than a failed check.
+  # Only while the container is running: a stopped Jellyfin is already
+  # homelab_container_running's to report, and a 0 here would page twice.
+  # See docs/design/tsd-jellyfin.md.
+  if in_words jellyfin "$_running_now"; then
+    metric_help homelab_jellyfin_gpu_present gauge \
+      "1 if the jellyfin container can see /dev/dri/renderD128 (VA-API transcoding)"
+    if docker exec jellyfin test -c /dev/dri/renderD128 >/dev/null 2>&1; then
+      metric homelab_jellyfin_gpu_present 1
+    else
+      metric homelab_jellyfin_gpu_present 0
+    fi
+  fi
+
   metrics_close
 }
 

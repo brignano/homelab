@@ -93,6 +93,14 @@ Renovate is then what keeps that digest from becoming the next 23-month-old imag
       pinDigests: true,
     },
     {
+      description: "Jellyfin: pinned by tag and digest in docker/jellyfin/. \
+It migrates its database one way on upgrade, so every bump arrives as a PR to \
+read, never as a side effect of the nightly auto-pull.",
+      matchFileNames: ["docker/jellyfin/**"],
+      enabled: true,
+      pinDigests: true,
+    },
+    {
       description: "AdGuard is the household's DNS. Its bumps arrive alone \
 rather than grouped with Caddy's, so a resolver change is never something you \
 approve incidentally while reading about a TLS one.",

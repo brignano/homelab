@@ -75,6 +75,14 @@ stats.{$HOMELAB_DOMAIN} {
 	reverse_proxy grafana:3000
 }
 
+# Jellyfin — media server (docker/jellyfin/, listens on 8096). Jellyfin joins
+# the proxy network rather than Caddy joining a jellyfin one, so this stack
+# never depends on Jellyfin being up (see docker/jellyfin/docker-compose.yml).
+# LAN + tailnet only: never the Cloudflare tunnel (AGENTS.md, Networking rules).
+jellyfin.{$HOMELAB_DOMAIN} {
+	reverse_proxy jellyfin:8096
+}
+
 # Open WebUI — AI chat (container listens on 8080)
 chat.{$HOMELAB_DOMAIN} {
 	reverse_proxy open-webui:8080
