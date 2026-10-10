@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phase 1 built (calendar + mail in the digest, `docker/assistant/`); phases 2–5 draft
+**Status:** 🚧 phases 1–2 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`); phases 3–5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -175,6 +175,23 @@ and garage covers are **not exposed**. That means the agent cannot touch them
 however it is prompted. The tier table above is the second layer, not the only
 one.
 
+**Amended while building phase 2 (2026-10-10): the watch lane cannot use that
+ceiling.** Assist exposure governs HA's conversation and MCP surfaces. The REST
+API ignores it, and **Home Assistant has no read-only token**: any long-lived
+token, even a non-admin user's, can call services. So the watch lane's
+"read-only" rests on weaker ground than Google's scopes, and the docs say so:
+
+- a dedicated non-admin `digest` user, which cannot change HA's configuration
+  or mint tokens, but can still operate entities;
+- code that only ever sends `GET /api/states/<entity_id>`, for an explicit
+  `HA_ENTITIES` list, with no write path. A test fails if anything POSTs;
+- no model in the loop, so nothing read can steer what is done.
+
+Reading a lock's *state* is in scope for the watch lane ("Front Door unlocked
+6h" is exactly what a morning digest is for). It is *operating* locks that the
+act lane must never reach, and phase 3 keeps them unexposed to Assist as
+designed above.
+
 Camera *video analysis* (Frigate or similar) is out of scope. Object detection
 on a CPU-only box competes with Ollama for the same 6 cores. Home Assistant's
 own camera and motion entities, as state, are in scope.
@@ -253,7 +270,7 @@ earlier ones.
 | Phase | Ships | Writes anything? |
 |---|---|---|
 | **1. Calendar + mail in the digest** ✅ built | Google OAuth client, `app/google.py` + `app/day.py`, freshness metrics + `hl-google-stale` | No |
-| **2. Home Assistant, read-only** | `docker/homeassistant/` stack, Caddy route, a few HA facts in the digest ("garage open 2h") | No |
+| **2. Home Assistant, read-only** ✅ built | `docker/homeassistant/` stack, `ha.` route, probe, tile; `app/home.py` and a **Home** line in Today; `source-home` stamp | No |
 | **3. Concierge, read tools only** | `docker/concierge/`, `/ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
 | **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
 | **5. Car** | Tesla through HA's Tesla integration: battery, location, climate; "send destination to car" as a write | Yes, approved |
@@ -284,7 +301,21 @@ earlier ones.
   before committing to phase 3.
 - **Money:** the watch lane is $0 (local model, Google APIs within free quota).
   The act lane is Claude API usage, on demand only, and nothing in it is
-  scheduled. Set a monthly spend limit on the API key in the Anthropic console.
+  scheduled. **Phases 1–2 never call the Claude API** (Google, Home
+  Assistant and the local 3B only). Phase 3 is the first that does, and it
+  follows the same budget isolation as the brignano.io site chat:
+  - its own Console **workspace**, `homelab`, with its own monthly spend limit
+    and alert (for example $20 limit, alert at $10). Workspace limits are kept
+    summed under the org's $50 cap, alongside `brignano-io`'s $10;
+  - its own API key, **scoped to that workspace**, with a 1-year expiry. Put a
+    renewal reminder on the calendar when it is created;
+  - the key only in `ANTHROPIC_API_KEY` in `docker/concierge/.env`, as
+    `${ANTHROPIC_API_KEY:?required}` in compose. **This repo is public**: the key
+    is never committed, and `.env.example` holds a placeholder;
+  - Anthony creates the workspace and the key in the Console. Claude has no
+    Console access.
+
+  A future cloud model anywhere else in the lab follows the same steps.
   Tesla bills Fleet API usage: check current pricing before phase 5.
 
 ## Rejected alternatives
@@ -308,9 +339,13 @@ earlier ones.
 
 ## Open questions
 
-- [ ] Home Assistant networking: device discovery (mDNS, SSDP) usually wants
-      `network_mode: host`. Confirm what that means inside a privileged LXC, and
-      whether the integrations actually needed work on a bridge network.
+- [x] Home Assistant networking: **bridge**, on its own network plus `proxy`
+      (2026-10-10). Host mode buys mDNS/SSDP discovery but cannot join a Docker
+      network, so Caddy and the assistant would reach HA through the host's
+      address, and :8123 would be open to the whole LAN. Cloud integrations,
+      which is most of what a house has, need no discovery. Revisit only for an
+      integration that needs multicast. Reasoning in
+      `docker/homeassistant/README.md`.
 - [ ] Tesla Fleet API registration requires hosting a public key at
       `/.well-known/appspecific/com.tesla.3p.public-key.pem` on a publicly
       reachable domain. `*.$HOMELAB_DOMAIN` resolves to a private address. Options:

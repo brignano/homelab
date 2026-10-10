@@ -67,7 +67,7 @@
 # -----------------------
 # Reporting is the floor, not the whole answer. Where a bad version is cheap,
 # this job now also PULLS — see the image-pull section. Where it is not
-# (HL_NO_AUTOPULL: proxy, core, monitoring) the report is all you get, and a
+# (HL_NO_AUTOPULL: proxy, core, monitoring, homeassistant) the report is all you get, and a
 # person decides; `proxy` additionally has Renovate opening PRs for it, see
 # renovate.json5. Every automatic pull writes the digest it is replacing to
 # HL_DIGEST_LOG first, because a floating tag cannot be rolled back to.
@@ -289,13 +289,19 @@ in_list() {
 #               not get automatic major versions. Pinning Grafana to a major
 #               would let it back in; see the TSD.
 #
+#   homeassistant
+#               Same shape as core. HA migrates its recorder database one way
+#               on upgrade and ships breaking changes monthly, so a version you
+#               did not choose is one you cannot back out of. Update it by hand
+#               after reading the release notes.
+#
 # Everything else — ai, mcp, dashboard, desktops — pulls. Two of those are
 # version-pinned already, so a pull is a no-op for them until the pin moves,
 # which is the point: this is a mechanism, not a gamble.
 #
 # Stacks that build their own image are skipped entirely: there is no upstream
 # image to fetch, and `--pull` on their rebuild (below) refreshes the base.
-NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring}"
+NO_AUTOPULL="${HL_NO_AUTOPULL:-proxy core monitoring homeassistant}"
 AUTOPULL="${HL_AUTOPULL:-yes}"
 
 # Rollback insurance. Before anything is replaced, what is running is written

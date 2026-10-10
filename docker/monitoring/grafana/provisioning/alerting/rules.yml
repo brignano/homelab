@@ -314,22 +314,28 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [25] }
 
-      # --- The digest stopped reading a Google source ---
+      # --- The digest stopped reading one of its sources ---
       #
-      # The digest's "Today" section (docs/design/tsd-personal-assistant.md).
-      # A failed read does show in the digest as "not read" — but that line is
-      # read once, on a phone, and the likely cause is one that will not heal:
-      # the refresh token was revoked, the password changed, or the OAuth app
-      # was left in "Testing", where Google expires tokens after 7 days. The
-      # fix is `--google-auth`, and this is what says so.
+      # The digest's "Today" section (docs/design/tsd-personal-assistant.md):
+      # Google calendar and mail, and Home Assistant. A failed read does show in
+      # the digest as "not read", but that line is read once, on a phone, and
+      # the likely causes will not heal by themselves. For Google: the refresh
+      # token was revoked, the password changed, or the OAuth app was left in
+      # "Testing", where Google expires tokens after 7 days. For Home Assistant:
+      # the container is down, or the digest user's token was deleted.
       #
-      # The bot arms each enabled source's stamp at startup, so a sign-in that
+      # The uid says "google" because that was the only source when it was
+      # written. It is kept rather than renamed: Grafana does not delete a
+      # provisioned rule just because it left this file (that takes a
+      # `deleteRules` entry), so a rename risks two near-copies paging twice.
+      #
+      # The bot arms each enabled source's stamp at startup, so a source that
       # never worked still ages into this alert rather than publishing nothing.
       # 25h for the same reason as hl-digest-missing: sources are read with the
       # daily digest. If the digest itself stops, both fire, and that one is the
-      # cause. Absent series (Google off, or the schedule off) is silence.
+      # cause. Absent series (source off, or the schedule off) is silence.
       - uid: hl-google-stale
-        title: Digest cannot read a Google source
+        title: Digest cannot read one of its sources
         condition: C
         for: 30m
         noDataState: OK
@@ -337,7 +343,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Digest has not read Google {{ $labels.source }} for {{ printf \"%.0f\" $values.A.Value }}h — rerun the assistant's --google-auth if the sign-in expired"
+          summary: "Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }

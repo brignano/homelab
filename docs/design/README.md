@@ -17,5 +17,5 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-alerting-off-box.md`](tsd-alerting-off-box.md) | ✅ approved / shipped — alerting that survives the box going down (Discord webhook + Healthchecks dead man's switch) |
 | [`tsd-local-llm-discord-jobs.md`](tsd-local-llm-discord-jobs.md) | ✅ approved / shipped — local-LLM async jobs delivered over Discord (`docker/assistant/`) |
 | [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — open-ended telemetry querying; its canned-summary half shipped in `tsd-local-llm-discord-jobs.md` |
-| [`tsd-personal-assistant.md`](tsd-personal-assistant.md) | 🚧 phase 1 built — watch lane (mail/calendar/home into the digest) + act lane (Claude Agent SDK behind `/ask`, every write approved) |
+| [`tsd-personal-assistant.md`](tsd-personal-assistant.md) | 🚧 phases 1–2 built — watch lane (mail/calendar/Home Assistant into the digest) + act lane (Claude Agent SDK behind `/ask`, every write approved) |
 | [`tsd-dependency-updates.md`](tsd-dependency-updates.md) | ✅ approved / shipped — image staleness watchdog, auto-pull split by blast radius, Renovate on `proxy` |

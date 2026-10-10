@@ -27,6 +27,59 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant, read into the digest (personal assistant, phase 2)
+
+**Goal:** Phase 2 of [`tsd-personal-assistant.md`](design/tsd-personal-assistant.md).
+Add a home hub, and give the digest's Today section a **Home** line: anything
+open, unlocked, leaking, low on battery or offline among entities you choose.
+
+**Steps:**
+1. `docker/homeassistant/`: HA `:stable` on a bridge network plus `proxy`, with
+   no host ports. State is in a named volume (it holds auth tokens), and git
+   owns only `config/configuration.yaml`, mounted read-only (HA's reverse-proxy
+   trust). A one-shot `homeassistant-init` creates the `!include` targets HA's
+   UI editors write, only if they are missing. It has no `container_name`, so
+   heartbeat's inventory does not expect it to stay up.
+2. `ha.$HOMELAB_DOMAIN` in the Caddyfile, a dashboard tile with its vendored
+   icon, and a blackbox probe on `/manifest.json`.
+3. `homeassistant` added to `HL_NO_AUTOPULL`: its database migrations are one
+   way, the same reasoning as `core`.
+4. `docker/assistant/app/home.py`: GET `/api/states/<id>` for `HA_ENTITIES`
+   only, and a table of what counts as notable. Rendered by code, never shown
+   to the model. The assistant joins `proxy_proxy` to reach HA.
+5. `source-home` stamp → `heartbeat.sh` → `hl-google-stale`, now worded for
+   either kind of source. Its uid is kept, to avoid a duplicate rule.
+6. 7 new smoke tests (51 total).
+
+**Issues encountered:**
+- Home Assistant has no read-only token. Any token can call services. The
+  design's "capability ceiling" (Assist exposure) governs the act lane's MCP
+  surface, not REST. Documented as such: a dedicated non-admin user, a GET-only
+  code path, and a test that fails on any POST. That is weaker than Google's
+  scopes, and the docs do not pretend otherwise.
+- Host networking (the HA docs' default) would expose :8123 to the LAN and
+  cannot join Docker networks. Chose bridge. Cloud integrations need no
+  discovery, and local ones are added by IP.
+
+**Resolution:**
+- Off on the digest side until `HA_TOKEN` and `HA_ENTITIES` are set. The bot
+  refuses to start with only one of them.
+
+**Notes / next steps:**
+- **Deploy soon after merging.** `heartbeat.sh` counts `container_name:
+  homeassistant` as must-be-running, so an undeployed stack raises
+  `hl-container-missing`.
+- The deploy also needs `caddy` recreated (new site; recreate `caddy` alone,
+  not AdGuard), `prometheus` recreated (probe), the dashboard restarted (new
+  icon file), Grafana restarted (alert wording), and the assistant rebuilt
+  (`--build`, and it now joins `proxy`).
+- Setup is in `docker/homeassistant/README.md`: onboarding, the `digest` user
+  and token, then `HA_ENTITIES`.
+- Phase 3 is the act lane: `docker/concierge/`, Claude via the Agent SDK,
+  every write approved in Discord.
+
+---
+
 ## 2026-10-10 — An invariants-reviewer agent, and a skill that was half-loaded
 
 **Goal:** Check a diff against the rules this repo learned the hard way before it

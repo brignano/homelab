@@ -59,6 +59,13 @@
         description: DNS resolver and ad blocking for the house
         icon: /icons/adguard-home.svg
 
+- Home:
+    - Home Assistant:
+        href: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Doors, locks, sensors and cameras — read by the digest
+        icon: /icons/home-assistant.svg
+
 - Desktops:
     - Kali:
         href: https://kali.{{HOMEPAGE_VAR_DOMAIN}}
