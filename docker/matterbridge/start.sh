@@ -14,9 +14,11 @@
 #   4. Registers the plugin (a no-op after the first run).
 set -eu
 
-if [ ! -s /proc/net/if_inet6 ]; then
+# `grep -q .`, not `[ -s ]`: files in /proc report a size of 0 however much
+# they hold, so `-s` called every host IPv6-less, the first deploy included.
+if ! grep -q . /proc/net/if_inet6 2>/dev/null; then
   echo "matterbridge: this host has no IPv6, and Matter needs it." >&2
-  echo "  Check on CT 100: cat /proc/sys/net/ipv6/conf/all/disable_ipv6  (must be 0)" >&2
+  echo "  Check on CT 100: cat /proc/net/if_inet6  (must list eth0)" >&2
   echo "  See docker/matterbridge/README.md → Before you start." >&2
   exit 1
 fi
