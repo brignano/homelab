@@ -27,6 +27,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Matterbridge: the IPv6 check refused every host
+
+**Goal:** First deploy of `docker/matterbridge/`.
+
+**Steps:**
+1. The image built. The container exited at once with "this host has no
+   IPv6", though CT 100 has IPv6: `eth0` holds a link-local address and a
+   global one, and every `disable_ipv6` reads 0.
+2. `start.sh` now tests `grep -q . /proc/net/if_inet6`. It used `[ -s ]`.
+
+**Issues encountered:**
+- Files in `/proc` report a size of 0 however much they hold, so `-s` is
+  false on every host. The sandbox it was tested in had no IPv6 and no such
+  file, so only the failing case was ever exercised. The check that should
+  have caught a real problem was the problem.
+
+**Resolution:**
+- `grep -q .` was checked against a file with an `eth0` line (passes), an
+  empty file and a missing file (both refuse). The README's pre-deploy check
+  reads the same file the container does. Its sysctl fix now covers `all`,
+  `default` and `eth0`.
+
+**Notes / next steps:**
+- On the box: `git pull`, then `up -d --build --force-recreate`, then pair.
+
+---
+
 ## 2026-10-10 — Matterbridge: Alexa controls Home Assistant, free and local
 
 **Goal:** Voice control through Alexa without paying for Home Assistant Cloud,

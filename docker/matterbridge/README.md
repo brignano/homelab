@@ -29,15 +29,16 @@ Alexa's commands stay on the LAN instead of going through a cloud relay.
    without it. On CT 100:
 
    ```bash
-   cat /proc/sys/net/ipv6/conf/all/disable_ipv6   # must print 0
-   ip -6 addr show dev eth0 | grep fe80           # a link-local address
+   grep eth0 /proc/net/if_inet6    # at least one line; the container checks the same file
    ```
 
-   A link-local address is enough: your router does not need to hand out
-   IPv6. If the first line prints `1`, turn IPv6 back on and keep it on:
+   A link-local address (`fe80…`) is enough: your router does not need to
+   hand out IPv6. If it prints nothing, check
+   `cat /proc/sys/net/ipv6/conf/{all,default,eth0}/disable_ipv6`. Any `1`
+   there means IPv6 is off. Turn it back on and keep it on:
 
    ```bash
-   echo 'net.ipv6.conf.all.disable_ipv6 = 0' > /etc/sysctl.d/90-ipv6.conf
+   printf 'net.ipv6.conf.%s.disable_ipv6 = 0\n' all default eth0 > /etc/sysctl.d/90-ipv6.conf
    sysctl --system
    ```
 
@@ -159,7 +160,7 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 
 | Symptom | Likely cause |
 |---|---|
-| Exits at once: "this host has no IPv6" | IPv6 is disabled on CT 100. See "Before you start" step 2. |
+| Exits at once: "this host has no IPv6" | `grep eth0 /proc/net/if_inet6` prints nothing on CT 100: IPv6 is off. See "Before you start" step 2. (Before 2026-10-11, `start.sh` said this on every host, even with IPv6 on. `git pull` and rebuild.) |
 | Alexa: "device is unresponsive" for everything | Matterbridge or HA is down. `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
 | An entity is not in Alexa | It lacks the `Alexa` label, its domain is blacklisted (lock, cover, valve, alarm, button, remote, media player), or it is hidden in HA. Fix it, then `docker restart matterbridge`. |
