@@ -27,6 +27,52 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — SSH key access to CT 100 restored for Windows and the Mac
+
+**Goal:** `hl-ssh` from the Windows desktop asked for root's password on
+`10.0.0.201`, and nobody knew that password. Key auth was the only way in.
+
+**Steps:**
+1. Windows already had a key (`C:\Users\abrig\.ssh\id_ed25519`). It was not in
+   CT 100's `/root/.ssh/authorized_keys`.
+2. No CT 100 root password and no Proxmox web UI login were known. The way in
+   was the Mac's key on the **Proxmox host**, installed at setup
+   (`ssh-copy-id root@10.0.0.200`), plus `pct exec 100`, which needs no
+   container password.
+3. Taildrop (`tailscale file cp … macbook:`) never delivered the file, so the
+   public key was copied to the Mac's clipboard by hand.
+4. CT 100's `authorized_keys` was rewritten from the Mac with one key per line:
+   ```bash
+   { echo '<windows pubkey>'; cat ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub; } \
+     | ssh root@10.0.0.200 "pct exec 100 -- bash -c 'cat > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
+   ```
+   It now holds `abrig@Desktop` (Windows ed25519) and the Mac's ed25519 and
+   RSA keys (`abrignano@comcast.net`).
+
+**Issues encountered:**
+- A `>` overwrite with a placeholder string wiped the file, and with it the
+  Mac's direct key. After that the Mac's `hl-ssh` asked for a password too.
+- `pbpaste` has no trailing newline, so the next `>>` append glued the Mac's
+  key onto the end of the Windows key's line. That corrupted both keys
+  silently: `cat` looked almost right, and sshd ignores the bad line.
+
+**Resolution:**
+- Rewrote the whole file in one `>` from `echo` and the `.pub` files, which
+  end in newlines. Checked with `pct exec 100 -- cat` that there are three
+  separate lines. `hl-ssh` works from both machines.
+
+**Notes / next steps:**
+- **The Mac's key on the Proxmox host was the only route into the host.**
+  Nothing else had its password or a key. Both gaps are now closed: the
+  Windows key is in the host's `authorized_keys` (`ssh root@10.0.0.200
+  hostname` → `m5` from Windows), and the host has a known root password
+  (`passwd`), which is also the `https://10.0.0.200:8006` web UI login (realm
+  Linux PAM). Keep it in the password manager.
+- When appending to `authorized_keys`, check afterwards that there is one key
+  per line. A missing newline breaks two keys and gives no error.
+
+---
+
 ## 2026-10-10 — Home Assistant moved to host networking
 
 **Goal:** Pair the Honeywell T6 Pro Smart thermostat (TH6220WF2006) with Home
