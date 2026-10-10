@@ -40,8 +40,12 @@ it becomes a break. From 2027.2, HA stops reading `http:` from
 2. Added `docker/homeassistant/docker-compose.bootstrap.yml`, an override that
    publishes HA on `127.0.0.1:8123` only, for setting those values on a fresh
    volume over an SSH tunnel.
-3. README "Fresh volume" section, troubleshooting row, and the Caddyfile
-   comment now point at the UI setting.
+3. README "Fresh volume" section and troubleshooting row now point at the UI
+   setting. The Caddyfile comment still names the old YAML block, on purpose:
+   any edit to that single-file mount, even a comment, needs a human-run
+   recreate of `caddy` and trips `hl-config-drift`, and `hl-stack-drift` can
+   trip too because `proxy` drift is measured against the image's build time.
+   Fix the comment the next time the Caddyfile changes for a real reason.
 
 **Issues encountered:**
 - A fresh volume would have no proxy trust, so Caddy gets 400 and the UI that
@@ -54,11 +58,13 @@ it becomes a break. From 2027.2, HA stops reading `http:` from
   already uses.
 
 **Notes / next steps:**
+- **Before merging,** confirm Settings → System → Network shows Use
+  X-Forwarded-For on, with both trusted proxy ranges. `repo-sync.sh`
+  recreates `homeassistant` unattended at 04:00 after a change to its stack, and
+  without the imported values that recreate would leave `ha.` answering 400.
 - Deploy: recreate `homeassistant` (single-file mount), then confirm
   `ha.$HOMELAB_DOMAIN` still answers 200. Rollback while HA is still below
-  2027.2: restore the block (`git revert`) and recreate. Also recreate `caddy`
-  alone for the comment change, or `hl-stack-drift` will report `proxy` as
-  stale.
+  2027.2: restore the block (`git revert`) and recreate.
 - The values are no longer in git. If the volume is lost, the README has
   them.
 
