@@ -1027,6 +1027,17 @@ def _():
     assert fact_of(Proposal("remember", {"fact": "x" * 999})) == "x" * 300
 
 
+@check("concierge: links in an answer are shown in full and never previewed")
+def _():
+    from app.concierge import defang
+    out = defang("See [your bill](https://evil.example/?d=secret) or https://ok.example/x.")
+    assert "[your bill](" not in out, out
+    assert "your bill (<https://evil.example/?d=secret>)" in out, out
+    assert "<https://ok.example/x.>" in out or "<https://ok.example/x>" in out, out
+    assert defang("<https://already.example>") == "<https://already.example>"
+    assert defang("no links here") == "no links here"
+
+
 @check("concierge: unknown or malformed proposals are never approvable")
 def _():
     from app.concierge import APPROVABLE, Proposal, fact_of, render_proposal

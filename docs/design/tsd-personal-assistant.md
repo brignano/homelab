@@ -385,6 +385,14 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   refresh token, and Compose would refuse to run it if the token were
   required. `config.py` refuses a half-set Google config, and an unconfigured
   family's tools are not registered.
+- **Links in answers:** an injected email could have the agent end its answer
+  with a URL carrying mailbox contents. Discord fetches links in bot messages
+  to build previews, so that would leak data with no click. #ask replies are
+  sent with `suppress_embeds`. Every URL is wrapped in `<…>`, and masked
+  `[text](url)` links are rewritten so the destination is visible
+  (`app/concierge.py` → `defang`). With this, the worst case of injection
+  stays "a proposal you decline" or "a link you can see and choose not to
+  open".
 - **Internal network:** `assistant_concierge`, owned by the assistant stack, so
   the watch lane never waits on the act lane. The concierge is the only other
   member, and it still checks a bearer token.

@@ -31,7 +31,7 @@ from .chat import (
     context_mode, is_ignorable,
 )
 from .concierge import (
-    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, fact_of,
+    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, defang, fact_of,
     footer as concierge_footer, render_proposal, usable_memories,
 )
 from .config import Config
@@ -435,13 +435,15 @@ class Assistant(discord.Client):
             return
 
         # The answer can quote an email or an event, so it may hold text a
-        # stranger wrote: never let it ping anyone.
+        # stranger wrote: never let it ping anyone, never let Discord fetch a
+        # link in it, and never hide where a link goes (see defang).
         quiet = discord.AllowedMentions.none()
-        parts = chunk(reply.answer + "\n" + concierge_footer(reply))
+        parts = chunk(defang(reply.answer) + "\n" + concierge_footer(reply))
         try:
-            await message.reply(parts[0], mention_author=False, allowed_mentions=quiet)
+            await message.reply(parts[0], mention_author=False, allowed_mentions=quiet,
+                                suppress_embeds=True)
             for part in parts[1:]:
-                await channel.send(part, allowed_mentions=quiet)
+                await channel.send(part, allowed_mentions=quiet, suppress_embeds=True)
             for proposal in reply.proposals:
                 view = ApprovalView(self, proposal) if fact_of(proposal) else None
                 sent = await channel.send(

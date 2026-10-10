@@ -105,14 +105,18 @@ class Concierge:
 
         if self._in_flight >= self.cfg.max_queue:
             return _bad("busy", 429)
+        async def locked_run() -> agent.Outcome:
+            async with self._lock:
+                return await agent.run(self.cfg, self.google, self.home,
+                                       prompt=prompt, history=history, memories=memories)
+
         self._in_flight += 1
         try:
-            async with self._lock:
-                outcome = await asyncio.wait_for(
-                    agent.run(self.cfg, self.google, self.home,
-                              prompt=prompt, history=history, memories=memories),
-                    timeout=self.cfg.timeout_s,
-                )
+            # The timeout covers waiting for the lock as well as the run. The
+            # bot gives up a minute after CONCIERGE_TIMEOUT_S, and aiohttp does
+            # not cancel a handler whose client left, so a run that started
+            # after a long wait would spend money on an answer nobody receives.
+            outcome = await asyncio.wait_for(locked_run(), timeout=self.cfg.timeout_s)
         except asyncio.TimeoutError:
             log.warning("task timed out after %ss", self.cfg.timeout_s)
             return _bad(f"timed out after {self.cfg.timeout_s}s", 504)

