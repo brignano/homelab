@@ -27,6 +27,34 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Ollama and assistant-bot details moved into a skill
+
+**Goal:** Finish the split started below: move the parts of "Ollama / AI
+tuning" and "Local LLM usage" that only matter when working on the model or the
+Discord bot.
+
+**Steps:**
+1. Created `.claude/skills/local-llm/SKILL.md` holding, word for word, how to
+   add or reload a model (`load-models.sh`, one Modelfile per model) and how
+   the assistant bot works (`guild.yml`, `#chat` memory and scope, readings by
+   injection, the two rules for extending it).
+2. `AGENTS.md` keeps "Local LLM usage" down to the deciding question (is anyone
+   waiting on the answer?) and a pointer to the skill.
+
+**Issues encountered:**
+- Eight files cite `AGENTS.md` → "Ollama / AI tuning" for the ~0.5 tok/s story,
+  the `num_thread 4` pin, never sending `num_thread` per request, and one
+  generation at a time. Those are most of the section.
+
+**Resolution:**
+- Those four bullets stay in `AGENTS.md` word for word, so every citation still
+  holds. Only the two how-to bullets moved.
+
+**Notes / next steps:**
+- `AGENTS.md` is now 285 lines, down from 381 before the first split.
+
+---
+
 ## 2026-10-10 — Calendar and mail in the digest (personal assistant, phase 1)
 
 **Goal:** Start the personal-assistant design
