@@ -904,6 +904,10 @@ def _():
     hostile = [Reading("cover.x", "@everyone [x](https://evil)", "open", None, "open")]
     assert "@everyone" not in line(hostile) and "://" not in line(hostile)
     assert "_not read_" in "\n".join(render_lines(Day(now=NOW, sources=("home",))))
+    # A naive timestamp from HA must not take the digest down.
+    from app.home import parse_state
+    naive = parse_state("lock.a", {"state": "unlocked", "last_changed": "2026-10-12T05:30:00"})
+    assert naive.since.tzinfo is not None and line([naive]).endswith("unlocked 2h"), line([naive])
 
 
 @check("home: works without Google, fails alone, and stamps only on success")

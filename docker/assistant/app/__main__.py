@@ -259,9 +259,6 @@ async def _selftest_async() -> int:
 
         collector = FactCollector(session, prometheus_url=prom, loki_url=loki)
 
-        # The "Today" section, if Google is configured. No state_dir: a selftest
-        # proves the sign-in works, it is not a scheduled read, and it must not
-        # refresh the stamps hl-google-stale watches.
         # The "Today" section, from whichever of Google and Home Assistant is
         # configured. Parsed with the same helpers the bot uses, so a half-set
         # config fails here too, before you rely on it. No state_dir: a
@@ -299,11 +296,6 @@ async def _selftest_async() -> int:
     print(message)
     print("=" * 70)
     return 0
-
-
-def _csv(name: str, default: str) -> tuple[str, ...]:
-    raw = os.environ.get(name)
-    return tuple(x.strip() for x in (default if raw is None else raw).split(",") if x.strip())
 
 
 def main(argv: list[str] | None = None) -> int:

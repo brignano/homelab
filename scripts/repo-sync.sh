@@ -67,7 +67,7 @@
 # -----------------------
 # Reporting is the floor, not the whole answer. Where a bad version is cheap,
 # this job now also PULLS — see the image-pull section. Where it is not
-# (HL_NO_AUTOPULL: proxy, core, monitoring) the report is all you get, and a
+# (HL_NO_AUTOPULL: proxy, core, monitoring, homeassistant) the report is all you get, and a
 # person decides; `proxy` additionally has Renovate opening PRs for it, see
 # renovate.json5. Every automatic pull writes the digest it is replacing to
 # HL_DIGEST_LOG first, because a floating tag cannot be rolled back to.

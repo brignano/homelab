@@ -112,6 +112,11 @@ def parse_state(entity_id: str, payload: dict) -> Reading:
             since = dt.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
         except ValueError:
             since = None
+    # HA sends +00:00 today. A naive value would make the "for 2h" arithmetic
+    # raise in render_lines, outside the collector's never-raises boundary,
+    # and take the whole digest down over one timestamp. Read it as UTC.
+    if since is not None and since.tzinfo is None:
+        since = since.replace(tzinfo=dt.timezone.utc)
     return Reading(
         entity_id=entity_id,
         name=str(attributes.get("friendly_name") or entity_id),
