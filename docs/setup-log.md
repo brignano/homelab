@@ -27,6 +27,60 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — A weekly test that the Postgres dump actually restores
+
+**Goal:** Phase 0 of `docs/design/tsd-backups-and-monitoring.md`. Prove the one
+backup the lab has can be read back, not just that it was written.
+
+**Steps:**
+1. Added `scripts/pg-restore-test.sh`, Sundays 03:00. It runs `gzip -t` on the
+   newest dump and starts a scratch container from the core stack's own image
+   (`--network none`, 1 CPU, 512 MB). It replays the dump, then compares the
+   databases, roles and tables against what the dump creates. The container
+   is removed on every exit path.
+2. Every pg_dumpall replay into a fresh server produces one
+   `role "postgres" already exists`. That one error is allowed; any other
+   fails the test.
+3. Reporting matches `pg-backup.sh`. A Healthchecks ping carries the exit code
+   (`HEALTHCHECKS_PG_RESTORE_TEST_URL`, period 7d, grace 1d). Metrics are
+   `homelab_pg_restore_test_*`, and the last-success time comes from a marker
+   file's mtime, so a failed run cannot hide the age of the last good one.
+   New alert: `hl-restore-test-failed`.
+4. Added to `install-cron.sh` (both lists) and to `heartbeat.sh`'s
+   `CRON_JOBS`, so an uninstalled entry shows up in
+   `homelab_cron_job_installed`.
+
+**Issues encountered:**
+- `install-cron.sh` holds the job list twice: `JOBS` and a
+  `for script in …` loop. `check-observability.sh` reads the loop. Adding to
+  `JOBS` alone fails CI.
+
+**Resolution:**
+- Tested end to end against `postgres:16-alpine`. `pg-backup.sh` dumped a
+  stand-in production server with 2 databases, a role and 4 tables, and the
+  test restored all of it in about 4s. A truncated dump, a dump with a
+  failing statement, a dump missing a table and an empty dump directory each
+  failed, recorded `success=0`, kept the last-good timestamp and left no
+  container behind.
+- Reviewed with the `invariants-reviewer` agent before pushing. It caught two
+  things the tests had missed. First, the postgres image declares a `VOLUME`,
+  so `docker rm -f` without `-v` left a full restored copy of the cluster
+  (password hashes included) as an anonymous volume every run. The four test
+  runs had already left four. Second, the alert summary read a query that
+  has no data until a first pass, so a failing first run would have been
+  silent in Grafana. Both are fixed: `rm -f -v`, and `or on() vector(-1)`
+  with a "never passed" summary.
+
+**Notes / next steps (on the box):**
+- `git pull`, then `./scripts/install-cron.sh` to add the Sunday entry.
+- Create the Healthchecks check (period 7d, grace 1d) and set
+  `HEALTHCHECKS_PG_RESTORE_TEST_URL` in `docker/monitoring/.env`.
+- Restart Grafana to load the new alert rule (a directory mount, so restart is
+  enough).
+- Run `./scripts/pg-restore-test.sh` once by hand to see it pass.
+
+---
+
 ## 2026-10-10 — Concierge: Claude in #ask with read tools (personal assistant, phase 3)
 
 **Goal:** Build the act lane from `docs/design/tsd-personal-assistant.md`:
