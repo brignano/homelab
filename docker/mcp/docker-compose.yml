@@ -4,7 +4,10 @@ services:
   # the dev machines gets metrics, logs and alert-rule status through one tool
   # surface. See docs/design/tsd-homelab-mcp-server.md.
   mcp-grafana:
-    image: grafana/mcp-grafana:latest
+    # Pinned. `:latest` took 2.0 unannounced via the nightly pull, and 2.0's new
+    # Host allowlist 403'd every request through Caddy (see --allowed-hosts and
+    # docs/setup-log.md, 2026-10-10). Renovate opens a PR for each new release.
+    image: grafana/mcp-grafana:2.0.2
     container_name: mcp-grafana
     restart: unless-stopped
     command:
