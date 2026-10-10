@@ -31,6 +31,9 @@ layout:
   Network:
     style: row
     columns: 2
+  Media:
+    style: row
+    columns: 2
   Desktops:
     style: row
     columns: 2
