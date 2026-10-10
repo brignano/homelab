@@ -1,7 +1,7 @@
 # TSD — Backups, restore testing & job monitoring
 
 **Status:** 📝 revised draft (2026-10-10), awaiting approval. Phase 0 needs no
-hardware; Phase 1 is still blocked on the USB SSD.
+hardware; Phase 1 is still blocked on the backup drive.
 **Goal:** Give the lab backups that can actually be restored. Today it has none
 that cover the data that matters. Then prove they restore on a schedule, and
 make every backup job report from off the box when it stops running.
@@ -20,7 +20,7 @@ would hurt to lose — Open WebUI's chat history, Grafana, AdGuard's
 configuration, the Kali home directory, and every `.env` file with the lab's
 secrets — has no backup at all, and lives on the same NVMe as the dump. The plan
 is: **(0)** now, prove the dump we have restores, and settle three decisions;
-**(1)** the day the SSD arrives, a nightly `vzdump` of the whole of CT 100 to it,
+**(1)** the day the backup drive arrives, a nightly `vzdump` of the whole of CT 100 to it,
 pinging Healthchecks; **(2)** if you approve it, an encrypted `restic` copy of
 just the irreplaceable data to Backblaze B2, which likely fits in B2's free
 10 GB; **(3)** weekly automated restore checks, and a quarterly manual full
@@ -53,6 +53,7 @@ restore.
 | Postgres | `postgres_data` → `/opt/backups/postgres` | Nothing today | ✅ nightly dump, same disk |
 | Prometheus, Loki, Alloy | named volumes | 30 days of metrics/logs | Not worth backing up |
 | Ollama models, Docker images | volumes / `/var/lib/docker` | Re-pulled | Not worth backing up offsite |
+| Jellyfin media (planned) | its own drive, mounted into CT 100 | Re-acquired | **Never backed up** — see Phase 1, step 7 |
 | Configs, dashboards, scripts | git | — | ✅ GitHub |
 
 Two things follow. A **whole-CT image** covers every row at once and is the only
@@ -74,7 +75,7 @@ marked ❌ that are not "acceptable" — a few GB at most.
    manager** if Phase 2 is approved. An encrypted offsite backup whose key only
    exists on the dead disk is not a backup.
 
-### Phase 1 — SSD day: nightly image of CT 100
+### Phase 1 — drive day: nightly image of CT 100
 
 All on the **Proxmox host**, like the `fstrim` job in `AGENTS.md` "Disk" —
 `pct`/`vzdump` do not exist inside CT 100. Host-side files live in
@@ -117,6 +118,18 @@ section.
    the same "silence is the signal" rule as every other job here: a vzdump job
    that was never scheduled, or a drive that fell off the USB bus, must page.
 6. **First restore test** — the quarterly drill in Phase 3, run once now.
+7. **Keep media out of the image.** vzdump includes every mount point of CT 100
+   unless that mount point says otherwise. When the Jellyfin drive is attached,
+   mount it with `backup=0`, or the next nightly backup tries to copy the whole
+   library onto the backup drive, fills it, and fails, so the job that matters
+   stops:
+   ```bash
+   pct set 100 -mp0 /mnt/media,mp=/media,backup=0
+   pct config 100 | grep mp0      # must show backup=0
+   ```
+   The media drive and the backup drive are **separate drives**. Sharing one
+   would let a single failure take the library and the only backup together,
+   and a growing library would quietly squeeze backup retention.
 
 **Not encrypted at rest** unless LUKS is chosen. The archive contains every
 `.env` file and the Postgres role hashes. The drive is the part of this setup
@@ -172,10 +185,13 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
 
 ## Decisions needed
 
-1. **SSD size.** Recommendation: **1 TB**. Retention keeps up to 14 archives.
-   At an assumed 20–35 GB per compressed archive (to be measured in Phase 1,
-   step 3), that is 280–490 GB, which does not fit on 500 GB with headroom.
-   If the measured size is small, retention can grow instead.
+1. **Backup drive.** Recommendation: a **2 TB portable USB HDD**, or a 1 TB
+   SSD if it costs about the same. Retention keeps up to 14 archives. At an
+   assumed 20–35 GB per compressed archive (to be measured in Phase 1, step 3),
+   that is 280–490 GB, which does not fit on 500 GB with headroom. Speed does
+   not matter for a 02:30 job, so an HDD is fine; 2 TB leaves room to keep
+   backups longer. It holds backups and nothing else. Jellyfin gets its own
+   drive (Phase 1, step 7).
 2. **LUKS on the SSD?** Recommendation: **yes, with a keyfile on the host.** It
    protects against losing the drive by itself, the likeliest loss. It does not
    protect against theft of the whole machine, which takes the keyfile too.
@@ -199,7 +215,8 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
 
 ## Cost
 
-- USB SSD, 1 TB: one-time, roughly $50–80.
+- Backup drive (2 TB portable HDD or 1 TB SSD): one-time, roughly $50–80.
+- Jellyfin's media drive is separate, and costed with Jellyfin rather than here.
 - B2: likely $0 (within the free 10 GB); at most about $1/month.
 - RAM/CPU: none resident. vzdump and restic run for minutes a night.
 
@@ -216,7 +233,8 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
   backup we have ran", not "the lab is recoverable".
 - 2026-10-10: Revised against the lab as it is now. Self-hosted Healthchecks
   and the prune job are dropped (already covered). Restic moves into CT 100.
-  vzdump runs at 02:30 with a hook-script dead man's switch. `is_mountpoint`
+  vzdump runs at 02:30 with a hook-script dead man's switch. Media stays on
+  its own drive, mounted with `backup=0`. `is_mountpoint`
   guards the SSD mount. Tier C restores with no network. The inventory shows
   the existing dump protects an empty database.
 

@@ -73,7 +73,7 @@ the source wins, and say so in your report so this file gets fixed.
 **Exposure and secrets** — `AGENTS.md` "Networking rules", "Repo conventions", "How to help me"
 - New ports bind `127.0.0.1` unless the service genuinely needs LAN/tailnet,
   and then prefer a Caddy route. PostgreSQL never binds all interfaces.
-- Nothing exposes Portainer, Grafana or PostgreSQL through Cloudflare Tunnel.
+- Nothing exposes Portainer, Grafana, PostgreSQL or Jellyfin through Cloudflare Tunnel.
 - No `.env` committed; required secrets use `${VAR:?required}`; `.env.example`
   holds placeholders only, never a real value.
 
