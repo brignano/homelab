@@ -81,6 +81,42 @@ and without putting HA on the internet.
 
 ---
 
+## 2026-10-10 — Jellyfin phase 1: iGPU passed through to CT 100
+
+**Goal:** Give CT 100 the Ryzen's Radeon iGPU so Jellyfin can transcode on it
+(`docs/design/tsd-jellyfin.md`, phase 1). Needs no drive.
+
+**Steps:**
+1. On the Proxmox host: `pct set 100 -dev0 /dev/dri/renderD128,gid=<host render gid>`,
+   then `pct reboot 100`.
+2. In CT 100: `/dev/dri/renderD128` present, group id **993** (CT 100 names
+   that group `kvm`; the number is what counts). This is `RENDER_GID` for
+   `docker/jellyfin/.env`.
+3. `vainfo` from `jellyfin/jellyfin:12.2`: Mesa radeonsi (renoir) driver,
+   decode (`VLD`) and encode (`EncSlice`) for H.264 Constrained
+   Baseline/Main/High, HEVC Main and HEVC Main10.
+4. DNS answered after the reboot (`dig +short jellyfin.home.brignano.io` →
+   10.0.0.201).
+
+**Issues encountered:**
+- `jellyfin.` first gave `ERR_SSL_PROTOCOL_ERROR`: Caddy was still running an
+  old Caddyfile with no `jellyfin.` site, so it had no certificate to offer.
+  The `pct reboot 100` started it fresh on the current file.
+
+**Resolution:**
+- `jellyfin.` now gives a 502, which is expected: the route and certificate
+  work, and the stack waits for the 5 TB drive (`create_host_path: false`).
+
+**Notes / next steps:**
+- Do NOT create `docker/jellyfin/.env` before drive day: it makes the stack
+  required, and the container-down and probe alerts would fire.
+- Drive day: `docker/jellyfin/README.md` §2–3, with `RENDER_GID=993`, then
+  VA-API in the web UI with H.264, HEVC and HEVC 10-bit hardware decoding and
+  hardware encoding.
+- AV1 is not supported by this iGPU; it falls back to the CPU.
+
+---
+
 ## 2026-10-10 — Home Assistant: Echos as speakers (Alexa Media Player)
 
 **Goal:** Let HA make an Echo speak, the other direction from the Nabu Casa

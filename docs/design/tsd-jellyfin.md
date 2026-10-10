@@ -1,8 +1,8 @@
 # TSD: Jellyfin, with the iGPU doing the transcoding
 
-**Status:** ✅ approved 2026-10-10; 🚧 stack built (`docker/jellyfin/`), deployed on
-drive day. Phase 1 (GPU) can be done now. See [Revisions](#revisions) for what
-building it changed.
+**Status:** ✅ approved 2026-10-10; ✅ phase 1 (GPU) done 2026-10-10; 🚧 stack
+built (`docker/jellyfin/`), deployed on drive day. See [Revisions](#revisions)
+for what building it changed.
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -180,7 +180,7 @@ Per the `alerting` skill:
 
 | Phase | Needs | What |
 |---|---|---|
-| 1 | nothing | GPU passthrough to CT 100; prove it with `vainfo`. One `pct reboot 100`, at a quiet time. |
+| 1 ✅ | nothing | GPU passthrough to CT 100; prove it with `vainfo`. One `pct reboot 100`, at a quiet time. **Done 2026-10-10:** `RENDER_GID` is 993; `vainfo` shows H.264, HEVC and HEVC 10-bit decode and encode (`docs/setup-log.md`). |
 | 2 | built | `docker/jellyfin/` stack, Caddy route, probe, tile, GPU metric and alert, Renovate rule. **Merged and started on drive day:** the stack refuses to start without the drive (see Revisions), and once merged the container inventory expects it running. |
 | 3 | 5 TB drive + phases 1–2 | Mount with `backup=0`, create the folder layout, start the stack, recreate `caddy`, set up users, libraries and VA-API, test a transcode over Tailscale on mobile data. Steps in `docker/jellyfin/README.md`. |
 
