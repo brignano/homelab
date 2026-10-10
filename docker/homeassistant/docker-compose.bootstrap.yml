@@ -1,0 +1,20 @@
+# Fresh-volume bootstrap ONLY. Layer it on the main file, finish setup, drop it.
+#
+#   docker compose -f docker/homeassistant/docker-compose.yml \
+#                  -f docker/homeassistant/docker-compose.bootstrap.yml up -d
+#
+# Why it exists: Home Assistant's reverse-proxy trust (use_x_forwarded_for,
+# trusted_proxies) is configured in the UI since HA moved the http integration
+# out of YAML. A new volume has none, so every request through Caddy is 400 —
+# and with no published port, the UI that would fix it is unreachable. This
+# publishes HA on the box's LOOPBACK only, for the one visit that sets it.
+# Nothing on the LAN can reach 127.0.0.1; you get there over SSH:
+#
+#   ssh -L 8123:127.0.0.1:8123 root@10.0.0.201      # then open http://localhost:8123
+#
+# Then: onboarding, Settings > System > Network > reverse proxy (see README),
+# and bring the stack back up WITHOUT this file so the port goes away again.
+services:
+  homeassistant:
+    ports:
+      - "127.0.0.1:8123:8123"
