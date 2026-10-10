@@ -144,9 +144,12 @@ not take you back, so "revert the tag" is not a rollback. Postgres is in the sam
 stack, pinned to `16-alpine` and staying there — patch releases within 16 are
 safe and arrive with the pull, a major is a dump-and-restore.
 
-What remains in the top row is genuinely cheap: `dashboard` and `desktops` are
-version-pinned, so a pull is a no-op until the pin moves, and `ai`/`mcp` hold
-nothing whose breakage is quiet. That is thinner than the original table, and
+What remains in the top row is genuinely cheap: `dashboard`, `desktops` and
+(since 2026-10-10) `mcp` are version-pinned, so a pull is a no-op until the pin
+moves, and `ai` holds nothing whose breakage is quiet. `mcp` was on that last
+list until `:latest` pulled mcp-grafana 2.0 in overnight and its new Host
+allowlist 403'd every request through Caddy — a break nobody saw until Claude
+Code reported the server as failed. That is thinner than the original table, and
 deliberately so — the mechanism is general (`HL_NO_AUTOPULL`), so widening it
 later is one word, and each widening should be argued rather than assumed.
 

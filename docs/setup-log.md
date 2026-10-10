@@ -149,6 +149,9 @@ so deploying is mechanical when they arrive.
   `mcp-grafana` (command changed). `proxy` is on `HL_NO_AUTOHEAL`: recreate it
   deliberately and check DNS twice.
 - `mcp-grafana` is on `:latest`, which is how this arrived unannounced.
+  **Done (same day):** pinned to `2.0.2` (the digest `:latest` pointed at, so
+  no behaviour change) and added to `renovate.json5`, so each release arrives
+  as a PR instead of overnight.
 
 ## 2026-10-10 — Digest: thermostat rule and iCloud calendar through Home Assistant
 

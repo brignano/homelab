@@ -27,7 +27,7 @@
   // can act on, and those are very different numbers here. Outside `proxy`,
   // every image in this lab is `:latest`, `:main`, or built locally -- tags
   // with no version to compare, which Renovate cannot bump and does not open
-  // PRs for. The exceptions are exactly two:
+  // PRs for. The exceptions were exactly two:
   //
   //   ghcr.io/gethomepage/homepage:v1.5.0   (dashboard)
   //   sablierapp/sablier:1.8.1              (desktops)
@@ -38,6 +38,10 @@
   // is guarding against is not on the other side of this door: enabling these
   // two stacks admits at most two PRs, and they are the two the original
   // argument was about.
+  //
+  // A third has since joined them: grafana/mcp-grafana (docker/mcp/), pinned on
+  // 2026-10-10 after `:latest` pulled a breaking 2.0 in overnight. One more
+  // image, one more possible PR -- still not the flood. Its rule is below.
   //
   // Not grouped, for the same reason AdGuard's bumps arrive alone -- a dashboard
   // change and a desktops change are unrelated, and bundling them means
@@ -117,6 +121,16 @@ so a readable tag in the compose file is worth more here than a reproducible \
 build, and the digest would only be one more string nobody reads. Neither stack \
 holds DNS or TLS, so these are ordinary bumps -- they just have to be SEEN.",
       matchFileNames: ["docker/dashboard/**", "docker/desktops/**"],
+      enabled: true,
+      groupName: null,
+      addLabels: ["pinned-image"],
+    },
+    {
+      description: "mcp-grafana (docker/mcp/), pinned 2026-10-10 after \
+`:latest` pulled 2.0 in overnight and its new Host allowlist broke every request \
+through Caddy. A release can change flags or defaults, so each bump is a PR to \
+read -- check its notes for new security defaults before merging.",
+      matchFileNames: ["docker/mcp/**"],
       enabled: true,
       groupName: null,
       addLabels: ["pinned-image"],

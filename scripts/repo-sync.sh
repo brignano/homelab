@@ -295,7 +295,7 @@ in_list() {
 #               did not choose is one you cannot back out of. Update it by hand
 #               after reading the release notes.
 #
-# Everything else — ai, mcp, dashboard, desktops — pulls. Two of those are
+# Everything else — ai, mcp, dashboard, desktops — pulls. Three of those are
 # version-pinned already, so a pull is a no-op for them until the pin moves,
 # which is the point: this is a mechanism, not a gamble.
 #
