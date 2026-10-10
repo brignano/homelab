@@ -12,6 +12,7 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-proxy-memorable-names.md`](tsd-proxy-memorable-names.md) | ✅ approved / shipped — `*.home` names via Caddy + AdGuard |
 | [`tsd-on-demand-desktops.md`](tsd-on-demand-desktops.md) | on-demand Kali webtop via Sablier |
 | [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) | 🚧 Phase 0 built (weekly Postgres restore test) — Phase 1 (nightly vzdump) waits on the backup drive |
+| [`tsd-jellyfin.md`](tsd-jellyfin.md) | 📝 draft — Jellyfin in CT 100 with iGPU (VA-API) transcoding, library on the 5 TB drive (`backup=0`), LAN + tailnet only |
 | [`tsd-photo-library.md`](tsd-photo-library.md) | 📝 draft — local read-only mirror of iCloud Photos + a cleanup that proposes deletions into review albums |
 | [`tsd-self-healing-remediation.md`](tsd-self-healing-remediation.md) | 💡 future — auto-remediation layer |
 | [`tsd-real-domain-private-tls.md`](tsd-real-domain-private-tls.md) | ✅ approved / shipped — real domain + real certs via DNS-01, still unreachable from the internet |
