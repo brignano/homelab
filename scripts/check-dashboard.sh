@@ -35,8 +35,10 @@ EXEMPT="mcp"
 
 # Subdomain of every `<name>.{$HOMELAB_DOMAIN} {` site block. The bare
 # `{$HOMELAB_DOMAIN} {` block is the dashboard itself and is not matched here —
-# it would only ever link to itself.
-sites=$(grep -oE '^[a-z0-9-]+\.\{\$HOMELAB_DOMAIN\} \{' "$CADDYFILE" | cut -d. -f1 | sort -u)
+# it would only ever link to itself. `[ ,]` because a block may list a second
+# address after the real one (`ha.{$HOMELAB_DOMAIN}, http://ha.caddy {`, the
+# probe alias check-probes.sh guards).
+sites=$(grep -oE '^[a-z0-9-]+\.\{\$HOMELAB_DOMAIN\}[ ,]' "$CADDYFILE" | cut -d. -f1 | sort -u)
 
 missing=""
 for site in $sites; do

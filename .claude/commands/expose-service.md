@@ -1,9 +1,9 @@
 Add a service to the Cloudflare Tunnel so it's publicly accessible.
 
 Ask me for:
-1. The service name and which stack it lives in (e.g. "jellyfin" in `docker/jellyfin/`)
-2. The public hostname it should be reachable at (e.g. `jellyfin.yourdomain.com`)
-3. Confirmation that this service should be public (double-check: never expose Portainer, Grafana, PostgreSQL, or Prometheus)
+1. The service name and which stack it lives in (e.g. "preview" in `docker/preview/`)
+2. The public hostname it should be reachable at (e.g. `preview.yourdomain.com`)
+3. Confirmation that this service should be public (double-check: never expose Portainer, Grafana, PostgreSQL, or Prometheus — nor Jellyfin: video over the tunnel risks the Cloudflare account, see AGENTS.md "Networking rules")
 
 Then:
 - Remind me to configure the Public Hostname route in the Cloudflare Zero Trust dashboard:

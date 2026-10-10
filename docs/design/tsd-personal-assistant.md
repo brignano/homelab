@@ -305,7 +305,7 @@ earlier ones.
 |---|---|---|
 | **1. Calendar + mail in the digest** ✅ built | Google OAuth client, `app/google.py` + `app/day.py`, freshness metrics + `hl-google-stale` | No |
 | **2. Home Assistant, read-only** ✅ built | `docker/homeassistant/` stack, `ha.` route, probe, tile; `app/home.py` and a **Home** line in Today; `source-home` stamp | No |
-| **3. Concierge, read tools only** ✅ built | `docker/concierge/`, `/ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
+| **3. Concierge, read tools only** ✅ built | `docker/concierge/`, `#ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
 | **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
 | **5. Car** | Tesla through HA's Tesla integration: battery, location, climate; "send destination to car" as a write | Yes, approved |
 
@@ -345,6 +345,14 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       `#memory` in `guild.yml`, the bot's forwarding and ✅/❌ prompts in
       `docker/assistant/app/concierge.py`. Setup is in
       `docker/concierge/README.md`.
+- [x] **Probe through Caddy.** Today's HA probe goes to HA through the host,
+      so a broken Caddy → HA route (`ha.` answering 502) pages nobody.
+      Done 2026-10-10: job `blackbox-ha-caddy` probes the `ha.` site block
+      through its `http://ha.caddy` alias, and `hl-ha-route-down` pages only
+      while HA itself still answers.
+- [ ] **Matter Server**, only once a Matter device is bought. HA's host
+      networking is in place, and the Matter Server container also needs host
+      networking and IPv6.
 
 **Setup left for phase 3 (you)**
 - [ ] `homelab` workspace in the Claude Console with its own spend limit
@@ -357,11 +365,6 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       and Assist exposure with **no** locks, alarm panels or garage covers.
 - [ ] Bring up `concierge`, then `docker stats` with Ollama loaded (the RAM
       check under "Cost and footprint").
-- [ ] **Probe through Caddy.** Today's HA probe goes to HA through the host,
-      so a broken Caddy → HA route (`ha.` answering 502) pages nobody.
-- [ ] **Matter Server**, only once a Matter device is bought. HA's host
-      networking is in place, and the Matter Server container also needs host
-      networking and IPv6.
 
 ## Security
 

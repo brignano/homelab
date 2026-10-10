@@ -95,12 +95,14 @@ diagnose_stale_config() {
   rm -f "$tmp"
 }
 
-# The blackbox job's targets, in file order. Stops at the next job so the
-# relabel_configs below the list — and every other job — stay out of it.
+# Every HTTP target of every blackbox* job, in file order, as `module|target`.
+# The module is per job (blackbox-ha-caddy sends its own Host header), so a live
+# probe with the wrong one would ask a different question than Prometheus does.
+# The DNS jobs' targets are not URLs and drop out here.
 targets=$(awk '
-  /^  - job_name: blackbox$/ { in_job = 1; next }
-  in_job && /^  - job_name:/ { exit }
-  in_job && $1 == "-" && $2 ~ /^https?:\/\// { print $2 }
+  /^  - job_name:/ { in_job = ($3 ~ /^blackbox/); mod = ""; next }
+  in_job && /^ +module: *\[/ { mod = $0; sub(/.*\[ */, "", mod); sub(/ *\].*/, "", mod); next }
+  in_job && $1 == "-" && $2 ~ /^https?:\/\// { print mod "|" $2 }
 ' "$PROM_FILE")
 
 [ -n "$targets" ] || { echo "probe-status: no blackbox targets found in $PROM_FILE" >&2; exit 1; }
@@ -113,7 +115,8 @@ if ! live=$(curl -fsS -m 10 "$PROM_URL/api/v1/targets" 2>/dev/null); then
   echo
   live=""
 else
-  for t in $targets; do
+  for pair in $targets; do
+    t=${pair#*|}
     # A literal substring match against the API response. Prometheus echoes the
     # target verbatim in the scrape's labels, and Go does not escape slashes in
     # JSON, so this needs no parser and cannot half-match a different URL.
@@ -138,12 +141,14 @@ if ! docker ps --filter "name=^${BLACKBOX}$" --filter "status=running" --format 
      2>/dev/null | grep -qx "$BLACKBOX"; then
   echo "  container '$BLACKBOX' is not running — skipping live probes"
 else
-  for t in $targets; do
+  for pair in $targets; do
+    module=${pair%%|*}
+    t=${pair#*|}
     # /probe returns Prometheus text format, so no JSON parsing is needed. On a
     # failure blackbox still emits the metrics, with the status code as 0 when
     # it never got a response at all.
     out=$(docker exec "$BLACKBOX" \
-            wget -qO- "http://localhost:9115/probe?target=${t}&module=http_2xx" \
+            wget -qO- "http://localhost:9115/probe?target=${t}&module=${module}" \
           2>/dev/null || true)
 
     if [ -z "$out" ]; then

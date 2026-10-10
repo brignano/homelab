@@ -71,7 +71,7 @@ docker exec prometheus wget -qO- \
   | grep -i 'storage.*local-lvm'
 ```
 
-**Three things grow. Two of them now have a ceiling:**
+**Three things grow. Two of them now have a ceiling** (a fourth, media, is planned):
 
 - **Prometheus** — 30d (`--storage.tsdb.retention.time`), **Loki** — 30d
   (`retention_period`). Both are at steady state.
@@ -81,6 +81,10 @@ docker exec prometheus wget -qO- \
   week-old `builder prune` after its pulls, and reports what it freed.
   **Never `image prune -a` on this box** — Sablier scales the Kali webtop to
   zero, so `-a` deletes a GB-scale image that has no container on it by design.
+- **Media (planned).** Jellyfin's library goes on its own drive, never the
+  backup drive, and its mount point on CT 100 carries `backup=0` — otherwise the
+  nightly vzdump tries to copy the library and fails. See
+  `docs/design/tsd-backups-and-monitoring.md`, Phase 1 step 7.
 - **Container logs.** `json-file` is Docker's default driver and its default
   max-size is *unlimited*; `restart: unless-stopped` means nothing truncates
   them either. Capped daemon-wide at 10m x 3 in `/etc/docker/daemon.json`
@@ -131,14 +135,14 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Sablier | `docker/desktops/` | internal (on-demand engine for desktops) |
 | Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
 | Home Assistant | `docker/homeassistant/` | LAN + tailnet: **host networking** (`:8123` direct, and via Caddy at `ha.$HOMELAB_DOMAIN`), for HomeKit/Matter/discovery. Reached by other containers as `host.docker.internal:8123` |
-| Jellyfin | planned | Cloudflare Tunnel |
+| Jellyfin | planned | LAN + tailnet (via Caddy) — **not** Cloudflare Tunnel; media on its own drive, mounted with `backup=0` |
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC — `/dev/net/tun` isn't exposed to the container.)
 - **Service names (`*.$HOMELAB_DOMAIN`):** a real domain with real Let's Encrypt certificates. A single wildcard DNS record (`*.<base> → 10.0.0.201`, Cloudflare proxy **off**) covers every service; Caddy routes by Host header. **These are not public** — the name resolves publicly but the address is private, so only LAN/tailnet devices can reach it. Certificates come via the ACME **DNS-01** challenge (Caddy writes a TXT record to the zone), so no inbound connection is ever needed. Adding a service needs only a Caddyfile block — the wildcard already covers it.
 - **Legacy `*.home`:** still served, now as redirects to the real names. AdGuard keeps the `*.home → 10.0.0.201` rewrites for these; once nothing uses them, both can go. AdGuard itself stays for ad blocking and as the tailnet resolver.
 - **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. Home Assistant runs on **host networking** (HomeKit/discovery need LAN multicast), so its `:8123` is on all interfaces too; hand out `ha.$HOMELAB_DOMAIN`, not the plain-HTTP port. PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
-- **Public access:** only via Cloudflare Tunnel (`cloudflared`), reserved for app previews and Jellyfin (planned) — not yet deployed. `cloudflared` joins `core_core` and `ai_ai` so it can proxy to other stacks without opening host ports.
+- **Public access:** only via Cloudflare Tunnel (`cloudflared`), reserved for app previews — not yet deployed. **Not for Jellyfin:** Cloudflare's terms require non-Enterprise plans to use paid products (Stream) to serve video through its network. Whether a personal tunnel counts is disputed, but enforcement would land on the account that also serves `life` and `hoststats`. Jellyfin is reached over Tailscale like every other service here. `cloudflared` joins `core_core` and `ai_ai` so it can proxy to other stacks without opening host ports.
 
 ## Ollama / AI tuning (LXC constraint)
 
@@ -218,7 +222,7 @@ injection) and the two rules for extending it are in
 [`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
 
 ## Planned / proposals (not yet deployed)
-- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **⏸ Parked** on a ~$50 USB SSD. ⚠️ **The lab currently has NO backups** — a disk/CT loss is unrecoverable. Zero-cost stopgaps are live: configs-in-git, and nightly `pg_dumpall` via [`scripts/pg-backup.sh`](scripts/pg-backup.sh) (cron 02:00). The **job monitoring** half of the spec shipped early on 2026-09-19 — the dump now pings Healthchecks and publishes age/size/result as metrics, with alerts on the Discord `#alerts` webhook — because it was cheap and did not need the hardware. The backup half is what is still parked: monitoring a job is not the same as having a backup you can restore.
+- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **📝 Revised 2026-10-10, awaiting approval;** Phase 1 still blocked on the backup drive. ⚠️ **The lab has no backup of anything that matters** — a disk/CT loss is unrecoverable. Configs are in git, and nightly `pg_dumpall` ([`scripts/pg-backup.sh`](scripts/pg-backup.sh), cron 02:00, monitored since 2026-09-19) runs fine — but nothing writes to that Postgres, while Open WebUI, Grafana, AdGuard, Home Assistant, the Kali home and every `.env` file have no copy at all. Monitoring a job is not the same as having a backup you can restore.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
 - [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–3 built** (calendar, mail metadata and Home Assistant states in the digest; the concierge answering in `#ask` with read tools only; see `docker/assistant/README.md` → "Today", `docker/homeassistant/README.md` and `docker/concierge/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot in `#ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
 
