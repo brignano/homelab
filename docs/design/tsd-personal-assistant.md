@@ -301,7 +301,21 @@ earlier ones.
   before committing to phase 3.
 - **Money:** the watch lane is $0 (local model, Google APIs within free quota).
   The act lane is Claude API usage, on demand only, and nothing in it is
-  scheduled. Set a monthly spend limit on the API key in the Anthropic console.
+  scheduled. **Phases 1–2 never call the Claude API** (Google, Home
+  Assistant and the local 3B only). Phase 3 is the first that does, and it
+  follows the same budget isolation as the brignano.io site chat:
+  - its own Console **workspace**, `homelab`, with its own monthly spend limit
+    and alert (for example $20 limit, alert at $10). Workspace limits are kept
+    summed under the org's $50 cap, alongside `brignano-io`'s $10;
+  - its own API key, **scoped to that workspace**, with a 1-year expiry. Put a
+    renewal reminder on the calendar when it is created;
+  - the key only in `ANTHROPIC_API_KEY` in `docker/concierge/.env`, as
+    `${ANTHROPIC_API_KEY:?required}` in compose. **This repo is public**: the key
+    is never committed, and `.env.example` holds a placeholder;
+  - Anthony creates the workspace and the key in the Console. Claude has no
+    Console access.
+
+  A future cloud model anywhere else in the lab follows the same steps.
   Tesla bills Fleet API usage: check current pricing before phase 5.
 
 ## Rejected alternatives
