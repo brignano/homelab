@@ -99,6 +99,34 @@ def _channel_id() -> int:
     return int(raw)
 
 
+def _list(name: str, default: str) -> tuple[str, ...]:
+    raw = os.environ.get(name)
+    raw = default if raw is None else raw
+    return tuple(x.strip() for x in raw.split(",") if x.strip())
+
+
+def _google() -> tuple[str, str, str]:
+    """All three Google values, or none of them.
+
+    None is a supported setup: the digest simply has no "Today" section. Two of
+    three is a half-finished sign-in, and running anyway would put "could not
+    read calendar" in every digest instead of saying once, at startup, what is
+    missing.
+    """
+    names = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN")
+    values = tuple(os.environ.get(n, "").strip() for n in names)
+    if any(values) and not all(values):
+        missing = ", ".join(n for n, v in zip(names, values) if not v)
+        raise SystemExit(
+            f"config error: Google is half configured — {missing} unset.\n"
+            "  Set all three (run `--google-auth` for the refresh token), or none to turn it off."
+        )
+    return values  # type: ignore[return-value]
+
+
+GOOGLE_SOURCES = ("calendar", "mail")
+
+
 @dataclass(frozen=True)
 class Config:
     # --- Discord ---
@@ -151,6 +179,18 @@ class Config:
     # --- Queue ---
     max_queue: int
 
+    # --- Google (the digest's "Today" section; all blank = off) ---
+    # See docs/design/tsd-personal-assistant.md, phase 1. Read-only scopes only:
+    # calendar.events.readonly and gmail.metadata (headers, never bodies).
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    google_refresh_token: str = ""
+    google_sources: tuple[str, ...] = GOOGLE_SOURCES
+    google_calendar_ids: tuple[str, ...] = ("primary",)
+    # Gmail label IDs a message must carry ALL of. Labels, not a search: the
+    # gmail.metadata scope does not allow `q`.
+    gmail_labels: tuple[str, ...] = ("INBOX", "UNREAD", "CATEGORY_PERSONAL")
+
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
     @classmethod
@@ -166,6 +206,15 @@ class Config:
             raise SystemExit(
                 "config error: DISCORD_ALLOWED_USER_IDS is required — without an "
                 "allowlist anyone in the guild could queue jobs on your CPU"
+            )
+
+        g_id, g_secret, g_refresh = _google()
+        sources = _list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES))
+        unknown = [x for x in sources if x not in GOOGLE_SOURCES]
+        if unknown:
+            raise SystemExit(
+                f"config error: GOOGLE_SOURCES has {', '.join(unknown)} — "
+                f"choose from {', '.join(GOOGLE_SOURCES)}"
             )
 
         return cls(
@@ -197,4 +246,15 @@ class Config:
             chat_live_metrics=os.environ.get("CHAT_LIVE_METRICS", "true").lower() != "false",
             chat_metrics_ttl_s=_int("CHAT_METRICS_TTL_S", 60),
             max_queue=_int("MAX_QUEUE", 8),
+            google_client_id=g_id,
+            google_client_secret=g_secret,
+            google_refresh_token=g_refresh,
+            google_sources=sources,
+            google_calendar_ids=_list("GOOGLE_CALENDAR_IDS", "primary") or ("primary",),
+            gmail_labels=_list("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL")
+            or ("INBOX", "UNREAD"),
         )
+
+    @property
+    def google_enabled(self) -> bool:
+        return bool(self.google_refresh_token and self.google_sources)

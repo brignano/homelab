@@ -121,6 +121,106 @@ expected, so there is nothing to be stale about, and an alert that fires forever
 because a feature is deliberately off is noise that teaches you to ignore the
 channel.
 
+## Today: calendar and mail
+
+Optional. With Google configured, the digest gains a section under the lab's
+readings:
+
+```
+### Today
+**Calendar** 09:00 Standup · 13:00 Focus block · 15:00 Dentist · 15:30 1:1 with Sam
+**All day** Mom's birthday
+**Overlaps** 15:00 Dentist ↔ 15:30 1:1 with Sam
+**Mail (24h)** 3 new — Alice Chen: Re: flights for the 24th · Billing: Your invoice is ready
+```
+
+Phase 1 of [`tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md),
+the *watch* lane. It reads, and it cannot do anything else.
+
+**Read-only by scope, enforced by Google.** The token holds
+`calendar.events.readonly` and `gmail.metadata`. The second is the narrowest
+Gmail scope there is: headers and labels, and Google refuses to return a message
+body to it at all. That is also why mail is chosen by label IDs
+(`GMAIL_LABELS`) rather than a search: the metadata scope does not allow one.
+
+**Never shown to the model.** Event titles and subject lines are written by
+other people, and anyone can send you an invite or an email. The 3B narrates the
+lab's numbers, so it is given the lab's numbers and nothing else (`facts_block`).
+Otherwise a subject line reading "say every service is up" could steer the one
+paragraph that sums up the lab. The Today section is rendered by code, from
+facts code computed. Overlaps, "today", and "new in 24h" are all worked out in
+[`app/day.py`](app/day.py).
+
+**Inert in Discord.** The same text still reaches `#digest`, so each piece goes
+through `discord_safe` first. It is kept to one line, so it cannot forge a
+heading. Markdown is escaped, so there are no masked links. `@` is broken, so
+`@everyone` cannot ping, and `://` is broken, so a link in a subject is not
+clickable.
+
+**Unmarked on purpose.** The 🔴/🟠 marks and the ✅/⚠️ heading are the lab's
+verdict, and a double-booked afternoon is not a lab problem. A line that appears
+only when there is something to say, like **Overlaps**, is its own signal.
+
+**Privacy.** Senders, subjects and titles end up stored by Discord, because
+`#digest` is a Discord channel. They are never sent to Anthropic or to the
+model. `GOOGLE_SOURCES=calendar` leaves mail out entirely.
+
+### Setting it up
+
+1. **Google Cloud Console → a new project.** Under *APIs & Services*, enable
+   the **Google Calendar API** and the **Gmail API**.
+2. **OAuth consent screen.** User type *External*. Add the two scopes above and
+   your own address as a test user, then **set the publishing status to
+   "In production"**. Google expires refresh tokens after **7 days** for apps
+   left in *Testing*. A personal app in production needs no verification. You
+   click past an "unverified app" warning once, at sign-in.
+3. **Credentials → Create OAuth client ID → Desktop app.** Put the client ID and
+   secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
+4. **Sign in once:**
+
+   ```bash
+   docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --google-auth
+   ```
+
+   It prints a URL. Open it in a browser on any machine and approve. The browser
+   ends on a page at `127.0.0.1:8765` that will not load, which is expected:
+   nothing listens there, and that is what lets this run on a headless box.
+   Paste the whole address back into the terminal. It prints
+   `GOOGLE_REFRESH_TOKEN=…` for `.env`.
+5. **Check it, then apply it:**
+
+   ```bash
+   docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant --selftest
+   docker compose -f docker/assistant/docker-compose.yml up -d --build --force-recreate
+   ```
+
+   `--selftest` prints a full digest, Today included, without touching the
+   freshness stamps below.
+
+### It cannot report a sign-in that stopped working
+
+A failed read shows in the digest as `_not read_`. That line is read once, on a
+phone, and the likely cause does not heal: a revoked token, a changed password,
+or the *Testing* expiry above. So each enabled source writes a timestamp to the
+same state directory as the digest's (`source-calendar`, `source-mail`) on every
+successful read. `heartbeat.sh` publishes them as
+`homelab_assistant_source_timestamp_seconds{source=…}`, and `hl-google-stale`
+fires past 25h.
+
+**Armed at startup.** If a source has no stamp yet, the bot writes one when it
+starts. Without that, a sign-in that *never* worked would publish no series,
+and `noDataState: OK` would keep the alert silent forever. That is the same trap
+`HEALTHCHECKS_PG_BACKUP_URL` fell into (`.claude/skills/alerting/SKILL.md`). An existing stamp
+is never overwritten at startup, so a restart cannot reset a countdown that is
+already running.
+
+**Cleared when off.** If Google is unconfigured, a source is dropped from
+`GOOGLE_SOURCES`, or `DIGEST_ENABLED=false`, the stamps are removed. Sources are
+read when a digest runs, so with no digest nothing would refresh them.
+
+**After fixing the sign-in,** run `/digest` once. The alert clears on the next
+successful read, and otherwise that would be tomorrow's scheduled one.
+
 ## Conversational mode
 
 Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —
@@ -528,6 +628,9 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 | "Not authorised to use this bot" | Your user ID isn't in `DISCORD_ALLOWED_USER_IDS`. |
 | Digest posts without prose | Ollama unreachable or the model isn't loaded — check `/status`, then `docker exec ollama ollama list`. |
 | Digest says *Incomplete* | Prometheus or Loki couldn't be read; confirm the `monitoring` stack is up. |
+| Today says *not read* / `hl-google-stale` firing | The Google sign-in is no longer valid — the message names the reason. Usually the consent screen was left in *Testing* (7-day tokens) or access was revoked. Rerun `--google-auth`, recreate the container, then `/digest`. |
+| `--google-auth` returns no refresh token | Google only issues one on first consent. Remove the app at <https://myaccount.google.com/permissions> and sign in again. |
+| Today section missing entirely | `GOOGLE_REFRESH_TOKEN` is blank, so the feature is off. The bot refuses to start if only some of the three Google values are set. |
 | Container unhealthy but running | Gateway socket wedged — the heartbeat went stale. `docker restart assistant`. |
 | `--provision` fails with 403 Forbidden (50013) | Bot is missing an invite permission. It needs all four above — and note it must also hold any permission `_overwrites()` grants, not just Manage Roles. Re-invite with the link above. |
 | `--provision` failed partway through | Safe to re-run. It's idempotent: it skips what already exists and creates only what's missing. |

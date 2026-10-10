@@ -27,6 +27,55 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Calendar and mail in the digest (personal assistant, phase 1)
+
+**Goal:** Start the personal-assistant design
+([`tsd-personal-assistant.md`](design/tsd-personal-assistant.md)) with its
+lowest-risk piece. The daily digest gains a "Today" section: remaining events,
+overlapping meetings, and new mail from the last 24h. It is read-only, and it
+works on what the digest already has.
+
+**Steps:**
+1. `docker/assistant/app/google.py`: OAuth refresh plus Calendar and Gmail over
+   raw `aiohttp`, so no new dependency. The scopes are `calendar.events.readonly`
+   and `gmail.metadata`, and Google enforces both.
+2. `docker/assistant/app/day.py`: today's window, overlaps, the 24h mail filter,
+   and `discord_safe` for every piece of text someone else wrote. Rendered into
+   the digest by `digest.render(day=…)`.
+3. `python -m app --google-auth`: a one-time headless sign-in (PKCE, loopback
+   redirect, code pasted back from the browser's address bar).
+4. Freshness: `source-calendar` / `source-mail` stamps →
+   `heartbeat.sh` → `homelab_assistant_source_timestamp_seconds` →
+   `hl-google-stale` (25h).
+5. 14 new smoke tests. The Google client was also run against a local mock of
+   its endpoints.
+
+**Issues encountered:**
+- The draft had the 3B narrate calendar and mail. Changed while building: an
+  email subject would then be text a stranger can put in front of the model
+  that writes the lab's summary. That text is now never sent to the model.
+- `gmail.metadata` forbids the `q` search parameter. Mail is chosen by label IDs
+  (`GMAIL_LABELS`), and the 24h window is applied in code.
+- A stamp written only on success is a dead man's switch that a never-working
+  sign-in never arms. Stamps are now armed at startup.
+- The mock run found the concurrent reads making three token refreshes per
+  digest. Fixed with a lock, and covered by a test.
+
+**Resolution:**
+- Off by default: with no Google values set, the digest is unchanged. The bot
+  refuses to start with only some of the three set.
+
+**Notes / next steps:**
+- To turn it on, follow `docker/assistant/README.md` → "Today: calendar and
+  mail". Set the OAuth consent screen to **In production**: in *Testing*, refresh
+  tokens die after 7 days.
+- `hl-google-stale` needs the monitoring stack's Grafana restarted to load
+  (`grafana/provisioning/` is a directory mount). The new `heartbeat.sh` metric
+  needs nothing: cron picks up the pulled script.
+- Phase 2 is Home Assistant, read-only.
+
+---
+
 ## 2026-10-10 — Task-specific rules moved out of AGENTS.md into skills
 
 **Goal:** Stop loading about 130 lines of alerting and dashboard rules into

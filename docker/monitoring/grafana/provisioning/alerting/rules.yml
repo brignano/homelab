@@ -314,6 +314,48 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [25] }
 
+      # --- The digest stopped reading a Google source ---
+      #
+      # The digest's "Today" section (docs/design/tsd-personal-assistant.md).
+      # A failed read does show in the digest as "not read" — but that line is
+      # read once, on a phone, and the likely cause is one that will not heal:
+      # the refresh token was revoked, the password changed, or the OAuth app
+      # was left in "Testing", where Google expires tokens after 7 days. The
+      # fix is `--google-auth`, and this is what says so.
+      #
+      # The bot arms each enabled source's stamp at startup, so a sign-in that
+      # never worked still ages into this alert rather than publishing nothing.
+      # 25h for the same reason as hl-digest-missing: sources are read with the
+      # daily digest. If the digest itself stops, both fire, and that one is the
+      # cause. Absent series (Google off, or the schedule off) is silence.
+      - uid: hl-google-stale
+        title: Digest cannot read a Google source
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Digest has not read Google {{ $labels.source }} for {{ printf \"%.0f\" $values.A.Value }}h — rerun the assistant's --google-auth if the sign-in expired"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_assistant_source_timestamp_seconds) / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [25] }
+
       # --- A container is crash-looping ---
       #
       # Restarting four times in fifteen minutes is not a restart, it is a loop.
