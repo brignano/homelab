@@ -46,18 +46,23 @@ deletes a file, the pool still counts those blocks as used until they are
 discarded, and Proxmox does not trim containers by itself. Image prunes and
 log rotation free a lot, so the pool climbs even while the guest holds steady.
 On 2026-10-10 the guest read 18% and the pool 52%, and one `pct fstrim 100`
-brought the pool to 16%. The fix is a weekly cron entry on the **Proxmox
-host** (`pct` does not exist inside CT 100, so `install-cron.sh` cannot install
-it). It runs at 05:00 Sunday, an hour after `repo-sync.sh` prunes images at
-04:00, so it hands back what the prune just freed:
+brought the pool to 16%. The fix is a weekly cron job on the **Proxmox host**
+(`pct` does not exist inside CT 100, so `install-cron.sh` cannot install it).
+It runs at 05:00 Sunday, an hour after `repo-sync.sh` prunes images at 04:00,
+so it hands back what the prune just freed. It lives in its own `/etc/cron.d`
+file rather than root's crontab, so it can be written and checked with one
+command and needs no editor. Installed on `m5` on 2026-10-10:
 
 ```bash
-# on the Proxmox host: crontab -e
-0 5 * * 0  /usr/sbin/pct fstrim 100 >/dev/null 2>&1
+# on the Proxmox host. /etc/cron.d lines name the user, hence "root".
+echo '0 5 * * 0 root /usr/sbin/pct fstrim 100 >/dev/null 2>&1' > /etc/cron.d/fstrim-ct100
+
+cat /etc/cron.d/fstrim-ct100                                   # is it there?
+journalctl -u cron --since "last sunday" | grep fstrim         # did it run?
 ```
 
-If `health.sh` shows the pool well above the guest, check that this entry
-still exists before looking for anything else.
+If `health.sh` shows the pool well above the guest, check that file still
+exists before looking for anything else. `crontab -l` will not show it.
 
 ```bash
 # pve-exporter publishes no host port — ask it from inside the network.
