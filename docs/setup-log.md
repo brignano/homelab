@@ -71,8 +71,8 @@ without a missing-network error.
   source of truth.
 
 **Notes / next steps:**
-- On the existing box, run `apt-get install -y python3-yaml` once on CT 100.
-  `bootstrap-docker.sh` only covers fresh installs.
+- `python3-yaml` installed by hand on the existing CT 100 (PyYAML 6.0.2),
+  since `bootstrap-docker.sh` only covers fresh installs.
 
 ---
 
