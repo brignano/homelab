@@ -111,6 +111,10 @@ def _climate(state: str, attributes: dict, temp_unit: str | None) -> str | None:
         f = _fahrenheit(temp, temp_unit)
         if f is not None and (f < COLD_F or f > HOT_F):
             said.append(f"at {temp:.0f}{temp_unit}")
+    elif state != "off":
+        # No reading is not a reading in range. A dead sensor in a cold house
+        # is the case this rule exists for, so it is said, not skipped.
+        said.append("temperature not read")
     if state == "off":
         said.append("off")
     return " and ".join(said) or None
@@ -184,10 +188,16 @@ def parse_calendar(items: list) -> list[Event]:
         start, end = _when(item.get("start") or {}), _when(item.get("end") or {})
         if start is None or end is None:
             continue
+        # A naive time cannot be sorted or compared with Google's aware ones,
+        # and that TypeError would surface in render_lines, outside the
+        # collector's never-raises boundary. Read it as UTC, as parse_state does.
+        start_at, end_at = (
+            w.replace(tzinfo=dt.timezone.utc) if isinstance(w, dt.datetime) and w.tzinfo is None else w
+            for w in (start[0], end[0]))
         out.append(Event(
             title=str(item.get("summary") or "(no title)").strip(),
-            start=start[0],
-            end=end[0],
+            start=start_at,
+            end=end_at,
             all_day=start[1],
             busy=True,
         ))

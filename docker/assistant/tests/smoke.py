@@ -1011,8 +1011,10 @@ def _():
         # A unit that was not read judges nothing about temperature, but off is still off.
         ("heat", {"current_temperature": 11}, None, None),
         ("off", {"current_temperature": 11}, None, "off"),
-        ("heat", {}, "°F", None),
-        ("heat", {"current_temperature": "n/a"}, "°F", None),
+        # No reading is said, never taken as "in range".
+        ("heat", {}, "°F", "temperature not read"),
+        ("heat", {"current_temperature": "n/a"}, "°F", "temperature not read"),
+        ("off", {}, "°F", "off"),
         ("unavailable", {"current_temperature": 40}, "°F", "unavailable"),
     ]
     for state, attrs, unit, want in cases:
@@ -1078,6 +1080,12 @@ def _():
     assert all(e.busy for e in events) and events[1].all_day and not events[0].all_day
     assert events[0].start.utcoffset() == dt.timedelta(hours=-4)
     assert parse_calendar({"message": "not a list"}) == []
+    naive = parse_calendar([{"summary": "N", "start": {"dateTime": "2026-10-12T19:00:00"},
+                             "end": {"dateTime": "2026-10-12T20:00:00"}}])[0]
+    assert naive.start.tzinfo is not None and naive.end.tzinfo is not None
+    from app.day import Day, render_lines
+    render_lines(Day(now=NOW, sources=("calendar", "ha-calendar"),
+                     events=[_ev("G", 19, 0, 20, 0)], ha_events=[naive]))  # must not raise
 
 
 @check("ha calendar: only GETs the named calendars, today's window in UTC, unknown fails loudly")

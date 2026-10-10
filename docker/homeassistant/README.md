@@ -114,7 +114,7 @@ device class. Never by the model, which never sees any of it.
 | `lock` | unlocked, open, jammed |
 | `alarm_control_panel` | triggered |
 | `sensor` with device class battery | below 20% |
-| `climate` (thermostat) | current temperature below 55 °F or above 85 °F, in whichever unit HA is set to (°C is converted); or HVAC mode `off` |
+| `climate` (thermostat) | current temperature below 55 °F or above 85 °F, in whichever unit HA is set to (°C is converted); no temperature reading at all, as **temperature not read**; or HVAC mode `off` |
 | anything | `unavailable` or `unknown`, as **unavailable** |
 | an entity ID HA does not know | always, as **not found**. Usually a typo or a renamed device |
 
