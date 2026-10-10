@@ -126,6 +126,10 @@ mcp.{$HOMELAB_DOMAIN} {
 	# reach the client immediately instead of being held by the proxy.
 	reverse_proxy mcp-grafana:8000 {
 		flush_interval -1
+		# mcp-grafana only accepts Host values on its --allowed-hosts list
+		# (docker/mcp/docker-compose.yml). The public name is checked above;
+		# send the internal one so that list never has to name the domain.
+		header_up Host {upstream_hostport}
 	}
 }
 

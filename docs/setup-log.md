@@ -27,6 +27,34 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — MCP: "403 forbidden: host not allowed" behind Caddy
+
+**Goal:** Get Claude Code's `homelab` MCP server connecting again.
+
+**Steps:**
+1. `docker/mcp/docker-compose.yml`: `--allowed-hosts mcp-grafana:8000`.
+2. `docker/proxy/Caddyfile`: `header_up Host {upstream_hostport}` on the
+   `mcp.` site, so mcp-grafana sees `mcp-grafana:8000` instead of the public name.
+
+**Issues encountered:**
+- First a 401: dev machines had a Grafana service-account token (`glsa_...`)
+  in `HOMELAB_MCP_TOKEN`, from a wrong example in ai-tools' `.env.example`.
+  Caddy wants `MCP_BEARER_TOKEN`; fixed in brignano/ai-tools#31. The bearer
+  token was rotated after it was shown in a chat.
+- Then `403 forbidden: host not allowed`: `grafana/mcp-grafana:latest` gained
+  a Host allowlist (DNS-rebinding protection) defaulting to loopback variants
+  of `--address`, and Caddy forwarded `mcp.$HOMELAB_DOMAIN`.
+
+**Resolution:**
+- Caddy keeps checking the public Host and the bearer token; mcp-grafana now
+  checks only the internal name it is reached by. No domain in the compose file.
+
+**Notes / next steps:**
+- Deploy needs a recreate of `caddy` (single-file Caddyfile mount) and of
+  `mcp-grafana` (command changed). `proxy` is on `HL_NO_AUTOHEAL`: recreate it
+  deliberately and check DNS twice.
+- `mcp-grafana` is on `:latest`, which is how this arrived unannounced.
+
 ## 2026-10-10 — Digest: thermostat rule and iCloud calendar through Home Assistant
 
 **Goal:** The "Next to build" item in `docs/design/tsd-personal-assistant.md`:
