@@ -27,6 +27,38 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Task-specific rules moved out of AGENTS.md into skills
+
+**Goal:** Stop loading about 130 lines of alerting and dashboard rules into
+every agent session, including the ones that never touch either.
+
+**Steps:**
+1. Moved the alerting rules (ping URLs, metrics, dashboards, probes, grouping,
+   `summary`, Discord rendering, `instance`) word for word into
+   `.claude/skills/alerting/SKILL.md`.
+2. Moved the visual rules (design system, page icons, manifest, tile icons,
+   tokens) and the Homepage skeleton story into
+   `.claude/skills/dashboard-visuals/SKILL.md`.
+3. Gave the two bind-mount rules their own **Config mounts** section in
+   `AGENTS.md`. They were filed under Alerting but apply to any config change,
+   so they stay where every session sees them.
+
+**Issues encountered:**
+- Code comments cite `AGENTS.md` for the dead man's switch rule
+  (`pg-backup.sh`, `rules.yml`, `docker/monitoring/.env.example`). That rule
+  stays in `AGENTS.md`, condensed, so the citations still hold.
+
+**Resolution:**
+- `AGENTS.md` keeps a one-line pointer to each skill and a table of them under
+  Custom commands. `.gitignore` now points at the dashboard skill.
+
+**Notes / next steps:**
+- Other candidates for the same treatment: "Ollama / AI tuning" and "Local LLM
+  usage". Several code comments cite those sections by name, so moving them
+  means updating those citations too.
+
+---
+
 ## 2026-10-10 — The thin pool was 52% full of space the guest had freed
 
 **Goal:** Explain why the first `health.sh` run showed guest `/` at 18% and the
