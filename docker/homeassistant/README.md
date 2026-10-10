@@ -18,6 +18,7 @@ the read-only half of it. The digest reads the states you choose and puts a
 | State | the `homeassistant_config` volume (users, tokens, integrations, history) |
 | Owned by git | `config/configuration.yaml` only, mounted read-only. Reverse-proxy trust is a UI setting now: see "Fresh volume" |
 | Networking | `network_mode: host`, for HomeKit, Matter and discovery. See "Host networking" |
+| Voice | Alexa, through Home Assistant Cloud (Nabu Casa). Outbound only: see "Alexa"
 | Updates | by hand. On `HL_NO_AUTOPULL`, because HA's database migrations are one-way |
 
 ## Bring it up
@@ -211,6 +212,59 @@ Then recreate `homeassistant`, `caddy`, `blackbox-exporter`, `prometheus` and
 `assistant`. HomeKit and Matter devices stop updating on a bridge, but HA keeps
 their pairings, so switching back to host mode later restores them.
 
+## Alexa
+
+Alexa reaches HA through **Home Assistant Cloud** (Nabu Casa), a paid
+subscription. HA keeps an **outbound** connection open to Nabu Casa, and Alexa's
+requests come back down it. Nothing on the box accepts a connection from the
+internet, so `ha.` stays off the Cloudflare Tunnel. That is why this was picked
+over the two free routes:
+
+- **A self-built Alexa skill (AWS Lambda)** needs HA on public HTTPS for both
+  the Lambda and Alexa's account linking. That means putting `ha.` on the
+  tunnel, which this stack rules out.
+- **`emulated_hue`** stays on the LAN, but newer Echos only look for a Hue
+  bridge on port 80, which Caddy holds. It also only does on/off and dimming.
+
+### Set it up
+
+1. **Settings → Home Assistant Cloud.** Create a Nabu Casa account (or sign
+   in) and start the subscription.
+2. On the same page, turn on **Alexa**. Leave **Remote control** off: Alexa
+   does not need it, and it would make HA's login page reachable from the
+   internet through Nabu Casa.
+3. **Settings → Voice assistants → Expose.** Turn off **Expose new entities**
+   for Alexa first, then add only what Alexa should see. See "What to expose".
+4. In the **Alexa app: More → Skills & Games**, find **Home Assistant**,
+   enable it and sign in with the **Nabu Casa** account. The account linking
+   is to Nabu Casa, not to an HA user, so no HA token is handed out.
+5. Say "Alexa, discover devices", or tap **Devices → + → Add device → Other →
+   Discover devices** in the app.
+
+After exposing something new later, run discovery again. Renaming an entity in
+HA renames it in Alexa too, which can break Alexa routines that used the old
+name.
+
+### What to expose
+
+Lights, switches, scenes, scripts, the thermostat and read-only sensors. **Not
+locks, the garage door or the alarm panel.** HA cannot narrow what Alexa does
+with an exposed entity, and anyone in earshot of an Echo, or a TV playing the
+right phrase, is a user. It is the same line the concierge draws
+(`docs/design/tsd-personal-assistant.md`). If you want the garage closed by
+voice, expose a **script** that only closes it, never the cover itself.
+
+### What it changes
+
+- **Nabu Casa sees the exposed entities' states and every command Alexa
+  sends.** Unexposed entities never leave the box.
+- **The subscription lives in the volume** (`.storage/cloud`). On a fresh
+  volume, sign in to Home Assistant Cloud again and redo the Expose list.
+  The Alexa app's link to Nabu Casa survives.
+- **If HA is down, Alexa says the device is not responding.** No alert covers
+  the cloud link itself: the blackbox probes watch HA
+  (`host.docker.internal:8123`) and the `ha.` route, not Nabu Casa.
+
 ## Updating
 
 Not automatic. Read the [release notes](https://www.home-assistant.io/blog/categories/release-notes/)
@@ -238,4 +292,6 @@ until `tsd-backups-and-monitoring.md` lands.
 | Digest says **Home** `_not read_ (token rejected (401))` | The `digest` user's token was deleted or the user was removed. Make a new token, update `HA_TOKEN`, recreate the assistant, then `/digest`. |
 | An entity shows **not found** | The entity ID in `HA_ENTITIES` is wrong, or the device was renamed in HA. |
 | `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
+| Alexa: "device is not responding" | HA is down, or its cloud link is. **Settings → Home Assistant Cloud** shows whether it is connected; sign in again if it logged out. |
+| Alexa does not know a device | It is not in **Settings → Voice assistants → Expose → Alexa**, or discovery has not run since it was added. Expose it, then "Alexa, discover devices". |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |

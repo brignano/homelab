@@ -27,6 +27,30 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant: Alexa through Home Assistant Cloud
+
+**Goal:** Control the house from Alexa without making Home Assistant public.
+
+**Steps:**
+1. `docker/homeassistant/README.md`: new "Alexa" section (setup, what to
+   expose, what it changes) and two troubleshooting rows.
+2. `AGENTS.md`: the Home Assistant exposure row notes the outbound-only cloud link.
+
+**Issues encountered:**
+- A self-built Alexa skill (Lambda) needs HA on public HTTPS, so `ha.` would
+  have to go on the Cloudflare Tunnel. `emulated_hue` needs port 80, which
+  Caddy holds.
+
+**Resolution:**
+- Nabu Casa: HA dials out, so nothing inbound is opened. No compose or
+  `configuration.yaml` change: `default_config:` already loads `cloud`.
+
+**Notes / next steps:**
+- Docs only so far. Subscribing, exposing entities and linking the skill are
+  manual steps in the README. Locks, garage and alarm stay unexposed.
+
+---
+
 ## 2026-10-10 — Jellyfin merged before its drive: stopped it paging
 
 **Goal:** `docker/jellyfin/` reached `main` before the 5 TB drive. Stop the

@@ -134,7 +134,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
 | Sablier | `docker/desktops/` | internal (on-demand engine for desktops) |
 | Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
-| Home Assistant | `docker/homeassistant/` | LAN + tailnet: **host networking** (`:8123` direct, and via Caddy at `ha.$HOMELAB_DOMAIN`), for HomeKit/Matter/discovery. Reached by other containers as `host.docker.internal:8123` |
+| Home Assistant | `docker/homeassistant/` | LAN + tailnet: **host networking** (`:8123` direct, and via Caddy at `ha.$HOMELAB_DOMAIN`), for HomeKit/Matter/discovery. Reached by other containers as `host.docker.internal:8123`. Alexa via Home Assistant Cloud (Nabu Casa): **outbound only**, remote UI off |
 | Jellyfin | `docker/jellyfin/` (built; started on drive day) | LAN + tailnet (via Caddy, `jellyfin.$HOMELAB_DOMAIN`) — **not** Cloudflare Tunnel; joins `proxy_proxy`; iGPU via `dev0`; library read-only on its own drive (`backup=0`) |
 
 ## Networking rules
