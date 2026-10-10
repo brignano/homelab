@@ -180,8 +180,15 @@ def _sample_day(now: dt.datetime):
             Mail("Billing", "Your invoice is ready — see https://example.com/pay", at(6, 40)),
             Mail("@everyone", "**URGENT** [click](https://phish.example)", at(5)),
         ],
-        sources=("calendar", "mail", "home"),
+        # iCloud, through HA: one event of its own, and Standup again, which
+        # the merge must show once.
+        ha_events=[
+            Event("Standup", at(9), at(9, 15), False, True),
+            Event("Pick up dry cleaning", at(17, 30), at(18), False, True),
+        ],
+        sources=("calendar", "mail", "home", "ha-calendar"),
         home=[
+            Reading("climate.thermostat", "Thermostat", "heat", None, "at 52°F"),
             Reading("cover.garage_door", "Garage Door", "open", now - dt.timedelta(hours=2), "open"),
             Reading("lock.front_door", "Front Door", "locked", now - dt.timedelta(hours=9), None),
             Reading("binary_sensor.basement_leak", "Basement Leak", "unavailable",
@@ -266,9 +273,9 @@ async def _selftest_async() -> int:
         # it must not refresh the stamps hl-google-stale watches.
         from .config import GOOGLE_SOURCES, _google, _home, _list
         g_id, g_secret, g_refresh = _google()
-        ha_token, ha_entities = _home()
+        ha_token, ha_entities, ha_calendars = _home()
         sources = (_list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES)) if g_refresh else ()) + (
-            ("home",) if ha_token else ())
+            ("home",) if ha_entities else ()) + (("ha-calendar",) if ha_calendars else ())
         day_collector = None
         if sources:
             from .day import DayCollector
@@ -283,9 +290,11 @@ async def _selftest_async() -> int:
                 home=Home(session, os.environ.get("HA_URL", "").strip() or "http://host.docker.internal:8123",
                           ha_token) if ha_token else None,
                 home_entities=ha_entities,
+                ha_calendars=ha_calendars,
             )
         print(f"google     : {'configured' if g_refresh else 'not configured'}")
-        print(f"home       : {f'{len(ha_entities)} entities' if ha_token else 'not configured'}\n")
+        print(f"home       : {f'{len(ha_entities)} entities' if ha_entities else 'not configured'}")
+        print(f"ha calendar: {f'{len(ha_calendars)} calendars' if ha_calendars else 'not configured'}\n")
 
         tz_name = os.environ.get("TZ", "").strip() or "UTC"
         from zoneinfo import ZoneInfo

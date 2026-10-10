@@ -133,7 +133,8 @@ class Assistant(discord.Client):
                 client_secret=self.cfg.google_client_secret,
                 refresh_token=self.cfg.google_refresh_token,
             ) if self.cfg.google_enabled else None
-            home = Home(self._session, self.cfg.ha_url, self.cfg.ha_token) if self.cfg.home_enabled else None
+            home = Home(self._session, self.cfg.ha_url, self.cfg.ha_token) if (
+                self.cfg.home_enabled or self.cfg.ha_calendar_enabled) else None
             self.day = DayCollector(
                 google,
                 calendar_ids=self.cfg.google_calendar_ids,
@@ -142,6 +143,7 @@ class Assistant(discord.Client):
                 state_dir=state_dir if stamping else None,
                 home=home,
                 home_entities=self.cfg.ha_entities,
+                ha_calendars=self.cfg.ha_calendars,
             )
             self.day.arm()
         if not stamping and state_dir:

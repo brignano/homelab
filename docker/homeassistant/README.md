@@ -114,11 +114,27 @@ device class. Never by the model, which never sees any of it.
 | `lock` | unlocked, open, jammed |
 | `alarm_control_panel` | triggered |
 | `sensor` with device class battery | below 20% |
+| `climate` (thermostat) | current temperature below 55 °F or above 85 °F, in whichever unit HA is set to (°C is converted); or HVAC mode `off` |
 | anything | `unavailable` or `unknown`, as **unavailable** |
 | an entity ID HA does not know | always, as **not found**. Usually a typo or a renamed device |
 
 Motion, occupancy and presence are never mentioned: someone being home is not
 an event. With nothing to mention, the line says how many entities it checked.
+
+A thermostat's "for 2h" appears only when it is **off**. HA's `last_changed`
+tracks the mode, not the temperature, so "at 52°F 3d" would be a false claim.
+
+### Calendars
+
+`HA_CALENDARS` names `calendar.*` entities, such as the iCloud calendars added
+through the CalDAV integration (**Settings → Devices & services → CalDAV →
+entities**). Their events merge into the digest's **Calendar** line with
+Google's. They need the same `digest` token and nothing else in HA: reading a
+calendar needs no admin rights.
+
+```
+HA_CALENDARS=calendar.home,calendar.work
+```
 
 **If HA does not answer, the line says `_not read_`, never "nothing open".**
 A rejected token or a dead container fails the whole read rather than

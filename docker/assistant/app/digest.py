@@ -247,7 +247,7 @@ def render(
     if day is not None:
         if {"calendar", "mail"} & set(day.sources):
             origins.append("Google")
-        if "home" in day.sources:
+        if {"home", "ha-calendar"} & set(day.sources):
             origins.append("Home Assistant")
     footer_bits.append("facts from " + " + ".join(origins))
     out.append("-# " + " · ".join(footer_bits))

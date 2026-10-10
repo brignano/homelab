@@ -343,7 +343,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}"
+          summary: "Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else if eq $labels.source \"ha-calendar\" }}Home Assistant calendars{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else if eq $labels.source \"ha-calendar\" }}check HA_CALENDARS, the CalDAV integration and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }

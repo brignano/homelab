@@ -301,12 +301,13 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       Smart Life app, not the phone camera.
 
 **Next to build**
-- [ ] **Digest: thermostat and iCloud calendar.** Needs the `climate.…` and
-      `calendar.…` entity IDs from the steps above. `climate` gets a rule in
+- [x] **Digest: thermostat and iCloud calendar.** `climate` has a rule in
       `app/home.py`'s `notable()` (current temperature below 55 °F or above
-      85 °F, or HVAC mode `off`). iCloud events come from HA's
-      `calendar.*` entities and merge with Google's in `app/day.py`, still
-      rendered by code and never shown to the model.
+      85 °F in HA's own unit, or HVAC mode `off`). iCloud events come from
+      HA's `calendar.*` entities (`HA_CALENDARS`, its own `ha-calendar`
+      source and stamp) and merge with Google's in `app/day.py`, still
+      rendered by code and never shown to the model. Going live needs the
+      `climate.…` and `calendar.…` entity IDs in `docker/assistant/.env`.
 - [ ] **Phase 3, concierge with read tools.** Before it starts **(you)**:
       create a `homelab` workspace in the Claude Console with its own spend
       limit (e.g. $20, alert at $10), and a workspace-scoped key with a

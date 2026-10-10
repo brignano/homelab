@@ -27,6 +27,49 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Digest: thermostat rule and iCloud calendar through Home Assistant
+
+**Goal:** The "Next to build" item in `docs/design/tsd-personal-assistant.md`:
+mention the Honeywell T6 Pro when it is off or the house is too cold/hot, and
+merge the iCloud calendar (in HA via CalDAV) into the digest's Calendar line.
+
+**Steps:**
+1. `app/home.py`: a `climate` rule in `notable()`. Mentioned when the HVAC mode
+   is `off`, or `current_temperature` is below 55 °F or above 85 °F. Climate
+   entities carry no unit, so the unit comes from `GET /api/config`
+   (`unit_system.temperature`), read only when a `climate.*` entity is
+   watched; a °C install is converted. A thermostat gets a "for 2h" only when
+   off, since `last_changed` tracks the mode, not the temperature.
+2. `app/home.py`: `Home.calendars()` reads `GET /api/calendars/<id>?start&end`
+   (UTC, `Z`, no `+` in the query) for each entity in the new `HA_CALENDARS`.
+   All or nothing; an unknown calendar (HA answers 400) fails the read.
+3. `app/day.py`: a new source, `ha-calendar`, kept apart from Google's
+   `calendar` so each can be "not read" alone. `Day.merged` dedupes across
+   both (same title, start, end; aware datetimes compare by instant), and
+   overlaps are computed on the merged list. One source unread is said on the
+   Calendar line (`· _HA calendars not read_`), never "nothing else today".
+4. Freshness: `source-ha-calendar` stamp, added to `SOURCES`, `arm()`,
+   `scripts/heartbeat.sh` and the `hl-google-stale` summary. A smoke test now
+   pins `SOURCES` to the heartbeat loop.
+5. Config: `HA_CALENDARS` optional and off when unset; `HA_TOKEN` now needs
+   `HA_ENTITIES` or `HA_CALENDARS` (either alone is valid).
+
+**Issues encountered:**
+- Python on the Windows desktop is broken (`py.exe` reports as corrupted,
+  `C:\Python314` cannot import `encodings`), so the smoke tests ran in CI only.
+
+**Resolution:**
+- Tests added for the climate rule (°F, °C, unknown unit, off), the config
+  read, calendar parsing and fetching, the merge and dedupe, partial reads,
+  stamps, and that iCloud titles never reach the model.
+
+**Notes / next steps:**
+- Deploy needs the real `climate.…` and `calendar.…` entity IDs in
+  `docker/assistant/.env`; see the PR for the steps.
+- Probe through Caddy is the next unchecked build item.
+
+---
+
 ## 2026-10-10 — SSH key access to CT 100 restored for Windows and the Mac
 
 **Goal:** `hl-ssh` from the Windows desktop asked for root's password on
