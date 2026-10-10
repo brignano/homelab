@@ -131,6 +131,14 @@ jobs:
               yaml.safe_load(f.read_text()); print('ok   ', f)
           "
 
+      - name: Every stack can come up from scratch
+        # Compose will not create an external network, so the stacks have a
+        # start order hidden in their networks: blocks — and monitoring and
+        # proxy need each other's. This fails when a compose change leaves
+        # some stack waiting on a network no stack creates, or no order
+        # (partial steps included) can bring them all up.
+        run: ./scripts/bootstrap-plan.py
+
       - name: Dashboards render, metrics have a writer, job lists agree
         # Three silent failures, all of which had already happened:
         #
