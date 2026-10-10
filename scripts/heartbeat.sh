@@ -79,7 +79,7 @@ DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
 # Kept identical to the job list in install-cron.sh; CI fails if they drift
 # (scripts/check-observability.sh). Two lists of the same thing is exactly how
 # the 2026-09-19 gap stayed invisible, so they get checked rather than trusted.
-CRON_JOBS="${HL_CRON_JOBS:-heartbeat.sh repo-sync.sh pg-backup.sh}"
+CRON_JOBS="${HL_CRON_JOBS:-heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh}"
 
 running() {
   docker ps --filter "name=^${1}$" --filter "status=running" --format '{{.Names}}' 2>/dev/null \
