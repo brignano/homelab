@@ -65,9 +65,14 @@ ID, no CRC).
 - **Deploy all of it in one sitting.** If `homeassistant` goes to host mode
   before `caddy` is recreated, `ha.` returns 502 until it is. `homeassistant`
   heals at 04:00 by itself, and `proxy` never does. Order:
-  `homeassistant` → `caddy` (alone) → `prometheus` + `blackbox-exporter` →
-  `assistant` (`--build`).
-- After deploy: turn on IP banning (Settings → System → Network), then pair
+  `homeassistant` → `caddy` (alone) → `prometheus` + `blackbox-exporter`
+  (both `--force-recreate`: a plain `up -d` leaves prometheus on the old
+  file) → `assistant` (`--build`) → restart `grafana` (alert wording).
+  Do it before 04:00: the sync would apply every stack but `proxy`, and
+  the 502 that leaves is silent, because the blackbox probe reaches HA
+  through the host, not through Caddy.
+- After deploy: turn on IP banning (Settings → System → Network) with a
+  threshold of 10 or more (tailnet clients share one address), then pair
   the thermostat (HomeKit Device, code from the label).
 
 ---

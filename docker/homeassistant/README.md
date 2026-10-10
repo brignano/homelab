@@ -42,11 +42,10 @@ container that should be there.
 
 1. Open `https://ha.$HOMELAB_DOMAIN` and create your owner account. Use
    a strong password: this account can do anything in the house.
-2. Add your integrations under **Settings → Devices & services**. On this
-   bridge network, discovery mostly will not find local devices on its own.
-   Cloud integrations (most cameras, smart locks, alarm systems) just need a
-   sign-in, and local ones need the device's IP. See "Why not host networking"
-   below.
+2. Add your integrations under **Settings → Devices & services**. With host
+   networking, discovery finds most local devices (HomeKit, Matter, Chromecast,
+   …) on its own. Cloud integrations (most cameras, smart locks, alarm systems)
+   just need a sign-in. See "Host networking" below.
 
 That works on the volume this lab already has. **On a fresh volume, step 1
 answers 400 instead.** See below.
@@ -130,7 +129,9 @@ source) alerts once the Home source has gone 25h without a good read.
 
 HA runs with `network_mode: host`, switched from a bridge on 2026-10-10.
 HomeKit pairing, Matter and local discovery all depend on mDNS/SSDP multicast
-on the LAN, which a Docker bridge does not carry. The first device that needed
+on the LAN, which a Docker bridge does not carry. (Matter also needs a Matter
+Server container next to HA, which this lab does not run yet. Host networking
+is the part it needs from this stack.) The first device that needed
 it was the Honeywell T6 Pro Smart thermostat. HomeKit is its only local
 integration, and Resideo's cloud API would not issue developer access.
 
@@ -145,14 +146,36 @@ integration, and Resideo's cloud API would not issue developer access.
 - **:8123 is open on the LAN and tailnet.** Anything that can reach
   10.0.0.201 can reach HA's login page directly, not only through Caddy. It is
   still not public: the box has no inbound route from the internet, and HA is
-  never on the Cloudflare Tunnel. This is the one deliberate exception to the
-  repo's "bind to 127.0.0.1 by default" rule.
+  never on the Cloudflare Tunnel. It is an exception to the repo's "bind to
+  127.0.0.1 by default" rule, listed under Port bindings in `AGENTS.md`.
+  Hand out `https://ha.$HOMELAB_DOMAIN`: the direct port is plain HTTP, so a
+  login there crosses the LAN unencrypted. Keep it for the fresh-volume
+  bootstrap.
+- **Every container on the box can reach HA.** Before, only containers on
+  `proxy` could. Now any bridge can, through the host (`172.17.0.1:8123`),
+  the Kali webtop and Open WebUI included. HA still asks them for a login,
+  but they sit inside the trusted proxy range, so they could forge
+  `X-Forwarded-For` and dodge an IP ban.
+- **HA can reach the host's loopback**, including PostgreSQL on
+  `127.0.0.1:5432`. Postgres still needs its credentials.
 
 ### Exposure
 
 Turn on **Settings → System → Network → IP banning** with a low login-attempt
-threshold (5). Because Caddy's `X-Forwarded-For` is trusted, bans apply to the
-real client address for requests through `ha.` too, not to Caddy's.
+threshold. Because Caddy's `X-Forwarded-For` is trusted, bans apply to the
+client address for requests through `ha.` too, not to Caddy's.
+
+**On the tailnet, that address is the Proxmox host's.** Tailscale runs on the
+host as a subnet router and SNATs, so every tailnet device (your phone away
+from home, the companion app) arrives as the same LAN address. Five typos
+from any of them bans all of them, and HA has no allow list to exempt it.
+So use a higher threshold (10 or more) rather than 5. To unban, delete the
+address's entry from `ip_bans.yaml` in the volume and restart HA:
+
+```bash
+docker exec -it homeassistant vi /config/ip_bans.yaml
+docker restart homeassistant
+```
 
 ### Pairing a HomeKit device
 
