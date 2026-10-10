@@ -63,11 +63,11 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 **Notes / next steps:**
 - **The Mac's key on the Proxmox host was the only route into the host.**
-  Nothing else had its password or a key. Set a host root password
-  (`ssh root@10.0.0.200 passwd`), which is also the `https://10.0.0.200:8006`
-  web UI login, and save it. The Windows key has since been added to the
-  host's `authorized_keys` (`ssh root@10.0.0.200 hostname` → `m5` from
-  Windows), so either machine can reach the host now.
+  Nothing else had its password or a key. Both gaps are now closed: the
+  Windows key is in the host's `authorized_keys` (`ssh root@10.0.0.200
+  hostname` → `m5` from Windows), and the host has a known root password
+  (`passwd`), which is also the `https://10.0.0.200:8006` web UI login (realm
+  Linux PAM). Keep it in the password manager.
 - When appending to `authorized_keys`, check afterwards that there is one key
   per line. A missing newline breaks two keys and gives no error.
 
