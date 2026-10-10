@@ -92,12 +92,14 @@ dns.{$HOMELAB_DOMAIN} {
 
 # Home Assistant — the home hub (docs/design/tsd-personal-assistant.md, phase 2).
 # LAN + tailnet only, like every admin UI here: never route this through the
-# Cloudflare Tunnel. HA trusts Caddy's X-Forwarded-For because of the
-# `trusted_proxies` block in docker/homeassistant/config/configuration.yaml;
-# without it this site answers 400. WebSockets (which the HA frontend lives on)
-# need nothing extra: reverse_proxy upgrades them by default.
+# Cloudflare Tunnel. HA runs on host networking, so it is reached through the
+# host (extra_hosts in ../proxy/docker-compose.yml), not by container name.
+# HA must trust Caddy's X-Forwarded-For (Settings > System > Network; see
+# docker/homeassistant/README.md), or this site answers 400. WebSockets, which
+# the HA frontend lives on, need nothing extra: reverse_proxy upgrades them by
+# default.
 ha.{$HOMELAB_DOMAIN} {
-	reverse_proxy homeassistant:8123
+	reverse_proxy host.docker.internal:8123
 }
 
 # Grafana MCP server — read-only metrics/logs/alerts for Claude Code.

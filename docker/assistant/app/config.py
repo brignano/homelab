@@ -218,7 +218,7 @@ class Config:
     # --- Home Assistant (the digest's "Home" line; blank = off) ---
     # See docs/design/tsd-personal-assistant.md, phase 2, and app/home.py for
     # why this token is read-only by code, not by capability.
-    ha_url: str = "http://homeassistant:8123"
+    ha_url: str = "http://host.docker.internal:8123"
     ha_token: str = ""
     ha_entities: tuple[str, ...] = ()
 
@@ -285,7 +285,7 @@ class Config:
             google_calendar_ids=_list("GOOGLE_CALENDAR_IDS", "primary") or ("primary",),
             gmail_labels=_list("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL")
             or ("INBOX", "UNREAD"),
-            ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://homeassistant:8123",
+            ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://host.docker.internal:8123",
             ha_token=ha_token,
             ha_entities=ha_entities,
         )

@@ -91,9 +91,9 @@ scrape_configs:
           - http://ollama:11434/
           # /manifest.json, not /: the root redirects to onboarding or the
           # login page depending on state, and this file is served 200 to
-          # anyone before either. Reached over the proxy network, which
-          # blackbox-exporter already joins.
-          - http://homeassistant:8123/manifest.json
+          # anyone before either. HA runs on host networking, so this goes
+          # through the host (extra_hosts on blackbox-exporter).
+          - http://host.docker.internal:8123/manifest.json
           # /health, not /, and the path matters: a bare / carries the Host
           # header `caddy`, which matches no site block and gets a 404 — a
           # failed probe against a healthy proxy. docker/proxy/Caddyfile
