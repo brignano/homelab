@@ -244,6 +244,13 @@ when the task matches.
 | [`dashboard-visuals`](.claude/skills/dashboard-visuals/SKILL.md) | Touching `docker/dashboard/`, an icon, a colour, or any visual choice |
 | [`local-llm`](.claude/skills/local-llm/SKILL.md) | Touching `docker/ai/`, a Modelfile, `docker/assistant/`, or anything that calls Ollama |
 
+Subagents live in `.claude/agents/`. They run in their own context and hand back
+a report:
+
+| Agent | Use it |
+|-------|--------|
+| [`invariants-reviewer`](.claude/agents/invariants-reviewer.md) | Before pushing a change to `docker/`, `scripts/`, `grafana/` or Caddy config. Read-only: runs the fast CI checks, then checks the diff against the rules above and in the skills, and lists what the deploy will need beyond `git pull` |
+
 `/deploy` detects which containers are serving a stale single-file bind mount
 rather than naming them, because a hardcoded recreate list is a second copy of
 something Docker already knows — and one was got wrong within a day of being
