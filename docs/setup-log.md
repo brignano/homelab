@@ -27,6 +27,55 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Matterbridge: Alexa controls Home Assistant, free and local
+
+**Goal:** Voice control through Alexa without paying for Home Assistant Cloud,
+and without putting HA on the internet.
+
+**Steps:**
+1. `docker/matterbridge/`: `luligu/matterbridge` 3.10.13 (tag and digest) with
+   `matterbridge-hass` 1.5.0 installed at build time. Host networking, since
+   Matter is mDNS on IPv6. `start.sh` refuses to start without IPv6, binds the
+   web UI to docker0, writes the plugin config from `.env` on every start, and
+   registers the plugin.
+2. What Alexa sees: entities with the HA label `Alexa`, minus the lock, cover,
+   valve, alarm, button, remote and media_player domains, which are dropped
+   even when labelled. A non-admin `matterbridge` HA user holds the token.
+3. Wiring: blackbox probe `service="matterbridge"` on `/health`;
+   `SETUP_GATED_STACKS` gains `matterbridge`, so it pages only once `.env`
+   exists; a Renovate group for the base image and plugin together; `HA_TOKEN`
+   added to CI's throwaway env.
+4. `docker/homeassistant/README.md`: the Alexa section now points here.
+   Nabu Casa is kept as a paid alternative in one paragraph.
+
+**Issues encountered:**
+- Home Assistant Matter Hub, the bridge most guides use, was archived in
+  January 2026. Matterbridge is maintained.
+- The web UI authenticates by client IP. Behind Caddy every user is Caddy's IP,
+  so one login would unlock it for the whole LAN and tailnet, and it can
+  install npm packages as root. No Caddy route: docker0 only, opened over SSH.
+- The plugin reads `reconnectRetries: 0` as never reconnect. It is set to
+  effectively forever, since HA restarts on every update.
+- Matterbridge's own Docker image installs plugins at runtime from the UI, so
+  their version is outside git and a recreate loses it. Built here instead.
+
+**Resolution:**
+- Tested in a sandbox Docker daemon without IPv6: the image builds; `start.sh`
+  stops with its IPv6 message, and with its docker0 message when there is no
+  docker0; the config is written mode 600 from `.env` (a token with quotes and
+  backslashes survives); the plugin registers once and is a no-op after; and
+  the frontend binds only the given address. Matter itself could not start
+  without IPv6, so pairing with an Echo is untested.
+
+**Notes / next steps:**
+- Before deploying, check IPv6 on CT 100 (`docker/matterbridge/README.md` →
+  Before you start), then create the HA user and label, deploy, and pair
+  using the code in the logs.
+- Not verified: that a non-admin HA user can read the device, entity and label
+  registries the plugin lists. If the logs show `unauthorized`, that is why.
+
+---
+
 ## 2026-10-10 — Home Assistant: Echos as speakers (Alexa Media Player)
 
 **Goal:** Let HA make an Echo speak, the other direction from the Nabu Casa

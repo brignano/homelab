@@ -75,7 +75,7 @@ REQUIRED="grafana prometheus"
 OPTIONAL_CONTAINERS="${HL_OPTIONAL_CONTAINERS:-kali-linux cloudflared}"
 # Stacks that only become required once they are set up on this box, i.e. once
 # docker/<stack>/.env exists. See the inventory loop below.
-SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin}"
+SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin matterbridge}"
 # Written by the assistant after each scheduled digest; see app/stamp.py.
 DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
 

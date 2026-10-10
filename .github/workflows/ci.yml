@@ -103,6 +103,7 @@ jobs:
       ANTHROPIC_API_KEY: ci
       CONCIERGE_TOKEN: ci
       RENDER_GID: "993"
+      HA_TOKEN: ci
     steps:
       - uses: actions/checkout@v4
 
