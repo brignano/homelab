@@ -59,7 +59,8 @@ DIGEST_STATE_UID="${HL_DIGEST_STATE_UID:-10001}"
 JOBS="*/5 * * * *|heartbeat.sh|dead man's switch -> Healthchecks
 0 4 * * *|repo-sync.sh|pull, restart stale stacks, report
 0 2 * * *|pg-backup.sh|nightly pg_dumpall, 14-day retention
-0 3 * * 0|pg-restore-test.sh|weekly: restore the newest dump into a scratch Postgres"
+0 3 * * 0|pg-restore-test.sh|weekly: restore the newest dump into a scratch Postgres
+30 3 * * *|offsite-backup.sh|nightly restic copy to B2 (no-op until restic.env exists)"
 
 check=""
 case "${1:-}" in
@@ -113,7 +114,7 @@ if [ -s "$tmp" ] && [ -n "$(tail -c1 "$tmp")" ]; then
   printf '\n' >> "$tmp"
 fi
 
-for script in heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh; do
+for script in heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh; do
   line=$(echo "$JOBS" | grep "|$script|" | head -n1)
   schedule=${line%%|*}
   path="$REPO/scripts/$script"

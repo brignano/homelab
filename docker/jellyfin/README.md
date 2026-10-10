@@ -34,17 +34,15 @@ docker run --rm --device /dev/dri/renderD128 \
 
 ## 2. Media drive (when the 5 TB drive arrives)
 
-Follow `docs/design/tsd-backups-and-monitoring.md`, Phase 1 step 7. On the host:
+Format, mount and pass it in on the host: `docs/runbook-backups.md` §3. That
+ends with `pct set 100 -mp0 /mnt/media,mp=/media,backup=0` and a reboot.
+
+Then inside CT 100. Checking `mountpoint /media` here proves nothing: it is a
+bind mount, so it is "a mountpoint" even when the host's drive is missing. Ask
+for the drive's size instead:
 
 ```bash
-pct set 100 -mp0 /mnt/media,mp=/media,backup=0
-pct config 100 | grep mp0                 # must show backup=0
-```
-
-Inside CT 100:
-
-```bash
-mountpoint /media                          # must say "is a mountpoint"
+df -h /media                               # must show ~4.5T, not CT 100's own disk
 mkdir -p /media/jellyfin/library/{movies,shows,home-videos,music} /media/jellyfin/cache
 ```
 

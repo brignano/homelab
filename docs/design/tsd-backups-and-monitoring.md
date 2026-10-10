@@ -1,7 +1,9 @@
 # TSD — Backups, restore testing & job monitoring
 
-**Status:** 🚧 Phase 0 built (2026-10-10). Phases 1–3 approved in outline; Phase 1
-waits on the backup drive (ordered 2026-10-10).
+**Status:** 🚧 Phase 0 built and running (2026-10-10). Phases 1–2 built
+2026-10-10: Phase 2 (offsite) can go live now; Phase 1 (image) waits on the
+backup drive (ordered 2026-10-10). LUKS and B2 approved. Steps:
+[`docs/runbook-backups.md`](../runbook-backups.md).
 **Goal:** Give the lab backups that can actually be restored. Today it has none
 that cover the data that matters. Then prove they restore on a schedule, and
 make every backup job report from off the box when it stops running.
@@ -75,7 +77,8 @@ marked ❌ that are not "acceptable" — a few GB at most.
    and is in `install-cron.sh`. This is the "tier B" restore test
    from June, shipped early for the same reason the job monitoring was: it
    needs no hardware, and a backup never restored is a hope.
-2. **Settle the decisions below**, so SSD day is mechanical.
+2. ✅ **Settle the decisions below**, so drive day is mechanical. Settled
+   2026-10-10.
 3. **Write the restic password and the Google OAuth client into your password
    manager** if Phase 2 is approved. An encrypted offsite backup whose key only
    exists on the dead disk is not a backup.
@@ -88,9 +91,11 @@ All on the **Proxmox host**, like the `fstrim` job in `AGENTS.md` "Disk" —
 section.
 
 1. **Prepare the drive.** Identify it by `lsblk -o NAME,SIZE,MODEL,SERIAL`
-   (never by `/dev/sdX` alone), partition GPT, `mkfs.ext4 -L hl-backup`.
-   *(If LUKS is approved: `cryptsetup luksFormat` first, with a keyfile at
-   `/root/.hl-backup.key` and an entry in `/etc/crypttab`.)*
+   (never by `/dev/sdX` alone), partition GPT, LUKS, `mkfs.ext4 -L hl-backup`.
+   LUKS was approved: a **passphrase** (kept in the password manager) plus a
+   **keyfile** at `/root/.hl-backup.key` in `/etc/crypttab`, so nightly
+   backups unlock unattended. The passphrase slot matters: the keyfile dies
+   with the host, which is exactly when the drive is needed.
 2. **Mount it so a missing drive fails loudly, never quietly.**
    `/etc/fstab`: `LABEL=hl-backup /mnt/hl-backup ext4 defaults,nofail 0 2`.
    Then add it to Proxmox with **`is_mountpoint`** set:
@@ -115,9 +120,13 @@ section.
      --vmid 100 --storage hl-backup --mode snapshot --compress zstd \
      --script /usr/local/bin/hl-vzdump-hook --notes-template '{{guestname}}'
    ```
-5. **Give it a dead man's switch.** `scripts/host/hl-vzdump-hook` (vzdump hook
-   script): pings `/start` on `job-start`, success on `job-end`, `/fail` on
-   `job-abort` or `backup-abort`. It reads its URL from
+5. **Give it a dead man's switch.** ✅ built: `scripts/host/hl-vzdump-hook`
+   (vzdump hook script): pings `/start` on `job-start`, success on `job-end`,
+   `/fail` on `job-abort` or `backup-abort`. It also runs restore-test tier A
+   (`zstd -t` on the archive at `backup-end`, nightly rather than weekly: a few
+   minutes at 02:30 costs nothing) and `smartctl -H` on the backup and media
+   drives, and fails the check-in if either fails. `hl-backup-drive-full`
+   watches the drive's usage through pve-exporter. It reads its URL from
    `/etc/homelab/healthchecks.env` (mode 600), because the host has no checkout
    of this repo. New Healthchecks check: period 1 day, grace 2 hours. This is
    the same "silence is the signal" rule as every other job here: a vzdump job
@@ -140,7 +149,12 @@ section.
 `.env` file and the Postgres role hashes. The drive is the part of this setup
 most likely to be lost or carried off on its own.
 
-### Phase 2 — offsite (needs your decision)
+### Phase 2 — offsite
+
+✅ Approved and built 2026-10-10: `scripts/offsite-backup.sh`, alerting as
+`hl-offsite-failed`. It does nothing (and reports
+`homelab_offsite_configured 0`) until `/root/.config/homelab/restic.env`
+exists, so it is merged ahead of the B2 account without paging.
 
 `restic` from **CT 100** (where `healthchecks.sh` and `metrics.sh` already live)
 to Backblaze B2, nightly at 03:30.
@@ -165,7 +179,7 @@ to Backblaze B2, nightly at 03:30.
 
 | Tier | When | What | Where |
 |---|---|---|---|
-| A | Weekly, automated | `zstd -t` on the newest vzdump archive; ping Healthchecks | Host, from the hook script's `job-end` |
+| A | Nightly, automated | `zstd -t` on the archive just written; ping Healthchecks | Host, from the hook script's `backup-end` |
 | B | Weekly, automated | Postgres dump → scratch DB → sanity query | CT 100 (Phase 0) |
 | B′ | Weekly, automated | `restic check --read-data-subset=5%` | CT 100 (Phase 2) |
 | C | Quarterly, manual | Full restore of CT 100 as a throwaway container (below) | Host |
@@ -198,10 +212,11 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
    not matter for a 02:30 job, so an HDD is fine; 2 TB leaves room to keep
    backups longer. It holds backups and nothing else. Jellyfin gets its own
    drive (Phase 1, step 7).
-2. **LUKS on the SSD?** Recommendation: **yes, with a keyfile on the host.** It
-   protects against losing the drive by itself, the likeliest loss. It does not
-   protect against theft of the whole machine, which takes the keyfile too.
-3. **Offsite at all, and where?** Recommendation: **yes, B2.** The data set is a
+2. ~~**LUKS on the backup drive?**~~ **Yes** (2026-10-10), with a keyfile on
+   the host and a passphrase in the password manager. It protects against
+   losing the drive by itself, the likeliest loss. It does not protect against
+   theft of the whole machine, which takes the keyfile too.
+3. ~~**Offsite at all, and where?**~~ **Yes, B2** (2026-10-10). The data set is a
    few GB, which likely fits in B2's free 10 GB, so the cost is about $0 to
    $1 a month. Without it, a fire or a theft takes the lab and its only backup
    together.
@@ -243,6 +258,12 @@ the drill), **never `local-lvm`**: the thin pool is about 348 GiB under a
   its own drive, mounted with `backup=0`. `is_mountpoint`
   guards the SSD mount. Tier C restores with no network. The inventory shows
   the existing dump protects an empty database.
+
+- 2026-10-10: LUKS and B2 approved. Phases 1 and 2 built ahead of the drive:
+  the vzdump hook (with nightly archive verification and SMART), the offsite
+  script (gated on `restic.env`), `hl-offsite-failed`, `hl-backup-drive-full`,
+  and `docs/runbook-backups.md`. The media drive gets `chattr +i` on its
+  unmounted mount point, its equivalent of `is_mountpoint`.
 
 ## Open questions
 

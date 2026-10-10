@@ -685,6 +685,91 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- The offsite backup failed ---
+      #
+      # scripts/offsite-backup.sh, nightly 03:30: restic to Backblaze B2, plus a
+      # Sunday `restic check` that reads back 5% of the stored data. "Did it run
+      # at all" is Healthchecks' job (HEALTHCHECKS_OFFSITE_BACKUP_URL); this is
+      # "it ran and failed". The success series only exists once restic.env
+      # does, so a lab that has not set up offsite yet is silent here and shows
+      # homelab_offsite_configured 0 instead.
+      #
+      # Re-run by hand once fixed: ./scripts/offsite-backup.sh
+      - uid: hl-offsite-failed
+        title: Offsite backup failed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "The offsite backup to B2 failed; {{ if lt $values.B.Value 0.0 }}it has never succeeded{{ else }}last good copy is {{ printf \"%.0f\" $values.B.Value }}h old{{ end }}. See /var/log/offsite-backup.log on CT 100"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_offsite_success
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              # Same fallback as hl-restore-test-failed: a failing FIRST run has
+              # no timestamp yet, and NoData would be silent.
+              expr: (time() - homelab_offsite_timestamp_seconds) / 3600 or on() vector(-1)
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
+      # --- The backup drive is filling ---
+      #
+      # The nightly vzdump keeps a fixed number of archives (prune-backups on
+      # the hl-backup storage), so this drive should sit at a steady level. If
+      # it climbs, archives grew: something large landed in CT 100, or the
+      # media drive was mounted without backup=0 and the library is being
+      # imaged. 80% leaves room for one more night while you look. Read from
+      # pve-exporter, because the drive is mounted on the host, not in CT 100.
+      - uid: hl-backup-drive-full
+        title: Backup drive above 80%
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "The backup drive (Proxmox storage hl-backup) is {{ printf \"%.0f\" $values.A.Value }}% full; check the archive sizes in /mnt/hl-backup/dump on the host"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                pve_disk_usage_bytes{id=~"storage/.+/hl-backup"}
+                / pve_disk_size_bytes{id=~"storage/.+/hl-backup"} * 100
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [80] }
+
       # --- A container is serving a config file the repo has replaced ---
       #
       # The six-day bug. A single-file bind mount is pinned to an inode at

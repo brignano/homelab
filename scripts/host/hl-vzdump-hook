@@ -1,0 +1,160 @@
+#!/usr/bin/env bash
+#
+# vzdump hook script for the nightly image of CT 100. Runs on the PROXMOX HOST,
+# not in CT 100: the host has no checkout of this repo, so this file is copied
+# into place rather than run from git (docs/runbook-backups.md → "Drive day").
+#
+#   install -m 755 hl-vzdump-hook /usr/local/bin/hl-vzdump-hook
+#
+# Why this exists
+# ---------------
+# Every scheduled job in this lab needs a dead man's switch (AGENTS.md,
+# .claude/skills/alerting). A vzdump job is the easiest one to lose silently: a
+# backup job that was never created, a drive that fell off the USB bus, a
+# storage marked inactive — all of them look exactly like a quiet, healthy
+# night. So vzdump itself pings Healthchecks, and the absence of a ping pages.
+#
+# It also does the two checks only the host can do, at the one moment the
+# drive is guaranteed to be awake:
+#
+#   1. Restore-test tier A (docs/design/tsd-backups-and-monitoring.md, Phase 3):
+#      `zstd -t` the archive just written. A truncated or corrupt archive is a
+#      file of a plausible size that restores nothing; reading it back is the
+#      only way to know.
+#   2. SMART health of the backup drive and the media drive. Proxmox's smartd
+#      only mails root, which on this box reaches nobody. A failing drive now
+#      fails the night's check-in instead.
+#
+# Phases (vzdump calls this with the phase as $1):
+#   job-start     -> /start ping, reset this run's state
+#   backup-end    -> verify the archive ($TARGET)
+#   backup-abort  -> record the failure
+#   job-end       -> SMART, then success or /fail ping with a summary body
+#   job-abort     -> /fail ping
+#
+# The ping URL lives in /etc/homelab/healthchecks.env (mode 600):
+#   HEALTHCHECKS_VZDUMP_URL=https://hc-ping.com/<uuid>
+#
+# This script always exits 0. A hook that fails can abort the backup it is
+# watching, and a backup destroyed by the monitoring bolted onto it is the one
+# outcome none of this is allowed to have (same rule as scripts/pg-backup.sh).
+#
+set -u
+
+ENV_FILE="${HL_HOOK_ENV:-/etc/homelab/healthchecks.env}"
+STATE="${HL_HOOK_STATE:-/run/hl-vzdump-hook.state}"
+# Mount points whose drives get a SMART check. One that is not mounted is
+# skipped (the media drive may not exist yet).
+SMART_MOUNTS="${HL_SMART_MOUNTS:-/mnt/hl-backup /mnt/media}"
+
+phase="${1:-}"
+
+log() { echo "hl-vzdump-hook: $*" >&2; }
+
+# Read only the one key, never source the file. Same validation as
+# scripts/healthchecks.sh, which the host does not have: a placeholder or a
+# bare host pings nothing while looking configured.
+hc_url() {
+  _u=$(sed -n 's/^HEALTHCHECKS_VZDUMP_URL=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r')
+  case "$_u" in
+    http://*/?*|https://*/?*) ;;
+    *) return 1 ;;
+  esac
+  case "$_u" in
+    *your-uuid*|*'<'*|*'>'*|*changeme*|*replace*|*REPLACE*|*example.com*) return 1 ;;
+  esac
+  printf '%s' "$_u"
+}
+
+ping() {  # ping <suffix> [body]
+  _url=$(hc_url) || { log "HEALTHCHECKS_VZDUMP_URL in $ENV_FILE is unset or a placeholder — nothing notices if backups stop"; return 0; }
+  curl -fsS -m 20 --retry 3 --retry-delay 5 --data-raw "${2:-}" "$_url$1" >/dev/null 2>&1 \
+    || log "Healthchecks ping$1 failed"
+}
+
+note() { printf '%s\n' "$*" >> "$STATE"; }
+fail() { printf 'FAIL %s\n' "$*" >> "$STATE"; log "FAIL $*"; }
+
+# The whole disk behind a mount point, through LUKS and partitions:
+# /mnt/hl-backup -> /dev/mapper/hl-backup -> sdb1 -> sdb.
+disk_of() {
+  _src=$(findmnt -no SOURCE "$1" 2>/dev/null) || return 1
+  _dev=$_src
+  while :; do
+    _parent=$(lsblk -no PKNAME "$_dev" 2>/dev/null | head -n1)
+    [ -n "$_parent" ] || break
+    _dev=/dev/$_parent
+  done
+  printf '%s' "$_dev"
+}
+
+smart_check() {
+  command -v smartctl >/dev/null 2>&1 || { note "SMART: smartctl not installed"; return; }
+  for _m in $SMART_MOUNTS; do
+    mountpoint -q "$_m" || continue
+    _disk=$(disk_of "$_m") || { note "SMART $_m: could not find its disk"; continue; }
+    # USB enclosures usually need -d sat; try the default first.
+    _out=$(smartctl -H "$_disk" 2>&1) || _out=$(smartctl -d sat -H "$_disk" 2>&1) || true
+    case "$_out" in
+      *PASSED*|*"Health Status: OK"*) note "SMART $_m ($_disk): PASSED" ;;
+      *FAILED*) fail "SMART $_m ($_disk) reports FAILING health — replace this drive" ;;
+      *) note "SMART $_m ($_disk): not readable through this enclosure" ;;
+    esac
+  done
+}
+
+verify() {
+  case "$1" in
+    *.zst) zstd -tq "$1" 2>/dev/null ;;
+    *.gz)  gzip -t "$1" 2>/dev/null ;;
+    *.lzo) lzop -t "$1" 2>/dev/null ;;
+    *)     true ;;
+  esac
+}
+
+case "$phase" in
+  job-start)
+    : > "$STATE"
+    chmod 600 "$STATE" 2>/dev/null
+    ping /start
+    ;;
+
+  backup-end)
+    # $TARGET is the finished archive. Tier A restore test: read every byte.
+    _t="${TARGET:-}"
+    if [ -z "$_t" ] || [ ! -f "$_t" ]; then
+      fail "backup-end for ${3:-?} but no archive at '${_t}'"
+    else
+      _size=$(du -h "$_t" | cut -f1)
+      _start=$(date +%s)
+      if verify "$_t"; then
+        note "archive $(basename "$_t") ($_size) verified in $(( $(date +%s) - _start ))s"
+      else
+        fail "archive $(basename "$_t") ($_size) FAILED its integrity test"
+      fi
+    fi
+    ;;
+
+  backup-abort)
+    fail "backup of ${3:-?} aborted"
+    ;;
+
+  job-end)
+    smart_check
+    _free=$(df -h --output=avail,pcent /mnt/hl-backup 2>/dev/null | tail -n1 | awk '{print $1" free ("$2" used)"}')
+    [ -z "$_free" ] || note "backup drive: $_free"
+    _body=$(cat "$STATE" 2>/dev/null)
+    if grep -q '^FAIL ' "$STATE" 2>/dev/null; then
+      ping /fail "$_body"
+    else
+      ping "" "$_body"
+    fi
+    ;;
+
+  job-abort)
+    fail "vzdump job aborted"
+    ping /fail "$(cat "$STATE" 2>/dev/null)"
+    ;;
+esac
+
+exit 0
