@@ -27,6 +27,43 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — One command for "is the lab healthy"
+
+**Goal:** Answer "is everything OK?" from the box in one command, rather than
+from five scripts and a dashboard that each have to be remembered.
+
+**Steps:**
+1. Added `scripts/health.sh`: one OK/WARN/FAIL line per check, a summary, and
+   exit 1 on any FAIL. It checks:
+   - every `container_name` in `docker/*/docker-compose.yml` is running
+     (`kali-linux`, `cloudflared` optional, as in `heartbeat.sh`), and none is
+     unhealthy or restarting;
+   - firing Grafana alerts, through Grafana's Alertmanager API with the admin
+     credentials from `docker/monitoring/.env`;
+   - Prometheus `up == 0`;
+   - guest `/` usage **and** the `local-lvm` thin pool through pve-exporter;
+   - checkout vs `origin/main`, plus locally modified tracked files;
+   - `install-cron.sh --check`.
+
+**Issues encountered:**
+- Running the earlier one-liners from `~` gave "No such file or directory":
+  they are relative to the checkout. `health.sh` resolves its own repo path,
+  so it can be run from anywhere.
+
+**Resolution:**
+- "Could not ask" is reported as a finding, never a pass: if Grafana does not
+  answer, that is a FAIL, because a dead Grafana fires no alerts.
+
+**Notes / next steps:**
+- The thin pool query assumes pve-exporter's `pve_disk_usage_bytes` /
+  `pve_disk_size_bytes` with `id="storage/<node>/local-lvm"`. Not yet checked
+  against the running exporter. If it prints "thin pool usage unknown", run the
+  grep in AGENTS.md "Disk" and fix the metric name.
+- No JSON dependency: the responses are parsed with sed and awk, the same way
+  `probe-status.sh` does it.
+
+---
+
 ## 2026-09-20 — The digest could not report not running, and the switch stayed in-lab
 
 **Goal:** The digest pushes, so nobody checks it — the failure that matters is
