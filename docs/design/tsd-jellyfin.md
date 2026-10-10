@@ -167,11 +167,14 @@ Per the `alerting` skill:
   only for the monitoring stack itself.)
 - **Dashboard tile** under a new *Media* group, with the vendored Jellyfin icon
   (`scripts/update-tile-icons.sh`).
-- **GPU in use:** a metric for whether `/dev/dri/renderD128` is present inside
-  the container (`homelab_jellyfin_gpu_present`), with an alert if it vanishes.
-  A host kernel update or a lost `dev0` line would silently send every
-  transcode to the CPU, and the first symptom would be a slow lab, not a
-  failed check.
+- **GPU passthrough present:** `homelab_jellyfin_gpu_present` reports whether
+  `/dev/dri/renderD128` exists **in CT 100**, from `heartbeat.sh`, once
+  `docker/jellyfin/.env` exists there. `hl-jellyfin-gpu-missing` alerts if it
+  vanishes, which is what a host kernel update or a lost `dev0` line does.
+  It is checked in CT 100 rather than inside the container: a running container
+  keeps the node it started with, so an in-container check would stay green
+  after the passthrough was gone, and a `docker exec` could hang the heartbeat
+  before its off-box ping.
 
 ## Phases
 
@@ -218,7 +221,8 @@ Building phase 2 changed three things in this design (2026-10-10):
    and clients are set up on drive day instead.
 3. **Monitoring.** The probe goes straight to `jellyfin:8096/health` rather
    than through a `jellyfin.caddy` alias. Stopped-container alerting comes
-   from the existing container inventory, not from `REQUIRED`.
+   from the existing container inventory, not from `REQUIRED`. The GPU check
+   moved from inside the container to CT 100 after review (see Monitoring).
 
 Tested against `jellyfin/jellyfin:12.2` in a real Docker daemon. The stack
 refused to start without `RENDER_GID` and without the media directories, and

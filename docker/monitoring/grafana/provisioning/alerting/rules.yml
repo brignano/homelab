@@ -594,13 +594,13 @@ groups:
 
       # --- Jellyfin lost the GPU ---
       #
-      # heartbeat.sh checks every 5 minutes that the jellyfin container can see
-      # /dev/dri/renderD128. Without it Jellyfin keeps working but transcodes on
-      # the CPU, inside its 2-core cap, so playback stutters and the lab slows.
-      # Usual causes: a host kernel update, or the dev0 line gone from
-      # /etc/pve/lxc/100.conf. docs/design/tsd-jellyfin.md, phase 1, has the fix.
+      # heartbeat.sh checks every 5 minutes that /dev/dri/renderD128 exists in
+      # CT 100 (once docker/jellyfin/.env exists there). Without it, the next
+      # Jellyfin restart fails or transcodes on the CPU. Usual causes: a host
+      # kernel update, or the dev0 line gone from /etc/pve/lxc/100.conf.
+      # docker/jellyfin/README.md §1 has the fix.
       - uid: hl-jellyfin-gpu-missing
-        title: Jellyfin cannot see the GPU
+        title: Jellyfin GPU missing from CT 100
         condition: C
         for: 10m
         noDataState: OK
@@ -608,7 +608,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Jellyfin cannot see /dev/dri/renderD128, so transcodes are running on the CPU; check dev0 in CT 100's config"
+          summary: "The iGPU (/dev/dri/renderD128) is missing from CT 100, so Jellyfin cannot hardware-transcode; check dev0 in /etc/pve/lxc/100.conf"
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }

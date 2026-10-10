@@ -53,13 +53,26 @@ mkdir -p /media/jellyfin/library/{movies,shows,home-videos,music} /media/jellyfi
 ```bash
 cp docker/jellyfin/.env.example docker/jellyfin/.env   # set RENDER_GID
 docker compose -f docker/jellyfin/docker-compose.yml up -d
-docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy
 ```
 
-Caddy needs the **recreate** for the new `jellyfin.` route: the Caddyfile is a
-single-file mount (`AGENTS.md` → Config mounts). Recreating `caddy` alone, not
-the whole `proxy` stack, leaves AdGuard and the house's DNS running. Prometheus
-needs `docker restart prometheus` for the new probe.
+Then make the rest of the lab pick up what this change added. `/deploy`, or
+`./scripts/deploy-plan.sh`, works this out for you. By hand it is:
+
+```bash
+# New jellyfin. route. The Caddyfile is a single-file mount, so RECREATE, and
+# recreate caddy alone: the rest of proxy is AdGuard, the house's DNS.
+docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy
+# New probe target. prometheus.yml is a single-file mount too: recreate.
+docker compose -f docker/monitoring/docker-compose.yml up -d --force-recreate prometheus
+# New alert rule (hl-jellyfin-gpu-missing). provisioning/ is a directory
+# mount, read at boot: a restart is enough.
+docker compose -f docker/monitoring/docker-compose.yml restart grafana
+# New icon FILE (jellyfin.svg). Homepage lists its public dir once at startup,
+# so a new filename 404s until it is recreated.
+docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate
+```
+
+Check DNS twice after touching `caddy` (`.claude/commands/deploy.md`).
 
 Then in the web UI: create the admin user, add the libraries (`/media/movies`,
 `/media/shows`, …), and under *Dashboard → Playback → Transcoding* choose
@@ -73,7 +86,7 @@ H.264 and HEVC and hardware encoding. Set scheduled tasks (scans, trickplay) to
 |---|---|
 | Container stopped | `homelab_container_running{container="jellyfin"}`, automatic from this compose file |
 | App not answering | blackbox probe `http://jellyfin:8096/health` (`hl-probe-down`) |
-| GPU gone, transcodes on CPU | `homelab_jellyfin_gpu_present` (`hl-jellyfin-gpu-missing`) |
+| GPU passthrough lost from CT 100 | `homelab_jellyfin_gpu_present`, checked in CT 100 once `.env` exists (`hl-jellyfin-gpu-missing`) |
 
 ## Troubleshooting
 
