@@ -33,10 +33,30 @@ exists. `node_filesystem_avail_bytes` (and therefore `hl-disk-full` and
 `hl-disk-filling`) measures the guest's view: treat every disk alert here as
 arriving **later** than it should, never earlier.
 
-The pool itself is watched by nothing. `pve-exporter` is in the monitoring
-stack and the PVE API does expose pool usage, so an alert is cheap — but name
-the metric from the running exporter, not from memory. See the note at the top
-of `rules.yml` about the alert that watched a metric that did not exist.
+The pool has no alert yet. `scripts/health.sh` reports it on demand, from
+`pve_disk_usage_bytes` / `pve_disk_size_bytes` with
+`id="storage/<node>/local-lvm"`, names confirmed against the running exporter
+on 2026-10-10. Those are the names an alert should use. Do not take metric
+names from memory. See the note at the top of `rules.yml` about the alert that
+watched a metric that did not exist.
+
+**The pool does not get space back unless someone trims it.** When the guest
+deletes a file, the pool still counts those blocks as used until they are
+discarded, and Proxmox does not trim containers by itself. Image prunes and
+log rotation free a lot, so the pool climbs even while the guest holds steady.
+On 2026-10-10 the guest read 18% and the pool 52%, and one `pct fstrim 100`
+brought the pool to 16%. The fix is a weekly cron entry on the **Proxmox
+host** (`pct` does not exist inside CT 100, so `install-cron.sh` cannot install
+it). It runs at 05:00 Sunday, an hour after `repo-sync.sh` prunes images at
+04:00, so it hands back what the prune just freed:
+
+```bash
+# on the Proxmox host: crontab -e
+0 5 * * 0  /usr/sbin/pct fstrim 100 >/dev/null 2>&1
+```
+
+If `health.sh` shows the pool well above the guest, check that this entry
+still exists before looking for anything else.
 
 ```bash
 # pve-exporter publishes no host port — ask it from inside the network.

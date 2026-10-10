@@ -186,10 +186,19 @@ else ok "thin pool local-lvm is ${pool}% full"; fi
 section "Repo"
 if timeout 20 git -C "$REPO" fetch --quiet origin main 2>/dev/null; then
   behind=$(git -C "$REPO" rev-list --count HEAD..origin/main 2>/dev/null || echo "?")
+  # Being behind is normal for up to a day: repo-sync.sh pulls at 04:00. It is
+  # only a finding once the oldest missing commit has lived through a sync.
+  oldest=$(git -C "$REPO" log --format=%ct HEAD..origin/main 2>/dev/null | tail -n1)
+  age_h=$(( ($(date +%s) - ${oldest:-0}) / 3600 ))
   if [ "$behind" = "0" ]; then ok "checkout is current with origin/main"
-  else
+  elif [ -n "$oldest" ] && [ "$age_h" -lt 26 ]; then
+    ok "checkout is $behind commit(s) behind origin/main, oldest ${age_h}h old — the 04:00 repo-sync will pull it"
+  elif [ -z "$oldest" ]; then
     warn "checkout is $behind commit(s) behind origin/main"
-    hint "/deploy (repo-sync.sh should have done this overnight — is it installed?)"
+    hint "tail /var/log/repo-sync.log, then /deploy"
+  else
+    warn "checkout is $behind commit(s) behind origin/main, oldest ${age_h}h old — a nightly sync has missed it"
+    hint "tail /var/log/repo-sync.log, then /deploy"
   fi
 else
   warn "could not fetch origin/main — cannot say whether the checkout is current"
