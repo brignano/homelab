@@ -27,6 +27,37 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — The thin pool was 52% full of space the guest had freed
+
+**Goal:** Explain why the first `health.sh` run showed guest `/` at 18% and the
+`local-lvm` pool at 52%, and stop that gap from building up again.
+
+**Steps:**
+1. Ran `pct fstrim 100` on the Proxmox host. The pool went from 52% to 16%,
+   with the guest at 14%.
+2. Documented a weekly host crontab entry in AGENTS.md "Disk":
+   `0 5 * * 0 /usr/sbin/pct fstrim 100`. It runs an hour after `repo-sync.sh`
+   prunes images at 04:00.
+3. `health.sh` no longer warns about a checkout that is behind `origin/main`
+   until the oldest missing commit is more than 26h old, so it has lived
+   through a 04:00 sync. A PR merged ten minutes ago is not a broken sync.
+
+**Issues encountered:**
+- `pct fstrim` run inside CT 100 fails with "command not found". `pct` exists
+  only on the host.
+
+**Resolution:**
+- The trim has to be scheduled on the host, by hand. `install-cron.sh` runs
+  inside the container and cannot install it.
+
+**Notes / next steps:**
+- The host crontab entry is not tracked anywhere `health.sh` can see. If the
+  pool climbs well above the guest again, check that entry first.
+- The pool still has no alert. The metric names are now confirmed, so the
+  next step is a rule in `rules.yml`.
+
+---
+
 ## 2026-10-10 — One command for "is the lab healthy"
 
 **Goal:** Answer "is everything OK?" from the box in one command, rather than
