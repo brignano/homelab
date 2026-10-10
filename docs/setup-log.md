@@ -27,6 +27,194 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — SSH key access to CT 100 restored for Windows and the Mac
+
+**Goal:** `hl-ssh` from the Windows desktop asked for root's password on
+`10.0.0.201`, and nobody knew that password. Key auth was the only way in.
+
+**Steps:**
+1. Windows already had a key (`C:\Users\abrig\.ssh\id_ed25519`). It was not in
+   CT 100's `/root/.ssh/authorized_keys`.
+2. No CT 100 root password and no Proxmox web UI login were known. The way in
+   was the Mac's key on the **Proxmox host**, installed at setup
+   (`ssh-copy-id root@10.0.0.200`), plus `pct exec 100`, which needs no
+   container password.
+3. Taildrop (`tailscale file cp … macbook:`) never delivered the file, so the
+   public key was copied to the Mac's clipboard by hand.
+4. CT 100's `authorized_keys` was rewritten from the Mac with one key per line:
+   ```bash
+   { echo '<windows pubkey>'; cat ~/.ssh/id_ed25519.pub ~/.ssh/id_rsa.pub; } \
+     | ssh root@10.0.0.200 "pct exec 100 -- bash -c 'cat > /root/.ssh/authorized_keys && chmod 600 /root/.ssh/authorized_keys'"
+   ```
+   It now holds `abrig@Desktop` (Windows ed25519) and the Mac's ed25519 and
+   RSA keys (`abrignano@comcast.net`).
+
+**Issues encountered:**
+- A `>` overwrite with a placeholder string wiped the file, and with it the
+  Mac's direct key. After that the Mac's `hl-ssh` asked for a password too.
+- `pbpaste` has no trailing newline, so the next `>>` append glued the Mac's
+  key onto the end of the Windows key's line. That corrupted both keys
+  silently: `cat` looked almost right, and sshd ignores the bad line.
+
+**Resolution:**
+- Rewrote the whole file in one `>` from `echo` and the `.pub` files, which
+  end in newlines. Checked with `pct exec 100 -- cat` that there are three
+  separate lines. `hl-ssh` works from both machines.
+
+**Notes / next steps:**
+- **The Mac's key on the Proxmox host was the only route into the host.**
+  Nothing else had its password or a key. Both gaps are now closed: the
+  Windows key is in the host's `authorized_keys` (`ssh root@10.0.0.200
+  hostname` → `m5` from Windows), and the host has a known root password
+  (`passwd`), which is also the `https://10.0.0.200:8006` web UI login (realm
+  Linux PAM). Keep it in the password manager.
+- When appending to `authorized_keys`, check afterwards that there is one key
+  per line. A missing newline breaks two keys and gives no error.
+
+---
+
+## 2026-10-10 — Home Assistant moved to host networking
+
+**Goal:** Pair the Honeywell T6 Pro Smart thermostat (TH6220WF2006) with Home
+Assistant. Its only local integration is HomeKit, which needs mDNS on the LAN.
+The cloud routes were closed: Resideo's developer portal would not create an
+account, and the thermostat is not registrable in Total Connect Comfort (MAC
+ID, no CRC).
+
+**Steps:**
+1. `docker/homeassistant/docker-compose.yml`: `network_mode: host`, and the
+   `homeassistant` and `proxy` networks removed.
+2. Caddy, blackbox-exporter and the assistant get
+   `extra_hosts: "host.docker.internal:host-gateway"` and reach HA at
+   `host.docker.internal:8123`: the Caddyfile `ha.` site, the blackbox probe
+   target, and the default `HA_URL`. The assistant leaves `proxy_proxy`, which
+   it joined only to reach HA.
+3. Removed `docker-compose.bootstrap.yml`. Ports cannot coexist with host mode,
+   and a fresh volume is now set up directly at `http://10.0.0.201:8123`.
+4. README "Host networking" (exposure, IP banning, HomeKit pairing,
+   rollback), TSD open question, AGENTS stack table.
+
+**Issues encountered:**
+- Host mode cannot join Docker networks, so every container-name reference to
+  `homeassistant` had to move to the host gateway. Those were Caddy, the
+  probe and the digest.
+- :8123 is now open on the LAN and tailnet behind HA's login. That is a
+  deliberate exception to the 127.0.0.1-by-default rule. HA is still never on
+  the Tunnel.
+
+**Resolution:**
+- Caddy's and the assistant's requests arrive from their 172.x bridge
+  addresses, inside the trusted proxy range already set in HA, so `ha.` keeps
+  answering without a settings change.
+
+**Notes / next steps:**
+- **Deploy all of it in one sitting.** If `homeassistant` goes to host mode
+  before `caddy` is recreated, `ha.` returns 502 until it is. `homeassistant`
+  heals at 04:00 by itself, and `proxy` never does. Order:
+  `homeassistant` → `caddy` (alone) → `prometheus` + `blackbox-exporter`
+  (both `--force-recreate`: a plain `up -d` leaves prometheus on the old
+  file) → `assistant` (`--build`) → restart `grafana` (alert wording).
+  Do it before 04:00: the sync would apply every stack but `proxy`, and
+  the 502 that leaves is silent, because the blackbox probe reaches HA
+  through the host, not through Caddy.
+- After deploy: turn on IP banning (Settings → System → Network) with a
+  threshold of 10 or more (tailnet clients share one address), then pair
+  the thermostat (HomeKit Device, code from the label).
+
+---
+
+## 2026-10-10 — `/bootstrap-stack` derives its order; monitoring ↔ proxy cycle
+
+**Goal:** `/bootstrap-stack` still listed `core → monitoring → ai → tunnel` and
+omitted six stacks (`proxy`, `assistant`, `dashboard`, `desktops`, `mcp`,
+`homeassistant`). Make the documented order bring every stack up from scratch
+without a missing-network error.
+
+**Steps:**
+1. Read every stack's `networks:` block. Compose will not create an external
+   network, so each `external: true` entry is a start-order edge.
+2. `scripts/bootstrap-plan.py` derives the order from those blocks instead of
+   listing it, the same move as `deploy-plan.sh`. It prints one step per line,
+   exits 1 naming the missing network and its owner when the named stacks
+   cannot all come up, and runs in CI (`observability` job).
+3. `/bootstrap-stack` now runs the planner instead of carrying an order, asks
+   before leaving out an undeployed stack (`tunnel`), and warns that recreating
+   `proxy` takes the household's DNS down (AdGuard) until `:53` binds again.
+4. `python3-yaml` added to `bootstrap-docker.sh`'s prerequisites. The planner
+   needs it and CT 100 did not have it.
+5. `/preflight`'s hardcoded four-stack list replaced with "every stack".
+
+**Issues encountered:**
+- **No stack-level order exists.** `monitoring`'s blackbox-exporter joins
+  `proxy_proxy`, and `proxy`'s Caddy joins `monitoring_monitoring`. The running
+  box only works because those edges were added one at a time to stacks that
+  were already up. A from-scratch rebuild, the case this command exists for,
+  would have failed at whichever of the two came first.
+- `docker compose config` cannot stand in for PyYAML. It refuses a file whose
+  `${VAR:?required}` is unset, and `--no-interpolate` fails validation on a
+  volume named by a variable.
+
+**Resolution:**
+- Kept both edges and broke the cycle in the plan. `monitoring` comes up first
+  without `blackbox-exporter`, which creates `monitoring_monitoring`. Then
+  `proxy` comes up, then `monitoring` again, whole. Verified on CT 100 (Compose
+  v5.1.4) with a throwaway project: `up -d <svc>` created the project's own
+  network and ignored a missing external network that only the omitted service
+  used. The whole-project `up` failed on it.
+- Current derived order: `ai`, `core`, `tunnel`, `monitoring` (without
+  blackbox-exporter), `mcp`, `proxy`, `assistant`, `dashboard`, `desktops`,
+  `homeassistant`, `monitoring`. This is a snapshot only. The planner is the
+  source of truth.
+
+**Notes / next steps:**
+- `python3-yaml` installed by hand on the existing CT 100 (PyYAML 6.0.2),
+  since `bootstrap-docker.sh` only covers fresh installs.
+
+---
+
+## 2026-10-10 — Home Assistant's reverse-proxy trust moved out of YAML
+
+**Goal:** Clear HA's repair "The HTTP YAML configuration is deprecated" before
+it becomes a break. From 2027.2, HA stops reading `http:` from
+`configuration.yaml`.
+
+**Steps:**
+1. Removed the `http:` block (use_x_forwarded_for, trusted_proxies) from
+   `docker/homeassistant/config/configuration.yaml`. HA had already imported
+   it into the volume. It now lives at Settings → System → Network.
+2. Added `docker/homeassistant/docker-compose.bootstrap.yml`, an override that
+   publishes HA on `127.0.0.1:8123` only, for setting those values on a fresh
+   volume over an SSH tunnel.
+3. README "Fresh volume" section and troubleshooting row now point at the UI
+   setting. The Caddyfile comment still names the old YAML block, on purpose:
+   any edit to that single-file mount, even a comment, needs a human-run
+   recreate of `caddy` and trips `hl-config-drift`, and `hl-stack-drift` can
+   trip too because `proxy` drift is measured against the image's build time.
+   Fix the comment the next time the Caddyfile changes for a real reason.
+
+**Issues encountered:**
+- A fresh volume would have no proxy trust, so Caddy gets 400 and the UI that
+  fixes it is unreachable: a bootstrap loop. Keeping the YAML block until
+  first import only works until 2027.2, so the loopback override is the route
+  that keeps working.
+
+**Resolution:**
+- Existing install: no behaviour change. The imported settings are what HA
+  already uses.
+
+**Notes / next steps:**
+- **Before merging,** confirm Settings → System → Network shows Use
+  X-Forwarded-For on, with both trusted proxy ranges. `repo-sync.sh`
+  recreates `homeassistant` unattended at 04:00 after a change to its stack, and
+  without the imported values that recreate would leave `ha.` answering 400.
+- Deploy: recreate `homeassistant` (single-file mount), then confirm
+  `ha.$HOMELAB_DOMAIN` still answers 200. Rollback while HA is still below
+  2027.2: restore the block (`git revert`) and recreate.
+- The values are no longer in git. If the volume is lost, the README has
+  them.
+
+---
+
 ## 2026-10-10 — Home Assistant, read into the digest (personal assistant, phase 2)
 
 **Goal:** Phase 2 of [`tsd-personal-assistant.md`](design/tsd-personal-assistant.md).

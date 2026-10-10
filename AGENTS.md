@@ -133,14 +133,14 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
 | Sablier | `docker/desktops/` | internal (on-demand engine for desktops) |
 | Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
-| Home Assistant | `docker/homeassistant/` | LAN + tailnet (via Caddy, `ha.$HOMELAB_DOMAIN`); read by the assistant over `proxy` |
+| Home Assistant | `docker/homeassistant/` | LAN + tailnet: **host networking** (`:8123` direct, and via Caddy at `ha.$HOMELAB_DOMAIN`), for HomeKit/Matter/discovery. Reached by other containers as `host.docker.internal:8123` |
 | Jellyfin | planned | LAN + tailnet (via Caddy) — **not** Cloudflare Tunnel; media on its own drive, mounted with `backup=0` |
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC — `/dev/net/tun` isn't exposed to the container.)
 - **Service names (`*.$HOMELAB_DOMAIN`):** a real domain with real Let's Encrypt certificates. A single wildcard DNS record (`*.<base> → 10.0.0.201`, Cloudflare proxy **off**) covers every service; Caddy routes by Host header. **These are not public** — the name resolves publicly but the address is private, so only LAN/tailnet devices can reach it. Certificates come via the ACME **DNS-01** challenge (Caddy writes a TXT record to the zone), so no inbound connection is ever needed. Adding a service needs only a Caddyfile block — the wildcard already covers it.
 - **Legacy `*.home`:** still served, now as redirects to the real names. AdGuard keeps the `*.home → 10.0.0.201` rewrites for these; once nothing uses them, both can go. AdGuard itself stays for ad blocking and as the tailnet resolver.
-- **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
+- **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. Home Assistant runs on **host networking** (HomeKit/discovery need LAN multicast), so its `:8123` is on all interfaces too; hand out `ha.$HOMELAB_DOMAIN`, not the plain-HTTP port. PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
 - **Public access:** only via Cloudflare Tunnel (`cloudflared`), reserved for app previews — not yet deployed. **Not for Jellyfin:** Cloudflare's terms require non-Enterprise plans to use paid products (Stream) to serve video through its network. Whether a personal tunnel counts is disputed, but enforcement would land on the account that also serves `life` and `hoststats`. Jellyfin is reached over Tailscale like every other service here. `cloudflared` joins `core_core` and `ai_ai` so it can proxy to other stacks without opening host ports.
 
 ## Ollama / AI tuning (LXC constraint)

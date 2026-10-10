@@ -968,7 +968,7 @@ def _():
     with_env(HA_TOKEN="t", HA_ENTITIES="cover.garage_door, lock.front_door")
     c = Config.from_env()
     assert c.home_enabled and c.ha_entities == ("cover.garage_door", "lock.front_door")
-    assert c.ha_url == "http://homeassistant:8123" and c.day_sources == ("home",)
+    assert c.ha_url == "http://host.docker.internal:8123" and c.day_sources == ("home",)
     with_env(HA_TOKEN="t", HA_ENTITIES="lock.a", GOOGLE_CLIENT_ID="i", GOOGLE_CLIENT_SECRET="s",
              GOOGLE_REFRESH_TOKEN="r")
     assert Config.from_env().day_sources == ("calendar", "mail", "home")

@@ -12,19 +12,17 @@
 # The standard set of built-in integrations a fresh install gets.
 default_config:
 
-# Behind Caddy. Without this, every request through https://ha.$HOMELAB_DOMAIN
-# carries an X-Forwarded-For header from an untrusted address, and HA answers
-# 400 Bad Request.
+# NOT here any more: the http: block (reverse-proxy trust for Caddy).
 #
-# Docker's default address pools, not one subnet: the proxy network's subnet is
-# assigned when it is created and is not pinned anywhere in this repo. Nothing
-# outside Docker can reach HA directly (it publishes no port), so trusting the
-# whole range lets no LAN device spoof its address.
-http:
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 172.16.0.0/12
-    - 192.168.0.0/16
+# Home Assistant moved the http integration to the UI, and from 2027.2 it
+# stops reading http: from YAML. The block this file used to carry was imported
+# into the volume on 2026-10-10 and now lives at Settings > System > Network:
+#   Use X-Forwarded-For: on
+#   Trusted proxies:     172.16.0.0/12, 192.168.0.0/16  (Docker's default pools)
+#
+# On a FRESH volume those settings do not exist, so https://ha.$HOMELAB_DOMAIN
+# answers 400. HA runs on host networking, so set them directly at
+# http://10.0.0.201:8123 instead (README > "Fresh volume").
 
 # Written by HA's UI editors. Created empty on a fresh volume by the
 # homeassistant-init service, and never tracked by git.

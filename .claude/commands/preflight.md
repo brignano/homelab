@@ -8,7 +8,7 @@ For each stack the user wants to bring up (or all stacks if unspecified), verify
 
 ### 1. `.env` file exists
 
-For each stack directory (`docker/core`, `docker/monitoring`, `docker/ai`, `docker/tunnel`):
+For each stack directory (`docker/<stack>/` — every one under `docker/`):
 ```bash
 ls docker/<stack>/.env
 ```

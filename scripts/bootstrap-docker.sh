@@ -20,7 +20,8 @@ apt-get install -y -qq \
   ca-certificates \
   curl \
   gnupg \
-  lsb-release
+  lsb-release \
+  python3-yaml   # scripts/bootstrap-plan.py reads the compose files with it
 
 echo "==> Adding Docker GPG key"
 install -m 0755 -d /etc/apt/keyrings

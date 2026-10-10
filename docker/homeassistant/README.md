@@ -13,15 +13,17 @@ the read-only half of it. The digest reads the states you choose and puts a
 
 | | |
 |---|---|
-| UI | `https://ha.$HOMELAB_DOMAIN`. LAN + tailnet only, never the Cloudflare Tunnel |
-| Read by | the assistant, at `http://homeassistant:8123`, over the `proxy` network |
+| UI | `https://ha.$HOMELAB_DOMAIN`, and directly at `http://10.0.0.201:8123` (host networking). LAN + tailnet only, never the Cloudflare Tunnel |
+| Read by | the assistant, at `http://host.docker.internal:8123` (the host, via `extra_hosts`) |
 | State | the `homeassistant_config` volume (users, tokens, integrations, history) |
-| Owned by git | `config/configuration.yaml` only, mounted read-only |
+| Owned by git | `config/configuration.yaml` only, mounted read-only. Reverse-proxy trust is a UI setting now: see "Fresh volume" |
+| Networking | `network_mode: host`, for HomeKit, Matter and discovery. See "Host networking" |
 | Updates | by hand. On `HL_NO_AUTOPULL`, because HA's database migrations are one-way |
 
 ## Bring it up
 
-The proxy stack must be up first: HA joins its network, so Caddy can route to it.
+HA runs on host networking (see "Host networking"), so it needs no other
+stack to start. Caddy reaches it through the host.
 
 ```bash
 docker compose -f docker/homeassistant/docker-compose.yml up -d
@@ -29,8 +31,7 @@ docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy  
 ```
 
 Recreating `caddy` alone leaves AdGuard, and so the house's DNS, untouched.
-`/deploy` works out the rest. Prometheus needs a recreate for the new probe,
-and the dashboard a restart for the new tile icon.
+`/deploy` works out the rest.
 
 **Deploy it soon after merging.** `heartbeat.sh` counts every `container_name`
 in `docker/*/docker-compose.yml` as must-be-running, so an undeployed
@@ -41,11 +42,31 @@ container that should be there.
 
 1. Open `https://ha.$HOMELAB_DOMAIN` and create your owner account. Use
    a strong password: this account can do anything in the house.
-2. Add your integrations under **Settings → Devices & services**. On this
-   bridge network, discovery mostly will not find local devices on its own.
-   Cloud integrations (most cameras, smart locks, alarm systems) just need a
-   sign-in, and local ones need the device's IP. See "Why not host networking"
-   below.
+2. Add your integrations under **Settings → Devices & services**. With host
+   networking, discovery finds most local devices (HomeKit, Matter, Chromecast,
+   …) on its own. Cloud integrations (most cameras, smart locks, alarm systems)
+   just need a sign-in. See "Host networking" below.
+
+That works on the volume this lab already has. **On a fresh volume, step 1
+answers 400 instead.** See below.
+
+### Fresh volume: setting the reverse-proxy trust
+
+HA must trust Caddy's `X-Forwarded-For` header, or every request through
+`ha.$HOMELAB_DOMAIN` is a **400 Bad Request**. That is a UI setting now: HA
+moved the http integration out of YAML and stops reading it in 2027.2. The
+existing volume has it. A new one (say, after losing the volume, since there
+are no backups yet) does not. Host networking makes the fix direct: a request
+straight to the box carries no `X-Forwarded-For`, so it is never refused.
+
+1. Open `http://10.0.0.201:8123` from the LAN or tailnet and onboard.
+2. **Settings → System → Network → Reverse proxy:** turn on **Trust
+   X-Forwarded-For** and add **Trusted proxies** `172.16.0.0/12` and
+   `192.168.0.0/16`. These are Docker's default address pools, which is where
+   Caddy's requests come from. The proxy network's subnet is not pinned
+   anywhere, so the whole range is trusted.
+3. **Save** (it restarts HA). `https://ha.$HOMELAB_DOMAIN` now answers.
+   Continue with "First run" step 2.
 
 ## Connect the digest
 
@@ -104,21 +125,75 @@ A rejected token or a dead container fails the whole read rather than
 rendering part of the house as quiet. `hl-google-stale` (named before HA was a
 source) alerts once the Home source has gone 25h without a good read.
 
-## Why not host networking
+## Host networking
 
-Host networking (`network_mode: host`) is how HA's docs suggest running it,
-for mDNS/SSDP auto-discovery. It is not used here, for three reasons:
+HA runs with `network_mode: host`, switched from a bridge on 2026-10-10.
+HomeKit pairing, Matter and local discovery all depend on mDNS/SSDP multicast
+on the LAN, which a Docker bridge does not carry. (Matter also needs a Matter
+Server container next to HA, which this lab does not run yet. Host networking
+is the part it needs from this stack.) The first device that needed
+it was the Honeywell T6 Pro Smart thermostat. HomeKit is its only local
+integration, and Resideo's cloud API would not issue developer access.
 
-- **It cannot join Docker networks.** Caddy and the assistant would have to
-  reach HA through the host's address instead of by container name.
-- **It publishes :8123 to the whole LAN.** On a bridge, HA is reachable only
-  through Caddy.
-- **What it buys is discovery,** and most of what a house has (cloud cameras,
-  locks, alarm systems, the car) is set up by signing in, not discovered.
+**What it changes:**
 
-If an integration you need truly requires discovery or multicast (some
-Chromecast and HomeKit setups), that is the time to revisit it, in its own
-change.
+- **Nothing reaches HA by container name.** A host-network container joins no
+  Docker network. Caddy, blackbox-exporter and the assistant reach it as
+  `host.docker.internal:8123`. Each of their compose files maps that name to
+  the host with `extra_hosts: "host.docker.internal:host-gateway"`. Their
+  requests arrive from their own 172.x bridge addresses, which the trusted
+  proxy range already covers.
+- **:8123 is open on the LAN and tailnet.** Anything that can reach
+  10.0.0.201 can reach HA's login page directly, not only through Caddy. It is
+  still not public: the box has no inbound route from the internet, and HA is
+  never on the Cloudflare Tunnel. It is an exception to the repo's "bind to
+  127.0.0.1 by default" rule, listed under Port bindings in `AGENTS.md`.
+  Hand out `https://ha.$HOMELAB_DOMAIN`: the direct port is plain HTTP, so a
+  login there crosses the LAN unencrypted. Keep it for the fresh-volume
+  bootstrap.
+- **Every container on the box can reach HA.** Before, only containers on
+  `proxy` could. Now any bridge can, through the host (`172.17.0.1:8123`),
+  the Kali webtop and Open WebUI included. HA still asks them for a login,
+  but they sit inside the trusted proxy range, so they could forge
+  `X-Forwarded-For` and dodge an IP ban.
+- **HA can reach the host's loopback**, including PostgreSQL on
+  `127.0.0.1:5432`. Postgres still needs its credentials.
+
+### Exposure
+
+Turn on **Settings → System → Network → IP banning** with a low login-attempt
+threshold. Because Caddy's `X-Forwarded-For` is trusted, bans apply to the
+client address for requests through `ha.` too, not to Caddy's.
+
+**On the tailnet, that address is the Proxmox host's.** Tailscale runs on the
+host as a subnet router and SNATs, so every tailnet device (your phone away
+from home, the companion app) arrives as the same LAN address. Five typos
+from any of them bans all of them, and HA has no allow list to exempt it.
+So use a higher threshold (10 or more) rather than 5. To unban, delete the
+address's entry from `ip_bans.yaml` in the volume and restart HA:
+
+```bash
+docker exec -it homeassistant vi /config/ip_bans.yaml
+docker restart homeassistant
+```
+
+### Pairing a HomeKit device
+
+1. If the device is in **Apple Home**, remove it there first. A HomeKit
+   accessory pairs with one controller at a time.
+2. **Settings → Devices & services.** HA discovers it on its own. Or use
+   **+ Add integration → HomeKit Device**.
+3. Enter the 8-digit setup code from the device's label (`XXX-XX-XXX`).
+
+The maker's app (Resideo, for the thermostat) keeps working alongside.
+
+### Rolling back to a bridge
+
+Revert this change. That puts back `networks: [homeassistant, proxy]` and
+container-name addressing in the Caddyfile, prometheus.yml and the assistant.
+Then recreate `homeassistant`, `caddy`, `blackbox-exporter`, `prometheus` and
+`assistant`. HomeKit and Matter devices stop updating on a bridge, but HA keeps
+their pairings, so switching back to host mode later restores them.
 
 ## Updating
 
@@ -142,8 +217,9 @@ until `tsd-backups-and-monitoring.md` lands.
 
 | Symptom | Likely cause |
 |---|---|
-| `ha.` answers **400 Bad Request** | The `http:` block in `config/configuration.yaml` is missing or not loaded. Recreate the container (it is a single-file mount). |
+| `ha.` answers **400 Bad Request** | HA does not trust Caddy's `X-Forwarded-For`: the reverse-proxy settings are missing (a fresh volume) or were changed in **Settings → System → Network**. Set them as in "Fresh volume" above. |
 | HA starts in recovery mode | A YAML error in `configuration.yaml`, or an `!include` target missing from the volume. `docker compose ... up -d` reruns `homeassistant-init`, which recreates the missing ones. |
 | Digest says **Home** `_not read_ (token rejected (401))` | The `digest` user's token was deleted or the user was removed. Make a new token, update `HA_TOKEN`, recreate the assistant, then `/digest`. |
 | An entity shows **not found** | The entity ID in `HA_ENTITIES` is wrong, or the device was renamed in HA. |
+| `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |
