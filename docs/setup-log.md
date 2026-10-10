@@ -27,6 +27,55 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — `/bootstrap-stack` derives its order; monitoring ↔ proxy cycle
+
+**Goal:** `/bootstrap-stack` still listed `core → monitoring → ai → tunnel` and
+omitted six stacks (`proxy`, `assistant`, `dashboard`, `desktops`, `mcp`,
+`homeassistant`). Make the documented order bring every stack up from scratch
+without a missing-network error.
+
+**Steps:**
+1. Read every stack's `networks:` block. Compose will not create an external
+   network, so each `external: true` entry is a start-order edge.
+2. `scripts/bootstrap-plan.py` derives the order from those blocks instead of
+   listing it, the same move as `deploy-plan.sh`. It prints one step per line,
+   exits 1 naming the missing network and its owner when the named stacks
+   cannot all come up, and runs in CI (`observability` job).
+3. `/bootstrap-stack` now runs the planner instead of carrying an order, asks
+   before leaving out an undeployed stack (`tunnel`), and warns that recreating
+   `proxy` takes the household's DNS down (AdGuard) until `:53` binds again.
+4. `python3-yaml` added to `bootstrap-docker.sh`'s prerequisites. The planner
+   needs it and CT 100 did not have it.
+5. `/preflight`'s hardcoded four-stack list replaced with "every stack".
+
+**Issues encountered:**
+- **No stack-level order exists.** `monitoring`'s blackbox-exporter joins
+  `proxy_proxy`, and `proxy`'s Caddy joins `monitoring_monitoring`. The running
+  box only works because those edges were added one at a time to stacks that
+  were already up. A from-scratch rebuild, the case this command exists for,
+  would have failed at whichever of the two came first.
+- `docker compose config` cannot stand in for PyYAML. It refuses a file whose
+  `${VAR:?required}` is unset, and `--no-interpolate` fails validation on a
+  volume named by a variable.
+
+**Resolution:**
+- Kept both edges and broke the cycle in the plan. `monitoring` comes up first
+  without `blackbox-exporter`, which creates `monitoring_monitoring`. Then
+  `proxy` comes up, then `monitoring` again, whole. Verified on CT 100 (Compose
+  v5.1.4) with a throwaway project: `up -d <svc>` created the project's own
+  network and ignored a missing external network that only the omitted service
+  used. The whole-project `up` failed on it.
+- Current derived order: `ai`, `core`, `tunnel`, `monitoring` (without
+  blackbox-exporter), `mcp`, `proxy`, `assistant`, `dashboard`, `desktops`,
+  `homeassistant`, `monitoring`. This is a snapshot only. The planner is the
+  source of truth.
+
+**Notes / next steps:**
+- On the existing box, run `apt-get install -y python3-yaml` once on CT 100.
+  `bootstrap-docker.sh` only covers fresh installs.
+
+---
+
 ## 2026-10-10 — Home Assistant, read into the digest (personal assistant, phase 2)
 
 **Goal:** Phase 2 of [`tsd-personal-assistant.md`](design/tsd-personal-assistant.md).
