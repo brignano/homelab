@@ -1116,7 +1116,7 @@ def _():
     from app.day import Day, render_lines
     from app.google import Event
     east = dt.timezone(dt.timedelta(hours=-4))
-    standup_east = Event("Standup", NOW.replace(hour=9).astimezone(east),
+    standup_east = Event("Standup", NOW.replace(hour=9, minute=0).astimezone(east),
                          NOW.replace(hour=9, minute=15).astimezone(east), False, True)
     day = Day(now=NOW, sources=("calendar", "ha-calendar"),
               events=[_ev("Standup", 9, 0, 9, 15), _ev("Dentist", 15, 0, 16, 0)],
