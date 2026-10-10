@@ -796,7 +796,7 @@ def _():
 
 class _HAResp:
     def __init__(self, status, body=None):
-        self.status, self._body = status, body or {}
+        self.status, self._body = status, {} if body is None else body
     async def json(self, content_type=None):
         return self._body
     async def __aenter__(self):
@@ -806,12 +806,14 @@ class _HAResp:
 
 
 class _HASession:
-    """Answers GET /api/states/<id> from a dict. A value that is an int is the
-    HTTP status to return; an Exception is raised."""
+    """Answers GET /api/states/<id>, /api/calendars/<id> and /api/config (key
+    "config") from a dict, keyed on the last path segment. A value that is an
+    int is the HTTP status to return; an Exception is raised."""
     def __init__(self, states):
-        self.states, self.calls = states, []
-    def get(self, url, headers=None, timeout=None):
+        self.states, self.calls, self.params = states, [], []
+    def get(self, url, headers=None, timeout=None, params=None):
         self.calls.append(("GET", url, headers))
+        self.params.append(params)
         entity = url.rsplit("/", 1)[1]
         got = self.states.get(entity, 404)
         if isinstance(got, Exception):
@@ -980,6 +982,243 @@ def _():
             continue
         raise AssertionError(f"accepted {bad}")
     with_env()
+
+
+# --- Thermostat and iCloud calendar (tsd-personal-assistant.md, next up) ------
+
+def _climate(mode, temp, name="Thermostat", changed="2026-10-12T05:30:00+00:00"):
+    attrs = {"friendly_name": name}
+    if temp is not None:
+        attrs["current_temperature"] = temp
+    return {"state": mode, "attributes": attrs, "last_changed": changed}
+
+
+@check("climate: off, or below 55 °F / above 85 °F, in whichever unit HA uses")
+def _():
+    from app.home import notable
+    cases = [
+        ("heat", {"current_temperature": 68}, "°F", None),
+        ("heat", {"current_temperature": 52}, "°F", "at 52°F"),
+        ("cool", {"current_temperature": 88}, "°F", "at 88°F"),
+        ("heat", {"current_temperature": 55}, "°F", None),   # the band is inclusive
+        ("off", {"current_temperature": 68}, "°F", "off"),
+        ("off", {"current_temperature": 50}, "°F", "at 50°F and off"),
+        # °C is converted, never compared raw: 20 °C is not "below 55".
+        ("heat", {"current_temperature": 20}, "°C", None),
+        ("heat", {"current_temperature": 11}, "°C", "at 11°C"),   # 51.8 °F
+        ("cool", {"current_temperature": 31}, "°C", "at 31°C"),   # 87.8 °F
+        ("heat", {"current_temperature": 13}, "°C", None),        # 55.4 °F
+        # A unit that was not read judges nothing about temperature, but off is still off.
+        ("heat", {"current_temperature": 11}, None, None),
+        ("off", {"current_temperature": 11}, None, "off"),
+        # No reading is said, never taken as "in range".
+        ("heat", {}, "°F", "temperature not read"),
+        ("heat", {"current_temperature": "n/a"}, "°F", "temperature not read"),
+        ("off", {}, "°F", "off"),
+        ("unavailable", {"current_temperature": 40}, "°F", "unavailable"),
+    ]
+    for state, attrs, unit, want in cases:
+        got = notable("climate.thermostat", state, attrs, unit)
+        assert got == want, (state, attrs, unit, got)
+    assert notable("sensor.outside", "40", {"device_class": "temperature"}, "°F") is None, \
+        "only a thermostat is judged, not every temperature sensor"
+
+
+@check("climate: the unit comes from HA's config, and a duration only for 'off'")
+def _():
+    from app.home import Home, HomeError
+    session = _HASession({"config": {"unit_system": {"temperature": "°C"}},
+                          "climate.thermostat": _climate("heat", 11),
+                          "climate.upstairs": _climate("off", 20, name="Upstairs")})
+    got = asyncio.run(Home(session, "http://ha:8123", "t").readings(("climate.thermostat", "climate.upstairs")))
+    assert [c[0] for c in session.calls] == ["GET"] * 3
+    assert session.calls[0][1] == "http://ha:8123/api/config"
+    by = {r.entity_id: r for r in got}
+    assert by["climate.thermostat"].notable == "at 11°C" and by["climate.thermostat"].since is None, \
+        "last_changed is the mode's, not the temperature's"
+    assert by["climate.upstairs"].notable == "off" and by["climate.upstairs"].since is not None
+    # No climate entity: no config read.
+    session = _HASession({"lock.a": _ha("locked")})
+    asyncio.run(Home(session, "http://ha", "t").readings(("lock.a",)))
+    assert not any(c[1].endswith("/api/config") for c in session.calls)
+    # A config HA will not give fails the read: a thermostat judged without its unit is a guess.
+    for config in (500, {"unit_system": {"temperature": "K"}}):
+        try:
+            asyncio.run(Home(_HASession({"config": config, "climate.t": _climate("heat", 11)}),
+                             "http://ha", "t").readings(("climate.t",)))
+        except HomeError:
+            continue
+        raise AssertionError(f"judged a thermostat without a unit: {config}")
+
+
+@check("climate: the Home line says it, and the quiet line says temperature was checked")
+def _():
+    from app.day import Day, render_lines
+    from app.home import parse_state
+    def line(home):
+        return next(l for l in render_lines(Day(now=NOW, sources=("home",), home=home)) if "**Home**" in l)
+    cold = parse_state("climate.t", _climate("heat", 52), "°F")
+    assert line([cold]) == "**Home** Thermostat at 52°F", line([cold])
+    off = parse_state("climate.t", _climate("off", 68), "°F")
+    assert line([off]) == "**Home** Thermostat off 2h", line([off])
+    fine = parse_state("climate.t", _climate("heat", 68), "°F")
+    assert line([fine]) == "**Home** nothing open, unlocked, offline or out of temperature range (1 watched)"
+
+
+@check("ha calendar: events parse like Google's, every one busy, broken ones dropped")
+def _():
+    from app.home import parse_calendar
+    events = parse_calendar([
+        {"summary": "Dinner", "start": {"dateTime": "2026-10-12T19:00:00-04:00"},
+         "end": {"dateTime": "2026-10-12T21:00:00-04:00"}, "uid": "x"},
+        {"summary": "Holiday", "start": {"date": "2026-10-12"}, "end": {"date": "2026-10-13"}},
+        {"summary": "Broken", "start": {"dateTime": "nope"}, "end": {}},
+        {"start": {"date": "2026-10-12"}, "end": {"date": "2026-10-13"}},
+        "not an event",
+    ])
+    assert [e.title for e in events] == ["Dinner", "Holiday", "(no title)"], events
+    assert all(e.busy for e in events) and events[1].all_day and not events[0].all_day
+    assert events[0].start.utcoffset() == dt.timedelta(hours=-4)
+    assert parse_calendar({"message": "not a list"}) == []
+    naive = parse_calendar([{"summary": "N", "start": {"dateTime": "2026-10-12T19:00:00"},
+                             "end": {"dateTime": "2026-10-12T20:00:00"}}])[0]
+    assert naive.start.tzinfo is not None and naive.end.tzinfo is not None
+    from app.day import Day, render_lines
+    render_lines(Day(now=NOW, sources=("calendar", "ha-calendar"),
+                     events=[_ev("G", 19, 0, 20, 0)], ha_events=[naive]))  # must not raise
+
+
+@check("ha calendar: only GETs the named calendars, today's window in UTC, unknown fails loudly")
+def _():
+    from app.home import Home, HomeError
+    item = {"summary": "Dinner", "start": {"dateTime": "2026-10-12T19:00:00+00:00"},
+            "end": {"dateTime": "2026-10-12T21:00:00+00:00"}}
+    session = _HASession({"calendar.home": [item]})
+    start = dt.datetime(2026, 10, 12, 3, 30, 15, 999, tzinfo=dt.timezone(dt.timedelta(hours=-4)))
+    got = asyncio.run(Home(session, "http://ha:8123", "t").calendars(("calendar.home",), start, start))
+    assert session.calls == [("GET", "http://ha:8123/api/calendars/calendar.home", {"Authorization": "Bearer t"})]
+    assert session.params == [{"start": "2026-10-12T07:30:15Z", "end": "2026-10-12T07:30:15Z"}], \
+        "no '+' in a query string, no microseconds"
+    assert [e.title for e in got[0]] == ["Dinner"]
+    for states in ({"calendar.home": [item], "calendar.typo": 400},
+                   {"calendar.home": [item], "calendar.typo": 404},
+                   {"calendar.home": [item], "calendar.typo": 500},
+                   {"calendar.home": 401}):
+        try:
+            asyncio.run(Home(_HASession(states), "http://ha", "t").calendars(tuple(states), start, start))
+        except HomeError:
+            continue
+        raise AssertionError(f"half a calendar rendered as a free day: {states}")
+
+
+@check("ha calendar: merges with Google, the same meeting once, overlaps across both")
+def _():
+    from app.day import Day, render_lines
+    from app.google import Event
+    east = dt.timezone(dt.timedelta(hours=-4))
+    standup_east = Event("Standup", NOW.replace(hour=9, minute=0).astimezone(east),
+                         NOW.replace(hour=9, minute=15).astimezone(east), False, True)
+    day = Day(now=NOW, sources=("calendar", "ha-calendar"),
+              events=[_ev("Standup", 9, 0, 9, 15), _ev("Dentist", 15, 0, 16, 0)],
+              ha_events=[standup_east, _ev("Pick up kids", 15, 30, 16, 30)])
+    assert [e.title for e in day.timed] == ["Standup", "Dentist", "Pick up kids"], \
+        "the same instant in another time zone is the same meeting"
+    assert [(a.title, b.title) for a, b in day.conflicts] == [("Dentist", "Pick up kids")]
+    text = "\n".join(render_lines(day))
+    assert "**Calendar** 09:00 Standup · 15:00 Dentist · 15:30 Pick up kids" in text, text
+    assert "**Overlaps** 15:00 Dentist ↔ 15:30 Pick up kids" in text and "not read" not in text, text
+    # iCloud alone, no Google at all.
+    only = "\n".join(render_lines(Day(now=NOW, sources=("ha-calendar",), ha_events=[])))
+    assert "**Calendar** nothing else today" in only and "Mail" not in only, only
+
+
+@check("ha calendar: one calendar unread is said on the line, both unread is 'not read'")
+def _():
+    from app.day import Day, render_lines
+    def cal(**kw):
+        lines = [l for l in render_lines(Day(now=NOW, sources=("calendar", "ha-calendar"), **kw))
+                 if l.startswith("**Calendar**")]
+        assert len(lines) == 1, lines
+        return lines[0]
+    assert cal(events=[]) == "**Calendar** nothing else today · _HA calendars not read_"
+    assert cal(ha_events=[_ev("Dinner", 19, 0, 20, 0)]) == "**Calendar** 19:00 Dinner · _Google not read_"
+    assert cal() == "**Calendar** _not read_"
+
+
+@check("ha calendar: its own source — fails alone, stamps alone, titles never reach the model")
+def _():
+    import tempfile
+    from app import stamp
+    from app.day import DayCollector, stamp_path
+    from app.digest import build
+    from app.home import Home
+    item = {"summary": "SECRET-ICLOUD", "start": {"dateTime": "2026-10-12T19:00:00+00:00"},
+            "end": {"dateTime": "2026-10-12T20:00:00+00:00"}}
+    with tempfile.TemporaryDirectory() as d:
+        dc = DayCollector(_FakeGoogle(events={"primary": [_ev("Standup", 9, 0, 9, 15)]}),
+                          calendar_ids=("primary",), mail_labels=(), sources=("calendar", "ha-calendar"),
+                          state_dir=d, home=Home(_HASession({"calendar.home": 401}), "http://ha", "t"),
+                          ha_calendars=("calendar.home",))
+        day = asyncio.run(dc.collect(NOW))
+        assert [e.title for e in day.events] == ["Standup"] and day.ha_events is None
+        assert any("ha-calendar" in p and "401" in p for p in day.problems), day.problems
+        assert stamp.read(stamp_path(d, "calendar")) and stamp.read(stamp_path(d, "ha-calendar")) is None
+    with tempfile.TemporaryDirectory() as d:
+        # HA_CALENDARS without HA_ENTITIES: no state is read, only the calendar.
+        session = _HASession({"calendar.home": [item]})
+        dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("ha-calendar",), state_dir=d,
+                          home=Home(session, "http://ha", "t"), ha_calendars=("calendar.home",))
+        dc.arm()
+        assert stamp.read(stamp_path(d, "ha-calendar")) is not None, "armed, so a never-working read alerts"
+        assert stamp.read(stamp_path(d, "home")) is None
+
+        class _Facts:
+            async def collect(self, now):
+                return _facts(targets_up=2, targets_total=2)
+
+        seen = {}
+
+        class _Ollama:
+            async def generate(self, prompt, system, temperature, num_predict):
+                seen["prompt"] = prompt + system
+                raise RuntimeError("narration off")
+
+        out = asyncio.run(build(_Facts(), _Ollama(), NOW, day_collector=dc))
+        assert "SECRET" not in seen["prompt"] and "19:00 SECRET-ICLOUD" in out, out
+        assert all("/api/states/" not in c[1] for c in session.calls)
+        assert "Home Assistant" in out.splitlines()[-1] and "Google" not in out.splitlines()[-1]
+
+
+@check("config: HA_CALENDARS is its own optional source, needing HA_TOKEN")
+def _():
+    from app.config import Config
+    with_env(HA_TOKEN="t", HA_CALENDARS="calendar.home, calendar.work")
+    c = Config.from_env()
+    assert c.ha_calendars == ("calendar.home", "calendar.work") and not c.home_enabled
+    assert c.ha_calendar_enabled and c.day_sources == ("ha-calendar",)
+    with_env(HA_TOKEN="t", HA_ENTITIES="climate.thermostat", HA_CALENDARS="calendar.home")
+    assert Config.from_env().day_sources == ("home", "ha-calendar")
+    with_env(HA_TOKEN="t", HA_ENTITIES="lock.a")
+    assert not Config.from_env().ha_calendar_enabled, "off when unset"
+    for bad in (dict(HA_CALENDARS="calendar.home"), dict(HA_TOKEN="t", HA_CALENDARS="home"),
+                dict(HA_TOKEN="t", HA_CALENDARS="lock.front_door"), dict(HA_TOKEN="t", HA_CALENDARS="calendar.")):
+        with_env(**bad)
+        try:
+            Config.from_env()
+        except SystemExit:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    with_env()
+
+
+@check("freshness: every source the bot stamps is one heartbeat.sh publishes")
+def _():
+    import re
+    from app.day import SOURCES
+    script = (HERE.parents[2] / "scripts" / "heartbeat.sh").read_text(encoding="utf-8")
+    m = re.search(r"for _source in ([a-z\- ]+); do", script)
+    assert m, "heartbeat.sh no longer loops over sources"
+    assert tuple(m.group(1).split()) == SOURCES, (m.group(1), SOURCES)
 
 
 # --- every module imports -----------------------------------------------------

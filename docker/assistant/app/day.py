@@ -38,8 +38,14 @@ log = logging.getLogger(__name__)
 
 # Every source that keeps a freshness stamp, for scripts/heartbeat.sh and
 # hl-google-stale. GOOGLE_SOURCES is the default for a Day built by hand.
-SOURCES = ("calendar", "mail", "home")
+# "ha-calendar" is Home Assistant's calendar.* entities (iCloud, via CalDAV):
+# its own source, because HA can be down while Google is fine, and the other
+# way round.
+SOURCES = ("calendar", "mail", "home", "ha-calendar")
 GOOGLE_SOURCES = ("calendar", "mail")
+# The sources merged into the one Calendar line, and how each is named when
+# it alone could not be read.
+CALENDAR_SOURCES = {"calendar": "Google", "ha-calendar": "HA calendars"}
 
 # How much of the section a single run can fill. The digest is one Discord
 # message (2000 characters); this section must never be the reason it splits.
@@ -83,6 +89,18 @@ def discord_safe(text: str, limit: int) -> str:
 
 # --- Facts --------------------------------------------------------------------
 
+def dedupe(*calendars: list[Event]) -> list[Event]:
+    """The same meeting on two calendars (yours and a shared one, or Google and
+    iCloud) is one meeting. Without this it would also be reported as
+    overlapping itself. Aware datetimes compare by instant, so the same event
+    reported in two time zones is still one."""
+    seen: dict[tuple, Event] = {}
+    for events in calendars:
+        for e in events:
+            seen.setdefault((e.title, e.start, e.end), e)
+    return list(seen.values())
+
+
 @dataclass
 class Day:
     """None for a list means it was not read, never "nothing there"."""
@@ -90,7 +108,10 @@ class Day:
     # Which sources were asked for. One left out of GOOGLE_SOURCES gets no line
     # at all; "not read" is reserved for a source that was asked for and failed.
     sources: tuple[str, ...] = GOOGLE_SOURCES
+    # Google's events, and Home Assistant's. Kept apart so each can be "not
+    # read" on its own; `merged` is what the Calendar line shows.
     events: list[Event] | None = None
+    ha_events: list[Event] | None = None
     mail: list[Mail] | None = None
     # More new mail arrived than was fetched, so the count is a floor.
     mail_more: bool = False
@@ -98,12 +119,16 @@ class Day:
     problems: list[str] = field(default_factory=list)
 
     @property
+    def merged(self) -> list[Event]:
+        return dedupe(self.events or [], self.ha_events or [])
+
+    @property
     def timed(self) -> list[Event]:
-        return sorted((e for e in self.events or [] if not e.all_day), key=lambda e: e.start)
+        return sorted((e for e in self.merged if not e.all_day), key=lambda e: e.start)
 
     @property
     def all_day(self) -> list[Event]:
-        return [e for e in self.events or [] if e.all_day]
+        return [e for e in self.merged if e.all_day]
 
     @property
     def conflicts(self) -> list[tuple[Event, Event]]:
@@ -144,18 +169,25 @@ def render_lines(day: Day) -> list[str]:
     tz = day.now.tzinfo
     lines: list[str] = ["### Today"]
 
-    if "calendar" not in day.sources:
+    asked = [s for s in CALENDAR_SOURCES if s in day.sources]
+    read = {"calendar": day.events, "ha-calendar": day.ha_events}
+    unread = [s for s in asked if read[s] is None]
+    if not asked:
         pass
-    elif day.events is None:
+    elif len(unread) == len(asked):
         lines.append("**Calendar** _not read_")
     else:
+        # One calendar read and another not: show what was read, and say on
+        # the same line what is missing. "nothing else today" with a calendar
+        # unread would be the all-clear this must never give.
+        gap = "".join(f" · _{CALENDAR_SOURCES[s]} not read_" for s in unread)
         timed = day.timed
         if timed:
             shown = " · ".join(_event(e, tz) for e in timed[:MAX_EVENTS])
             more = len(timed) - MAX_EVENTS
-            lines.append(f"**Calendar** {shown}" + (f" · +{more} more" if more > 0 else ""))
+            lines.append(f"**Calendar** {shown}" + (f" · +{more} more" if more > 0 else "") + gap)
         else:
-            lines.append("**Calendar** nothing else today")
+            lines.append("**Calendar** nothing else today" + gap)
         if day.all_day:
             lines.append("**All day** " + " · ".join(
                 discord_safe(e.title, TITLE_CHARS) for e in day.all_day[:MAX_EVENTS]))
@@ -194,7 +226,10 @@ def render_lines(day: Day) -> list[str]:
         else:
             # The verdict is Python's, and it says exactly what was checked:
             # not "all fine", which would claim more than the table knows.
-            lines.append(f"**Home** nothing open, unlocked or offline ({len(day.home)} watched)")
+            checked = "open, unlocked or offline"
+            if any(r.entity_id.startswith("climate.") for r in day.home):
+                checked = "open, unlocked, offline or out of temperature range"
+            lines.append(f"**Home** nothing {checked} ({len(day.home)} watched)")
 
     if day.problems:
         lines.append("⚠️ _Incomplete: " + "; ".join(day.problems) + "_")
@@ -211,15 +246,19 @@ def stamp_path(state_dir: str, source: str) -> str:
 
 class DayCollector:
     """`google` and `home` are each optional. A source whose client is absent
-    must not be in `sources`; the bot builds both from the same config."""
+    must not be in `sources`; the bot builds both from the same config.
+    `home` serves two sources: "home" (HA_ENTITIES) and "ha-calendar"
+    (HA_CALENDARS)."""
 
     def __init__(self, google: Google | None, *, calendar_ids: tuple[str, ...],
                  mail_labels: tuple[str, ...], sources: tuple[str, ...],
                  state_dir: str | None, home: Home | None = None,
-                 home_entities: tuple[str, ...] = ()) -> None:
+                 home_entities: tuple[str, ...] = (),
+                 ha_calendars: tuple[str, ...] = ()) -> None:
         self._google = google
         self._home = home
         self._home_entities = home_entities
+        self._ha_calendars = ha_calendars
         self._calendar_ids = calendar_ids
         self._mail_labels = mail_labels
         self._sources = sources
@@ -248,13 +287,11 @@ class DayCollector:
         start, end = window(now)
         per_calendar = await asyncio.gather(
             *(self._google.events(cid, start, end) for cid in self._calendar_ids))
-        # The same meeting on two calendars (yours and a shared one) is one
-        # meeting. Without this it would also be reported as overlapping itself.
-        seen: dict[tuple, Event] = {}
-        for events in per_calendar:
-            for e in events:
-                seen.setdefault((e.title, e.start, e.end), e)
-        return list(seen.values())
+        return dedupe(*per_calendar)
+
+    async def _ha_calendar(self, now: dt.datetime) -> list[Event]:
+        start, end = window(now)
+        return dedupe(*await self._home.calendars(self._ha_calendars, start, end))
 
     async def _mail(self, now: dt.datetime) -> tuple[list[Mail], bool]:
         ids, estimate = await self._google.list_unread(self._mail_labels)
@@ -278,6 +315,8 @@ class DayCollector:
             jobs["mail"] = self._mail(now)
         if "home" in self._sources:
             jobs["home"] = self._home.readings(self._home_entities)
+        if "ha-calendar" in self._sources:
+            jobs["ha-calendar"] = self._ha_calendar(now)
         results = await asyncio.gather(*jobs.values(), return_exceptions=True)
 
         for source, result in zip(jobs, results):
@@ -290,6 +329,8 @@ class DayCollector:
                 day.events = result
             elif source == "mail":
                 day.mail, day.mail_more = result
+            elif source == "ha-calendar":
+                day.ha_events = result
             else:
                 day.home = result
             self._ok(source)

@@ -237,12 +237,30 @@ watching a door.
 **The token is not read-only, and the docs say so.** Google enforces this
 module's scopes. Home Assistant has no read-only token: any token can also
 unlock and open. The digest's token belongs to a dedicated non-admin user, and
-the code only ever sends `GET /api/states/<entity_id>`, but a leaked `HA_TOKEN`
-is a house key. Setup and the full table are in
-[`docker/homeassistant/README.md`](../homeassistant/README.md).
+the code only ever sends GETs (`/api/states/<entity_id>`, `/api/calendars/<entity_id>`,
+`/api/config`), but a leaked `HA_TOKEN` is a house key. Setup and the full
+table are in [`docker/homeassistant/README.md`](../homeassistant/README.md).
+
+A thermostat (`climate.*` in `HA_ENTITIES`) is mentioned when it is off, or
+when the room is below 55 °F or above 85 °F. The unit is read from HA's own
+config, so a °C install is converted, never compared raw.
 
 It keeps a `source-home` stamp like the Google sources, so `hl-google-stale`
 also covers a Home Assistant that stopped answering.
+
+### iCloud calendar, through Home Assistant
+
+`HA_CALENDARS` (with `HA_TOKEN`) lists HA `calendar.*` entities, such as iCloud
+added through the CalDAV integration. Their events join Google's on the one
+**Calendar** line, still rendered by code and never shown to the model. The
+same meeting on both is shown once, and overlaps are computed across both.
+
+It is its own source, `ha-calendar`, with its own `source-ha-calendar` stamp,
+because HA and Google fail independently. If only one calendar source could be
+read, the line shows the other's events and says which is missing
+(`· _HA calendars not read_`) rather than claiming a free day. A calendar
+entity HA does not know fails the read, so a typo cannot quietly hide events.
+Unset, nothing changes.
 
 **After fixing the sign-in,** run `/digest` once. The alert clears on the next
 successful read, and otherwise that would be tomorrow's scheduled one.

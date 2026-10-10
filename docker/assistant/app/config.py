@@ -148,28 +148,34 @@ def _concierge() -> tuple[int | None, int | None, str]:
     return ask, memory, token
 
 
-def _home() -> tuple[str, tuple[str, ...]]:
-    """HA_TOKEN and HA_ENTITIES together, or neither.
+def _home() -> tuple[str, tuple[str, ...], tuple[str, ...]]:
+    """HA_TOKEN with at least one of HA_ENTITIES and HA_CALENDARS, or none.
 
-    The entity list is required, not a filter with an "everything" default.
-    The digest reads only what you named. A token alone would mean either
-    reading every entity in the house or reading none, and neither is what
-    someone who set a token meant.
+    Both lists are required to name things, not filters with an "everything"
+    default. The digest reads only what you named. A token alone would mean
+    either reading every entity in the house or reading none, and neither is
+    what someone who set a token meant.
     """
     token = os.environ.get("HA_TOKEN", "").strip()
     entities = _list("HA_ENTITIES", "")
-    if token and not entities:
+    calendars = _list("HA_CALENDARS", "")
+    if token and not (entities or calendars):
         raise SystemExit(
-            "config error: HA_TOKEN is set but HA_ENTITIES is empty.\n"
+            "config error: HA_TOKEN is set but HA_ENTITIES and HA_CALENDARS are empty.\n"
             "  List the entity IDs the digest should watch, e.g. "
             "HA_ENTITIES=cover.garage_door,lock.front_door"
         )
-    if entities and not token:
-        raise SystemExit("config error: HA_ENTITIES is set but HA_TOKEN is not — see docker/homeassistant/README.md")
+    if (entities or calendars) and not token:
+        raise SystemExit("config error: HA_ENTITIES or HA_CALENDARS is set but HA_TOKEN is not "
+                         "— see docker/homeassistant/README.md")
     bad = [e for e in entities if "." not in e]
     if bad:
         raise SystemExit(f"config error: HA_ENTITIES has {', '.join(bad)} — entity IDs look like domain.name")
-    return token, entities
+    bad = [c for c in calendars if not c.startswith("calendar.") or c == "calendar."]
+    if bad:
+        raise SystemExit(f"config error: HA_CALENDARS has {', '.join(bad)} — calendar entity IDs "
+                         "look like calendar.name")
+    return token, entities, calendars
 
 
 @dataclass(frozen=True)
@@ -242,6 +248,9 @@ class Config:
     ha_url: str = "http://host.docker.internal:8123"
     ha_token: str = ""
     ha_entities: tuple[str, ...] = ()
+    # calendar.* entities (iCloud through the CalDAV integration), merged into
+    # the Calendar line. Blank = off.
+    ha_calendars: tuple[str, ...] = ()
 
     # --- Concierge (the act lane: #ask; all blank = off) ---
     # See docs/design/tsd-personal-assistant.md, phase 3. The bot only forwards
@@ -269,7 +278,7 @@ class Config:
             )
 
         g_id, g_secret, g_refresh = _google()
-        ha_token, ha_entities = _home()
+        ha_token, ha_entities, ha_calendars = _home()
         ask_id, memory_id, concierge_token = _concierge()
         sources = _list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES))
         unknown = [x for x in sources if x not in GOOGLE_SOURCES]
@@ -318,6 +327,7 @@ class Config:
             ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://host.docker.internal:8123",
             ha_token=ha_token,
             ha_entities=ha_entities,
+            ha_calendars=ha_calendars,
             ask_channel_id=ask_id,
             memory_channel_id=memory_id,
             concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
@@ -337,7 +347,12 @@ class Config:
         return bool(self.ha_token and self.ha_entities)
 
     @property
+    def ha_calendar_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_calendars)
+
+    @property
     def day_sources(self) -> tuple[str, ...]:
         """Every source the Today section reads, in render order."""
         return (self.google_sources if self.google_enabled else ()) + (
-            ("home",) if self.home_enabled else ())
+            ("home",) if self.home_enabled else ()) + (
+            ("ha-calendar",) if self.ha_calendar_enabled else ())

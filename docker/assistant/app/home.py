@@ -16,8 +16,10 @@ Unlike Google's scopes, Home Assistant has no read-only token. Any long-lived
 access token, even a non-admin user's, can also call services: unlock, open,
 disarm. So "read-only" here rests on three things, none of them Google-grade:
 
-  * this code only ever sends GET to /api/states/<entity_id>, for the entities
-    named in HA_ENTITIES, and has no code path that writes;
+  * this code only ever sends GET: to /api/states/<entity_id> for the entities
+    named in HA_ENTITIES, to /api/calendars/<entity_id> for those named in
+    HA_CALENDARS, and to /api/config for the temperature unit. It has no code
+    path that writes;
   * no model is involved, so nothing this module reads can steer what it does;
   * the token belongs to a dedicated non-admin HA user, so it cannot change
     HA's configuration, add integrations, or mint more tokens.
@@ -37,6 +39,8 @@ from dataclasses import dataclass
 from urllib.parse import quote
 
 import aiohttp
+
+from .google import Event, _when
 
 log = logging.getLogger(__name__)
 
@@ -63,6 +67,11 @@ COVER_NOTABLE = {"open", "opening"}
 LOCK_NOTABLE = {"unlocked", "unlocking", "open", "opening", "jammed"}
 OFFLINE = {"unavailable", "unknown"}
 BATTERY_LOW_PCT = 20.0
+# A thermostat reading outside this band means the heating or cooling is not
+# keeping up (or has failed), whatever mode it is in. Fahrenheit, because the
+# thresholds were chosen in it; a Celsius house is converted, never compared raw.
+COLD_F = 55.0
+HOT_F = 85.0
 
 
 class HomeError(RuntimeError):
@@ -80,8 +89,42 @@ class Reading:
     notable: str | None
 
 
-def notable(entity_id: str, state: str, attributes: dict) -> str | None:
-    """The single rule for "worth saying". Pure, so it is the thing tested."""
+def _fahrenheit(value: float, unit: str | None) -> float | None:
+    if unit == "°F":
+        return value
+    if unit == "°C":
+        return value * 9 / 5 + 32
+    return None
+
+
+def _climate(state: str, attributes: dict, temp_unit: str | None) -> str | None:
+    """A thermostat is worth a mention when it is off, or when the room is
+    outside COLD_F..HOT_F. An unknown unit judges nothing about temperature:
+    guessing °F in a °C house would call every room freezing."""
+    said: list[str] = []
+    raw = attributes.get("current_temperature")
+    try:
+        temp = float(raw) if raw is not None else None
+    except (TypeError, ValueError):
+        temp = None
+    if temp is not None:
+        f = _fahrenheit(temp, temp_unit)
+        if f is not None and (f < COLD_F or f > HOT_F):
+            said.append(f"at {temp:.0f}{temp_unit}")
+    elif state != "off":
+        # No reading is not a reading in range. A dead sensor in a cold house
+        # is the case this rule exists for, so it is said, not skipped.
+        said.append("temperature not read")
+    if state == "off":
+        said.append("off")
+    return " and ".join(said) or None
+
+
+def notable(entity_id: str, state: str, attributes: dict, temp_unit: str | None = None) -> str | None:
+    """The single rule for "worth saying". Pure, so it is the thing tested.
+
+    `temp_unit` is HA's configured temperature unit ("°F" or "°C"), which
+    climate entities do not carry themselves. None means it was not read."""
     if state in OFFLINE:
         return "unavailable"
     domain = entity_id.split(".", 1)[0]
@@ -100,12 +143,15 @@ def notable(entity_id: str, state: str, attributes: dict) -> str | None:
         except ValueError:
             return None
         return f"battery {pct:.0f}%" if pct < BATTERY_LOW_PCT else None
+    if domain == "climate":
+        return _climate(state, attributes, temp_unit)
     return None
 
 
-def parse_state(entity_id: str, payload: dict) -> Reading:
+def parse_state(entity_id: str, payload: dict, temp_unit: str | None = None) -> Reading:
     attributes = payload.get("attributes") or {}
     state = str(payload.get("state", "unknown"))
+    said = notable(entity_id, state, attributes, temp_unit)
     since = None
     if raw := payload.get("last_changed"):
         try:
@@ -117,13 +163,45 @@ def parse_state(entity_id: str, payload: dict) -> Reading:
     # and take the whole digest down over one timestamp. Read it as UTC.
     if since is not None and since.tzinfo is None:
         since = since.replace(tzinfo=dt.timezone.utc)
+    # last_changed is when the HVAC mode changed, not the temperature. "at 52°F
+    # 3d" would claim the room has been cold for three days, so a thermostat
+    # gets a duration only when it is the mode that is being reported.
+    if entity_id.startswith("climate.") and state != "off":
+        since = None
     return Reading(
         entity_id=entity_id,
         name=str(attributes.get("friendly_name") or entity_id),
         state=state,
         since=since,
-        notable=notable(entity_id, state, attributes),
+        notable=said,
     )
+
+
+def parse_calendar(items: list) -> list[Event]:
+    """Events from HA's GET /api/calendars/<entity_id>, which uses Google's
+    start/end shape ({"dateTime": …} or {"date": …}). HA has no free/busy, so
+    every event counts as busy, and an unparseable one is dropped."""
+    out: list[Event] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict):
+            continue
+        start, end = _when(item.get("start") or {}), _when(item.get("end") or {})
+        if start is None or end is None:
+            continue
+        # A naive time cannot be sorted or compared with Google's aware ones,
+        # and that TypeError would surface in render_lines, outside the
+        # collector's never-raises boundary. Read it as UTC, as parse_state does.
+        start_at, end_at = (
+            w.replace(tzinfo=dt.timezone.utc) if isinstance(w, dt.datetime) and w.tzinfo is None else w
+            for w in (start[0], end[0]))
+        out.append(Event(
+            title=str(item.get("summary") or "(no title)").strip(),
+            start=start_at,
+            end=end_at,
+            all_day=start[1],
+            busy=True,
+        ))
+    return out
 
 
 def missing(entity_id: str) -> Reading:
@@ -150,26 +228,73 @@ class Home:
         self._base = base_url.rstrip("/")
         self._token = token
 
-    async def _state(self, entity_id: str) -> Reading:
+    async def _get(self, path: str, params: dict | None = None):
+        """(status, body), the body only for a 200. Only ever a GET; see the
+        module docstring."""
         async with self._session.get(
-            f"{self._base}/api/states/{quote(entity_id, safe='')}",
+            f"{self._base}{path}",
             headers={"Authorization": f"Bearer {self._token}"},
             timeout=aiohttp.ClientTimeout(total=15),
+            params=params,
         ) as resp:
-            if resp.status == 404:
-                return missing(entity_id)
             if resp.status == 401:
                 raise HomeError("token rejected (401) — create a new one for the digest user")
-            if resp.status != 200:
-                raise HomeError(f"HTTP {resp.status}")
-            return parse_state(entity_id, await resp.json(content_type=None))
+            if resp.status == 200:
+                return 200, await resp.json(content_type=None)
+            return resp.status, None
+
+    async def _state(self, entity_id: str, temp_unit: str | None) -> Reading:
+        status, body = await self._get(f"/api/states/{quote(entity_id, safe='')}")
+        if status == 404:
+            return missing(entity_id)
+        if status != 200:
+            raise HomeError(f"HTTP {status}")
+        return parse_state(entity_id, body, temp_unit)
+
+    async def _temp_unit(self) -> str:
+        status, body = await self._get("/api/config")
+        if status != 200:
+            raise HomeError(f"config: HTTP {status}")
+        unit = ((body or {}).get("unit_system") or {}).get("temperature")
+        if unit not in ("°F", "°C"):
+            raise HomeError(f"unexpected temperature unit {unit!r}")
+        return unit
 
     async def readings(self, entity_ids: tuple[str, ...]) -> list[Reading]:
         """All or nothing. One entity failing for a reason other than "not
         found" means HA itself is unwell, and half a house rendered as quiet
-        is the one wrong answer this must never give."""
+        is the one wrong answer this must never give. The temperature unit is
+        part of that: a thermostat judged without it would be a guess."""
         try:
-            return list(await asyncio.gather(*(self._state(e) for e in entity_ids)))
+            unit = await self._temp_unit() if any(e.startswith("climate.") for e in entity_ids) else None
+            return list(await asyncio.gather(*(self._state(e, unit) for e in entity_ids)))
+        except aiohttp.ClientError as exc:
+            raise HomeError(f"unreachable ({exc.__class__.__name__})") from exc
+        except asyncio.TimeoutError as exc:
+            raise HomeError("timed out") from exc
+
+    async def _calendar(self, entity_id: str, start: dt.datetime, end: dt.datetime) -> list[Event]:
+        # UTC with a Z: a "+00:00" offset is one unencoded "+" away from
+        # arriving as a space.
+        def z(when: dt.datetime) -> str:
+            return when.astimezone(dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
+        status, body = await self._get(f"/api/calendars/{quote(entity_id, safe='')}",
+                                       {"start": z(start), "end": z(end)})
+        # HA answers 400 "Entity not found" for an unknown calendar. Fail the
+        # source rather than skip it: a calendar the digest silently stopped
+        # reading looks exactly like a free day.
+        if status in (400, 404):
+            raise HomeError(f"{entity_id} not found in Home Assistant (HTTP {status})")
+        if status != 200:
+            raise HomeError(f"HTTP {status}")
+        return parse_calendar(body)
+
+    async def calendars(self, entity_ids: tuple[str, ...], start: dt.datetime,
+                        end: dt.datetime) -> list[list[Event]]:
+        """Each calendar's events between start and end. All or nothing, like
+        readings(): half a calendar rendered as a free afternoon is wrong."""
+        try:
+            return list(await asyncio.gather(*(self._calendar(e, start, end) for e in entity_ids)))
         except aiohttp.ClientError as exc:
             raise HomeError(f"unreachable ({exc.__class__.__name__})") from exc
         except asyncio.TimeoutError as exc:
