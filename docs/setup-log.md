@@ -27,6 +27,67 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant: Echos as speakers (Alexa Media Player)
+
+**Goal:** Let HA make an Echo speak, the other direction from the Nabu Casa
+Alexa link.
+
+**Steps:**
+1. `docker/homeassistant/README.md`: new "Echos as speakers" section. It covers
+   installing HACS, Alexa Media Player, Amazon's authenticator key, the
+   integration setup and an `announce` example. Also an "Updating" note and two
+   troubleshooting rows.
+
+**Issues encountered:**
+- Amazon has no supported way to do this. Alexa Media Player uses Amazon's
+  unofficial API and keeps the Amazon password and 2SV key in the HA volume.
+
+**Resolution:**
+- Documented as a nice-to-have, never an alert channel. The README marks the
+  volume as an Amazon credential. Outbound only, so no compose change.
+
+**Notes / next steps:**
+- Docs only. Installing HACS and the integration, and signing in, are manual
+  steps in the README.
+
+---
+
+## 2026-10-10 — repo-sync was failing on the Kali image; desktops stops auto-pulling
+
+**Goal:** Find out why Healthchecks' "m5 — repo sync" check had gone DOWN five
+times in September and again on 2026-10-10.
+
+**Steps:**
+1. Healthchecks' emails said "received a failure signal", so the script was
+   reporting its own failure rather than not running. `/var/log/repo-sync.log`
+   on CT 100 showed the cause:
+   `desktops — pull failed, still on the old image … error from registry:
+   retry-after: 841.2µs, allowed: 44000/minute`.
+2. The nightly auto-pull pulls every image in a stack. `desktops` includes
+   `lscr.io/linuxserver/kali-linux:latest`, a multi-GB image rebuilt upstream
+   every few days, and fetching its layers trips the registry's per-minute
+   limit on some nights and not others. That is the on/off pattern.
+3. The same report showed Sablier still running `1.8.1` although the compose
+   file has pinned `1.18.0` since Renovate's bump on 2026-09-21. The failing
+   pull was the only reason the bump hadn't been applied unattended, ten minor
+   versions on, against the Caddy plugin pinned separately in
+   `docker/proxy/Dockerfile`.
+
+**Resolution:**
+- `desktops` added to the `HL_NO_AUTOPULL` default in `scripts/repo-sync.sh`,
+  with the reasoning next to the list. Kali and Sablier are updated by hand.
+  The report's "Images older than 90d" section still says when Kali is old.
+
+**Notes / next steps (on CT 100, at a time you can test):**
+- Apply the Sablier bump deliberately:
+  `docker compose -f docker/desktops/docker-compose.yml pull sablier && docker compose -f docker/desktops/docker-compose.yml up -d sablier`,
+  then open `kali.` and check it boots on demand. If it doesn't, revert the tag
+  to `1.8.1`; the Caddy plugin probably needs a matching bump.
+- Healthchecks emails land in Gmail's Updates tab, unread. Discord `#alerts` is
+  where they are meant to be seen.
+
+---
+
 ## 2026-10-10 — Home Assistant: Alexa through Home Assistant Cloud
 
 **Goal:** Control the house from Alexa without making Home Assistant public.

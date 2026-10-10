@@ -18,7 +18,7 @@ the read-only half of it. The digest reads the states you choose and puts a
 | State | the `homeassistant_config` volume (users, tokens, integrations, history) |
 | Owned by git | `config/configuration.yaml` only, mounted read-only. Reverse-proxy trust is a UI setting now: see "Fresh volume" |
 | Networking | `network_mode: host`, for HomeKit, Matter and discovery. See "Host networking" |
-| Voice | Alexa, through Home Assistant Cloud (Nabu Casa). Outbound only: see "Alexa"
+| Voice | Alexa, through Home Assistant Cloud (Nabu Casa). Outbound only: see "Alexa". Echos as speakers through Alexa Media Player (HACS): see "Echos as speakers"
 | Updates | by hand. On `HL_NO_AUTOPULL`, because HA's database migrations are one-way |
 
 ## Bring it up
@@ -265,6 +265,96 @@ voice, expose a **script** that only closes it, never the cover itself.
   the cloud link itself: the blackbox probes watch HA
   (`host.docker.internal:8123`) and the `ha.` route, not Nabu Casa.
 
+### Echos as speakers: Alexa Media Player
+
+The section above is Alexa controlling HA. This is the other direction: HA
+making an Echo speak ("garage has been open 2h"). Nabu Casa cannot do that.
+[Alexa Media Player](https://github.com/alandtse/alexa_media_player) can. It is
+a **community integration on Amazon's unofficial API**, installed through
+HACS. Amazon can break it without notice, so nothing that matters may depend
+on an Echo saying it: Discord and Grafana alerts stay the real channels.
+
+**It holds your Amazon password.** The config entry stores the password and the
+2-step-verification key in `.storage/core.config_entries` in the volume, and
+both are enough to sign in as you, purchases included. Treat the volume, and
+any backup copied off the box, as an Amazon credential. Only an HA
+**administrator** can see config entries, so the `digest` user cannot read it.
+
+#### 1. Install HACS (once)
+
+HACS is a downloader for community integrations. It writes to
+`/config/custom_components` in the volume, not to git:
+
+```bash
+docker exec -it homeassistant bash -c 'wget -O - https://get.hacs.xyz | bash -'
+docker restart homeassistant
+```
+
+`restart` is right here: nothing git owns changed. Then **Settings → Devices &
+services → + Add integration → HACS**, accept the prompts, and authorize it
+with the GitHub device code it shows.
+
+#### 2. Install Alexa Media Player
+
+1. **HACS → search "Alexa Media Player" → Download.**
+2. Restart HA **twice**: the first restart installs its `alexapy` dependency,
+   the second loads it.
+
+#### 3. Get Amazon's authenticator key
+
+The integration signs in with an authenticator-app key, not SMS codes.
+
+1. Open `https://www.amazon.com/a/settings/approval` (your Amazon domain).
+2. **Add a new app → Can't scan the barcode.** Copy the 52-character key under
+   "Enter your key". Store it in your password manager: a reinstall needs it.
+3. Amazon asks for a code to finish. Add the same key to your usual
+   authenticator app and enter the code it shows. The phone and HA then both
+   generate valid codes.
+
+#### 4. Add the integration
+
+**Settings → Devices & services → + Add integration → Alexa Media Player.**
+Enter your Amazon email, password and the **Amazon 2SV Authenticator App
+Key**. For the **Public URL**, use `https://ha.$HOMELAB_DOMAIN/`. The login
+runs through a proxy in HA, and your browser has to reach that URL to finish.
+LAN or tailnet is enough. HA never needs to be on the internet for this.
+
+Each Echo then shows up as a `media_player.*` entity.
+
+#### 5. Make it talk
+
+In each Echo's settings in the **Alexa app**, turn **Communications** on.
+Without it, announcements are dropped silently. Do Not Disturb also silences
+them without an error.
+
+An automation action, for an announcement with the chime first:
+
+```yaml
+action: notify.alexa_media
+data:
+  message: "The garage door has been open for an hour."
+  target:
+    - media_player.kitchen_echo
+  data:
+    type: announce
+    method: speak
+```
+
+`type: tts` speaks without the chime. `type: push` sends a notification to the
+Alexa app instead. `method: speak` keeps Echo Shows from putting the text on
+screen.
+
+#### What it changes
+
+- **It logs out now and then.** Amazon expires sessions, and a restart can ask
+  for a CAPTCHA, which shows up as an HA notification. Until you finish it, the
+  Echos are `unavailable`. No alert covers it, which is one more reason to
+  keep it to nice-to-haves.
+- **HA upgrades can break it.** It is not in HA's own test suite. After an HA
+  update, check **HACS** for an Alexa Media Player update, and check that the
+  Echos are not `unavailable` (see "Updating").
+- **Outbound only**, to Amazon's API. It opens no port.
+
 ## Updating
 
 Not automatic. Read the [release notes](https://www.home-assistant.io/blog/categories/release-notes/)
@@ -274,6 +364,10 @@ for breaking changes first, then:
 docker compose -f docker/homeassistant/docker-compose.yml pull
 docker compose -f docker/homeassistant/docker-compose.yml up -d
 ```
+
+Then open **HACS** and apply any updates for community integrations (Alexa
+Media Player). An HA release often needs one. HACS integrations are not pinned
+by anything in git, and nothing updates them on its own.
 
 ## Backups
 
@@ -294,4 +388,6 @@ until `tsd-backups-and-monitoring.md` lands.
 | `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
 | Alexa: "device is not responding" | HA is down, or its cloud link is. **Settings → Home Assistant Cloud** shows whether it is connected; sign in again if it logged out. |
 | Alexa does not know a device | It is not in **Settings → Voice assistants → Expose → Alexa**, or discovery has not run since it was added. Expose it, then "Alexa, discover devices". |
+| Echos are `unavailable` | Alexa Media Player lost its Amazon session. Look for a notification asking for a CAPTCHA or a new login, then **Settings → Devices & services → Alexa Media Player → Reconfigure**. Right after an HA update, check HACS for an update first. |
+| An announcement runs with no error and nothing plays | **Communications** is off for that Echo in the Alexa app, or it is on Do Not Disturb. |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |
