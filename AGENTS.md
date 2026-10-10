@@ -33,12 +33,13 @@ exists. `node_filesystem_avail_bytes` (and therefore `hl-disk-full` and
 `hl-disk-filling`) measures the guest's view: treat every disk alert here as
 arriving **later** than it should, never earlier.
 
-The pool has no alert yet. `scripts/health.sh` reports it on demand, from
-`pve_disk_usage_bytes` / `pve_disk_size_bytes` with
-`id="storage/<node>/local-lvm"`, names confirmed against the running exporter
-on 2026-10-10. Those are the names an alert should use. Do not take metric
-names from memory. See the note at the top of `rules.yml` about the alert that
-watched a metric that did not exist.
+The pool is watched by `hl-thinpool-full`, which fires above 80%, and
+`scripts/health.sh` reports it on demand. Both read `pve_disk_usage_bytes` /
+`pve_disk_size_bytes` with `id="storage/<node>/local-lvm"`, names confirmed
+against the running exporter on 2026-10-10. If the exporter renames them, the
+alert goes quiet without erroring, the same way the alert described at the top
+of `rules.yml` did. `health.sh` printing "thin pool usage unknown" is what
+reveals it.
 
 **The pool does not get space back unless someone trims it.** When the guest
 deletes a file, the pool still counts those blocks as used until they are

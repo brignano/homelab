@@ -617,6 +617,55 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [0] }
 
+      # --- The thin pool under CT 100 is filling ---
+      #
+      # The two rules above watch the guest's view of its disk, and that view is
+      # optimistic by design (AGENTS.md "Disk"). The pool under it is the ceiling
+      # that actually exists. On 2026-10-10 the guest read 18% while the pool
+      # read 52%, which is the gap neither rule above can see.
+      #
+      # 80%, not 85%: a full guest filesystem fails writes in one container, but
+      # a full thin pool fails them for every volume on it, and the VG has
+      # ~16 GiB free, so the pool cannot be grown out of trouble. The first thing
+      # to try is `pct fstrim 100` on the host, which is also scheduled weekly.
+      #
+      # Metric names checked against the running exporter on 2026-10-10, and
+      # already in use on the Capacity dashboard. noDataState is OK because an
+      # exporter outage already fires hl-target-down. A renamed metric would leave
+      # this rule silent; health.sh reports "thin pool usage unknown" in that case.
+      - uid: hl-thinpool-full
+        title: Thin pool above 80%
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Proxmox thin pool local-lvm is {{ printf \"%.0f\" $values.A.Value }}% full. The guest's own disk numbers will not show this. Run pct fstrim 100 on the host"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              # No label_replace: this directory gets environment-variable
+              # substitution (contactpoints.yml relies on it), and its "$1"
+              # would not reach Prometheus intact.
+              expr: >-
+                pve_disk_usage_bytes{id=~"storage/.+/local-lvm"}
+                / pve_disk_size_bytes{id=~"storage/.+/local-lvm"} * 100
+          - refId: C
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [80] }
+
       # --- An alert rule is failing to evaluate ---
       #
       # The watchman's own blind spot, and the sharpest version of the failure

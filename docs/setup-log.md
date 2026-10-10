@@ -53,8 +53,10 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Notes / next steps:**
 - The host crontab entry is not tracked anywhere `health.sh` can see. If the
   pool climbs well above the guest again, check that entry first.
-- The pool still has no alert. The metric names are now confirmed, so the
-  next step is a rule in `rules.yml`.
+- Later the same day: added `hl-thinpool-full` to `rules.yml`. It fires when
+  `local-lvm` is above 80% for 15m. The threshold is 80%, not 85%, because a
+  full pool fails writes for every volume on it, and the VG has too little free
+  space to grow the pool.
 
 ---
 
