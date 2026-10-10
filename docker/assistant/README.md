@@ -210,7 +210,7 @@ fires past 25h.
 **Armed at startup.** If a source has no stamp yet, the bot writes one when it
 starts. Without that, a sign-in that *never* worked would publish no series,
 and `noDataState: OK` would keep the alert silent forever. That is the same trap
-`HEALTHCHECKS_PG_BACKUP_URL` fell into (AGENTS.md → Alerting). An existing stamp
+`HEALTHCHECKS_PG_BACKUP_URL` fell into (`.claude/skills/alerting/SKILL.md`). An existing stamp
 is never overwritten at startup, so a restart cannot reset a countdown that is
 already running.
 

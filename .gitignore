@@ -36,8 +36,8 @@ docker/dashboard/config/logs/
 # they sit in `git status` forever — and the failure mode is not cosmetic: the
 # day a commit starts tracking one of these paths, `git pull` on the box refuses
 # to overwrite the local empty copy and EVERY stack stops updating, over a file
-# with nothing in it (repo-sync.sh clears that narrow case; AGENTS.md has the
-# story). Named individually on purpose: the config files this repo really does
+# with nothing in it (repo-sync.sh clears that narrow case;
+# .claude/skills/dashboard-visuals/SKILL.md has the story). Named individually on purpose: the config files this repo really does
 # track must not be swept up in a glob.
 docker/dashboard/config/docker.yaml
 docker/dashboard/config/kubernetes.yaml

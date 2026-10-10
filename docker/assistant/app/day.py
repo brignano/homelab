@@ -194,7 +194,7 @@ class DayCollector:
         """Make sure each enabled source has a stamp, so the alert has something
         to age. Without this, a sign-in that never worked writes no stamp,
         publishes no series, and `hl-google-stale` stays silent forever — a
-        dead man's switch that was never armed (see AGENTS.md → Alerting).
+        dead man's switch that was never armed (see .claude/skills/alerting/SKILL.md).
         Only ever creates; an existing stamp is real history and is kept."""
         if not self._state_dir:
             return
