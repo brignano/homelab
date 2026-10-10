@@ -27,6 +27,56 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant moved to host networking
+
+**Goal:** Pair the Honeywell T6 Pro Smart thermostat (TH6220WF2006) with Home
+Assistant. Its only local integration is HomeKit, which needs mDNS on the LAN.
+The cloud routes were closed: Resideo's developer portal would not create an
+account, and the thermostat is not registrable in Total Connect Comfort (MAC
+ID, no CRC).
+
+**Steps:**
+1. `docker/homeassistant/docker-compose.yml`: `network_mode: host`, and the
+   `homeassistant` and `proxy` networks removed.
+2. Caddy, blackbox-exporter and the assistant get
+   `extra_hosts: "host.docker.internal:host-gateway"` and reach HA at
+   `host.docker.internal:8123`: the Caddyfile `ha.` site, the blackbox probe
+   target, and the default `HA_URL`. The assistant leaves `proxy_proxy`, which
+   it joined only to reach HA.
+3. Removed `docker-compose.bootstrap.yml`. Ports cannot coexist with host mode,
+   and a fresh volume is now set up directly at `http://10.0.0.201:8123`.
+4. README "Host networking" (exposure, IP banning, HomeKit pairing,
+   rollback), TSD open question, AGENTS stack table.
+
+**Issues encountered:**
+- Host mode cannot join Docker networks, so every container-name reference to
+  `homeassistant` had to move to the host gateway. Those were Caddy, the
+  probe and the digest.
+- :8123 is now open on the LAN and tailnet behind HA's login. That is a
+  deliberate exception to the 127.0.0.1-by-default rule. HA is still never on
+  the Tunnel.
+
+**Resolution:**
+- Caddy's and the assistant's requests arrive from their 172.x bridge
+  addresses, inside the trusted proxy range already set in HA, so `ha.` keeps
+  answering without a settings change.
+
+**Notes / next steps:**
+- **Deploy all of it in one sitting.** If `homeassistant` goes to host mode
+  before `caddy` is recreated, `ha.` returns 502 until it is. `homeassistant`
+  heals at 04:00 by itself, and `proxy` never does. Order:
+  `homeassistant` → `caddy` (alone) → `prometheus` + `blackbox-exporter`
+  (both `--force-recreate`: a plain `up -d` leaves prometheus on the old
+  file) → `assistant` (`--build`) → restart `grafana` (alert wording).
+  Do it before 04:00: the sync would apply every stack but `proxy`, and
+  the 502 that leaves is silent, because the blackbox probe reaches HA
+  through the host, not through Caddy.
+- After deploy: turn on IP banning (Settings → System → Network) with a
+  threshold of 10 or more (tailnet clients share one address), then pair
+  the thermostat (HomeKit Device, code from the label).
+
+---
+
 ## 2026-10-10 — `/bootstrap-stack` derives its order; monitoring ↔ proxy cycle
 
 **Goal:** `/bootstrap-stack` still listed `core → monitoring → ai → tunnel` and

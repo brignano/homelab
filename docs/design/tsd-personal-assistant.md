@@ -339,18 +339,25 @@ earlier ones.
 
 ## Open questions
 
-- [x] Home Assistant networking: **bridge**, on its own network plus `proxy`
-      (2026-10-10). Host mode buys mDNS/SSDP discovery but cannot join a Docker
-      network, so Caddy and the assistant would reach HA through the host's
-      address, and :8123 would be open to the whole LAN. Cloud integrations,
-      which is most of what a house has, need no discovery. Revisit only for an
-      integration that needs multicast. Reasoning in
-      `docker/homeassistant/README.md`.
-- [ ] Tesla Fleet API registration requires hosting a public key at
-      `/.well-known/appspecific/com.tesla.3p.public-key.pem` on a publicly
-      reachable domain. `*.$HOMELAB_DOMAIN` resolves to a private address. Options:
-      Cloudflare Pages on the same zone, or a third-party Fleet proxy that HA
-      supports. Decide in phase 5.
+- [x] Home Assistant networking: **host** (2026-10-10), after starting as a
+      bridge on its own network plus `proxy` the same day. The bridge kept HA
+      off the LAN and let Caddy and the assistant reach it by name. It could
+      not carry the mDNS/SSDP multicast that HomeKit, Matter and discovery
+      need, and the first real device (a Honeywell T6 Pro Smart thermostat,
+      whose only local integration is HomeKit, with Resideo's cloud API
+      closed to new developers) needed exactly that. Host mode puts :8123 on
+      the LAN and tailnet behind HA's login (never on the Tunnel). Caddy,
+      blackbox and the assistant reach it as `host.docker.internal` via
+      `extra_hosts: host-gateway`. Reasoning, exposure and rollback are in
+      `docker/homeassistant/README.md` → "Host networking".
+- [x] Tesla Fleet API registration needs a public key at
+      `/.well-known/appspecific/com.tesla.3p.public-key.pem` on a public
+      domain. Resolved 2026-10-10: served from `brignano.io`
+      (brignano/brignano.io#263), with a Vercel firewall **Bypass** rule for
+      `/.well-known/appspecific/`. Bot Protection is set to *Challenge*, which
+      had been serving Tesla's fetcher a browser-check page. The rule lives in
+      the Vercel dashboard, not in git. HA's built-in Tesla Fleet integration
+      is used directly, with no third-party proxy.
 - [x] Which Gmail signal is worth a digest line? Started with unread in the
       Primary tab, last 24h (`GMAIL_LABELS`). Revisit once it has been read for
       a few weeks.

@@ -25,6 +25,11 @@ services:
       # must not be one. This is how real certificates are obtained without ever
       # accepting an inbound connection.
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:?required}
+    # Home Assistant runs on host networking (docker/homeassistant), so it is
+    # not on any network above. This name resolves to the host from inside the
+    # container, and the Caddyfile proxies ha. to host.docker.internal:8123.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - proxy
       - core

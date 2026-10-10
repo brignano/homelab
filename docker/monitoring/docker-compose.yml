@@ -149,6 +149,10 @@ services:
       - ./blackbox/blackbox.yml:/etc/blackbox_exporter/config.yml:ro
     command:
       - "--config.file=/etc/blackbox_exporter/config.yml"
+    # For the Home Assistant probe: HA runs on host networking, so it is
+    # reached through the host, not on any network below.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - monitoring
       - core

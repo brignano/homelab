@@ -4,17 +4,26 @@ services:
   # of a separate MCP server per vendor. See docs/design/tsd-personal-assistant.md
   # (phase 2: read-only, into the digest).
   #
-  # No `ports:`. It is reached two ways, both over Docker networks:
-  #   Caddy  → https://ha.$HOMELAB_DOMAIN   (LAN + tailnet, never the tunnel)
-  #   assistant → http://homeassistant:8123 (reads states for the digest)
+  # Host networking (`network_mode: host`), changed from a bridge on 2026-10-10.
+  # HomeKit pairing, Matter and local discovery all need mDNS/SSDP multicast on
+  # the LAN, which a Docker bridge does not carry. The first device that needed
+  # it was the T6 Pro Smart thermostat (HomeKit is its only local integration,
+  # and Resideo's cloud API would not issue developer access).
   #
-  # Bridge networking, not `network_mode: host`, decided in the TSD's open
-  # question. Host mode gives HA mDNS/SSDP auto-discovery, but it cannot join a
-  # Docker network, so Caddy and the assistant would have to reach it through
-  # the host's address, and every LAN device could hit :8123 directly. Cloud
-  # integrations (most cameras, locks, alarm systems, Tesla) work fine on a
-  # bridge. Local ones are added by IP instead of being discovered. Revisit if
-  # one you need truly requires discovery.
+  # What host mode costs, and where it is paid:
+  #   - HA listens on :8123 on every interface of CT 100. LAN and tailnet
+  #     devices can reach http://10.0.0.201:8123 directly, behind HA's login,
+  #     as well as through Caddy. Turn on IP banning in Settings > System >
+  #     Network (README > "Exposure").
+  #   - It cannot join Docker networks, so nothing reaches it by container name.
+  #     Caddy, blackbox-exporter and the assistant reach it as
+  #     host.docker.internal:8123, which each of their compose files maps to
+  #     the host with `extra_hosts: host-gateway`. Their requests arrive from
+  #     their own 172.x bridge addresses, which the reverse-proxy trust
+  #     (172.16.0.0/12) already covers.
+  #
+  #   Caddy     → https://ha.$HOMELAB_DOMAIN       (LAN + tailnet, never the tunnel)
+  #   assistant → http://host.docker.internal:8123  (reads states for the digest)
   #
   # On HL_NO_AUTOPULL (scripts/repo-sync.sh): HA ships breaking changes monthly
   # and migrates its database one way on upgrade, so a version rollback is not
@@ -42,9 +51,7 @@ services:
       # the container must be RECREATED (`up -d --force-recreate homeassistant`),
       # not restarted. /deploy and scripts/deploy-plan.sh detect that.
       - ./config/configuration.yaml:/config/configuration.yaml:ro
-    networks:
-      - homeassistant
-      - proxy
+    network_mode: host
 
   # One-shot: create the files configuration.yaml includes, if they are missing.
   #
@@ -73,12 +80,3 @@ services:
 
 volumes:
   homeassistant_config:
-
-networks:
-  homeassistant:
-    driver: bridge
-  # Caddy's network, so ha.$HOMELAB_DOMAIN can be proxied by container name.
-  # The assistant joins it too, to read states. Bring the proxy stack up first.
-  proxy:
-    external: true
-    name: proxy_proxy

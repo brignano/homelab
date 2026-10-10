@@ -21,8 +21,8 @@ default_config:
 #   Trusted proxies:     172.16.0.0/12, 192.168.0.0/16  (Docker's default pools)
 #
 # On a FRESH volume those settings do not exist, so https://ha.$HOMELAB_DOMAIN
-# answers 400 and the UI cannot be reached through Caddy to set them. Bootstrap
-# through ../docker-compose.bootstrap.yml instead (README > "Fresh volume").
+# answers 400. HA runs on host networking, so set them directly at
+# http://10.0.0.201:8123 instead (README > "Fresh volume").
 
 # Written by HA's UI editors. Created empty on a fresh volume by the
 # homeassistant-init service, and never tracked by git.

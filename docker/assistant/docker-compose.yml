@@ -64,8 +64,9 @@ services:
       # entities you list. Both blank = off. The token is a dedicated non-admin
       # HA user's long-lived token; HA cannot make a token read-only, so the
       # read-only promise is in app/home.py (GET only, these entities only).
-      # See docker/homeassistant/README.md. Reached over the proxy network.
-      HA_URL: ${HA_URL:-http://homeassistant:8123}
+      # See docker/homeassistant/README.md. HA runs on host networking, so it
+      # is reached through the host (extra_hosts below), not by container name.
+      HA_URL: ${HA_URL:-http://host.docker.internal:8123}
       HA_TOKEN: ${HA_TOKEN:-}
       HA_ENTITIES: ${HA_ENTITIES:-}
 
@@ -100,17 +101,15 @@ services:
       # Created (and chowned to this container's uid 10001) by
       # scripts/install-cron.sh, alongside the node-exporter textfile dir.
       - ${DIGEST_STATE_DIR:-/var/lib/homelab/assistant}:/state
+    # Home Assistant runs on host networking: this name resolves to the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - ai
       - monitoring
-      - proxy
 
-# Joins the ai stack (ollama), the monitoring stack (prometheus, loki), and the
-# proxy stack's network, which is where Home Assistant is reachable by name.
-# Bring those up first — Compose will not create external networks. The proxy
-# network is joined even with Home Assistant off: it always exists (it is the
-# household's DNS), and a network that depends on whether a feature is enabled
-# would make the compose file depend on .env.
+# Joins the ai stack (ollama) and the monitoring stack (prometheus, loki).
+# Bring both of those up first — Compose will not create external networks.
 networks:
   ai:
     external: true
@@ -118,6 +117,3 @@ networks:
   monitoring:
     external: true
     name: monitoring_monitoring
-  proxy:
-    external: true
-    name: proxy_proxy

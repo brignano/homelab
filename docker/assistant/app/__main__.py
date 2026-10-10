@@ -280,7 +280,7 @@ async def _selftest_async() -> int:
                 mail_labels=_list("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL"),
                 sources=sources,
                 state_dir=None,
-                home=Home(session, os.environ.get("HA_URL", "").strip() or "http://homeassistant:8123",
+                home=Home(session, os.environ.get("HA_URL", "").strip() or "http://host.docker.internal:8123",
                           ha_token) if ha_token else None,
                 home_entities=ha_entities,
             )
