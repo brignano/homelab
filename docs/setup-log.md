@@ -56,9 +56,14 @@ from five scripts and a dashboard that each have to be remembered.
 
 **Notes / next steps:**
 - The thin pool query assumes pve-exporter's `pve_disk_usage_bytes` /
-  `pve_disk_size_bytes` with `id="storage/<node>/local-lvm"`. Not yet checked
-  against the running exporter. If it prints "thin pool usage unknown", run the
-  grep in AGENTS.md "Disk" and fix the metric name.
+  `pve_disk_size_bytes` with `id="storage/<node>/local-lvm"`. Confirmed on CT
+  100 the same day, when the first run came back all ok. If it ever prints
+  "thin pool usage unknown", the exporter has renamed something: run the grep
+  in AGENTS.md "Disk" and fix the metric name.
+- That first run showed guest `/` at 18% and the pool at 52%. Part of the gap
+  is blocks the guest has freed but never discarded. `pct fstrim 100` hands
+  them back, and it runs on the **Proxmox host**, not inside CT 100 (`pct` is
+  not installed in the container).
 - No JSON dependency: the responses are parsed with sed and awk, the same way
   `probe-status.sh` does it.
 
