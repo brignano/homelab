@@ -27,6 +27,31 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant: Echos as speakers (Alexa Media Player)
+
+**Goal:** Let HA make an Echo speak, the other direction from the Nabu Casa
+Alexa link.
+
+**Steps:**
+1. `docker/homeassistant/README.md`: new "Echos as speakers" section. It covers
+   installing HACS, Alexa Media Player, Amazon's authenticator key, the
+   integration setup and an `announce` example. Also an "Updating" note and two
+   troubleshooting rows.
+
+**Issues encountered:**
+- Amazon has no supported way to do this. Alexa Media Player uses Amazon's
+  unofficial API and keeps the Amazon password and 2SV key in the HA volume.
+
+**Resolution:**
+- Documented as a nice-to-have, never an alert channel. The README marks the
+  volume as an Amazon credential. Outbound only, so no compose change.
+
+**Notes / next steps:**
+- Docs only. Installing HACS and the integration, and signing in, are manual
+  steps in the README.
+
+---
+
 ## 2026-10-10 — repo-sync was failing on the Kali image; desktops stops auto-pulling
 
 **Goal:** Find out why Healthchecks' "m5 — repo sync" check had gone DOWN five
