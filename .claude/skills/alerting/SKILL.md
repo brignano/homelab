@@ -72,7 +72,12 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   down. This matters most for Caddy, which routes by Host header and sees the
   container name `caddy` from inside Docker: it serves `/health` for the probe
   and 404s everything else, and `scripts/check-probes.sh` keeps the two files in
-  step.
+  step. To probe a *service* through Caddy, send a `Host: <name>.caddy` from
+  the blackbox module and list `http://<name>.caddy` as a second address of
+  that service's own site block (see `ha.`), so no domain is committed and
+  the probe tests the real route. A failure at either end already pages for
+  itself, so the route alert stands down with `unless` while either one fails
+  (`hl-ha-route-down`).
 - **Group notifications by `instance`, not by `alertname` alone.** Grouping is
   what decides how loud `#alerts` is: a notification group is re-sent whenever
   its membership changes, throttled to `group_interval`, so coarse grouping
