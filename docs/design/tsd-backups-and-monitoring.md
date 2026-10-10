@@ -17,7 +17,7 @@ make every backup job report from off the box when it stops running.
 The only backup the lab has is a nightly `pg_dumpall` of a Postgres that,
 going by the June audit and the compose files, holds nothing. The data that
 would hurt to lose — Open WebUI's chat history, Grafana, AdGuard's
-configuration, the Kali home directory, and every `.env` file with the lab's
+configuration, Home Assistant, the Kali home directory, and every `.env` file with the lab's
 secrets — has no backup at all, and lives on the same NVMe as the dump. The plan
 is: **(0)** now, prove the dump we have restores, and settle three decisions;
 **(1)** the day the backup drive arrives, a nightly `vzdump` of the whole of CT 100 to it,
@@ -47,6 +47,7 @@ restore.
 | Grafana state (users, API tokens incl. the MCP viewer token, annotations) | `grafana_data` volume (SQLite) | Dashboards come back from git; the rest is re-created by hand | ❌ |
 | AdGuard configuration (rewrites, filters, clients) | `adguard_conf` volume | Household DNS re-configured from memory | ❌ |
 | Kali home directory | `kali_config` volume | Gone | ❌ |
+| Home Assistant (users, integration sign-ins, automations, recorder DB) | `homeassistant_config` volume (SQLite recorder) | Onboarding, every integration and every automation redone by hand | ❌ (added 2026-10-10; `docker/homeassistant/README.md` → Backups points here) |
 | Portainer settings | `portainer_data` volume | Minor | ❌ |
 | Caddy ACME account + certificates | `caddy_data` volume | Re-issued automatically (rate limits apply if repeated) | ❌ (acceptable) |
 | Assistant digest state | `/var/lib/homelab/assistant` | One missed-digest alert | ❌ (acceptable) |
@@ -143,7 +144,8 @@ to Backblaze B2, nightly at 03:30.
 - **What:** the rows in the inventory marked ❌ and not "acceptable" — every
   `docker/*/.env`, the newest Postgres dump, and the volumes above. Nothing
   re-downloadable.
-- **SQLite consistency:** copy Open WebUI's and Grafana's databases with
+- **SQLite consistency:** copy Open WebUI's, Grafana's and Home Assistant's
+  recorder databases with
   `sqlite3 <db> ".backup <staging>"` before restic runs, instead of reading the
   live files. A file-level copy of a SQLite database being written can restore
   as corrupt.

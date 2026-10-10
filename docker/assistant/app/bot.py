@@ -35,6 +35,7 @@ from .day import SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_p
 from .digest import build as build_digest
 from .facts import FactCollector
 from .google import Google
+from .home import Home
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
@@ -113,28 +114,34 @@ class Assistant(discord.Client):
             loki_url=self.cfg.loki_url,
         )
 
-        # The digest's "Today" section. Only built when Google is configured;
-        # otherwise the digest renders exactly as it did before phase 1.
+        # The digest's "Today" section: Google (calendar, mail) and Home
+        # Assistant, each optional. With neither configured, the digest renders
+        # exactly as it did before the personal-assistant work.
         #
         # Freshness stamps (for hl-google-stale) are kept only while the
         # schedule runs: sources are read when a digest is, so with the
         # schedule off nothing would refresh them and the alert would fire
-        # about a feature working as configured. Off, or unconfigured, means
-        # any stamps an earlier run left are cleared.
+        # about a feature working as configured. A source that is off, or
+        # unconfigured, has any stamp an earlier run left cleared by arm().
         state_dir = os.path.dirname(self.cfg.digest_stamp_path)
-        stamping = self.cfg.google_enabled and self.cfg.digest_enabled and bool(state_dir)
-        if self.cfg.google_enabled:
+        sources = self.cfg.day_sources
+        stamping = bool(sources) and self.cfg.digest_enabled and bool(state_dir)
+        if sources:
+            google = Google(
+                self._session,
+                client_id=self.cfg.google_client_id,
+                client_secret=self.cfg.google_client_secret,
+                refresh_token=self.cfg.google_refresh_token,
+            ) if self.cfg.google_enabled else None
+            home = Home(self._session, self.cfg.ha_url, self.cfg.ha_token) if self.cfg.home_enabled else None
             self.day = DayCollector(
-                Google(
-                    self._session,
-                    client_id=self.cfg.google_client_id,
-                    client_secret=self.cfg.google_client_secret,
-                    refresh_token=self.cfg.google_refresh_token,
-                ),
+                google,
                 calendar_ids=self.cfg.google_calendar_ids,
                 mail_labels=self.cfg.gmail_labels,
-                sources=self.cfg.google_sources,
+                sources=sources,
                 state_dir=state_dir if stamping else None,
+                home=home,
+                home_entities=self.cfg.ha_entities,
             )
             self.day.arm()
         if not stamping and state_dir:

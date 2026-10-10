@@ -218,6 +218,32 @@ already running.
 `GOOGLE_SOURCES`, or `DIGEST_ENABLED=false`, the stamps are removed. Sources are
 read when a digest runs, so with no digest nothing would refresh them.
 
+### Home: Home Assistant
+
+A **Home** line joins Today when `HA_TOKEN` and `HA_ENTITIES` are set. It works
+with or without Google, and it is phase 2 of the same design:
+
+```
+**Home** Garage Door open 2h · Basement Leak unavailable 3d
+```
+
+The rules are the Today section's: Python decides what is notable (a table
+keyed on HA's domain and device class, in [`app/home.py`](app/home.py)), the
+model never sees an entity name, and names pass through `discord_safe`. Only
+the entities you list are read, and one that HA does not know is reported as
+**not found** rather than skipped. Otherwise a typo would quietly stop
+watching a door.
+
+**The token is not read-only, and the docs say so.** Google enforces this
+module's scopes. Home Assistant has no read-only token: any token can also
+unlock and open. The digest's token belongs to a dedicated non-admin user, and
+the code only ever sends `GET /api/states/<entity_id>`, but a leaked `HA_TOKEN`
+is a house key. Setup and the full table are in
+[`docker/homeassistant/README.md`](../homeassistant/README.md).
+
+It keeps a `source-home` stamp like the Google sources, so `hl-google-stale`
+also covers a Home Assistant that stopped answering.
+
 **After fixing the sign-in,** run `/digest` once. The alert clears on the next
 successful read, and otherwise that would be tomorrow's scheduled one.
 

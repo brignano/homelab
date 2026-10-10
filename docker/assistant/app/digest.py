@@ -243,7 +243,13 @@ def render(
         footer_bits.append(f"{model} · {seconds:.0f}s")
     elif note:
         footer_bits.append(note)
-    footer_bits.append("facts from Prometheus + Loki" + (" + Google" if day is not None else ""))
+    origins = ["Prometheus", "Loki"]
+    if day is not None:
+        if {"calendar", "mail"} & set(day.sources):
+            origins.append("Google")
+        if "home" in day.sources:
+            origins.append("Home Assistant")
+    footer_bits.append("facts from " + " + ".join(origins))
     out.append("-# " + " · ".join(footer_bits))
 
     return "\n".join(out)

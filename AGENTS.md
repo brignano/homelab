@@ -133,6 +133,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |
 | Sablier | `docker/desktops/` | internal (on-demand engine for desktops) |
 | Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
+| Home Assistant | `docker/homeassistant/` | LAN + tailnet (via Caddy, `ha.$HOMELAB_DOMAIN`); read by the assistant over `proxy` |
 | Jellyfin | planned | LAN + tailnet (via Caddy) — **not** Cloudflare Tunnel; media on its own drive, mounted with `backup=0` |
 
 ## Networking rules
@@ -220,9 +221,9 @@ injection) and the two rules for extending it are in
 [`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
 
 ## Planned / proposals (not yet deployed)
-- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **📝 Revised 2026-10-10, awaiting approval;** Phase 1 still blocked on a USB SSD. ⚠️ **The lab has no backup of anything that matters** — a disk/CT loss is unrecoverable. Configs are in git, and nightly `pg_dumpall` ([`scripts/pg-backup.sh`](scripts/pg-backup.sh), cron 02:00, monitored since 2026-09-19) runs fine — but nothing writes to that Postgres, while Open WebUI, Grafana, AdGuard, the Kali home and every `.env` file have no copy at all. Monitoring a job is not the same as having a backup you can restore.
+- [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **📝 Revised 2026-10-10, awaiting approval;** Phase 1 still blocked on the backup drive. ⚠️ **The lab has no backup of anything that matters** — a disk/CT loss is unrecoverable. Configs are in git, and nightly `pg_dumpall` ([`scripts/pg-backup.sh`](scripts/pg-backup.sh), cron 02:00, monitored since 2026-09-19) runs fine — but nothing writes to that Postgres, while Open WebUI, Grafana, AdGuard, Home Assistant, the Kali home and every `.env` file have no copy at all. Monitoring a job is not the same as having a backup you can restore.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
-- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phase 1 built** (calendar + mail metadata in the digest; see `docker/assistant/README.md` → "Today"). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot's `/ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
+- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–2 built** (calendar, mail metadata and Home Assistant states in the digest; see `docker/assistant/README.md` → "Today" and `docker/homeassistant/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot's `/ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
 
 ## Custom commands
 These slash commands are available in `.claude/commands/`:

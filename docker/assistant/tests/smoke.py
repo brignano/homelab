@@ -64,7 +64,7 @@ def with_env(**extra):
     """A clean environment holding only the required vars plus `extra`."""
     keep = {k: v for k, v in os.environ.items() if not k.startswith(
         ("DISCORD_", "CHAT_", "OLLAMA_", "ASK_", "SUMMARIZE_", "DIGEST_", "LLM_", "MAX_", "TZ",
-         "GOOGLE_", "GMAIL_")
+         "GOOGLE_", "GMAIL_", "HA_")
     )}
     os.environ.clear()
     os.environ.update(keep)
@@ -792,12 +792,202 @@ def _():
     with_env()
 
 
+# --- Home: Home Assistant (tsd-personal-assistant.md, phase 2) ------------------
+
+class _HAResp:
+    def __init__(self, status, body=None):
+        self.status, self._body = status, body or {}
+    async def json(self, content_type=None):
+        return self._body
+    async def __aenter__(self):
+        return self
+    async def __aexit__(self, *a):
+        return False
+
+
+class _HASession:
+    """Answers GET /api/states/<id> from a dict. A value that is an int is the
+    HTTP status to return; an Exception is raised."""
+    def __init__(self, states):
+        self.states, self.calls = states, []
+    def get(self, url, headers=None, timeout=None):
+        self.calls.append(("GET", url, headers))
+        entity = url.rsplit("/", 1)[1]
+        got = self.states.get(entity, 404)
+        if isinstance(got, Exception):
+            raise got
+        return _HAResp(got) if isinstance(got, int) else _HAResp(200, got)
+    def post(self, *a, **kw):
+        raise AssertionError("the digest must never POST to Home Assistant")
+
+
+def _ha(state, device_class=None, name=None, changed="2026-10-12T05:30:00+00:00"):
+    attrs = {"friendly_name": name} if name else {}
+    if device_class:
+        attrs["device_class"] = device_class
+    return {"state": state, "attributes": attrs, "last_changed": changed}
+
+
+@check("home: the notable table is Python's, and says only what it knows")
+def _():
+    from app.home import notable
+    cases = [
+        ("binary_sensor.front", "on", {"device_class": "door"}, "open"),
+        ("binary_sensor.front", "off", {"device_class": "door"}, None),
+        ("binary_sensor.hall", "on", {"device_class": "motion"}, None),  # someone home is not an event
+        ("binary_sensor.leak", "on", {"device_class": "moisture"}, "detecting water"),
+        ("binary_sensor.bat", "on", {"device_class": "battery"}, "battery low"),
+        ("cover.garage", "open", {}, "open"),
+        ("cover.garage", "closed", {}, None),
+        ("lock.front", "unlocked", {}, "unlocked"),
+        ("lock.front", "jammed", {}, "jammed"),
+        ("lock.front", "locked", {}, None),
+        ("alarm_control_panel.house", "triggered", {}, "TRIGGERED"),
+        ("alarm_control_panel.house", "armed_away", {}, None),
+        ("sensor.door_battery", "12", {"device_class": "battery"}, "battery 12%"),
+        ("sensor.door_battery", "80", {"device_class": "battery"}, None),
+        ("sensor.door_battery", "n/a", {"device_class": "battery"}, None),
+        ("light.kitchen", "on", {}, None),
+        ("lock.back", "unavailable", {}, "unavailable"),
+        ("cover.garage", "unknown", {}, "unavailable"),
+    ]
+    for entity, state, attrs, want in cases:
+        assert notable(entity, state, attrs) == want, (entity, state, attrs, notable(entity, state, attrs))
+
+
+@check("home: only GETs, only the named entities, and a typo is reported")
+def _():
+    from app.home import Home
+    session = _HASession({"cover.garage_door": _ha("open", name="Garage Door"),
+                          "lock.front_door": _ha("locked", name="Front Door")})
+    got = asyncio.run(Home(session, "http://ha:8123/", "tok").readings(
+        ("cover.garage_door", "lock.front_door", "lock.frnt_door")))
+    assert [c[0] for c in session.calls] == ["GET"] * 3
+    assert all(c[1].startswith("http://ha:8123/api/states/") for c in session.calls)
+    assert session.calls[0][2] == {"Authorization": "Bearer tok"}
+    by = {r.entity_id: r for r in got}
+    assert by["cover.garage_door"].notable == "open" and by["cover.garage_door"].name == "Garage Door"
+    assert by["lock.front_door"].notable is None
+    assert by["lock.frnt_door"].notable == "not found in Home Assistant", "a typo must not mean unwatched"
+
+
+@check("home: a rejected token or a dead HA fails the whole read, never half a house")
+def _():
+    import aiohttp
+    from app.home import Home, HomeError
+    for states in ({"lock.a": _ha("locked"), "lock.b": 401},
+                   {"lock.a": _ha("locked"), "lock.b": 500},
+                   {"lock.a": aiohttp.ClientConnectionError("refused")}):
+        try:
+            asyncio.run(Home(_HASession(states), "http://ha:8123", "t").readings(("lock.a", "lock.b")))
+        except HomeError:
+            continue
+        raise AssertionError(f"rendered a partial house as a result: {states}")
+
+
+@check("home: the line names what is notable, with how long, or says what was checked")
+def _():
+    from app.day import Day, render_lines
+    from app.home import Reading
+    def line(home):
+        out = [l for l in render_lines(Day(now=NOW, sources=("home",), home=home)) if "**Home**" in l]
+        assert len(out) == 1, out
+        return out[0]
+    quiet = [Reading("lock.a", "Front", "locked", None, None)] * 3
+    assert line(quiet) == "**Home** nothing open, unlocked or offline (3 watched)"
+    loud = [Reading("cover.g", "Garage", "open", NOW - dt.timedelta(hours=2, minutes=10), "open"),
+            Reading("lock.f", "Front", "locked", None, None),
+            Reading("binary_sensor.l", "Leak", "unavailable", NOW - dt.timedelta(days=3), "unavailable")]
+    assert line(loud) == "**Home** Garage open 2h · Leak unavailable 3d", line(loud)
+    many = [Reading(f"cover.g{i}", f"G{i}", "open", None, "open") for i in range(9)]
+    assert line(many).endswith("· +3 more"), line(many)
+    hostile = [Reading("cover.x", "@everyone [x](https://evil)", "open", None, "open")]
+    assert "@everyone" not in line(hostile) and "://" not in line(hostile)
+    assert "_not read_" in "\n".join(render_lines(Day(now=NOW, sources=("home",))))
+    # A naive timestamp from HA must not take the digest down.
+    from app.home import parse_state
+    naive = parse_state("lock.a", {"state": "unlocked", "last_changed": "2026-10-12T05:30:00"})
+    assert naive.since.tzinfo is not None and line([naive]).endswith("unlocked 2h"), line([naive])
+
+
+@check("home: works without Google, fails alone, and stamps only on success")
+def _():
+    import tempfile
+    from app import stamp
+    from app.day import DayCollector, render_lines, stamp_path
+    from app.home import Home
+    with tempfile.TemporaryDirectory() as d:
+        dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("home",), state_dir=d,
+                          home=Home(_HASession({"lock.a": _ha("unlocked", name="Front")}), "http://ha", "t"),
+                          home_entities=("lock.a",))
+        day = asyncio.run(dc.collect(NOW))
+        text = "\n".join(render_lines(day))
+        assert "Front unlocked" in text and "Calendar" not in text and "Mail" not in text, text
+        assert stamp.read(stamp_path(d, "home")) is not None
+    with tempfile.TemporaryDirectory() as d:
+        dc = DayCollector(_FakeGoogle(events={"primary": []}), calendar_ids=("primary",), mail_labels=(),
+                          sources=("calendar", "home"), state_dir=d,
+                          home=Home(_HASession({"lock.a": 401}), "http://ha", "t"), home_entities=("lock.a",))
+        day = asyncio.run(dc.collect(NOW))
+        assert day.events == [] and day.home is None, "HA down must not take the calendar with it"
+        assert any("home" in p and "401" in p for p in day.problems), day.problems
+        assert stamp.read(stamp_path(d, "home")) is None and stamp.read(stamp_path(d, "calendar"))
+
+
+@check("home: entity names never reach the model")
+def _():
+    from app.day import DayCollector
+    from app.digest import build
+    from app.home import Home
+
+    class _Facts:
+        async def collect(self, now):
+            return _facts(targets_up=2, targets_total=2)
+
+    seen = {}
+
+    class _Ollama:
+        async def generate(self, prompt, system, temperature, num_predict):
+            seen["prompt"] = prompt + system
+            raise RuntimeError("narration off")
+
+    dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("home",), state_dir=None,
+                      home=Home(_HASession({"lock.a": _ha("unlocked", name="SECRET-DOOR")}), "http://ha", "t"),
+                      home_entities=("lock.a",))
+    out = asyncio.run(build(_Facts(), _Ollama(), NOW, day_collector=dc))
+    assert "SECRET" not in seen["prompt"] and "SECRET-DOOR unlocked" in out
+    assert "Home Assistant" in out.splitlines()[-1], "the footer names where the facts came from"
+
+
+@check("config: Home Assistant is a token and an entity list, or neither")
+def _():
+    from app.config import Config
+    with_env()
+    c = Config.from_env()
+    assert not c.home_enabled and c.day_sources == ()
+    with_env(HA_TOKEN="t", HA_ENTITIES="cover.garage_door, lock.front_door")
+    c = Config.from_env()
+    assert c.home_enabled and c.ha_entities == ("cover.garage_door", "lock.front_door")
+    assert c.ha_url == "http://homeassistant:8123" and c.day_sources == ("home",)
+    with_env(HA_TOKEN="t", HA_ENTITIES="lock.a", GOOGLE_CLIENT_ID="i", GOOGLE_CLIENT_SECRET="s",
+             GOOGLE_REFRESH_TOKEN="r")
+    assert Config.from_env().day_sources == ("calendar", "mail", "home")
+    for bad in (dict(HA_TOKEN="t"), dict(HA_ENTITIES="lock.a"), dict(HA_TOKEN="t", HA_ENTITIES="garage")):
+        with_env(**bad)
+        try:
+            Config.from_env()
+        except SystemExit:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    with_env()
+
+
 # --- every module imports -----------------------------------------------------
 
 @check("all modules import cleanly")
 def _():
     import importlib
-    for mod in ("bot", "chat", "config", "day", "digest", "facts", "google", "jobqueue",
+    for mod in ("bot", "chat", "config", "day", "digest", "facts", "google", "home", "jobqueue",
                 "logs", "ollama", "provision", "stamp", "text"):
         importlib.import_module(f"app.{mod}")
 

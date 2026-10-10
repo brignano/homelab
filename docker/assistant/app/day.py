@@ -1,4 +1,4 @@
-"""The digest's "Today" section: calendar and mail, as facts.
+"""The digest's "Today" section: calendar, mail and home, as facts.
 
 The same rule as facts.py, plus one of its own.
 
@@ -14,6 +14,10 @@ The same rule as facts.py, plus one of its own.
 
 That text still reaches Discord, so it goes through `discord_safe` first: no
 pings, no markdown, no clickable links, no way to fake a line of the digest.
+
+Home Assistant names go through the same path. You typed most of them, but a
+cloud integration can import device names from a vendor or a shared account,
+and "probably ours" is not a property worth relying on.
 """
 
 from __future__ import annotations
@@ -28,15 +32,21 @@ from dataclasses import dataclass, field
 
 from . import stamp
 from .google import Event, Google, Mail
+from .home import Home, Reading, for_how_long
 
 log = logging.getLogger(__name__)
 
-SOURCES = ("calendar", "mail")
+# Every source that keeps a freshness stamp, for scripts/heartbeat.sh and
+# hl-google-stale. GOOGLE_SOURCES is the default for a Day built by hand.
+SOURCES = ("calendar", "mail", "home")
+GOOGLE_SOURCES = ("calendar", "mail")
 
 # How much of the section a single run can fill. The digest is one Discord
 # message (2000 characters); this section must never be the reason it splits.
 MAX_EVENTS = 6
 MAX_CONFLICTS = 3
+MAX_HOME = 6
+HOME_NAME_CHARS = 32
 TITLE_CHARS = 48
 SENDER_CHARS = 28
 SUBJECT_CHARS = 56
@@ -79,11 +89,12 @@ class Day:
     now: dt.datetime
     # Which sources were asked for. One left out of GOOGLE_SOURCES gets no line
     # at all; "not read" is reserved for a source that was asked for and failed.
-    sources: tuple[str, ...] = SOURCES
+    sources: tuple[str, ...] = GOOGLE_SOURCES
     events: list[Event] | None = None
     mail: list[Mail] | None = None
     # More new mail arrived than was fetched, so the count is a floor.
     mail_more: bool = False
+    home: list[Reading] | None = None
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -167,6 +178,24 @@ def render_lines(day: Day) -> list[str]:
         )
         lines.append(f"**Mail (24h)** {count} — {newest}")
 
+    if "home" not in day.sources:
+        pass
+    elif day.home is None:
+        lines.append("**Home** _not read_")
+    else:
+        loud = [r for r in day.home if r.notable]
+        if loud:
+            shown = []
+            for r in loud[:MAX_HOME]:
+                took = for_how_long(r.since, day.now)
+                shown.append(f"{discord_safe(r.name, HOME_NAME_CHARS)} {r.notable}" + (f" {took}" if took else ""))
+            more = len(loud) - MAX_HOME
+            lines.append("**Home** " + " · ".join(shown) + (f" · +{more} more" if more > 0 else ""))
+        else:
+            # The verdict is Python's, and it says exactly what was checked:
+            # not "all fine", which would claim more than the table knows.
+            lines.append(f"**Home** nothing open, unlocked or offline ({len(day.home)} watched)")
+
     if day.problems:
         lines.append("⚠️ _Incomplete: " + "; ".join(day.problems) + "_")
     return lines
@@ -181,10 +210,16 @@ def stamp_path(state_dir: str, source: str) -> str:
 
 
 class DayCollector:
-    def __init__(self, google: Google, *, calendar_ids: tuple[str, ...],
+    """`google` and `home` are each optional. A source whose client is absent
+    must not be in `sources`; the bot builds both from the same config."""
+
+    def __init__(self, google: Google | None, *, calendar_ids: tuple[str, ...],
                  mail_labels: tuple[str, ...], sources: tuple[str, ...],
-                 state_dir: str | None) -> None:
+                 state_dir: str | None, home: Home | None = None,
+                 home_entities: tuple[str, ...] = ()) -> None:
         self._google = google
+        self._home = home
+        self._home_entities = home_entities
         self._calendar_ids = calendar_ids
         self._mail_labels = mail_labels
         self._sources = sources
@@ -241,6 +276,8 @@ class DayCollector:
             jobs["calendar"] = self._calendar(now)
         if "mail" in self._sources:
             jobs["mail"] = self._mail(now)
+        if "home" in self._sources:
+            jobs["home"] = self._home.readings(self._home_entities)
         results = await asyncio.gather(*jobs.values(), return_exceptions=True)
 
         for source, result in zip(jobs, results):
@@ -251,7 +288,9 @@ class DayCollector:
                 continue
             if source == "calendar":
                 day.events = result
-            else:
+            elif source == "mail":
                 day.mail, day.mail_more = result
+            else:
+                day.home = result
             self._ok(source)
         return day

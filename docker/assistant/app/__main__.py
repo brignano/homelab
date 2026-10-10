@@ -162,6 +162,7 @@ async def _google_auth_async() -> int:
 def _sample_day(now: dt.datetime):
     from .day import Day
     from .google import Event, Mail
+    from .home import Reading
 
     tz = now.tzinfo
     at = lambda h, m=0: now.replace(hour=h, minute=m)  # noqa: E731
@@ -178,6 +179,13 @@ def _sample_day(now: dt.datetime):
             Mail("Alice Chen", "Re: flights for the 24th", at(7, 2).astimezone(tz)),
             Mail("Billing", "Your invoice is ready — see https://example.com/pay", at(6, 40)),
             Mail("@everyone", "**URGENT** [click](https://phish.example)", at(5)),
+        ],
+        sources=("calendar", "mail", "home"),
+        home=[
+            Reading("cover.garage_door", "Garage Door", "open", now - dt.timedelta(hours=2), "open"),
+            Reading("lock.front_door", "Front Door", "locked", now - dt.timedelta(hours=9), None),
+            Reading("binary_sensor.basement_leak", "Basement Leak", "unavailable",
+                    now - dt.timedelta(days=3), "unavailable"),
         ],
     )
 
@@ -251,23 +259,33 @@ async def _selftest_async() -> int:
 
         collector = FactCollector(session, prometheus_url=prom, loki_url=loki)
 
-        # The "Today" section, if Google is configured. No state_dir: a selftest
-        # proves the sign-in works, it is not a scheduled read, and it must not
-        # refresh the stamps hl-google-stale watches.
+        # The "Today" section, from whichever of Google and Home Assistant is
+        # configured. Parsed with the same helpers the bot uses, so a half-set
+        # config fails here too, before you rely on it. No state_dir: a
+        # selftest proves the sources answer, it is not a scheduled read, and
+        # it must not refresh the stamps hl-google-stale watches.
+        from .config import GOOGLE_SOURCES, _google, _home, _list
+        g_id, g_secret, g_refresh = _google()
+        ha_token, ha_entities = _home()
+        sources = (_list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES)) if g_refresh else ()) + (
+            ("home",) if ha_token else ())
         day_collector = None
-        refresh = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
-        if refresh:
+        if sources:
             from .day import DayCollector
             from .google import Google
+            from .home import Home
             day_collector = DayCollector(
-                Google(session, os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
-                       os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(), refresh),
-                calendar_ids=_csv("GOOGLE_CALENDAR_IDS", "primary"),
-                mail_labels=_csv("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL"),
-                sources=_csv("GOOGLE_SOURCES", "calendar,mail"),
+                Google(session, g_id, g_secret, g_refresh) if g_refresh else None,
+                calendar_ids=_list("GOOGLE_CALENDAR_IDS", "primary"),
+                mail_labels=_list("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL"),
+                sources=sources,
                 state_dir=None,
+                home=Home(session, os.environ.get("HA_URL", "").strip() or "http://homeassistant:8123",
+                          ha_token) if ha_token else None,
+                home_entities=ha_entities,
             )
-        print(f"google     : {'configured' if day_collector else 'not configured — no Today section'}\n")
+        print(f"google     : {'configured' if g_refresh else 'not configured'}")
+        print(f"home       : {f'{len(ha_entities)} entities' if ha_token else 'not configured'}\n")
 
         tz_name = os.environ.get("TZ", "").strip() or "UTC"
         from zoneinfo import ZoneInfo
@@ -278,11 +296,6 @@ async def _selftest_async() -> int:
     print(message)
     print("=" * 70)
     return 0
-
-
-def _csv(name: str, default: str) -> tuple[str, ...]:
-    raw = os.environ.get(name)
-    return tuple(x.strip() for x in (default if raw is None else raw).split(",") if x.strip())
 
 
 def main(argv: list[str] | None = None) -> int:
