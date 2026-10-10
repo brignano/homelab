@@ -9,6 +9,30 @@ modules:
       valid_status_codes: []        # any 2xx is a pass
       fail_if_not_ssl: false
 
+  # Home Assistant through Caddy's `ha.` route, not around it. The direct probe
+  # (http_2xx against host.docker.internal:8123) skips Caddy, so a caddy left on
+  # a stale config answered `ha.` with 502 and nothing paged. This one asks the
+  # caddy container for the `ha.` site by Host header; the Caddyfile lists
+  # `http://ha.caddy` as a second address of that same block (see the comment
+  # there for why not the real domain).
+  #
+  # The body match is what makes the 200 mean "Home Assistant answered". A Host
+  # Caddy does not recognise must not pass as a quiet empty 200, and nothing but
+  # HA serves a manifest named "Home Assistant".
+  http_ha_via_caddy:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      valid_status_codes: []        # any 2xx is a pass
+      follow_redirects: false
+      headers:
+        Host: ha.caddy
+      fail_if_body_not_matches_regexp:
+        - "Home Assistant"
+
   tcp_connect:
     prober: tcp
     timeout: 5s

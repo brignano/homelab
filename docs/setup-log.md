@@ -27,6 +27,73 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-10 — Home Assistant probed through Caddy
+
+**Goal:** The HA probe reached `host.docker.internal:8123` directly, around
+Caddy. A caddy left on a stale config answers `ha.` with 502 while that probe
+and `hl-probe-down` stay green, which is the gap the host-networking deploy
+below had to be done "in one sitting" to avoid. Make a broken Caddy → HA route
+page.
+
+**Steps:**
+1. Caddyfile: the `ha.` block gets a second address,
+   `ha.{$HOMELAB_DOMAIN}, http://ha.caddy {`. The probe has to land in the
+   real block, but committed config carries no domain, and neither
+   `prometheus.yml` nor `blackbox.yml` can read `HOMELAB_DOMAIN`. One address
+   list, so the probe tests the route itself and not a copy of it.
+2. `blackbox.yml`: module `http_ha_via_caddy` sends `Host: ha.caddy`, does not
+   follow redirects, and requires `Home Assistant` in the body, so an empty
+   200 from an unmatched Host cannot pass.
+3. `prometheus.yml`: job `blackbox-ha-caddy`, target
+   `http://caddy/manifest.json`, `service: home-assistant via caddy`. A
+   separate job because `module` is per job.
+4. `rules.yml`: `hl-ha-route-down`. Its query drops the series
+   (`unless on()`) while either end is failing on its own: the direct HA
+   probe or `http://caddy/health`. HA down or Caddy down stays one page
+   (`hl-probe-down`, naming which). Both up with the route between them
+   broken is this page, and its summary says to recreate caddy.
+5. `check-probes.sh` now checks that every `Host: <x>.caddy` a module sends is
+   on the `<x>.{$HOMELAB_DOMAIN}` block's own address line, and limits the
+   `http://caddy` 200 check to `http_2xx` jobs. `check-dashboard.sh` accepts a
+   site line with a second address. `probe-status.sh` covers every
+   `blackbox*` job and probes with that job's module.
+
+**Issues encountered:**
+- Probing `https://ha.<domain>` directly would also have tested DNS and the
+  certificate. It was rejected because it puts the domain in committed config
+  and pages a second time whenever AdGuard is down.
+
+**Resolution:**
+- `check-probes.sh` passes. Splitting the alias into its own block fails it.
+
+**Notes / next steps:**
+- **Deploy.** Order matters: caddy needs the alias before the probe starts
+  asking for it, or `hl-ha-route-down` fires on the 2-minute mark. All three
+  configs are single-file mounts, so recreate. Do not restart or reload:
+  ```bash
+  git pull
+  docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy
+  dig +short @10.0.0.201 stats.home; dig +short @10.0.0.201 stats.home
+  docker exec blackbox-exporter wget -qO- --header 'Host: ha.caddy' http://caddy/manifest.json | head -c 120; echo
+  docker compose -f docker/monitoring/docker-compose.yml up -d --force-recreate prometheus blackbox-exporter
+  docker compose -f docker/monitoring/docker-compose.yml restart grafana
+  ./scripts/probe-status.sh
+  ```
+  **By hand, on merge day, before 04:00.** `repo-sync.sh` recreates
+  `monitoring` but never `proxy` (`NO_AUTOHEAL`). An unattended sync therefore
+  starts the probe against a caddy without the alias, and `hl-ha-route-down`
+  pages at about 04:02. That page would be accurate, since caddy is stale,
+  and the fix is the caddy recreate above. The caddy recreate is required
+  here even though `dig` answers. `deploy-plan.sh`'s "if it answers, a
+  recreate can only make things worse" is about drift, not about an
+  intentional Caddyfile change.
+  `caddy` alone, never the whole proxy stack, because AdGuard lives there too.
+  The two `dig`s check that DNS came back. Grafana is restarted for the new
+  rule.
+- Expect `probe-status.sh` to show `http://caddy/manifest.json` as `up`.
+
+---
+
 ## 2026-10-10 — SSH key access to CT 100 restored for Windows and the Mac
 
 **Goal:** `hl-ssh` from the Windows desktop asked for root's password on

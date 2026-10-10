@@ -312,8 +312,11 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       limit (e.g. $20, alert at $10), and a workspace-scoped key with a
       1-year expiry, kept only in `docker/concierge/.env`. Also settle the
       `/ask` open question below.
-- [ ] **Probe through Caddy.** Today's HA probe goes to HA through the host,
+- [x] **Probe through Caddy.** Today's HA probe goes to HA through the host,
       so a broken Caddy → HA route (`ha.` answering 502) pages nobody.
+      Done 2026-10-10: job `blackbox-ha-caddy` probes the `ha.` site block
+      through its `http://ha.caddy` alias, and `hl-ha-route-down` pages only
+      while HA itself still answers.
 - [ ] **Matter Server**, only once a Matter device is bought. HA's host
       networking is in place, and the Matter Server container also needs host
       networking and IPv6.

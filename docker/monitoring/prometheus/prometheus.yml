@@ -112,6 +112,29 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
+  # Home Assistant again, this time through Caddy's `ha.` route. The probe above
+  # goes around Caddy, so a caddy left on a stale config answered `ha.` with 502
+  # while it stayed green. Its own job because the module differs (it sends
+  # `Host: ha.caddy`, see blackbox/blackbox.yml), and its own alert rule
+  # (hl-ha-route-down) because that rule stands down while HA itself is
+  # failing: HA down is one page, not two.
+  - job_name: blackbox-ha-caddy
+    metrics_path: /probe
+    params:
+      module: [http_ha_via_caddy]
+    static_configs:
+      - targets:
+          - http://caddy/manifest.json
+        labels:
+          service: home-assistant via caddy
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   # DNS probing via blackbox-exporter. Separate job rather than another target
   # in `blackbox`, because the module differs per target and `params` is set per
   # job — and because these two want their own alert wording: "the house has no

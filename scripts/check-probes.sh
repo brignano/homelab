@@ -18,6 +18,13 @@
 # delete the health block, or move the probe to another path, and CI goes red
 # instead of Discord.
 #
+# The second half covers probes that reach Caddy under another Host on purpose.
+# blackbox-ha-caddy sends `Host: ha.caddy` so it lands in the `ha.` site block
+# (a second address of that block, because committed config carries no domain).
+# That only proves the route if the alias stays in the SAME address list as the
+# real name: split it into its own block and the probe tests a copy of the
+# route, green while the real one 502s. So the alias line is checked verbatim.
+#
 # Run by hand from the repo root:
 #   ./scripts/check-probes.sh
 #
@@ -26,15 +33,47 @@ set -eu
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 PROM="$REPO/docker/monitoring/prometheus/prometheus.yml"
 CADDYFILE="$REPO/docker/proxy/Caddyfile"
+BLACKBOX="$REPO/docker/monitoring/blackbox/blackbox.yml"
 
 [ -f "$PROM" ]      || { echo "check-probes: $PROM not found" >&2; exit 1; }
 [ -f "$CADDYFILE" ] || { echo "check-probes: $CADDYFILE not found" >&2; exit 1; }
+[ -f "$BLACKBOX" ]  || { echo "check-probes: $BLACKBOX not found" >&2; exit 1; }
 
+# ── Host aliases ─────────────────────────────────────────────────────────────
+# Every `Host: <name>.caddy` a blackbox module sends must be the second address
+# of the `<name>.{$HOMELAB_DOMAIN}` block, on that block's own line.
+alias_bad=""
+for host in $(grep -oE '^ +Host: +[a-z0-9-]+\.caddy *$' "$BLACKBOX" | awk '{ print $2 }' | sort -u); do
+  want="${host%.caddy}.{\$HOMELAB_DOMAIN}, http://$host {"
+  if grep -qxF "$want" "$CADDYFILE"; then
+    echo "ok       Host $host is an address of the ${host%.caddy}. site block"
+  else
+    echo "NO SITE  Host $host — Caddyfile has no line '$want'"
+    alias_bad="$alias_bad $host"
+  fi
+done
+
+if [ -n "$alias_bad" ]; then
+  echo >&2
+  echo "A probe sends a Host that is not an alias of the real site block, so it" >&2
+  echo "either gets no answer or tests a copy of the route. Keep the alias in" >&2
+  echo "the same address list as the real name in $CADDYFILE." >&2
+  exit 1
+fi
+
+# ── Probes that arrive as Host `caddy` ───────────────────────────────────────
 # Probe targets pointing at the caddy container, e.g. `http://caddy/health` or
-# `http://caddy:80/health`. Anything else in the blackbox job is somebody else's
-# service and its own health endpoint's problem.
-targets=$(grep -oE '^ *- +http://caddy(:80)?(/[^ ]*)?$' "$PROM" \
-          | sed 's|^ *- *||' | sort -u)
+# `http://caddy:80/health`, in jobs on the plain http_2xx module. A job whose
+# module sets its own Host is the alias case above, not this one. Anything else
+# in the blackbox job is somebody else's service and its own health endpoint's
+# problem.
+targets=$(awk '
+  function flush() { if (mod == "http_2xx") printf "%s", buf; buf = ""; mod = "" }
+  /^  - job_name:/ { flush(); next }
+  /^ +module: *\[/ { m = $0; sub(/.*\[ */, "", m); sub(/ *\].*/, "", m); mod = m; next }
+  /^ *- +http:\/\/caddy(:80)?(\/[^ ]*)?$/ { t = $0; sub(/^ *- */, "", t); buf = buf t "\n" }
+  END { flush() }
+' "$PROM" | sort -u)
 
 if [ -z "$targets" ]; then
   echo "ok       no blackbox probe targets caddy"

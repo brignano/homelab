@@ -98,7 +98,17 @@ dns.{$HOMELAB_DOMAIN} {
 # docker/homeassistant/README.md), or this site answers 400. WebSockets, which
 # the HA frontend lives on, need nothing extra: reverse_proxy upgrades them by
 # default.
-ha.{$HOMELAB_DOMAIN} {
+#
+# `http://ha.caddy` is the same site under a second address, for
+# blackbox-exporter alone (job `blackbox-ha-caddy` in prometheus.yml). The probe
+# has to come through this block to prove the route works, but committed config
+# carries no domain, and neither prometheus.yml nor blackbox.yml can read one
+# from the environment. So blackbox sends `Host: ha.caddy` to the caddy
+# container, and lands here. It shares one address list on purpose: a separate
+# block would be a second copy of the route, and the probe would test the copy.
+# scripts/check-probes.sh fails CI if they are split. Plain HTTP and no new
+# exposure: anyone who can send this Host header can already reach :8123.
+ha.{$HOMELAB_DOMAIN}, http://ha.caddy {
 	reverse_proxy host.docker.internal:8123
 }
 
