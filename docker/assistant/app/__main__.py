@@ -7,6 +7,9 @@
   python -m app --provision  diff the server against guild.yml and print a plan
   python -m app --provision --apply
                              ...and actually make those changes
+  python -m app --google-auth
+                             one-time Google sign-in; prints the refresh token
+                             for GOOGLE_REFRESH_TOKEN (docker/assistant/README.md)
 
 Order to run these when setting up from scratch:
 
@@ -100,6 +103,85 @@ async def _provision_async(apply_changes: bool) -> int:
     return 0
 
 
+async def _google_auth_async() -> int:
+    """Sign in once, in a browser on any machine, and print the refresh token.
+
+    Headless by design: nothing listens on the redirect address. The browser's
+    final page fails to load, and its address bar holds the code — so this
+    works from `docker compose run` on CT 100 with the browser on a laptop.
+    """
+    import aiohttp
+
+    from .google import SCOPES, GoogleError, auth_request, code_from_redirect, exchange_code
+
+    client_id = os.environ.get("GOOGLE_CLIENT_ID", "").strip()
+    client_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "").strip()
+    if not client_id or not client_secret:
+        raise SystemExit(
+            "set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in docker/assistant/.env first —\n"
+            "  a Desktop-app OAuth client from Google Cloud Console (see the README)"
+        )
+
+    req = auth_request(client_id)
+    print("Read-only access requested:")
+    for scope in SCOPES:
+        print(f"  {scope}")
+    print("\n1. Open this URL in a browser and approve:\n")
+    print(req.url)
+    print("\n2. The browser ends on a page that will not load (127.0.0.1:8765).")
+    print("   That is expected. Copy the WHOLE address from the address bar and paste it here.\n")
+    try:
+        pasted = input("URL> ")
+    except EOFError:
+        raise SystemExit("no input — run with a terminal: docker compose run --rm assistant --google-auth")
+
+    try:
+        code = code_from_redirect(pasted, req.state)
+        async with aiohttp.ClientSession() as session:
+            tokens = await exchange_code(session, client_id, client_secret, code, req.verifier)
+    except GoogleError as exc:
+        raise SystemExit(f"sign-in failed: {exc}")
+
+    refresh = tokens.get("refresh_token")
+    if not refresh:
+        raise SystemExit(
+            "Google returned no refresh token. Remove this app's access at "
+            "https://myaccount.google.com/permissions and run --google-auth again."
+        )
+    granted = set(tokens.get("scope", "").split())
+    missing = [s for s in SCOPES if s not in granted]
+    if missing:
+        print("\nwarning: these were not granted (untick them and those sources will fail):")
+        for scope in missing:
+            print(f"  {scope}")
+    print("\nPaste into docker/assistant/.env, then recreate the container:\n")
+    print(f"  GOOGLE_REFRESH_TOKEN={refresh}\n")
+    return 0
+
+
+def _sample_day(now: dt.datetime):
+    from .day import Day
+    from .google import Event, Mail
+
+    tz = now.tzinfo
+    at = lambda h, m=0: now.replace(hour=h, minute=m)  # noqa: E731
+    return Day(
+        now=now,
+        events=[
+            Event("Standup", at(9), at(9, 15), False, True),
+            Event("Dentist", at(15), at(16), False, True),
+            Event("1:1 with Sam", at(15, 30), at(16), False, True),
+            Event("Focus block", at(13), at(15), False, False),
+            Event("Mom's birthday", now.date(), now.date() + dt.timedelta(days=1), True, True),
+        ],
+        mail=[
+            Mail("Alice Chen", "Re: flights for the 24th", at(7, 2).astimezone(tz)),
+            Mail("Billing", "Your invoice is ready — see https://example.com/pay", at(6, 40)),
+            Mail("@everyone", "**URGENT** [click](https://phish.example)", at(5)),
+        ],
+    )
+
+
 def _dry_run() -> int:
     """Exercise the pure rendering path with representative facts. No I/O."""
     from .digest import facts_block, render
@@ -124,6 +206,8 @@ def _dry_run() -> int:
     # bot uses GRAFANA_URL; unset, the footer simply has no links.
     grafana = os.environ.get("GRAFANA_URL", "").strip() or "https://stats.example.com"
 
+    day = _sample_day(dt.datetime(2026, 8, 22, 7, 30, tzinfo=dt.timezone.utc))
+
     for name, facts in (("HEALTHY", healthy), ("DEGRADED", degraded)):
         print(f"\n{'=' * 70}\n{name} — prompt given to the model\n{'=' * 70}")
         print(facts_block(facts))
@@ -133,9 +217,11 @@ def _dry_run() -> int:
             "Everything looks normal this morning." if not facts.concerns
             else "A couple of targets are down and the box is running hot.",
             model="llama3.2:3b", seconds=34.0, grafana_url=grafana,
+            day=day if name == "HEALTHY" else None,
         ))
         print(f"\n{'-' * 70}\n{name} — rendered with the model unavailable\n{'-' * 70}")
-        print(render(facts, None, note="narration unavailable", grafana_url=grafana))
+        print(render(facts, None, note="narration unavailable", grafana_url=grafana,
+                     day=day if name == "HEALTHY" else None))
     return 0
 
 
@@ -164,12 +250,39 @@ async def _selftest_async() -> int:
         print(f"ollama has {model}: {'yes' if ok else 'NO — digest will post facts only'}\n")
 
         collector = FactCollector(session, prometheus_url=prom, loki_url=loki)
-        message = await build(collector, ollama, dt.datetime.now(), grafana_url=grafana)
+
+        # The "Today" section, if Google is configured. No state_dir: a selftest
+        # proves the sign-in works, it is not a scheduled read, and it must not
+        # refresh the stamps hl-google-stale watches.
+        day_collector = None
+        refresh = os.environ.get("GOOGLE_REFRESH_TOKEN", "").strip()
+        if refresh:
+            from .day import DayCollector
+            from .google import Google
+            day_collector = DayCollector(
+                Google(session, os.environ.get("GOOGLE_CLIENT_ID", "").strip(),
+                       os.environ.get("GOOGLE_CLIENT_SECRET", "").strip(), refresh),
+                calendar_ids=_csv("GOOGLE_CALENDAR_IDS", "primary"),
+                mail_labels=_csv("GMAIL_LABELS", "INBOX,UNREAD,CATEGORY_PERSONAL"),
+                sources=_csv("GOOGLE_SOURCES", "calendar,mail"),
+                state_dir=None,
+            )
+        print(f"google     : {'configured' if day_collector else 'not configured — no Today section'}\n")
+
+        tz_name = os.environ.get("TZ", "").strip() or "UTC"
+        from zoneinfo import ZoneInfo
+        message = await build(collector, ollama, dt.datetime.now(tz=ZoneInfo(tz_name)),
+                              grafana_url=grafana, day_collector=day_collector)
 
     print("=" * 70)
     print(message)
     print("=" * 70)
     return 0
+
+
+def _csv(name: str, default: str) -> tuple[str, ...]:
+    raw = os.environ.get(name)
+    return tuple(x.strip() for x in (default if raw is None else raw).split(",") if x.strip())
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -178,6 +291,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--dry-run", action="store_true", help="render sample digests offline")
     mode.add_argument("--selftest", action="store_true", help="query real backends, print a digest, exit")
     mode.add_argument("--provision", action="store_true", help="diff the server against guild.yml")
+    mode.add_argument("--google-auth", action="store_true", help="one-time Google sign-in for the Today section")
     parser.add_argument("--apply", action="store_true", help="with --provision: execute the plan")
     args = parser.parse_args(argv)
 
@@ -192,6 +306,8 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_selftest_async())
     if args.provision:
         return asyncio.run(_provision_async(args.apply))
+    if args.google_auth:
+        return asyncio.run(_google_auth_async())
 
     from .bot import run
     from .config import Config

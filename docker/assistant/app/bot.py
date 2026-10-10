@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import datetime as dt
 import logging
+import os
 import time
 
 import aiohttp
@@ -30,8 +31,10 @@ from .chat import (
     context_mode, is_ignorable,
 )
 from .config import Config
+from .day import SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
 from .digest import build as build_digest
 from .facts import FactCollector
+from .google import Google
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
@@ -89,6 +92,7 @@ class Assistant(discord.Client):
         self._metrics_cache: tuple[float, str] | None = None
         self.ollama: Ollama | None = None
         self.collector: FactCollector | None = None
+        self.day: DayCollector | None = None
         self._guild = discord.Object(id=cfg.guild_id)
 
     # --- lifecycle ---
@@ -108,6 +112,34 @@ class Assistant(discord.Client):
             prometheus_url=self.cfg.prometheus_url,
             loki_url=self.cfg.loki_url,
         )
+
+        # The digest's "Today" section. Only built when Google is configured;
+        # otherwise the digest renders exactly as it did before phase 1.
+        #
+        # Freshness stamps (for hl-google-stale) are kept only while the
+        # schedule runs: sources are read when a digest is, so with the
+        # schedule off nothing would refresh them and the alert would fire
+        # about a feature working as configured. Off, or unconfigured, means
+        # any stamps an earlier run left are cleared.
+        state_dir = os.path.dirname(self.cfg.digest_stamp_path)
+        stamping = self.cfg.google_enabled and self.cfg.digest_enabled and bool(state_dir)
+        if self.cfg.google_enabled:
+            self.day = DayCollector(
+                Google(
+                    self._session,
+                    client_id=self.cfg.google_client_id,
+                    client_secret=self.cfg.google_client_secret,
+                    refresh_token=self.cfg.google_refresh_token,
+                ),
+                calendar_ids=self.cfg.google_calendar_ids,
+                mail_labels=self.cfg.gmail_labels,
+                sources=self.cfg.google_sources,
+                state_dir=state_dir if stamping else None,
+            )
+            self.day.arm()
+        if not stamping and state_dir:
+            for source in DAY_SOURCES:
+                clear_stamp(day_stamp_path(state_dir, source))
 
         # With the schedule off there is nothing to be stale about, so drop
         # any timestamp a previous run left behind. An alert that fires forever
@@ -382,7 +414,7 @@ class Assistant(discord.Client):
             "digest",
             lambda: build_digest(
                 self.collector, self.ollama, now, self.cfg.digest_predict,
-                grafana_url=self.cfg.grafana_url,
+                grafana_url=self.cfg.grafana_url, day_collector=self.day,
             ),
             priority=priority,
         )

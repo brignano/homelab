@@ -12,9 +12,11 @@ or returns nonsense, the digest still posts and still tells you the truth.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
+from .day import Day, render_lines as day_lines
 from .facts import CPU_WARN, DISK_WARN, MEM_WARN, Facts
 
 log = logging.getLogger(__name__)
@@ -31,7 +33,12 @@ SYSTEM = (
 
 def facts_block(facts: Facts) -> str:
     """The exact text the model is given. Deliberately pre-digested and small —
-    the model's job is phrasing, not analysis."""
+    the model's job is phrasing, not analysis.
+
+    Lab facts only, and that is a security property rather than a scope choice:
+    the "Today" section carries event titles and email subjects that strangers
+    wrote, so it is rendered by code and never put in front of the model. See
+    day.py."""
     lines: list[str] = []
 
     if facts.targets_total:
@@ -171,6 +178,7 @@ def render(
     seconds: float | None = None,
     note: str | None = None,
     grafana_url: str | None = None,
+    day: Day | None = None,
 ) -> str:
     """Build the Discord message. Numbers always present; prose only if we got it."""
     # `##` is a real Discord heading, not bold text pretending to be one: it
@@ -219,6 +227,10 @@ def render(
         out.append("")
         out.append("⚠️ _Incomplete: " + "; ".join(facts.problems) + "_")
 
+    if day is not None:
+        out.append("")
+        out += day_lines(day)
+
     out.append("")
     if grafana_url:
         # Masked links, which Discord renders for bot and webhook messages.
@@ -231,7 +243,7 @@ def render(
         footer_bits.append(f"{model} · {seconds:.0f}s")
     elif note:
         footer_bits.append(note)
-    footer_bits.append("facts from Prometheus + Loki")
+    footer_bits.append("facts from Prometheus + Loki" + (" + Google" if day is not None else ""))
     out.append("-# " + " · ".join(footer_bits))
 
     return "\n".join(out)
@@ -243,9 +255,15 @@ async def build(
     now: datetime,
     num_predict: int = 180,
     grafana_url: str | None = None,
+    day_collector=None,
 ) -> str:
     """Collect, narrate, render. Never raises for a narration failure."""
-    facts = await collector.collect(now)
+    # Concurrently: these are network reads, not inference. DayCollector never
+    # raises, so it cannot take the lab's half of the digest down with it.
+    if day_collector is not None:
+        facts, day = await asyncio.gather(collector.collect(now), day_collector.collect(now))
+    else:
+        facts, day = await collector.collect(now), None
 
     narration: str | None = None
     model = seconds = None
@@ -265,5 +283,6 @@ async def build(
         narration, model, seconds = completion.text, completion.model, completion.seconds
 
     return render(
-        facts, narration, model=model, seconds=seconds, note=note, grafana_url=grafana_url
+        facts, narration, model=model, seconds=seconds, note=note,
+        grafana_url=grafana_url, day=day,
     )

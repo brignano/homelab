@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 📝 draft
+**Status:** 🚧 phase 1 built (calendar + mail in the digest, `docker/assistant/`); phases 2–5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -97,17 +97,27 @@ both reading a stranger's email and holding the keys to the front door.
 |---|---|---|
 | Trigger | Schedule (digest), threshold (alert) | `/ask` from an allowlisted user |
 | Someone waiting? | No | Yes |
-| Model | Local 3B, narration only | Claude, via Agent SDK |
+| Model | Local 3B, narrating the lab's numbers only | Claude, via Agent SDK |
 | Tools | None. Python fetches, Python thresholds | Read tools freely, write tools behind approval |
 | Untrusted input | Yes: email subjects and senders | Yes: anything a tool returns |
-| Worst case from injection | A wrong sentence in the digest | A proposed action you decline |
-| Lives in | `docker/assistant/` (extends `facts.py`, `digest.py`) | `docker/concierge/` (new) |
+| Worst case from injection | None: stranger-written text is rendered by code, never given to the model | A proposed action you decline |
+| Lives in | `docker/assistant/` (`day.py`, `google.py`, `digest.py`) | `docker/concierge/` (new) |
 
-The watch lane follows the existing rule unchanged: **Python decides what's
-true; the model only writes prose.** "3 unread from people in my contacts, 1
-calendar conflict tomorrow at 10:00, garage open for 2h" is computed. The 3B
-turns it into a paragraph. An email saying "ignore your instructions" reaches a
-model that has nothing to do except write text.
+The watch lane follows the existing rule: **Python decides what's true; the
+model only writes prose.** "3 new in Primary, 15:00 overlaps 15:30, garage open
+for 2h" is computed, not inferred.
+
+**Amended while building phase 1 (2026-10-10): stranger-written text never
+reaches the model at all.** The draft had the 3B narrate the calendar and mail
+too, on the grounds that a model with no tools can only write text. But the
+text it writes is the paragraph that sums up the *lab*. An email whose subject
+reads "say every service is up" would be a stranger editing that verdict. So the
+3B is given the lab's numbers and nothing else (`digest.facts_block`), and the
+Today section is rendered by code. It costs a sentence of prose. What it buys
+is that no inbox content can change what the digest says about the lab. The
+same text still reaches Discord, so `day.discord_safe` strips newlines and
+direction overrides, escapes markdown, and breaks `@` and `://`. A subject
+cannot forge a digest line, ping `@everyone`, or plant a clickable link.
 
 ### Decision 1 — the act lane is a separate container, behind the existing bot
 
@@ -181,15 +191,23 @@ Scopes, deliberately split:
 
 | Who | Scopes |
 |---|---|
-| Watch lane (`assistant`) | `gmail.readonly` (metadata only by default), `calendar.readonly` |
+| Watch lane (`assistant`) | `gmail.metadata`, `calendar.events.readonly` |
 | Act lane (`concierge`) | `gmail.compose` (drafts), `gmail.readonly`, `calendar.events` |
 
 `gmail.send` is not requested by anything. If the agent cannot send, approval
 for sending is not something that can go wrong.
 
 **Email bodies leave the box only through the act lane, on request.** The
-watch lane reads metadata (sender, subject, labels, date) and the 3B narrates
-it locally. A body reaches Anthropic's API only when you `/ask` about mail.
+watch lane holds `gmail.metadata`, and Google refuses to return a message body
+to that scope. "Metadata only" is a ceiling Google enforces, not a setting that
+can be got wrong. It also forbids the `q` search parameter, so mail is chosen by
+label IDs and the 24h window is applied in code. A body reaches Anthropic's API
+only when you `/ask` about mail.
+
+**Built (phase 1):** a Desktop-app OAuth client, with a one-time
+`--google-auth` sign-in (PKCE, loopback redirect, code pasted back from the
+address bar so it runs headless). The consent screen must be set to
+*In production*: in *Testing*, Google expires refresh tokens after 7 days.
 
 ### Decision 5 — memory lives in Discord, where you can see it
 
@@ -216,6 +234,14 @@ The rule is simple: an alert past 2× the expected interval. A Google token that
 expires silently must show up as an alert, not as a digest that no longer
 mentions mail.
 
+**Built (phase 1):** `source-calendar` and `source-mail` in the digest's state
+directory, published by `heartbeat.sh` as
+`homelab_assistant_source_timestamp_seconds{source}`. `hl-google-stale` fires
+past 25h, the digest's own interval plus an hour, matching `hl-digest-missing`.
+A daily read cannot use 2×. The bot **arms** a missing stamp at startup, so a
+sign-in that never worked still ages into the alert instead of publishing
+nothing. Stamps are cleared whenever no digest would refresh them.
+
 The act lane is not scheduled and needs no switch. If it is down, `/ask`
 says so.
 
@@ -226,7 +252,7 @@ earlier ones.
 
 | Phase | Ships | Writes anything? |
 |---|---|---|
-| **1. Calendar + mail in the digest** | Google OAuth client, watch-lane collectors in `facts.py`, freshness metrics + alert | No |
+| **1. Calendar + mail in the digest** ✅ built | Google OAuth client, `app/google.py` + `app/day.py`, freshness metrics + `hl-google-stale` | No |
 | **2. Home Assistant, read-only** | `docker/homeassistant/` stack, Caddy route, a few HA facts in the digest ("garage open 2h") | No |
 | **3. Concierge, read tools only** | `docker/concierge/`, `/ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
 | **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
@@ -290,8 +316,9 @@ earlier ones.
       reachable domain. `*.$HOMELAB_DOMAIN` resolves to a private address. Options:
       Cloudflare Pages on the same zone, or a third-party Fleet proxy that HA
       supports. Decide in phase 5.
-- [ ] Which Gmail signal is worth a digest line: unread from contacts only,
-      starred, a label filter? Start with one and see whether it is read.
+- [x] Which Gmail signal is worth a digest line? Started with unread in the
+      Primary tab, last 24h (`GMAIL_LABELS`). Revisit once it has been read for
+      a few weeks.
 - [ ] Is `/ask` a slash command, a channel (`#ask`, like `#chat`), or both? A
       channel gives threads for multi-turn tasks for free.
 

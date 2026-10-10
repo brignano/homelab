@@ -47,6 +47,19 @@ services:
       CHAT_LIVE_METRICS: ${CHAT_LIVE_METRICS:-true}
       CHAT_METRICS_TTL_S: ${CHAT_METRICS_TTL_S:-60}
 
+      # Optional: the digest's "Today" section — calendar and new mail, read-only.
+      # All three blank = off, and the digest renders exactly as before. The
+      # refresh token comes from `--google-auth` (README → "Today: calendar and
+      # mail"). Scopes are calendar.events.readonly and gmail.metadata, which
+      # Google enforces: this container can never read an email body.
+      # See docs/design/tsd-personal-assistant.md, phase 1.
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REFRESH_TOKEN: ${GOOGLE_REFRESH_TOKEN:-}
+      GOOGLE_SOURCES: ${GOOGLE_SOURCES:-calendar,mail}
+      GOOGLE_CALENDAR_IDS: ${GOOGLE_CALENDAR_IDS:-primary}
+      GMAIL_LABELS: ${GMAIL_LABELS:-INBOX,UNREAD,CATEGORY_PERSONAL}
+
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
