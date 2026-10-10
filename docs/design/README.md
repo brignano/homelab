@@ -11,11 +11,11 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 |-----|--------|
 | [`tsd-proxy-memorable-names.md`](tsd-proxy-memorable-names.md) | ✅ approved / shipped — `*.home` names via Caddy + AdGuard |
 | [`tsd-on-demand-desktops.md`](tsd-on-demand-desktops.md) | on-demand Kali webtop via Sablier |
-| [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) | ⏸ parked — backups + restore testing + job monitoring (blocked on a USB SSD) |
+| [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md) | 📝 revised draft, awaiting approval — backups + restore testing + job monitoring (Phase 0 needs no hardware; Phase 1 blocked on a USB SSD) |
 | [`tsd-self-healing-remediation.md`](tsd-self-healing-remediation.md) | 💡 future — auto-remediation layer |
 | [`tsd-real-domain-private-tls.md`](tsd-real-domain-private-tls.md) | ✅ approved / shipped — real domain + real certs via DNS-01, still unreachable from the internet |
 | [`tsd-alerting-off-box.md`](tsd-alerting-off-box.md) | ✅ approved / shipped — alerting that survives the box going down (Discord webhook + Healthchecks dead man's switch) |
 | [`tsd-local-llm-discord-jobs.md`](tsd-local-llm-discord-jobs.md) | ✅ approved / shipped — local-LLM async jobs delivered over Discord (`docker/assistant/`) |
 | [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — open-ended telemetry querying; its canned-summary half shipped in `tsd-local-llm-discord-jobs.md` |
-| [`tsd-personal-assistant.md`](tsd-personal-assistant.md) | 🚧 phases 1–2 built — watch lane (mail/calendar/Home Assistant into the digest) + act lane (Claude Agent SDK behind `/ask`, every write approved) |
+| [`tsd-personal-assistant.md`](tsd-personal-assistant.md) | 🚧 phases 1–3 built — watch lane (mail/calendar/Home Assistant into the digest) + act lane (Claude Agent SDK in `#ask`, read tools; every write approved) |
 | [`tsd-dependency-updates.md`](tsd-dependency-updates.md) | ✅ approved / shipped — image staleness watchdog, auto-pull split by blast radius, Renovate on `proxy` |

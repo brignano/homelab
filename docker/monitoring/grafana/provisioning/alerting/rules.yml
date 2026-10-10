@@ -162,6 +162,49 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- Caddy's route to Home Assistant is broken ---
+      #
+      # The direct HA probe (service="home-assistant" above) goes around Caddy,
+      # so `ha.` answering 502 used to page nobody. This one goes through it.
+      #
+      # `unless` stands it down while either end is failing on its own: HA
+      # (the direct probe) or Caddy (http://caddy/health). Either one fails this
+      # probe too, and hl-probe-down already pages for it by name. What is left
+      # is the case only this probe can see, both ends up and the route between
+      # them broken, so the summary can say what to fix. If either guard's
+      # series is missing altogether, `unless` drops nothing and this still
+      # fires.
+      - uid: hl-ha-route-down
+        title: Home Assistant route broken
+        condition: C
+        for: 2m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is failing while Caddy and Home Assistant both answer on their own: the ha. route is broken (stale caddy config? recreate caddy)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: |
+                probe_success{job="blackbox-ha-caddy"}
+                  unless on() (probe_success{job="blackbox", service="home-assistant"} == 0)
+                  unless on() (probe_success{job="blackbox", instance="http://caddy/health"} == 0)
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- PostgreSQL is down ---
       - uid: hl-postgres-down
         title: PostgreSQL down

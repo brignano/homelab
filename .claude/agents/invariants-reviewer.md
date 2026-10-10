@@ -24,7 +24,8 @@ the source wins, and say so in your report so this file gets fixed.
    each area touched: `alerting` for `grafana/`, `prometheus.yml`, probes,
    metrics or any scheduled script; `dashboard-visuals` for `docker/dashboard/`
    or anything visual; `local-llm` for `docker/ai/`, `docker/assistant/` or any
-   code calling Ollama.
+   code calling Ollama; `docs/design/tsd-personal-assistant.md` for
+   `docker/concierge/` or the bot's `#ask` code.
 3. **Run the checks CI runs**, the fast ones, so you report a red CI before the
    push does: `./scripts/check-observability.sh`, `./scripts/check-probes.sh`,
    `./scripts/check-dashboard.sh`, `./scripts/update-design-tokens.sh --check`,
@@ -42,13 +43,38 @@ the source wins, and say so in your report so this file gets fixed.
 - No request to Ollama sends `num_thread` (or any thread option) at request time.
 - Nothing new calls Ollama outside the single-worker queue, or in parallel with it.
 
-**Local LLM** — `local-llm` skill; `AGENTS.md` "Local LLM usage"
+**Local LLM / watch lane** — `local-llm` skill; `AGENTS.md` "Local LLM usage"
+
+These apply to the **local model** (Ollama, the 3B) and the code that feeds it:
+`docker/assistant/` digest, `#chat` and the slash commands. They do **not**
+apply to the concierge in `docker/concierge/`, which is Claude and is designed
+to call tools and read mail. Its rules are in the next section.
 - Facts are computed and thresholded in Python; the model only writes prose.
-- No tool-calling added for the model.
+- No tool-calling added for the local model.
 - A model or data failure degrades (numbers still posted, unreadable data
   reported) and never renders as "all clear".
 - Text written by other people (mail, calendar invites) is not passed to the
-  model — see `docs/design/tsd-personal-assistant.md`.
+  local model. See `docs/design/tsd-personal-assistant.md`, "The two lanes".
+
+**Act lane (concierge)** — `docs/design/tsd-personal-assistant.md` Decisions 1–5
+and "Security"; `docker/concierge/README.md`
+- Every tool the agent can call is registered in `docker/concierge/app/tools.py`
+  and has a tier in `app/tiers.py`. A new tool without a tier, or one put in
+  the read tier but able to change something, is a finding.
+- The **never** tier stays unregistered: no send, delete, unlock, disarm,
+  garage or purchase tool, and no direct connection to an MCP server whose
+  tool list includes them (HA is proxied through `GetLiveContext` only).
+- The agent options keep `tools=[]`, `allowed_tools=[]`,
+  `permission_mode="default"`, `setting_sources=[]` and the `PreToolUse` gate
+  hook. Anything that pre-approves a call skips `can_use_tool`.
+- A write takes effect only after an allowlisted ✅. The approval prompt is
+  rendered by code from the arguments, never from the model's prose, and an
+  unanswered prompt resolves as ❌.
+- What the agent says reaches Discord without pinging anyone, without link
+  previews, and with every link's destination visible (`defang`,
+  `suppress_embeds`), because an email it read may have steered it.
+- The concierge publishes no port; the bot is its only caller, over
+  `assistant_concierge` with the bearer token.
 
 **Scheduled jobs and alerting** — `AGENTS.md` "Alerting"; `alerting` skill
 - A new or changed cron job pings Healthchecks through `scripts/healthchecks.sh`
@@ -73,7 +99,7 @@ the source wins, and say so in your report so this file gets fixed.
 **Exposure and secrets** — `AGENTS.md` "Networking rules", "Repo conventions", "How to help me"
 - New ports bind `127.0.0.1` unless the service genuinely needs LAN/tailnet,
   and then prefer a Caddy route. PostgreSQL never binds all interfaces.
-- Nothing exposes Portainer, Grafana or PostgreSQL through Cloudflare Tunnel.
+- Nothing exposes Portainer, Grafana, PostgreSQL or Jellyfin through Cloudflare Tunnel.
 - No `.env` committed; required secrets use `${VAR:?required}`; `.env.example`
   holds placeholders only, never a real value.
 

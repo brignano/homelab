@@ -66,7 +66,123 @@ merge the iCloud calendar (in HA via CalDAV) into the digest's Calendar line.
 **Notes / next steps:**
 - Deploy needs the real `climate.…` and `calendar.…` entity IDs in
   `docker/assistant/.env`; see the PR for the steps.
-- Probe through Caddy is the next unchecked build item.
+
+---
+
+## 2026-10-10 — Concierge: Claude in #ask with read tools (personal assistant, phase 3)
+
+**Goal:** Build the act lane from `docs/design/tsd-personal-assistant.md`:
+Claude, through the Agent SDK, answering in Discord with read access to the
+calendar, mail and home. It writes nothing, and a memory is saved only on an
+approved ✅.
+
+**Steps:**
+1. New stack `docker/concierge/`: an aiohttp server on the internal
+   `assistant_concierge` network with no published port, a bearer token
+   shared with the bot, and one Agent SDK task at a time. Model
+   `claude-opus-5-5`, capped at 12 turns and $0.50 per request.
+2. Tools: `calendar_events`, `mail_search`, `mail_read` (own Google sign-in,
+   `gmail.readonly` + `calendar.events.readonly`), `home_overview` (HA's
+   `GetLiveContext` only), and `remember`, which records a proposal and
+   nothing more.
+3. Tiers in `app/tiers.py`, enforced in a `PreToolUse` hook and in
+   `can_use_tool`, with `tools=[]`, nothing pre-approved,
+   `permission_mode="default"` and no settings files.
+4. Bot: `#ask` (open) and `#memory` (bot-only) in `guild.yml`. #ask uses the
+   same thread/reply/one-off scope as #chat and forwards to the concierge
+   (`app/concierge.py`). Proposals render from their arguments under ✅/❌,
+   and only an allowlisted ✅ within 15 minutes posts to #memory. The
+   assistant stack owns the new network.
+5. CI job `concierge` installs the real SDK and runs `tests/smoke.py`.
+
+**Issues encountered:**
+- `can_use_tool` alone is not a boundary. The SDK consults it only when no
+  allow rule or permission mode has already approved the call.
+- HA's MCP server publishes its write intents next to `GetLiveContext`.
+  Connected directly, they would have been registered with the agent and
+  refused only by the tier check.
+
+**Resolution:**
+- The tier check also runs in a `PreToolUse` hook, which runs before every
+  other step.
+- The agent gets our own `home_overview`, which calls only `GetLiveContext`.
+  The TSD has both amendments.
+
+**Notes / next steps:**
+- Not deployed. Waiting on the `homelab` Console workspace and key (setup is in
+  `docker/concierge/README.md`). Once merged, `heartbeat.sh` requires the
+  `concierge` container, so `hl-container-missing` fires about 10 minutes
+  after the box pulls until the stack is up.
+- On deploy: the assistant is recreated (new network and env) **before** the
+  concierge; then `--selftest`, then `docker stats` with Ollama loaded.
+- Phase 4 (write tools behind the mid-run approval gate) is next in the TSD.
+
+---
+
+## 2026-10-10 — Home Assistant probed through Caddy
+
+**Goal:** The HA probe reached `host.docker.internal:8123` directly, around
+Caddy. A caddy left on a stale config answers `ha.` with 502 while that probe
+and `hl-probe-down` stay green, which is the gap the host-networking deploy
+below had to be done "in one sitting" to avoid. Make a broken Caddy → HA route
+page.
+
+**Steps:**
+1. Caddyfile: the `ha.` block gets a second address,
+   `ha.{$HOMELAB_DOMAIN}, http://ha.caddy {`. The probe has to land in the
+   real block, but committed config carries no domain, and neither
+   `prometheus.yml` nor `blackbox.yml` can read `HOMELAB_DOMAIN`. One address
+   list, so the probe tests the route itself and not a copy of it.
+2. `blackbox.yml`: module `http_ha_via_caddy` sends `Host: ha.caddy`, does not
+   follow redirects, and requires `Home Assistant` in the body, so an empty
+   200 from an unmatched Host cannot pass.
+3. `prometheus.yml`: job `blackbox-ha-caddy`, target
+   `http://caddy/manifest.json`, `service: home-assistant via caddy`. A
+   separate job because `module` is per job.
+4. `rules.yml`: `hl-ha-route-down`. Its query drops the series
+   (`unless on()`) while either end is failing on its own: the direct HA
+   probe or `http://caddy/health`. HA down or Caddy down stays one page
+   (`hl-probe-down`, naming which). Both up with the route between them
+   broken is this page, and its summary says to recreate caddy.
+5. `check-probes.sh` now checks that every `Host: <x>.caddy` a module sends is
+   on the `<x>.{$HOMELAB_DOMAIN}` block's own address line, and limits the
+   `http://caddy` 200 check to `http_2xx` jobs. `check-dashboard.sh` accepts a
+   site line with a second address. `probe-status.sh` covers every
+   `blackbox*` job and probes with that job's module.
+
+**Issues encountered:**
+- Probing `https://ha.<domain>` directly would also have tested DNS and the
+  certificate. It was rejected because it puts the domain in committed config
+  and pages a second time whenever AdGuard is down.
+
+**Resolution:**
+- `check-probes.sh` passes. Splitting the alias into its own block fails it.
+
+**Notes / next steps:**
+- **Deploy.** Order matters: caddy needs the alias before the probe starts
+  asking for it, or `hl-ha-route-down` fires on the 2-minute mark. All three
+  configs are single-file mounts, so recreate. Do not restart or reload:
+  ```bash
+  git pull
+  docker compose -f docker/proxy/docker-compose.yml up -d --force-recreate caddy
+  dig +short @10.0.0.201 stats.home; dig +short @10.0.0.201 stats.home
+  docker exec blackbox-exporter wget -qO- --header 'Host: ha.caddy' http://caddy/manifest.json | head -c 120; echo
+  docker compose -f docker/monitoring/docker-compose.yml up -d --force-recreate prometheus blackbox-exporter
+  docker compose -f docker/monitoring/docker-compose.yml restart grafana
+  ./scripts/probe-status.sh
+  ```
+  **By hand, on merge day, before 04:00.** `repo-sync.sh` recreates
+  `monitoring` but never `proxy` (`NO_AUTOHEAL`). An unattended sync therefore
+  starts the probe against a caddy without the alias, and `hl-ha-route-down`
+  pages at about 04:02. That page would be accurate, since caddy is stale,
+  and the fix is the caddy recreate above. The caddy recreate is required
+  here even though `dig` answers. `deploy-plan.sh`'s "if it answers, a
+  recreate can only make things worse" is about drift, not about an
+  intentional Caddyfile change.
+  `caddy` alone, never the whole proxy stack, because AdGuard lives there too.
+  The two `dig`s check that DNS came back. Grafana is restarted for the new
+  rule.
+- Expect `probe-status.sh` to show `http://caddy/manifest.json` as `up`.
 
 ---
 

@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phases 1–2 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`); phases 3–5 draft
+**Status:** 🚧 phases 1–3 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge with read tools in #ask: `docker/concierge/`); phases 4–5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -160,6 +160,24 @@ describe an action misleadingly. It cannot change what the arguments say.
 Approvals time out after 15 minutes and count as ❌. An unanswered prompt must
 never turn into a yes.
 
+**Amended while building phase 3 (2026-10-10): the tier check runs in a
+`PreToolUse` hook as well as `can_use_tool`.** The SDK only consults
+`can_use_tool` when nothing earlier settles the call. An allow rule or a
+permission mode can approve a call first, and then the callback never runs.
+Hooks run before every other step, so `app/tiers.py`'s `decide()` runs in
+both places, and the hook is the check that cannot be skipped. The agent also
+gets `tools=[]` (no Claude Code built-ins), `allowed_tools=[]`,
+`permission_mode="default"` and `setting_sources=[]`. `tests/smoke.py` pins
+each of those.
+
+Phase 3's only write is `remember`, and its effect never happens in the
+concierge. The tool records a proposal. The bot renders it from its arguments
+after the answer, and only a ✅ posts it to `#memory`. That makes it a fourth
+tier in code, **propose**: allowed to run, because running it changes nothing.
+Phase 4's write tools act from inside the concierge, so they need the
+mid-run pause this design describes. Until that gate exists, `decide()`
+refuses anything in the write tier.
+
 ### Decision 3 — Home Assistant is the hub for everything physical
 
 Home, cameras, presence and the car go through **one** integration:
@@ -191,6 +209,15 @@ Reading a lock's *state* is in scope for the watch lane ("Front Door unlocked
 6h" is exactly what a morning digest is for). It is *operating* locks that the
 act lane must never reach, and phase 3 keeps them unexposed to Assist as
 designed above.
+
+**Amended while building phase 3 (2026-10-10): the agent is not connected to
+HA's MCP server directly.** Connected directly, every Assist intent
+(`HassTurnOn`, `HassLightSet`, …) would sit in the agent's tool list, refused
+only by the tier check. The **never** tier means "not registered", so the
+concierge registers one tool of its own, `home_overview`. That tool calls one
+HA tool, `GetLiveContext`, which reports only exposed entities. No code path
+names any other HA tool, and a test checks that. The `concierge` HA user and
+token are separate from the digest's.
 
 Camera *video analysis* (Frigate or similar) is out of scope. Object detection
 on a CPU-only box competes with Ollama for the same 6 cores. Home Assistant's
@@ -243,6 +270,13 @@ Rejected: a vector database. One user's preferences fit in a context window
 for years, and retrieval adds a ranking step that decides what the model does
 not see.
 
+**Amended while building phase 3 (2026-10-10):** the concierge has no Discord
+connection (Decision 1), so the **bot** reads `#memory` and sends the
+memories with each request. It keeps only posts by the bot or an allowlisted
+user. Discord does not let a person edit a bot's message, so "edit" means
+delete and re-post. As server owner you can post a memory into the bot-only
+channel by hand.
+
 ### Decision 6 — scheduled work gets a dead man's switch
 
 Every watch-lane source (calendar, mail, HA) writes a success timestamp through
@@ -271,7 +305,7 @@ earlier ones.
 |---|---|---|
 | **1. Calendar + mail in the digest** ✅ built | Google OAuth client, `app/google.py` + `app/day.py`, freshness metrics + `hl-google-stale` | No |
 | **2. Home Assistant, read-only** ✅ built | `docker/homeassistant/` stack, `ha.` route, probe, tile; `app/home.py` and a **Home** line in Today; `source-home` stamp | No |
-| **3. Concierge, read tools only** | `docker/concierge/`, `/ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
+| **3. Concierge, read tools only** ✅ built | `docker/concierge/`, `#ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
 | **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
 | **5. Car** | Tesla through HA's Tesla integration: battery, location, climate; "send destination to car" as a write | Yes, approved |
 
@@ -308,16 +342,30 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       source and stamp) and merge with Google's in `app/day.py`, still
       rendered by code and never shown to the model. Going live needs the
       `climate.…` and `calendar.…` entity IDs in `docker/assistant/.env`.
-- [ ] **Phase 3, concierge with read tools.** Before it starts **(you)**:
-      create a `homelab` workspace in the Claude Console with its own spend
-      limit (e.g. $20, alert at $10), and a workspace-scoped key with a
-      1-year expiry, kept only in `docker/concierge/.env`. Also settle the
-      `/ask` open question below.
-- [ ] **Probe through Caddy.** Today's HA probe goes to HA through the host,
+- [x] **Phase 3, concierge with read tools.** `docker/concierge/`, `#ask` and
+      `#memory` in `guild.yml`, the bot's forwarding and ✅/❌ prompts in
+      `docker/assistant/app/concierge.py`. Setup is in
+      `docker/concierge/README.md`.
+- [x] **Probe through Caddy.** Today's HA probe goes to HA through the host,
       so a broken Caddy → HA route (`ha.` answering 502) pages nobody.
+      Done 2026-10-10: job `blackbox-ha-caddy` probes the `ha.` site block
+      through its `http://ha.caddy` alias, and `hl-ha-route-down` pages only
+      while HA itself still answers.
 - [ ] **Matter Server**, only once a Matter device is bought. HA's host
       networking is in place, and the Matter Server container also needs host
       networking and IPv6.
+
+**Setup left for phase 3 (you)**
+- [ ] `homelab` workspace in the Claude Console with its own spend limit
+      (e.g. $20, alert at $10), and a workspace-scoped key with a 1-year
+      expiry, kept only in `docker/concierge/.env`. Calendar reminder to renew.
+- [ ] `CONCIERGE_TOKEN` in both `.env` files; `--provision --apply` for
+      `#ask`/`#memory`, IDs into `docker/assistant/.env`.
+- [ ] Concierge's Google sign-in (`--google-auth`, read-only scopes).
+- [ ] HA: non-admin `concierge` user and token, the MCP Server integration,
+      and Assist exposure with **no** locks, alarm panels or garage covers.
+- [ ] Bring up `concierge`, then `docker stats` with Ollama loaded (the RAM
+      check under "Cost and footprint").
 
 ## Security
 
@@ -335,6 +383,23 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - **Secrets:** all `${VAR:?required}` in each stack's compose file. The
   concierge's are `ANTHROPIC_API_KEY`, `GOOGLE_OAUTH_*`, `HA_TOKEN`. The HA token
   is a long-lived token for a dedicated, non-admin HA user.
+  *As built (phase 3):* `ANTHROPIC_API_KEY` and `CONCIERGE_TOKEN` (the bot's
+  shared bearer) are `:?required`. Google and HA are optional, for the same
+  reason as the assistant's digest channel: `--google-auth` produces the
+  refresh token, and Compose would refuse to run it if the token were
+  required. `config.py` refuses a half-set Google config, and an unconfigured
+  family's tools are not registered.
+- **Links in answers:** an injected email could have the agent end its answer
+  with a URL carrying mailbox contents. Discord fetches links in bot messages
+  to build previews, so that would leak data with no click. #ask replies are
+  sent with `suppress_embeds`. Every URL is wrapped in `<…>`, and masked
+  `[text](url)` links are rewritten so the destination is visible
+  (`app/concierge.py` → `defang`). With this, the worst case of injection
+  stays "a proposal you decline" or "a link you can see and choose not to
+  open".
+- **Internal network:** `assistant_concierge`, owned by the assistant stack, so
+  the watch lane never waits on the act lane. The concierge is the only other
+  member, and it still checks a bearer token.
 - **Audit:** the concierge logs every tool call, its tier and the approval
   outcome to stdout, which reaches Loki through Alloy. "What did it do last
   Tuesday" is a LogQL query.
@@ -407,8 +472,13 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - [x] Which Gmail signal is worth a digest line? Started with unread in the
       Primary tab, last 24h (`GMAIL_LABELS`). Revisit once it has been read for
       a few weeks.
-- [ ] Is `/ask` a slash command, a channel (`#ask`, like `#chat`), or both? A
-      channel gives threads for multi-turn tasks for free.
+- [x] Is `/ask` a slash command, a channel (`#ask`, like `#chat`), or both?
+      **A channel, `#ask`** (2026-10-10). It gets threads for multi-turn tasks
+      for free, with the same scope rules as `#chat` (a thread is one
+      conversation, a reply follows its chain, anything else is a one-off),
+      and it needs no slash-command restriction set by hand. The existing
+      `/ask` slash command stays as it was, a one-shot question to the local
+      model. Where you type decides which model answers.
 
 ## Revisit if
 

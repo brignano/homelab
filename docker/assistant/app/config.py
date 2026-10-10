@@ -127,6 +127,27 @@ def _google() -> tuple[str, str, str]:
 GOOGLE_SOURCES = ("calendar", "mail")
 
 
+def _concierge() -> tuple[int | None, int | None, str]:
+    """#ask, #memory and the shared token: all three, or none.
+
+    #ask without #memory would have nowhere to put an approved memory, and
+    without the token every request would be refused. Better to say so once
+    at startup than to discover it on the first question.
+    """
+    ask = _optional_id("DISCORD_ASK_CHANNEL_ID")
+    memory = _optional_id("DISCORD_MEMORY_CHANNEL_ID")
+    token = os.environ.get("CONCIERGE_TOKEN", "").strip()
+    if ask is None:
+        return None, memory, token
+    missing = [n for n, v in (("DISCORD_MEMORY_CHANNEL_ID", memory), ("CONCIERGE_TOKEN", token)) if not v]
+    if missing:
+        raise SystemExit(
+            f"config error: DISCORD_ASK_CHANNEL_ID is set but {', '.join(missing)} is not.\n"
+            "  #ask needs #memory (from --provision) and the token shared with docker/concierge/.env."
+        )
+    return ask, memory, token
+
+
 def _home() -> tuple[str, tuple[str, ...], tuple[str, ...]]:
     """HA_TOKEN with at least one of HA_ENTITIES and HA_CALENDARS, or none.
 
@@ -231,6 +252,14 @@ class Config:
     # the Calendar line. Blank = off.
     ha_calendars: tuple[str, ...] = ()
 
+    # --- Concierge (the act lane: #ask; all blank = off) ---
+    # See docs/design/tsd-personal-assistant.md, phase 3. The bot only forwards
+    # and renders; the agent runs in docker/concierge/.
+    ask_channel_id: int | None = None
+    memory_channel_id: int | None = None
+    concierge_url: str = "http://concierge:8080"
+    concierge_token: str = ""
+
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
     @classmethod
@@ -250,6 +279,7 @@ class Config:
 
         g_id, g_secret, g_refresh = _google()
         ha_token, ha_entities, ha_calendars = _home()
+        ask_id, memory_id, concierge_token = _concierge()
         sources = _list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES))
         unknown = [x for x in sources if x not in GOOGLE_SOURCES]
         if unknown:
@@ -298,7 +328,15 @@ class Config:
             ha_token=ha_token,
             ha_entities=ha_entities,
             ha_calendars=ha_calendars,
+            ask_channel_id=ask_id,
+            memory_channel_id=memory_id,
+            concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
+            concierge_token=concierge_token,
         )
+
+    @property
+    def ask_enabled(self) -> bool:
+        return self.ask_channel_id is not None
 
     @property
     def google_enabled(self) -> bool:
