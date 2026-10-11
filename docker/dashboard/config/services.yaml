@@ -72,6 +72,26 @@
         siteMonitor: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
         description: Movies, shows and home videos — LAN and tailnet only
         icon: /icons/jellyfin.svg
+    - Sonarr:
+        href: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Shows — finds and files new episodes for Jellyfin
+        icon: /icons/sonarr.svg
+    - Radarr:
+        href: https://radarr.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://radarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Movies — finds and files them for Jellyfin
+        icon: /icons/radarr.svg
+    - Prowlarr:
+        href: https://prowlarr.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://prowlarr.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Indexers, shared by Sonarr and Radarr
+        icon: /icons/prowlarr.svg
+    - qBittorrent:
+        href: https://torrent.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://torrent.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Downloads — only through the VPN (gluetun)
+        icon: /icons/qbittorrent.svg
 
 - Desktops:
     - Kali:

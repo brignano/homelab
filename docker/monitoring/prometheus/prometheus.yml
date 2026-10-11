@@ -101,6 +101,32 @@ scrape_configs:
           - http://jellyfin:8096/health
         labels:
           service: jellyfin
+      # The downloads stack, one entry each for the `service` label, which must
+      # match the container name so hl-probe-down stands down while the stack is
+      # not set up (no docker/downloads/.env). gluetun's health server answers
+      # 200 only while the tunnel works: that probe failing IS the "VPN is down"
+      # alert. qBittorrent is reached through gluetun, whose namespace it shares.
+      # The *arr apps answer /ping 200 without a login.
+      - targets:
+          - http://gluetun:9999/
+        labels:
+          service: gluetun
+      - targets:
+          - http://gluetun:8080/
+        labels:
+          service: qbittorrent
+      - targets:
+          - http://sonarr:8989/ping
+        labels:
+          service: sonarr
+      - targets:
+          - http://radarr:7878/ping
+        labels:
+          service: radarr
+      - targets:
+          - http://prowlarr:9696/ping
+        labels:
+          service: prowlarr
       # Home Assistant, in an entry of its own for the `service` label. HA runs
       # on host networking, so this goes through the host (extra_hosts on
       # blackbox-exporter), and `instance` alone would read as

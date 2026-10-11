@@ -1,0 +1,179 @@
+services:
+  # Downloads — a VPN-only torrent client and the apps that drive it, feeding
+  # Jellyfin's library. See docs/design/tsd-media-downloads.md.
+  #
+  #   Caddy → https://torrent.$HOMELAB_DOMAIN    qBittorrent (through gluetun)
+  #   Caddy → https://sonarr.$HOMELAB_DOMAIN     shows
+  #   Caddy → https://radarr.$HOMELAB_DOMAIN     movies
+  #   Caddy → https://prowlarr.$HOMELAB_DOMAIN   indexers, shared by both
+  #
+  # LAN + tailnet only, like everything else behind Caddy. No ports published,
+  # nothing forwarded on the router: the one inbound port a torrent client
+  # needs is forwarded by the VPN provider, at the VPN's end.
+  #
+  # What protects the household, not the downloads:
+  #
+  #   1. qBittorrent has no network of its own. `network_mode: service:gluetun`
+  #      puts it inside gluetun's network namespace, whose firewall only lets
+  #      traffic out through the tunnel. If the VPN drops, qBittorrent is
+  #      offline, never on the home connection. There is no kill-switch setting
+  #      to forget: the route to the internet without the VPN does not exist.
+  #
+  #   2. Only qBittorrent is inside the tunnel. Sonarr, Radarr and Prowlarr
+  #      talk to metadata sites and indexers over the normal connection. They
+  #      never move the files, and putting them in the namespace too would make
+  #      every one of them unreachable whenever the VPN reconnects.
+  #
+  #   3. The media mounts refuse to create their own source directories
+  #      (`create_host_path: false`), as in docker/jellyfin/. Without the 5 TB
+  #      drive, a download would otherwise land on CT 100's thin pool and in
+  #      every nightly vzdump.
+  #
+  #   4. cpus / mem_limit on every container, so a big download, a library
+  #      import or a hash check never takes Ollama's four cores
+  #      (AGENTS.md → Ollama).
+  #
+  # Hardlinks, not copies: Sonarr and Radarr see the whole of /media/jellyfin
+  # as /data, so a finished download in /data/downloads and its place in
+  # /data/library are on one filesystem and one mount. An import is then a
+  # hardlink, instantly, with no second copy on the drive, and the torrent can
+  # keep seeding from the same blocks. qBittorrent sees only the downloads half,
+  # at the same /data/downloads path, so the paths agree without remapping.
+  #
+  # Versions: pinned by tag AND digest. Renovate proposes bumps as PRs
+  # (renovate.json5); the nightly auto-pull cannot move a digest. Sonarr,
+  # Radarr and Prowlarr migrate their databases one way on upgrade.
+
+  gluetun:
+    image: qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027
+    container_name: gluetun
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    cap_add:
+      - NET_ADMIN
+    # Must exist in CT 100 first. On the Proxmox host:
+    #   pct set 100 -dev1 /dev/net/tun && pct reboot 100
+    # Without it this container will not start, which is the right outcome.
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      TZ: ${TZ:-UTC}
+      VPN_SERVICE_PROVIDER: protonvpn
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${WIREGUARD_PRIVATE_KEY:?set WIREGUARD_PRIVATE_KEY in docker/downloads/.env (Proton → Downloads → WireGuard configuration, NAT-PMP on)}
+      SERVER_COUNTRIES: ${VPN_SERVER_COUNTRIES:-United States}
+      # Only servers that forward a port, and ask for one. Without it, peers
+      # cannot connect in and a torrent with few seeders barely moves.
+      PORT_FORWARD_ONLY: "on"
+      VPN_PORT_FORWARDING: "on"
+      # Hand each newly forwarded port to qBittorrent. Proton gives a new one on
+      # every reconnect, so this runs every time. It reaches qBittorrent's API
+      # on localhost, which works only with "Bypass authentication for clients
+      # on localhost" enabled in qBittorrent (docker/downloads/README.md, step 4).
+      # A retry loop rather than wget's --retry-connrefused, which busybox wget
+      # does not have: the first port arrives before qBittorrent is listening,
+      # because qBittorrent waits for gluetun to be healthy.
+      VPN_PORT_FORWARDING_UP_COMMAND: >-
+        /bin/sh -c 'for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        wget -qO- --post-data "json={\"listen_port\":{{PORTS}}}"
+        http://127.0.0.1:8080/api/v2/app/setPreferences && exit 0; sleep 10; done; exit 1'
+      # The health endpoint, on the network rather than localhost, so the
+      # blackbox probe can see it: 200 while the tunnel works, 500 when it does
+      # not. This is the "VPN is down" alert (hl-probe-down, service=gluetun).
+      HEALTH_SERVER_ADDRESS: ":9999"
+    networks:
+      - proxy
+
+  qbittorrent:
+    image: linuxserver/qbittorrent:5.2.4@sha256:97333cc1ccf903e0bbcd8eb67e3332e4970e9c1ecabe145e499e9c0847ebcaed
+    container_name: qbittorrent
+    restart: unless-stopped
+    cpus: 1
+    mem_limit: 1g
+    network_mode: service:gluetun
+    depends_on:
+      gluetun:
+        condition: service_healthy
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      WEBUI_PORT: "8080"
+    volumes:
+      - qbittorrent:/config
+      - type: bind
+        source: /media/jellyfin/downloads
+        target: /data/downloads
+        bind:
+          create_host_path: false
+
+  sonarr:
+    image: linuxserver/sonarr:4.0.20@sha256:dffc730adcb8b4f4342792fbb27fcad9c62fb8660523f2aeb082416980d7fe0c
+    container_name: sonarr
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - sonarr:/config
+      - type: bind
+        source: /media/jellyfin
+        target: /data
+        bind:
+          create_host_path: false
+    networks:
+      - proxy
+
+  radarr:
+    image: linuxserver/radarr:6.4.4@sha256:cfbc4fa09dc9d78f7cedc898f4ec48c6277cacedc523c4e159db6ff1c741959c
+    container_name: radarr
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - radarr:/config
+      - type: bind
+        source: /media/jellyfin
+        target: /data
+        bind:
+          create_host_path: false
+    networks:
+      - proxy
+
+  prowlarr:
+    image: linuxserver/prowlarr:2.6.5@sha256:f9151e5bc1025c6d0a630d503210cdcb6bb55a7cc098562609d96a408d838902
+    container_name: prowlarr
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+    volumes:
+      - prowlarr:/config
+    networks:
+      - proxy
+
+volumes:
+  qbittorrent:
+  sonarr:
+  radarr:
+  prowlarr:
+
+# Joins proxy_proxy rather than giving Caddy a network to join, as Jellyfin
+# does: an external network that does not exist would stop the proxy stack,
+# and the household's DNS with it. Sonarr and Radarr reach Jellyfin
+# (jellyfin:8096) and qBittorrent (gluetun:8080) over the same network.
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy

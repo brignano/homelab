@@ -27,6 +27,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Downloads stack built (gluetun + qBittorrent + *arr)
+
+**Goal:** Fill Jellyfin's library without manual copying, with torrent traffic
+only ever leaving through a VPN. Design: `docs/design/tsd-media-downloads.md`.
+
+**Steps:**
+1. Proton VPN Plus bought (2-year). The free plan blocks P2P and has no port
+   forwarding; Mullvad dropped port forwarding in 2023.
+2. WireGuard config `m5-gluetun` created in Proton (GNU/Linux, NetShield off,
+   NAT-PMP on, VPN Accelerator on). Private key in Google Password Manager as
+   `hl-vpn.m5`; it never entered this repo or the chat.
+3. `docker/downloads/`: gluetun v3.41.3, qBittorrent 5.2.4 in
+   `network_mode: service:gluetun`, Sonarr 4.0.20, Radarr 6.4.4, Prowlarr 2.6.5,
+   all pinned by tag and digest, capped, `create_host_path: false` on the media
+   binds. Caddy routes `torrent.`/`sonarr.`/`radarr.`/`prowlarr.`, five
+   blackbox probes (gluetun's health server is the VPN-down alert), Media tiles
+   with vendored icons, a Renovate rule, `downloads` added to
+   `SETUP_GATED_STACKS`.
+
+**Notes / next steps:**
+- Deploy: `docker/downloads/README.md` §1–5, starting with
+  `pct set 100 -dev1 /dev/net/tun` on m5 and a `pct reboot 100`.
+- **gluetun is never restarted or recreated alone.** qBittorrent stays
+  attached to the old namespace with no network; recreate the whole stack.
+
+---
+
 ## 2026-10-11 — Drive day: nightly image of CT 100, media drive, Jellyfin live
 
 **Goal:** Start drive day (`docs/runbook-backups.md` §2–3). Both drives
