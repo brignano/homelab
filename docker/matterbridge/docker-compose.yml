@@ -41,6 +41,9 @@ services:
       HA_URL: ${HA_URL:-ws://127.0.0.1:8123}
       # The HA label that opts an entity in. Nothing without it reaches Alexa.
       HA_LABEL: ${HA_LABEL:-Alexa}
+      # CT 100's LAN interface, the one the Echo is on. Matter is advertised
+      # there only (start.sh says why).
+      MDNS_INTERFACE: ${MDNS_INTERFACE:-eth0}
     volumes:
       # Matterbridge's home directory: the Matter fabric (Alexa's pairing),
       # device identities, and the frontend password. Losing it means removing

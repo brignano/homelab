@@ -69,6 +69,116 @@ after an allowlisted ✅ on the exact arguments (`docs/design/tsd-personal-assis
 
 ---
 
+## 2026-10-11 — #alerts: "node has no crontab entry" and the concierge page
+
+**Goal:** Stop the two alerts that kept repeating in `#alerts`.
+
+**Steps:**
+1. `hl-cron-missing`: the missing job was `offsite-backup.sh`, added to
+   `CRON_JOBS` by the backups PR and never installed. `./scripts/install-cron.sh`
+   on CT 100 added it. The script exits 0 until `restic.env` exists, so the
+   entry is harmless before B2 is set up.
+2. The summary named the job "node". `metrics.sh` writes `job="<script>"`,
+   which collides with the scrape label, so Prometheus stores it as
+   `exported_job`. `hl-cron-missing` and `hl-hc-ping-failing` now read
+   `exported_job`, and so does the Jobs dashboard's "Scheduled jobs" table,
+   whose Job column read "node" on every row.
+3. `hl-container-missing` for `concierge`: the stack was merged ahead of its
+   Console key, as the 2026-10-10 entry predicted. `concierge` joins
+   `SETUP_GATED_STACKS`, so it is required once `docker/concierge/.env` exists.
+
+**Issues encountered:**
+- The dead man's switch alert would also have pointed at `/var/log/node.log`.
+
+**Resolution:**
+- On the box: `git pull`, then `docker compose -f docker/monitoring/docker-compose.yml restart grafana`.
+  The concierge alert clears within one heartbeat (5 min) plus the rule's `for: 10m`.
+
+**Notes / next steps:**
+- Once `docker/concierge/.env` exists, the concierge pages again until it is up.
+  That is intended.
+
+---
+
+## 2026-10-11 — Matterbridge: advertise Matter on eth0 only
+
+**Goal:** Fix every Alexa device reading "Device is unresponsive", the car's
+included.
+
+**Steps:**
+1. Still unresponsive after the split. The previous entry's log showed Alexa
+   re-establishing 0 of 2 subscriptions after a restart: the bridge and the
+   Echo could not reach each other, though both were up.
+2. Matterbridge 3.10.13 announces on every interface by default. On host
+   networking that is all of CT 100's: `eth0`, `docker0`, every compose
+   network's bridge and every container's veth. Upstream's README: on a Docker
+   host with more than one interface, set the mDNS interface to the LAN one.
+3. `start.sh` passes `--mdnsinterface "${MDNS_INTERFACE:-eth0}"`. README
+   troubleshooting row updated.
+
+**Issues encountered:**
+- Not confirmed on the box yet: inferred from the subscription failure and
+  upstream's guidance, not from a packet capture.
+
+**Resolution:**
+- On the box: `git pull`, `up -d --build --force-recreate`, check the log
+  says `Using mdnsinterface eth0`, then delete the unresponsive devices in the
+  Alexa app and "Alexa, discover devices". If they stay unresponsive, remove
+  the bridge and pair again (README → Troubleshooting, last row).
+
+---
+
+## 2026-10-11 — Matterbridge: Alexa paired, entities split for their names
+
+**Goal:** Usable names in Alexa.
+
+**Steps:**
+1. Alexa paired (fabric `Alexa-1`). The car's entities arrived as "Fifth
+   contact sensor", "Seventh plug" and so on, and every device read "Device is
+   unresponsive".
+2. `start.sh`: `splitByLabel` set to `HA_LABEL`, `splitNameStrategy:
+   "Friendly name"`. Each labelled entity is now a Matter device of its own,
+   named like "Spaceship Front driver door".
+
+**Issues encountered:**
+- With the default merge, a device's entities share one bridged node, and
+  Alexa reads only the node's name and numbers the rest. The plugin README
+  documents this exact Alexa behaviour.
+- "Unresponsive": the log showed Matterbridge restarted many times during
+  setup (run count 30), and Alexa re-established 0 of 2 subscriptions after
+  one restart. Checked separately after the split.
+
+**Resolution:**
+- On the box: delete the generic devices in the Alexa app, then "discover
+  devices". The fabric survives, so no re-pairing should be needed.
+
+---
+
+## 2026-10-11 — Matterbridge: a device label exposes the whole device
+
+**Goal:** Choose what Alexa gets before pairing.
+
+**Steps:**
+1. The `Alexa` label went on the Spaceship (car) and Jaxon's Litter Box
+   devices. The log said `Creating device` for both, with `Filtered entities: 0`.
+2. Read matterbridge-hass 1.5.0: a device is in if it or any of its entities
+   has the label. If an entity has it, only labelled entities are exposed. If
+   only the device has it, every entity on the device is.
+3. README: "Label entities, never devices", the log check to run before
+   pairing, and a troubleshooting row.
+
+**Issues encountered:**
+- Exposed, and caught before pairing: the car's Sentry mode and Charge
+  switches, and the litter box's controls. The domain blacklist does not
+  cover switches, so nothing in `start.sh` would have stopped them.
+
+**Resolution:**
+- The labels move from the devices to `Spaceship Climate` (and Defrost). The
+  log check is the guard: a "doesn't have the label" line for each entity
+  left out.
+
+---
+
 ## 2026-10-10 — Matterbridge first deploy: admin user, no virtual switches
 
 **Goal:** Get `matterbridge` talking to Home Assistant and ready to pair.

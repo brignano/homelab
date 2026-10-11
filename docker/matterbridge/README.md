@@ -12,7 +12,7 @@ Alexa's commands stay on the LAN instead of going through a cloud relay.
 | | |
 |---|---|
 | Image | built here: `luligu/matterbridge` 3.10.13 + `matterbridge-hass` 1.5.0, both pinned (`Dockerfile`) |
-| Networking | `network_mode: host` (Matter needs LAN multicast and IPv6) |
+| Networking | `network_mode: host` (Matter needs LAN multicast and IPv6), advertised on `eth0` only (`MDNS_INTERFACE`) |
 | Talks to | Home Assistant at `ws://127.0.0.1:8123`, as the `matterbridge` user (an administrator: see "Home Assistant user") |
 | Exposes | Matter on UDP 5540 (LAN and tailnet) and mDNS on 5353 (LAN). The web UI on `127.0.0.1:8283` only |
 | What Alexa sees | entities with the HA label **Alexa**, minus locks, covers (garage), valves and the alarm, always |
@@ -70,8 +70,26 @@ the locks out of Alexa is the label filter and the domain blacklist in
 3. Make the label: **Settings → Areas, labels & zones → Labels → Create
    label** `Alexa`.
 4. Add the label to each entity Alexa should have: **Settings → Entities**,
-   select them, **Add label → Alexa**. Label entities rather than whole
-   devices: a labelled device brings every entity on it.
+   select them, **Add label → Alexa**.
+
+**Label entities, never devices.** The plugin decides per device:
+
+- If any entity on a device carries the label, only the labelled entities on
+  that device are exposed.
+- If the device carries the label and none of its entities do, every entity
+  on it is exposed, minus the blacklisted domains below.
+
+On the first deploy that meant the car's Sentry mode and Charge switches, and
+the litter box's controls, were one pairing away from Alexa. Check before
+pairing: the log should name every entity you left out.
+
+```bash
+docker logs --since 2m matterbridge 2>&1 | grep -E "Filtered (devices|entities)|doesn't have the label|Creating device"
+```
+
+`Filtered entities: 0` while a device is being created means its label is on
+the device. Remove it from the device (**Settings → Devices & services →
+Devices**) and put it on the entities instead.
 
 What to label: lights, switches, fans, the thermostat, sensors, and scenes
 and scripts (Alexa sees each as a switch that turns itself back off). Locks,
@@ -169,10 +187,12 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 | Symptom | Likely cause |
 |---|---|
 | Exits at once: "this host has no IPv6" | `grep eth0 /proc/net/if_inet6` prints nothing on CT 100: IPv6 is off. See "Before you start" step 2. (Before 2026-10-11, `start.sh` said this on every host, even with IPv6 on. `git pull` and rebuild.) |
-| Alexa: "device is unresponsive" for everything | Matterbridge or HA is down. `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. |
+| Alexa: "device is unresponsive" for everything | First, Matterbridge or HA is down: `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. If both are up, the Echo cannot reach the bridge: the log must say `Using mdnsinterface eth0`. `Invalid mdnsinterface` means `MDNS_INTERFACE` names no interface on CT 100 (`ip -br addr`), and Matterbridge is back to announcing on every interface, Docker's included. Fix it, `up -d --force-recreate`, then in the Alexa app delete the unresponsive devices and say "Alexa, discover devices". |
 | `Error subscribing to Home Assistant events: Unauthorized` | The `matterbridge` user is not an administrator. Turn it on in **Settings → People → Users**. The token keeps working, then `docker restart matterbridge`. |
 | `Label "Alexa" not found in Home Assistant` | No HA label named exactly `Alexa` (case matters). Create it, label some entities, `docker restart matterbridge`. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
+| Alexa has controls you never labelled (sentry mode, charging) | The `Alexa` label is on the device, which exposes every entity on it. Move it to the entities ("Home Assistant user"), restart, and check the log before re-pairing. |
+| Alexa shows "Fifth contact sensor", "Seventh plug" | Entities merged into one Matter device: Alexa names only the device and numbers its parts. `start.sh` splits every labelled entity into its own device (`splitByLabel`), named after its HA friendly name. After a change to splitting, delete the old devices in the Alexa app, then "Alexa, discover devices". |
 | An entity is not in Alexa | It lacks the `Alexa` label, its domain is blacklisted (lock, cover, valve, alarm, button, remote, media player), or it is hidden in HA. Fix it, then `docker restart matterbridge`. |
 | Alexa cannot find the bridge while pairing | The phone and the Echo must be on the same LAN as CT 100, not the tailnet. Check `docker logs matterbridge` for mDNS errors. |
 | Every device shows up twice | The Home Assistant Cloud Alexa skill is still linked. See "Before you start" step 3. |

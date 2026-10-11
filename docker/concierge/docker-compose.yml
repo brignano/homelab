@@ -12,7 +12,8 @@ services:
     build: .
     image: homelab-concierge:latest
     # heartbeat.sh reads container_name from every compose file and reports it
-    # as homelab_container_running{required="yes"}, so this alerts when down.
+    # as homelab_container_running, setup-gated (SETUP_GATED_STACKS): required,
+    # and alerting when down, once docker/concierge/.env exists on the box.
     container_name: concierge
     restart: unless-stopped
     environment:
