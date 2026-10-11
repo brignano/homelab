@@ -1,8 +1,9 @@
-# concierge — the act lane (phase 3: read tools only)
+# concierge — the act lane (phase 4: writes behind ✅/❌)
 
 Claude, through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python),
 answering questions in Discord's **#ask** with read access to your calendar,
-mail and home. Design: [`docs/design/tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md).
+mail and home, and proposing a few changes you approve one tap at a time:
+create or move a calendar event, save a Gmail draft, run a Home Assistant scene. Design: [`docs/design/tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md).
 
 ```mermaid
 flowchart LR
@@ -10,21 +11,30 @@ flowchart LR
   bot -->|"POST /v1/ask<br/>assistant_concierge network<br/>bearer token"| c[concierge]
   bot -. reads .-> mem[(#memory)]
   c -->|Agent SDK| api[api.anthropic.com]
-  c -->|read scopes| g[Google Calendar / Gmail]
+  c -->|"events, read mail, drafts"| g[Google Calendar / Gmail]
   c -->|"GetLiveContext only"| ha[Home Assistant MCP]
+  c -->|"scene.turn_on, HA_SCENES only"| har[Home Assistant REST]
   c -->|answer + proposals| bot
-  bot -->|"✅ from allowlisted user"| mem
+  bot -->|"✅ remember"| mem
+  bot -->|"✅ anything else: POST /v1/execute"| c
 ```
 
 - **No published port, no Caddy route.** The bot is the only front door; this
   container has no Discord connection. It reaches out to the Claude API, Google
   and Home Assistant, and nothing reaches in except the bot.
-- **Read tools only.** `calendar_events`, `mail_search`, `mail_read`,
-  `home_overview`. Nothing that writes is registered.
-- **`remember` is the one write**, and it does not happen here. The tool only
-  records a proposal. The bot renders the exact text under ✅/❌, and only a ✅
-  from an allowlisted user posts it to #memory. If nobody answers within 15
-  minutes, or the bot restarts first, it counts as ❌.
+- **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
+  `home_overview`.
+- **Every write is a proposal.** `remember`, `create_event`, `move_event`,
+  `draft_email` and `run_scene` check their arguments and record a proposal;
+  none of them changes anything during the run. The bot renders the stored
+  arguments under ✅/❌. A ✅ from an allowlisted user posts a memory to
+  #memory, or sends the proposal's id, tool and arguments back to
+  `/v1/execute`, which acts only if they match exactly what it stored, once,
+  within 16 minutes (`app/actions.py`). No answer within 15 minutes, a bot
+  restart or a concierge restart all count as ❌.
+- **What it can never do:** send email (drafts only; you send from Gmail),
+  delete anything, invite or notify anyone, or touch a lock, alarm or garage
+  door. Those tools do not exist. Scenes are limited to the `HA_SCENES` list.
 - **Tiers are enforced in code** (`app/tiers.py`), in a `PreToolUse` hook
   *and* in `can_use_tool`. No Claude Code built-ins (`tools=[]`), nothing
   pre-approved, `permission_mode="default"`, no settings files read.
@@ -76,15 +86,23 @@ same toggle #chat uses.
 ### 4. Google (optional, you)
 
 Reuse the Desktop OAuth client from `docker/assistant/.env`, but sign in
-separately. This lane gets `gmail.readonly` and `calendar.events.readonly`;
-the digest keeps its narrower `gmail.metadata`.
+separately. This lane gets `calendar.events`, `gmail.readonly` and
+`gmail.compose`; the digest keeps its narrower `gmail.metadata`.
+
+`gmail.compose` is the narrowest Google scope that can create a draft, and
+Google lets it send drafts too. So "never sends" is held by code, not by the
+scope: `app/google.py` has exactly three write calls (event insert, event
+patch, draft create), and a test fails if a send, delete or modify call
+appears.
 
 ```bash
 docker compose -f docker/concierge/docker-compose.yml run --rm --build concierge --google-auth
 ```
 
-Paste the printed `GOOGLE_REFRESH_TOKEN` into `docker/concierge/.env`. Phase 4
-reruns this with the write scopes.
+Paste the printed `GOOGLE_REFRESH_TOKEN` into `docker/concierge/.env`.
+**Upgrading from phase 3:** run it again. A token from the read-only sign-in
+still answers questions, but every approved write fails with a 403 and a hint
+to rerun this.
 
 ### 5. Home Assistant (optional, you)
 
@@ -99,6 +117,11 @@ reruns this with the write scopes.
    covers.** This is the capability ceiling (Decision 3): what is not exposed,
    the agent cannot see or reach, whatever it is told.
 4. Put the token in `HA_TOKEN` in `docker/concierge/.env`.
+5. Optional, for `run_scene`: list the scenes it may propose in `HA_SCENES`,
+   e.g. `scene.movie_night,scene.good_night`. **Read each scene first.** The
+   service is fixed to `scene.turn_on` and anything not listed is refused,
+   but a scene that itself unlocks a door would unlock it. HA does not apply
+   Assist exposure to this REST call, so this list is the ceiling.
 
 The concierge calls only HA's `GetLiveContext` (`app/home.py`) and never any
 `Hass*` action. HA's own tool list is never given to the agent.
@@ -129,7 +152,8 @@ Every tool call logs one line to stdout, which Alloy ships to Loki:
 ```
 
 `event=task_start`, `event=tool_call` (tool, tier, allow/deny, args),
-`event=tool_result` (ok, ms, size) and `event=task_end` (turns, cost). Bodies
+`event=tool_result` (ok, ms, size), `event=task_end` (turns, cost) and
+`event=execute` (proposal id, tool, ok or why not) for every approved write. Bodies
 and results are not logged. Approvals, declines, expiries and ignored clicks
 log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 
@@ -143,6 +167,8 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | HA unreachable / token revoked | `home_overview` reports the error; nothing else is affected |
 | Spend limit reached | the run fails with the API error; the digest and #chat are unaffected |
 | Busy | a second request waits; past 3 in flight, "busy — try again in a minute" |
+| ✅ after the concierge restarted | "failed: expired" under the prompt; nothing runs. Ask again |
+| Write with a pre-phase-4 Google token | "failed: HTTP 403 … rerun --google-auth" |
 
 The act lane being down never affects the watch lane: the digest, #chat and
 the alerts carry on without it.

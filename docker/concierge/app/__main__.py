@@ -3,7 +3,7 @@
   python -m app                serve /v1/ask on the internal network (default)
   python -m app --selftest     check the CLI, Google and Home Assistant; no API spend
   python -m app --ask "..."    run one task from the terminal and print it (costs money)
-  python -m app --google-auth  one-time Google sign-in (read-only scopes)
+  python -m app --google-auth  one-time Google sign-in (read, calendar writes, drafts)
 
 From the box:
   docker compose -f docker/concierge/docker-compose.yml run --rm concierge --selftest
@@ -103,7 +103,7 @@ async def _google_auth_async(cfg: Config) -> int:
         raise SystemExit("Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in docker/concierge/.env first "
                          "(GOOGLE_REFRESH_TOKEN stays blank until this finishes).")
     req = auth_request(cfg.google_client_id)
-    print("Scopes requested (read-only):")
+    print("Scopes requested (nothing here sends mail; see app/google.py):")
     for s in SCOPES:
         print(f"  {s}")
     print("\n1. Open this URL in a browser signed in to the Google account:\n")

@@ -1,5 +1,6 @@
 services:
-  # The act lane: Claude Agent SDK, read tools only (phase 3). See
+  # The act lane: Claude Agent SDK; reads freely, writes only after a ✅ in
+  # Discord (phase 4). See
   # docs/design/tsd-personal-assistant.md and README.md here.
   #
   # No `ports:` and no Caddy route. The assistant bot is the only front door: it
@@ -47,6 +48,8 @@ services:
       # locks, alarm and garage are never exposed. See app/home.py.
       HA_URL: ${HA_URL:-http://host.docker.internal:8123}
       HA_TOKEN: ${HA_TOKEN:-}
+      # Scenes run_scene may propose (scene.* IDs). Blank = no run_scene tool.
+      HA_SCENES: ${HA_SCENES:-}
 
       TZ: ${TZ:-UTC}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

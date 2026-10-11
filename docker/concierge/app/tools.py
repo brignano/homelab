@@ -5,6 +5,11 @@ there is no `mail_search` to call, rather than one that always fails. Every
 name registered here must appear in tiers.READ or tiers.PROPOSE; a test fails
 otherwise, so a new tool cannot arrive without someone choosing its tier.
 
+The propose tools (`remember`, and phase 4's `create_event`, `move_event`,
+`draft_email`, `run_scene`) check their arguments and record a proposal. None
+of them changes anything: the effect happens only after a ✅, through
+/v1/execute and actions.execute(). See app/actions.py for the whole flow.
+
 Everything a tool returns is untrusted. An email body, an event title and an
 entity's friendly name were all written by someone else, and the system prompt
 says so. The worst that text can do is steer the agent into *proposing*
@@ -21,7 +26,7 @@ from typing import Any
 
 from claude_agent_sdk import create_sdk_mcp_server, tool
 
-from . import audit
+from . import actions, audit
 from .google import Google, GoogleError
 from .home import Home, HomeError
 from .tiers import SERVER
@@ -39,6 +44,7 @@ class TaskContext:
     calendar_ids: tuple[str, ...]
     home: Home | None
     max_proposals: int
+    scenes: tuple[str, ...] = ()
     proposals: list[dict] = field(default_factory=list)
 
 
@@ -69,16 +75,34 @@ def clean_fact(raw: object) -> str | None:
     return fact[:MAX_FACT_CHARS]
 
 
+def _propose(ctx: TaskContext, tool_name: str, args: dict) -> dict | None:
+    """Record one proposal, or the error to return if the cap is reached."""
+    if len(ctx.proposals) >= ctx.max_proposals:
+        return _err(f"At most {ctx.max_proposals} proposals per request.")
+    ctx.proposals.append({"id": actions.new_id(), "tool": tool_name, "args": args})
+    return None
+
+
+PROPOSED = ("Proposed, not done. After your answer the user is shown exactly these "
+            "arguments and asked to approve; nothing happens unless they do. Say so "
+            "briefly rather than claiming it is done.")
+
+
 def record_proposal(ctx: TaskContext, args: dict) -> dict:
     """`remember`'s whole effect in this process: a note for the bot to render."""
     fact = clean_fact(args.get("fact"))
     if fact is None:
         return _err("remember needs a non-empty `fact` string.")
-    if len(ctx.proposals) >= ctx.max_proposals:
-        return _err(f"At most {ctx.max_proposals} memories can be proposed per request.")
-    ctx.proposals.append({"tool": "remember", "args": {"fact": fact}})
-    return _ok("Proposed. The user will be shown this exact text and asked to approve "
-               "it after your answer; it is not saved until they do. Mention it briefly.")
+    return _propose(ctx, "remember", {"fact": fact}) or _ok(PROPOSED)
+
+
+def propose_checked(ctx: TaskContext, tool_name: str, check, args: dict) -> dict:
+    """Run a pure argument check, then record. A bad argument goes back to the agent."""
+    try:
+        normalized = check(args)
+    except ValueError as exc:
+        return _err(f"{tool_name}: {exc}")
+    return _propose(ctx, tool_name, normalized) or _ok(PROPOSED)
 
 
 def build(ctx: TaskContext):
@@ -161,6 +185,86 @@ def build(ctx: TaskContext):
 
         tools += [calendar_events, mail_search, mail_read]
 
+        def now() -> dt.datetime:
+            return dt.datetime.now(tz=ctx.tz)
+
+        when_props = {
+            "start": {"type": "string", "description": "ISO 8601. `2026-10-14T09:00` (local time "
+                      "unless an offset is given) or `2026-10-14` for all-day."},
+            "end": {"type": "string", "description": "Same form as start. Default: 1 hour, or 1 day if all-day."},
+            "calendar": {"type": "string", "description": f"One of {', '.join(ctx.calendar_ids)}. "
+                         f"Default {ctx.calendar_ids[0]}."},
+        }
+
+        async def _create(args: dict) -> dict:
+            return propose_checked(ctx, "create_event",
+                                   lambda a: actions.event_args(a, ctx.tz, ctx.calendar_ids, now()), args)
+
+        @tool("create_event",
+              "Propose a new event on the user's calendar. Nobody is invited and nothing "
+              "is sent. The user approves the exact arguments before it is created.",
+              {"type": "object", "properties": {
+                  "title": {"type": "string"},
+                  **when_props,
+                  "location": {"type": "string"},
+                  "description": {"type": "string"},
+              }, "required": ["title", "start"]})
+        async def create_event(args: dict) -> dict:
+            return await run("create_event", _create, args)
+
+        async def _move(args: dict) -> dict:
+            try:
+                checked = actions.move_args(args, ctx.tz, ctx.calendar_ids, now())
+            except ValueError as exc:
+                return _err(f"move_event: {exc}")
+            current = await google.event(checked["calendar"], checked["event_id"])
+            if current["others"]:
+                # Moving it would move it for them too, silently (sendUpdates=none).
+                return _err("move_event: that event has other people on it. Moving it "
+                            "would change their calendars without telling them, so it is "
+                            "not allowed; suggest the user reschedule it themselves.")
+            shown = {"calendar": checked["calendar"], "event_id": checked["event_id"],
+                     "title": current["title"], "was": current["start"],
+                     "start": checked["start"], "end": checked["end"]}
+            return _propose(ctx, "move_event", shown) or _ok(PROPOSED)
+
+        @tool("move_event",
+              "Propose moving one of the user's own events (no other guests) to a new "
+              "time, by the id calendar_events returned. Only the time changes. The "
+              "user approves before it moves.",
+              {"type": "object", "properties": {
+                  "event_id": {"type": "string"},
+                  **when_props,
+              }, "required": ["event_id", "start"]})
+        async def move_event(args: dict) -> dict:
+            return await run("move_event", _move, args)
+
+        async def _draft(args: dict) -> dict:
+            try:
+                checked = actions.draft_args(args)
+            except ValueError as exc:
+                return _err(f"draft_email: {exc}")
+            if checked["reply_to_message_id"]:
+                c = await google.reply_context(checked["reply_to_message_id"])
+                checked["in_reply_to"] = " ".join(f"{c['subject']} — from {c['from']}".split())[:300]
+            return _propose(ctx, "draft_email", checked) or _ok(PROPOSED)
+
+        @tool("draft_email",
+              "Propose saving an email DRAFT in the user's Gmail. It is never sent: the "
+              "user reviews and sends it from Gmail themselves. To reply in a thread, pass "
+              "reply_to_message_id from mail_search (subject may then be left blank). "
+              "Plain text only.",
+              {"type": "object", "properties": {
+                  "to": {"type": "array", "items": {"type": "string"}},
+                  "subject": {"type": "string"},
+                  "body": {"type": "string", "description": f"Plain text, at most {actions.MAX_BODY} characters."},
+                  "reply_to_message_id": {"type": "string"},
+              }, "required": ["to", "body"]})
+        async def draft_email(args: dict) -> dict:
+            return await run("draft_email", _draft, args)
+
+        tools += [create_event, move_event, draft_email]
+
     if ctx.home is not None:
         home = ctx.home
 
@@ -176,6 +280,20 @@ def build(ctx: TaskContext):
             return await run("home_overview", _overview, args)
 
         tools.append(home_overview)
+
+        if ctx.scenes:
+            async def _scene(args: dict) -> dict:
+                return propose_checked(ctx, "run_scene", lambda a: actions.scene_args(a, ctx.scenes), args)
+
+            @tool("run_scene",
+                  "Propose running one Home Assistant scene. Only these exist: "
+                  + ", ".join(ctx.scenes) + ". The user approves before it runs.",
+                  {"type": "object", "properties": {"entity_id": {"type": "string", "enum": list(ctx.scenes)}},
+                   "required": ["entity_id"]})
+            async def run_scene(args: dict) -> dict:
+                return await run("run_scene", _scene, args)
+
+            tools.append(run_scene)
 
     async def _remember(args: dict) -> dict:
         return record_proposal(ctx, args)

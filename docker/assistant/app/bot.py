@@ -31,7 +31,7 @@ from .chat import (
     context_mode, is_ignorable,
 )
 from .concierge import (
-    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, defang, fact_of,
+    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, approvable, defang, fact_of,
     footer as concierge_footer, render_proposal, usable_memories,
 )
 from .config import Config
@@ -447,7 +447,7 @@ class Assistant(discord.Client):
             for part in parts[1:]:
                 await channel.send(part, allowed_mentions=quiet, suppress_embeds=True)
             for proposal in reply.proposals:
-                view = ApprovalView(self, proposal) if fact_of(proposal) else None
+                view = ApprovalView(self, proposal) if approvable(proposal) else None
                 sent = await channel.send(
                     render_proposal(proposal), view=view,
                     allowed_mentions=discord.AllowedMentions.none(),
@@ -551,6 +551,11 @@ class ApprovalView(discord.ui.View):
         except discord.HTTPException as exc:
             log.warning("could not update approval prompt: %s", exc)
 
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        # discord.py restarts the timeout on every click that passes this, so
+        # only an allowlisted click may keep a prompt alive.
+        return await self._allowed(interaction)
+
     async def _allowed(self, interaction: discord.Interaction) -> bool:
         if interaction.user.id in self.client.cfg.allowed_user_ids:
             return True
@@ -561,10 +566,13 @@ class ApprovalView(discord.ui.View):
 
     @discord.ui.button(label="Approve", emoji="✅", style=discord.ButtonStyle.success)
     async def approve(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if self._done or not await self._allowed(interaction):
+        if self._done:
             return
-        # Before the first await: a double-click must not save it twice.
+        # Before the first await: a double-click must not run it twice.
         self._done = True
+        if self.proposal.tool != "remember":
+            await self._execute(interaction)
+            return
         fact = fact_of(self.proposal)
         channel = self.client.get_channel(self.client.cfg.memory_channel_id)
         if fact is None or channel is None:
@@ -581,9 +589,42 @@ class ApprovalView(discord.ui.View):
         log.info("proposal approved by %s: tool=%s", interaction.user.id, self.proposal.tool)
         await self._finish("Approved — saved to #memory", interaction)
 
+    async def _execute(self, interaction: discord.Interaction) -> None:
+        """Hand an approved calendar, draft or scene proposal to the concierge.
+
+        The concierge acts only on the id it issued, with exactly the arguments
+        shown above. Deferred first: Google can take longer than the three
+        seconds Discord allows an interaction.
+        """
+        log.info("proposal approved by %s: tool=%s id=%s",
+                 interaction.user.id, self.proposal.tool, self.proposal.id)
+        try:
+            await interaction.response.defer()
+        except discord.HTTPException as exc:
+            log.warning("could not defer approval: %s", exc)
+        try:
+            summary = await self.client.concierge.execute(self.proposal)
+        except ConciergeError as exc:
+            log.error("approved proposal failed: tool=%s: %s", self.proposal.tool, exc)
+            await self._finish("Approved, but it failed", None)
+            await self._say(f"⚠️ `{self.proposal.tool}` failed: {exc}")
+            return
+        await self._finish("Approved — done", None)
+        await self._say(f"✅ {summary}")
+
+    async def _say(self, text: str) -> None:
+        if self.message is None:
+            return
+        try:
+            await self.message.reply(defang(text)[:1900], mention_author=False,
+                                     allowed_mentions=discord.AllowedMentions.none(),
+                                     suppress_embeds=True)
+        except discord.HTTPException as exc:
+            log.warning("could not post approval result: %s", exc)
+
     @discord.ui.button(label="Decline", emoji="❌", style=discord.ButtonStyle.secondary)
     async def decline(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
-        if self._done or not await self._allowed(interaction):
+        if self._done:
             return
         log.info("proposal declined by %s: tool=%s", interaction.user.id, self.proposal.tool)
         await self._finish("Declined", interaction)
@@ -591,7 +632,7 @@ class ApprovalView(discord.ui.View):
     async def on_timeout(self) -> None:
         if not self._done:
             log.info("proposal expired unanswered: tool=%s", self.proposal.tool)
-            await self._finish("Expired — not saved", None)
+            await self._finish("Expired — nothing done", None)
 
 
 # --- command registration -----------------------------------------------------

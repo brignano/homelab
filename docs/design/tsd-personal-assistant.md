@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phases 1–3 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge with read tools in #ask: `docker/concierge/`); phases 4–5 draft
+**Status:** 🚧 phases 1–4 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -178,6 +178,26 @@ Phase 4's write tools act from inside the concierge, so they need the
 mid-run pause this design describes. Until that gate exists, `decide()`
 refuses anything in the write tier.
 
+**Amended while building phase 4 (2026-10-11): there is no mid-run pause.
+Every write is a proposal, carried out after the run.** Holding an agent run
+open for up to 15 minutes while a person decides means a long-lived HTTP
+request between bot and concierge, a run that dies with either process, and a
+model that keeps going after the approval and could act on what it learns from
+the result. Instead, `create_event`, `move_event`, `draft_email` and
+`run_scene` join `remember` in the **propose** tier. Each checks and
+normalizes its arguments in code (`app/actions.py`), records a proposal with a
+random id, and changes nothing. When the run ends, the concierge keeps the
+proposals in memory for 16 minutes and returns them; the bot renders every
+field it will act on under ✅/❌. On a ✅ the bot POSTs `{id, tool, args}` to
+`/v1/execute`, and the concierge acts only if the id is live and the tool and
+arguments are exactly what it stored, then forgets it, so a ✅ runs at most
+once. A restart of either side forgets pending proposals: ❌, as before. The
+**write** tier (a tool that acts during the run) stays empty, and `decide()`
+still refuses one. What this costs: the agent cannot chain on a write's result
+("create it, then tell me the link") inside one run. The bot posts the result
+under the prompt instead. `move_event` refuses any event with other people on
+it: with `sendUpdates=none` it would move their copy without telling them.
+
 ### Decision 3 — Home Assistant is the hub for everything physical
 
 Home, cameras, presence and the car go through **one** integration:
@@ -240,6 +260,15 @@ Scopes, deliberately split:
 
 `gmail.send` is not requested by anything. If the agent cannot send, approval
 for sending is not something that can go wrong.
+
+**Amended while building phase 4 (2026-10-11): `gmail.compose` can send.**
+Google's `drafts.send` accepts it, so the paragraph above holds only for the
+literal `gmail.send` scope. There is no narrower scope that creates drafts.
+"Never sends" therefore rests on code: `app/google.py` has exactly three write
+calls (`events.insert`, `events.patch`, `drafts.create`) and no send, delete,
+trash or modify URL, and `tests/smoke.py` fails if one appears. Event writes
+pass `sendUpdates=none` and never set attendees, so nobody is emailed by a
+calendar change either.
 
 **Email bodies leave the box only through the act lane, on request.** The
 watch lane holds `gmail.metadata`, and Google refuses to return a message body
@@ -306,7 +335,7 @@ earlier ones.
 | **1. Calendar + mail in the digest** ✅ built | Google OAuth client, `app/google.py` + `app/day.py`, freshness metrics + `hl-google-stale` | No |
 | **2. Home Assistant, read-only** ✅ built | `docker/homeassistant/` stack, `ha.` route, probe, tile; `app/home.py` and a **Home** line in Today; `source-home` stamp | No |
 | **3. Concierge, read tools only** ✅ built | `docker/concierge/`, `#ask` routed through the bot, Google + HA read tools, `#memory` | No (memory is approved) |
-| **4. Write tools behind approval** | Approval gate, calendar events, email drafts, HA scenes and notifications | Yes, each approved |
+| **4. Write tools behind approval** ✅ built | Propose-then-execute (`app/actions.py`, `/v1/execute`), create/move calendar events, Gmail drafts, allowlisted HA scenes. Notifications deferred | Yes, each approved |
 | **5. Car** | Tesla through HA's Tesla integration: battery, location, climate; "send destination to car" as a write | Yes, approved |
 
 ### Status and next up
@@ -355,6 +384,20 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       networking is in place, and the Matter Server container also needs host
       networking and IPv6.
 
+- [x] **Phase 4, writes behind approval.** `create_event`, `move_event`,
+      `draft_email`, `run_scene` as proposals; `/v1/execute` in the
+      concierge; per-tool ✅/❌ prompts and the result line in the bot.
+- [ ] **Proactive triage** (proposed 2026-10-11): a morning and evening
+      #ask run that triages the inbox, drafts replies and posts a short
+      prioritized list, every change still a proposal. Needs its own cost
+      ceiling, since it is the first scheduled Claude spend.
+
+**Setup left for phase 4 (you)**
+- [ ] Rerun the concierge's `--google-auth` for the write scopes and paste
+      the new refresh token. The old one keeps reads working; writes 403.
+- [ ] Optional: `HA_SCENES` in `docker/concierge/.env`, after reading what
+      each scene does.
+
 **Setup left for phase 3 (you)**
 - [ ] `homelab` workspace in the Claude Console with its own spend limit
       (e.g. $20, alert at $10), and a workspace-scoped key with a 1-year
@@ -378,6 +421,8 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - **Injection:** assume every tool result is hostile. The watch lane has no
   tools, so injection costs a wrong sentence. The act lane can only *propose*
   writes, rendered verbatim, and cannot reach anything in the **never** tier.
+  An approved write runs with the stored arguments, not anything the model
+  says afterwards (`/v1/execute`, Decision 2).
 - **Who can ask:** the existing user allowlist applies to `/ask` and to ✅
   buttons. A ✅ from anyone else is ignored and logged.
 - **Secrets:** all `${VAR:?required}` in each stack's compose file. The

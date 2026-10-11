@@ -49,6 +49,14 @@ def _google() -> tuple[str, str, str]:
     return values  # type: ignore[return-value]
 
 
+def _scenes() -> tuple[str, ...]:
+    scenes = _list("HA_SCENES", "")
+    bad = [s for s in scenes if not s.startswith("scene.") or not s[6:].replace("_", "").isalnum()]
+    if bad:
+        raise SystemExit(f"config error: HA_SCENES must be scene.<id> entity IDs, not {', '.join(bad)}")
+    return scenes
+
+
 @dataclass(frozen=True)
 class Config:
     # Not read here: ANTHROPIC_API_KEY. The bundled Claude Code CLI reads it from
@@ -72,6 +80,9 @@ class Config:
 
     ha_url: str = "http://host.docker.internal:8123"
     ha_token: str = ""
+    # Scenes the agent may propose running. The allowlist IS the ceiling for
+    # HA writes: Assist exposure does not govern the REST call (app/scenes.py).
+    ha_scenes: tuple[str, ...] = ()
 
     @property
     def google_enabled(self) -> bool:
@@ -80,6 +91,10 @@ class Config:
     @property
     def home_enabled(self) -> bool:
         return bool(self.ha_token)
+
+    @property
+    def scenes_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_scenes)
 
     @classmethod
     def from_env(cls, *, require_token: bool = True) -> "Config":
@@ -108,4 +123,5 @@ class Config:
             google_calendar_ids=_list("GOOGLE_CALENDAR_IDS", "primary") or ("primary",),
             ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://host.docker.internal:8123",
             ha_token=os.environ.get("HA_TOKEN", "").strip(),
+            ha_scenes=_scenes(),
         )
