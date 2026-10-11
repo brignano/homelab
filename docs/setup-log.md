@@ -27,6 +27,31 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Matterbridge: a device label exposes the whole device
+
+**Goal:** Choose what Alexa gets before pairing.
+
+**Steps:**
+1. The `Alexa` label went on the Spaceship (car) and Jaxon's Litter Box
+   devices. The log said `Creating device` for both, with `Filtered entities: 0`.
+2. Read matterbridge-hass 1.5.0: a device is in if it or any of its entities
+   has the label. If an entity has it, only labelled entities are exposed. If
+   only the device has it, every entity on the device is.
+3. README: "Label entities, never devices", the log check to run before
+   pairing, and a troubleshooting row.
+
+**Issues encountered:**
+- Exposed, and caught before pairing: the car's Sentry mode and Charge
+  switches, and the litter box's controls. The domain blacklist does not
+  cover switches, so nothing in `start.sh` would have stopped them.
+
+**Resolution:**
+- The labels move from the devices to `Spaceship Climate` (and Defrost). The
+  log check is the guard: a "doesn't have the label" line for each entity
+  left out.
+
+---
+
 ## 2026-10-10 — Matterbridge first deploy: admin user, no virtual switches
 
 **Goal:** Get `matterbridge` talking to Home Assistant and ready to pair.

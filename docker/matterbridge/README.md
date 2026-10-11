@@ -70,8 +70,26 @@ the locks out of Alexa is the label filter and the domain blacklist in
 3. Make the label: **Settings → Areas, labels & zones → Labels → Create
    label** `Alexa`.
 4. Add the label to each entity Alexa should have: **Settings → Entities**,
-   select them, **Add label → Alexa**. Label entities rather than whole
-   devices: a labelled device brings every entity on it.
+   select them, **Add label → Alexa**.
+
+**Label entities, never devices.** The plugin decides per device:
+
+- If any entity on a device carries the label, only the labelled entities on
+  that device are exposed.
+- If the device carries the label and none of its entities do, every entity
+  on it is exposed, minus the blacklisted domains below.
+
+On the first deploy that meant the car's Sentry mode and Charge switches, and
+the litter box's controls, were one pairing away from Alexa. Check before
+pairing: the log should name every entity you left out.
+
+```bash
+docker logs --since 2m matterbridge 2>&1 | grep -E "Filtered (devices|entities)|doesn't have the label|Creating device"
+```
+
+`Filtered entities: 0` while a device is being created means its label is on
+the device. Remove it from the device (**Settings → Devices & services →
+Devices**) and put it on the entities instead.
 
 What to label: lights, switches, fans, the thermostat, sensors, and scenes
 and scripts (Alexa sees each as a switch that turns itself back off). Locks,
@@ -173,6 +191,7 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 | `Error subscribing to Home Assistant events: Unauthorized` | The `matterbridge` user is not an administrator. Turn it on in **Settings → People → Users**. The token keeps working, then `docker restart matterbridge`. |
 | `Label "Alexa" not found in Home Assistant` | No HA label named exactly `Alexa` (case matters). Create it, label some entities, `docker restart matterbridge`. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
+| Alexa has controls you never labelled (sentry mode, charging) | The `Alexa` label is on the device, which exposes every entity on it. Move it to the entities ("Home Assistant user"), restart, and check the log before re-pairing. |
 | An entity is not in Alexa | It lacks the `Alexa` label, its domain is blacklisted (lock, cover, valve, alarm, button, remote, media player), or it is hidden in HA. Fix it, then `docker restart matterbridge`. |
 | Alexa cannot find the bridge while pairing | The phone and the Echo must be on the same LAN as CT 100, not the tailnet. Check `docker logs matterbridge` for mDNS errors. |
 | Every device shows up twice | The Home Assistant Cloud Alexa skill is still linked. See "Before you start" step 3. |
