@@ -29,8 +29,10 @@ services:
   #      drive, a download would otherwise land on CT 100's thin pool and in
   #      every nightly vzdump.
   #
-  #   4. cpus / mem_limit on every container, so a big download, a library
-  #      import or a hash check never takes Ollama's four cores
+  #   4. cpus / mem_limit on every container: 3 CPUs for the whole stack at
+  #      most, and qBittorrent alone at 1. They are ceilings, mostly idle, and
+  #      they keep a big download, a library import or a hash check from
+  #      taking CT 100's whole quota while Ollama is generating
   #      (AGENTS.md → Ollama).
   #
   # Hardlinks, not copies: Sonarr and Radarr see the whole of /media/jellyfin
@@ -82,6 +84,9 @@ services:
       # blackbox probe can see it: 200 while the tunnel works, 500 when it does
       # not. This is the "VPN is down" alert (hl-probe-down, service=gluetun).
       HEALTH_SERVER_ADDRESS: ":9999"
+      # The control server (:8000 by default) can stop the VPN and nothing here
+      # uses it. Localhost only, so no other container on proxy_proxy can.
+      HTTP_CONTROL_SERVER_ADDRESS: "127.0.0.1:8000"
     networks:
       - proxy
 
@@ -92,9 +97,13 @@ services:
     cpus: 1
     mem_limit: 1g
     network_mode: service:gluetun
+    # `restart: true`: whenever Compose replaces gluetun (an image bump, a
+    # plain `up -d` after a compose change), it restarts this too, so it joins
+    # the new namespace instead of keeping the dead one with no network.
     depends_on:
       gluetun:
         condition: service_healthy
+        restart: true
     environment:
       TZ: ${TZ:-UTC}
       PUID: ${PUID:-1000}

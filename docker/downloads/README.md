@@ -97,7 +97,10 @@ required for all addresses). Save each in Google Password Manager.
   **8080**, your qBittorrent login, category `tv`.
 - *Settings → Connect → + → Emby / Jellyfin*: host **`jellyfin`**, port
   **8096**, an API key from Jellyfin (*Dashboard → API Keys → +*). Tick
-  *Update library*.
+  *Update library*, and set **Map Paths From** `/data/library/` and **Map
+  Paths To** `/media/`: Sonarr sees the library at `/data/library`, Jellyfin
+  at `/media`, and without the mapping Jellyfin is told to scan a folder it
+  does not have.
 
 **Radarr** (`radarr.`): the same, with root folder **`/data/library/movies`**
 and category `movies`.
@@ -126,7 +129,7 @@ appears there.
 |---|---|
 | `up` fails: `error gathering device information ... /dev/net/tun` | Step 1 not done, or `dev1` lost from CT 100's config. |
 | `up` fails: `bind source path does not exist: /media/jellyfin/...` | The media drive is not mounted into CT 100, or step 2 was skipped. Deliberate. |
-| `qbittorrent` probe fails while `gluetun` is healthy | gluetun was restarted or recreated on its own. qBittorrent is still attached to the old network namespace and has no network at all. Recreate both together: `docker compose -f docker/downloads/docker-compose.yml up -d --force-recreate`. Never restart gluetun alone. |
+| `qbittorrent` probe fails while `gluetun` is healthy | gluetun was restarted on its own (a crash, or `docker restart gluetun`); Compose's own replacements restart qBittorrent too (`depends_on … restart: true`). qBittorrent is still attached to the old network namespace and has no network at all. Recreate both together: `docker compose -f docker/downloads/docker-compose.yml up -d --force-recreate`. Never restart gluetun alone. |
 | Downloads stuck at 0 B/s, firewall icon in qBittorrent | No forwarded port reached qBittorrent: check *Bypass authentication for clients on localhost* (step 4), then `docker logs gluetun 2>&1 \| grep -i 'port forward'`. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |

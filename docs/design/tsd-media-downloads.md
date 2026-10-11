@@ -81,9 +81,12 @@ all. The alternative, a VPN client inside qBittorrent's own container or a
 
 The cost is a Docker quirk: qBittorrent is attached to the namespace of a
 specific gluetun container. If gluetun is restarted or recreated alone,
-qBittorrent keeps the dead namespace and has no network. The two are always
-recreated together (README → Troubleshooting), and the qBittorrent probe going
-red while gluetun's stays green is exactly that state.
+qBittorrent keeps the dead namespace and has no network. Compose handles its own
+side: `depends_on: {gluetun: {restart: true}}` restarts qBittorrent whenever
+Compose replaces gluetun. What it cannot see is the daemon restarting gluetun
+after a crash, or a manual `docker restart gluetun`; the qBittorrent probe
+going red while gluetun's stays green is exactly that state, and the fix is
+recreating the stack (README → Troubleshooting).
 
 ### Why only qBittorrent is inside
 
@@ -135,7 +138,10 @@ joining a downloads network, so the proxy stack (and DNS) never depends on it.
 | sonarr, radarr | 0.5 each | 512m each |
 | prowlarr | 0.5 | 256m |
 
-Ollama keeps its four cores (`AGENTS.md` → Ollama); Jellyfin is capped at two.
+At most 3 CPUs for the stack, and they are ceilings: idle, it uses almost
+nothing. Jellyfin is capped at two, Ollama pins four threads (`AGENTS.md` →
+Ollama); the sum can exceed CT 100's six only when everything is busy at once,
+which the caps keep from being any one stack's fault.
 
 ## Monitoring
 
@@ -145,6 +151,8 @@ Ollama keeps its four cores (`AGENTS.md` → Ollama); Jellyfin is capped at two.
 - **Apps:** probes of each `/ping`, and qBittorrent's web UI via `gluetun:8080`.
 - **Stopped containers:** `homelab_container_running`, required once
   `docker/downloads/.env` exists (`SETUP_GATED_STACKS`), silent before.
+- **Control server:** gluetun's (`:8000`, which can stop the VPN) is bound to
+  localhost, so no other container on `proxy_proxy` reaches it.
 
 ## Rollout
 
