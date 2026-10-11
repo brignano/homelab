@@ -27,7 +27,7 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
-## 2026-10-11 — Drive day: backup drive encrypted, passphrase stored
+## 2026-10-11 — Drive day: backup drive encrypted and mounted, passphrase verified
 
 **Goal:** Start drive day (`docs/runbook-backups.md` §2–3). Both drives
 arrived, and the backup drive's LUKS passphrase has to be findable when the
@@ -50,16 +50,28 @@ host that holds the keyfile is gone.
    `openssl rand -base64 30`.
 4. **Passphrase stored in Google Password Manager**, entry site
    `https://hl-backup.m5`, username `luks`, with the drive's serial in the
-   note. Checked by pasting it from there into `luksFormat`.
+   note.
+5. LUKS redone keyfile-first (`luksFormat --key-file /root/.hl-backup.key`),
+   then the passphrase added with `luksAddKey`, pasted from the password
+   manager. **`cryptsetup open --test-passphrase /dev/sda1` → `MATCHES`**:
+   the saved copy opens the drive.
+6. `mkfs.ext4 -L hl-backup`, `/etc/crypttab` (LUKS UUID `497bab99-…`, keyfile,
+   `luks,nofail`), `/etc/fstab` (`/dev/mapper/hl-backup /mnt/hl-backup`,
+   `nofail`). Mounted: 1.8T. `pvesm add dir hl-backup … --is_mountpoint 1`.
 
 **Issues encountered:**
 - `lsusb` "command not found": that shell was CT 100 (`root@docker`), which
   has no USB tools because it sees no USB devices. The drives are worked on
   from the host (`ssh root@10.0.0.200`, `root@m5`).
 - `cryptsetup` is not installed on Proxmox by default.
+- First `luksFormat` took a pasted passphrase that `luksAddKey` then rejected
+  ("No key available with this passphrase"): the two pastes did not match, so
+  the drive's only key was one nobody knew.
 
 **Resolution:**
 - Both installed with `apt` on the host.
+- Reformatted keyfile-first, passphrase second, then `--test-passphrase`.
+  `runbook-backups.md` §2 now uses that order, so it cannot happen again.
 
 **Notes / next steps:**
 - **Lost the passphrase?** It is in Google Password Manager under
@@ -67,8 +79,8 @@ host that holds the keyfile is gone.
   machine; `/root/.hl-backup.key` dies with the host. Unlock elsewhere:
   `cryptsetup open /dev/sdX1 hl-backup` (runbook §5).
 - Store the restic password the same way, as `https://hl-restic.m5`.
-- Still to do: keyfile + `luksAddKey`, `mkfs`, crypttab/fstab, `pvesm add`,
-  hook, the first timed vzdump (record its size and time here), the 02:30
+- Still to do: confirm `pvesm add` stored `is_mountpoint 1` (the paste was
+  garbled), the hook, the first timed vzdump (record its size and time here), the 02:30
   schedule. Then the media drive (runbook §3) and Jellyfin.
 
 ---
