@@ -27,7 +27,7 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
-## 2026-10-11 — Drive day: nightly image of CT 100 running, media drive mounted
+## 2026-10-11 — Drive day: nightly image of CT 100, media drive, Jellyfin live
 
 **Goal:** Start drive day (`docs/runbook-backups.md` §2–3). Both drives
 arrived, and the backup drive's LUKS passphrase has to be findable when the
@@ -101,8 +101,33 @@ host that holds the keyfile is gone.
 - `mkdir /media/jellyfin/...` was first run on the host by mistake and
   removed with `rmdir`. Added `hl-host` and a "which machine" table to
   `shell/README.md`.
-- Still to do: `pct set 100 -mp0 /mnt/media,mp=/media,backup=0`, `pct reboot
-  100`, then Jellyfin (`docker/jellyfin/README.md` §2–3).
+- `pct set 100 -mp0 /mnt/media,mp=/media,backup=0` (confirmed `backup=0` in
+  `pct config`), `pct reboot 100`; DNS answered after it. Inside CT 100,
+  `df -h /media` → `/dev/sdb1 4.6T`.
+- **Jellyfin started:** `.env` with `RENDER_GID=993`, `up -d`. No recreate
+  of caddy, prometheus, grafana or dashboard was needed: the reboot had
+  started them all on files that already carried Jellyfin's route, probe,
+  alert and icon. `deploy-plan.sh` (state mode) agreed.
+- Wizard done: libraries `/media/{movies,shows,home-videos,music}`, VA-API on
+  `/dev/dri/renderD128`, hardware decode H264/HEVC/HEVC 10bit, hardware
+  encode on, Intel low-power options off. Library scan moved from "every 12
+  hours" to daily 03:30, clear of the 02:30 vzdump.
+- **GPU verified:** `jellyfin-ffmpeg` with `-hwaccel vaapi`, `scale_vaapi`,
+  `h264_vaapi` on 60 s of video: `rtime=1.511s` (about 40x real time) with
+  0.44 s of CPU.
+- `deploy-plan.sh` also listed `docker/assistant/app/*` (concierge phase 4
+  not yet built; `up -d --build assistant` done) and `docker/proxy/Dockerfile`.
+  The latter last changed 2026-09-19: a timestamp false positive, left alone.
+
+**Gotchas for next time:**
+- A client playing a file directly is not a transcode test. The first test
+  file (archive.org's "720p" Big Buck Bunny) is really 640x360 at 0.8 Mbps,
+  below every quality the player offers, so Jellyfin never transcoded it and
+  wrote no `FFmpeg.Transcode-*.log`. Test the GPU with `jellyfin-ffmpeg`
+  directly, as above, rather than through a player.
+- `download.blender.org` is behind a bot check: `curl` gets a 61 KB "Just a
+  moment..." page saved as `.mp4`. Check a download with `head -c 12 | od -c`
+  (a real MP4 shows `ftyp`).
 
 ---
 
