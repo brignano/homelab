@@ -14,6 +14,20 @@ hl logs grafana   # tail a container's logs (runs on the server, over SSH from a
 hl up monitoring  # bring a stack up
 ```
 
+## Which machine am I on?
+
+Two machines, and the prompt tells you which:
+
+| Prompt | What it is | Get there | What lives there |
+|--------|-----------|-----------|------------------|
+| `root@m5` | Proxmox **host**, `10.0.0.200` | `hl-host` | USB drives, `pct`, `vzdump`, `pvesm`, `/etc/fstab`, the `fstrim` cron, `/usr/local/bin/hl-vzdump-hook` |
+| `root@docker` | **CT 100**, the Docker LXC, `10.0.0.201` | `hl-ssh`, or `pct enter 100` from the host (`exit` to go back) | Docker and every stack, the repo at `/root/homelab`, `/media` (the 5 TB drive, passed in by the host) |
+
+CT 100 cannot see USB devices or run `pct`, and the host has no Docker and no
+checkout of this repo. A command meant for one fails on the other, or worse,
+succeeds somewhere it should not: `mkdir /media/...` on the host writes to the
+host's root disk, not the media drive.
+
 ## How it's wired
 
 | File | Role |

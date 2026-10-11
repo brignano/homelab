@@ -147,11 +147,12 @@ pvesm status | grep hl-backup
 
 ### The hook and its dead man's switch
 
-Copy the hook from your PC (the host has no checkout of the repo), from the
-repo root:
+The host has no checkout of the repo, but CT 100 does. Copy the hook out of
+it, on the host:
 
 ```bash
-scp scripts/host/hl-vzdump-hook root@10.0.0.200:/usr/local/bin/hl-vzdump-hook
+pct exec 100 -- git -C /root/homelab pull --ff-only
+pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook
 ```
 
 Then on the host:

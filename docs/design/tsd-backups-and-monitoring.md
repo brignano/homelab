@@ -1,8 +1,9 @@
 # TSD — Backups, restore testing & job monitoring
 
-**Status:** 🚧 Phase 0 built and running (2026-10-10). Phases 1–2 built
-2026-10-10: Phase 2 (offsite) can go live now; Phase 1 (image) waits on the
-backup drive (ordered 2026-10-10). LUKS and B2 approved. Steps:
+**Status:** 🚧 Phase 0 built and running (2026-10-10). **Phase 1 live
+2026-10-11:** nightly 02:30 vzdump of CT 100 to the 2 TB LUKS drive, first
+archive 30 GB in 15 min, verified. Phase 2 (offsite) built, waits on the B2
+account. First restore drill (Phase 1 step 6) not yet run. Steps:
 [`docs/runbook-backups.md`](../runbook-backups.md).
 **Goal:** Give the lab backups that can actually be restored. Today it has none
 that cover the data that matters. Then prove they restore on a schedule, and
