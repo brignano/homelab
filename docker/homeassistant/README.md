@@ -219,6 +219,20 @@ offers the entities you label **Alexa** to an Echo as Matter devices, over the
 LAN. It's free, and HA stays off the internet. Setup, what Alexa may see, and
 pairing are all in that README.
 
+**A "Discovered: matter" card in Settings → Devices & services is
+Matterbridge. Click Ignore, never Add.** Both containers are on host
+networking, so HA hears the mDNS announcement Matterbridge makes for the Echo
+and offers to add it. Adding it would bring your own entities back into HA
+through Matter as duplicates. It would also fail: HA's Matter integration
+needs a Matter Server container, which this lab does not run. Ignoring it
+changes nothing for Alexa, since the Echo pairs with Matterbridge directly.
+Ignored on 2026-10-11. There is nothing to do afterwards. If the card comes
+back after a Matterbridge rebuild, ignore it again. To see the ignored entry,
+use the ⋮ menu on the integrations page → ignored integrations. You would
+only add the Matter integration for real Matter devices, and it needs a
+`python-matter-server` stack first. Matterbridge's card stays ignored even
+then.
+
 Why not the other routes:
 
 - **Home Assistant Cloud (Nabu Casa)** works and needs no container, but it
