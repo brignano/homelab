@@ -18,7 +18,15 @@ favicon: /icons/favicon.svg
 
 # Sections render in this order regardless of where they appear in
 # services.yaml, so the file can stay grouped by meaning rather than by layout.
+# A section missing from this list is not an error to Homepage — it is appended
+# after the listed ones, which is how Home Assistant, the tile most often
+# reached for, ended up last. scripts/check-dashboard.sh now fails on that.
+#
+# Home first: the house is what this page is opened for most.
 layout:
+  Home:
+    style: row
+    columns: 2
   Web:
     style: row
     columns: 2
