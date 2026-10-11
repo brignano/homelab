@@ -27,6 +27,34 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Matterbridge: advertise Matter on eth0 only
+
+**Goal:** Fix every Alexa device reading "Device is unresponsive", the car's
+included.
+
+**Steps:**
+1. Still unresponsive after the split. The previous entry's log showed Alexa
+   re-establishing 0 of 2 subscriptions after a restart: the bridge and the
+   Echo could not reach each other, though both were up.
+2. Matterbridge 3.10.13 announces on every interface by default. On host
+   networking that is all of CT 100's: `eth0`, `docker0`, every compose
+   network's bridge and every container's veth. Upstream's README: on a Docker
+   host with more than one interface, set the mDNS interface to the LAN one.
+3. `start.sh` passes `--mdnsinterface "${MDNS_INTERFACE:-eth0}"`. README
+   troubleshooting row updated.
+
+**Issues encountered:**
+- Not confirmed on the box yet: inferred from the subscription failure and
+  upstream's guidance, not from a packet capture.
+
+**Resolution:**
+- On the box: `git pull`, `up -d --build --force-recreate`, check the log
+  says `Using mdnsinterface eth0`, then delete the unresponsive devices in the
+  Alexa app and "Alexa, discover devices". If they stay unresponsive, remove
+  the bridge and pair again (README → Troubleshooting, last row).
+
+---
+
 ## 2026-10-11 — Matterbridge: Alexa paired, entities split for their names
 
 **Goal:** Usable names in Alexa.

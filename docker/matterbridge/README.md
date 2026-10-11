@@ -12,7 +12,7 @@ Alexa's commands stay on the LAN instead of going through a cloud relay.
 | | |
 |---|---|
 | Image | built here: `luligu/matterbridge` 3.10.13 + `matterbridge-hass` 1.5.0, both pinned (`Dockerfile`) |
-| Networking | `network_mode: host` (Matter needs LAN multicast and IPv6) |
+| Networking | `network_mode: host` (Matter needs LAN multicast and IPv6), advertised on `eth0` only (`MDNS_INTERFACE`) |
 | Talks to | Home Assistant at `ws://127.0.0.1:8123`, as the `matterbridge` user (an administrator: see "Home Assistant user") |
 | Exposes | Matter on UDP 5540 (LAN and tailnet) and mDNS on 5353 (LAN). The web UI on `127.0.0.1:8283` only |
 | What Alexa sees | entities with the HA label **Alexa**, minus locks, covers (garage), valves and the alarm, always |
@@ -187,7 +187,7 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 | Symptom | Likely cause |
 |---|---|
 | Exits at once: "this host has no IPv6" | `grep eth0 /proc/net/if_inet6` prints nothing on CT 100: IPv6 is off. See "Before you start" step 2. (Before 2026-10-11, `start.sh` said this on every host, even with IPv6 on. `git pull` and rebuild.) |
-| Alexa: "device is unresponsive" for everything | Matterbridge or HA is down. `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. |
+| Alexa: "device is unresponsive" for everything | First, Matterbridge or HA is down: `docker ps` (look for `unhealthy`), then `docker logs matterbridge`. After an HA restart the plugin reconnects within a minute. If both are up, the Echo cannot reach the bridge: the log must say `Using mdnsinterface eth0`. `Invalid mdnsinterface` means `MDNS_INTERFACE` names no interface on CT 100 (`ip -br addr`), and Matterbridge is back to announcing on every interface, Docker's included. Fix it, `up -d --force-recreate`, then in the Alexa app delete the unresponsive devices and say "Alexa, discover devices". |
 | `Error subscribing to Home Assistant events: Unauthorized` | The `matterbridge` user is not an administrator. Turn it on in **Settings → People → Users**. The token keeps working, then `docker restart matterbridge`. |
 | `Label "Alexa" not found in Home Assistant` | No HA label named exactly `Alexa` (case matters). Create it, label some entities, `docker restart matterbridge`. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
