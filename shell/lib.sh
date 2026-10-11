@@ -12,6 +12,9 @@
 # Direct SSH to the Docker LXC. The same 10.0.0.201 IP is reachable on the LAN
 # and over the Tailscale subnet route, so one target works from every device.
 : "${HL_SSH:=root@10.0.0.201}"
+# The Proxmox host (m5) that runs the LXC. Drives, vzdump, pct and fstrim live
+# here, never in the LXC. From the host, `pct enter 100` is a shell in the LXC.
+: "${HL_HOST_SSH:=root@10.0.0.200}"
 # Repo path ON THE SERVER (where the compose files live; the LXC clones to /root).
 : "${HL_REPO:=/root/homelab}"
 # Host:port to reach services directly by IP (the *.home fallback below).

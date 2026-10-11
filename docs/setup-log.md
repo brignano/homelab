@@ -27,7 +27,7 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
-## 2026-10-11 — Drive day: backup drive encrypted and mounted, passphrase verified
+## 2026-10-11 — Drive day: nightly image of CT 100 running, media drive mounted
 
 **Goal:** Start drive day (`docs/runbook-backups.md` §2–3). Both drives
 arrived, and the backup drive's LUKS passphrase has to be findable when the
@@ -79,9 +79,30 @@ host that holds the keyfile is gone.
   machine; `/root/.hl-backup.key` dies with the host. Unlock elsewhere:
   `cryptsetup open /dev/sdX1 hl-backup` (runbook §5).
 - Store the restic password the same way, as `https://hl-restic.m5`.
-- Still to do: confirm `pvesm add` stored `is_mountpoint 1` (the paste was
-  garbled), the hook, the first timed vzdump (record its size and time here), the 02:30
-  schedule. Then the media drive (runbook §3) and Jellyfin.
+- `storage.cfg` confirmed: `is_mountpoint 1`, `keep-daily=7,keep-weekly=4,keep-monthly=3`.
+- Hook installed with `pct pull` from CT 100's checkout (the runbook said
+  `scp` from a PC; it now says `pct pull`). Ping URL in
+  `/etc/homelab/healthchecks.env`.
+- **First vzdump, by hand: 15m 11s.** 55 GiB read at 115 MiB/s, archive
+  **30.12 GB** (zstd), written in ~8 min; the hook's `zstd -t` read-back took
+  the other ~7 min. Healthchecks **vzdump** went green. At ~30 GB a copy,
+  7 daily + 4 weekly + 3 monthly is ~420 GB of the 1.8 TB, so the retention
+  fits with room to grow. Nightly, 02:30 + 15 min ends well before
+  repo-sync at 04:00.
+- Scheduled: `pvesh create /cluster/backup --id hl-ct100 --schedule '02:30'`,
+  `enabled 1`.
+- The thin-pool warnings during the snapshot ("sum of all thin volume
+  sizes (800 GiB) exceeds…", "thin_pool_autoextend_threshold") are expected:
+  the snapshot is counted at full size on paper, holds only changed blocks,
+  and is removed at the end. `hl-thinpool-full` is the real guard.
+- Media drive (`sdb`, `WD-WXD2D36NFE47`): GPT `hl-media`, `mkfs.ext4 -m 0`
+  (it still had WD's factory NTFS header, label `Elements`), `chattr +i
+  /mnt/media`, fstab by `LABEL=hl-media`, `nofail`. Mounted: 4.6T.
+- `mkdir /media/jellyfin/...` was first run on the host by mistake and
+  removed with `rmdir`. Added `hl-host` and a "which machine" table to
+  `shell/README.md`.
+- Still to do: `pct set 100 -mp0 /mnt/media,mp=/media,backup=0`, `pct reboot
+  100`, then Jellyfin (`docker/jellyfin/README.md` §2–3).
 
 ---
 

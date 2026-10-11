@@ -7,6 +7,7 @@
 
 # ── Config (env overrides win; defaults match shell/lib.sh) ───────────────────
 $HL_SSH  = if ($env:HL_SSH)  { $env:HL_SSH }  else { "root@10.0.0.201" }
+$HL_HOST_SSH = if ($env:HL_HOST_SSH) { $env:HL_HOST_SSH } else { "root@10.0.0.200" }
 $HL_REPO = if ($env:HL_REPO) { $env:HL_REPO } else { "/root/homelab" }
 $HL_IP   = if ($env:HL_IP)   { $env:HL_IP }   else { "10.0.0.201" }
 
@@ -44,6 +45,7 @@ function hl-vpn      { tailscale status }
 function hl-vpn-up   { tailscale up --accept-routes }
 function hl-vpn-down { tailscale down }
 function hl-ssh      { ssh $HL_SSH @args }
+function hl-host     { ssh $HL_HOST_SSH @args }
 
 # hl-status — the "Tailscale flap != outage" check: which layer is actually down.
 function hl-status {
@@ -96,7 +98,8 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
-    hl-ssh [cmd]         ssh into the Docker LXC
+    hl-ssh [cmd]         ssh into the Docker LXC (CT 100, root@docker)
+    hl-host [cmd]        ssh into the Proxmox host (m5): drives, pct, vzdump
   docker / ops           (run over SSH on the server)
     hl-up [stack]        whole lab (boot order) or one stack
     hl-down [stack]      whole lab (reverse) or one stack

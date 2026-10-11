@@ -95,6 +95,7 @@ hl-vpn()      { tailscale status; }
 hl-vpn-up()   { tailscale up --accept-routes; }
 hl-vpn-down() { tailscale down; }
 hl-ssh()      { ssh "$HL_SSH" "$@"; }
+hl-host()     { ssh "$HL_HOST_SSH" "$@"; }
 
 # hl-status — the "Tailscale flap ≠ outage" check. Tells you WHICH layer broke
 # (your client's Tailscale vs the route vs the server) before you blame the lab.
@@ -143,7 +144,8 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
-    hl-ssh [cmd]         ssh into the Docker LXC
+    hl-ssh [cmd]         ssh into the Docker LXC (CT 100, root@docker)
+    hl-host [cmd]        ssh into the Proxmox host (m5): drives, pct, vzdump
   docker / ops           (run locally on the server, over SSH from a client)
     hl-up [stack]        whole lab (boot order) or one stack
     hl-down [stack]      whole lab (reverse) or one stack
@@ -177,7 +179,8 @@ stack         <up|down|restart> <stack>
 backup        -                    pg_dumpall (scripts/pg-backup.sh)
 models        -                    rebuild tuned Ollama models
 reload-prom   -                    reload Prometheus config (no downtime)
-ssh           [cmd]                ssh into the Docker LXC
+ssh           [cmd]                ssh into the Docker LXC (CT 100)
+host          [cmd]                ssh into the Proxmox host (m5)
 vpn           -                    tailscale status
 vpn-up        -                    tailscale up --accept-routes
 vpn-down      -                    tailscale down
