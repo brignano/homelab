@@ -27,6 +27,37 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — #alerts: "node has no crontab entry" and the concierge page
+
+**Goal:** Stop the two alerts that kept repeating in `#alerts`.
+
+**Steps:**
+1. `hl-cron-missing`: the missing job was `offsite-backup.sh`, added to
+   `CRON_JOBS` by the backups PR and never installed. `./scripts/install-cron.sh`
+   on CT 100 added it. The script exits 0 until `restic.env` exists, so the
+   entry is harmless before B2 is set up.
+2. The summary named the job "node". `metrics.sh` writes `job="<script>"`,
+   which collides with the scrape label, so Prometheus stores it as
+   `exported_job`. `hl-cron-missing` and `hl-hc-ping-failing` now read
+   `exported_job`, and so does the Jobs dashboard's "Scheduled jobs" table,
+   whose Job column read "node" on every row.
+3. `hl-container-missing` for `concierge`: the stack was merged ahead of its
+   Console key, as the 2026-10-10 entry predicted. `concierge` joins
+   `SETUP_GATED_STACKS`, so it is required once `docker/concierge/.env` exists.
+
+**Issues encountered:**
+- The dead man's switch alert would also have pointed at `/var/log/node.log`.
+
+**Resolution:**
+- On the box: `git pull`, then `docker compose -f docker/monitoring/docker-compose.yml restart grafana`.
+  The concierge alert clears within one heartbeat (5 min) plus the rule's `for: 10m`.
+
+**Notes / next steps:**
+- Once `docker/concierge/.env` exists, the concierge pages again until it is up.
+  That is intended.
+
+---
+
 ## 2026-10-11 — Matterbridge: advertise Matter on eth0 only
 
 **Goal:** Fix every Alexa device reading "Device is unresponsive", the car's
