@@ -28,6 +28,10 @@ with it:
 Generate the two passwords with the password manager itself, save them, then
 paste them where the steps below say.
 
+**Where they are:** Google Password Manager. The LUKS passphrase is the entry
+`https://hl-backup.m5` (username `luks`, saved 2026-10-11), and the restic
+password goes under `https://hl-restic.m5`. The values are never written here.
+
 ## 1. Offsite copy (do it now)
 
 **Backblaze** (web console):

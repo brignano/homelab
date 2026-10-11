@@ -27,6 +27,52 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Drive day: backup drive encrypted, passphrase stored
+
+**Goal:** Start drive day (`docs/runbook-backups.md` §2–3). Both drives
+arrived, and the backup drive's LUKS passphrase has to be findable when the
+host that holds the keyfile is gone.
+
+**Steps:**
+1. Both drives on the M5's two blue front ports. `lsusb -t` on the host shows
+   each at `5000M` (USB 3) on its own controller (bus 002 and 004). The two
+   rear ports are USB 2.
+2. Identified on the host (`m5`, not CT 100) by `lsblk`:
+
+   | Role | Model | Serial | At first boot |
+   |---|---|---|---|
+   | Backup (2 TB, LUKS) | WDC WD20JDRW-11C7VS0 | `WD-WX22A36KSCSH` | `sda` |
+   | Media (5 TB, plain ext4) | WDC WD50NDZW-11BCSS1 | `WD-WXD2D36NFE47` | `sdb` |
+
+   Both came with a factory NTFS partition holding only WD's software.
+3. Backup drive: one GPT partition `hl-backup`, `apt install cryptsetup`
+   (Proxmox does not ship it), LUKS passphrase generated with
+   `openssl rand -base64 30`.
+4. **Passphrase stored in Google Password Manager**, entry site
+   `https://hl-backup.m5`, username `luks`, with the drive's serial in the
+   note. Checked by pasting it from there into `luksFormat`.
+
+**Issues encountered:**
+- `lsusb` "command not found": that shell was CT 100 (`root@docker`), which
+  has no USB tools because it sees no USB devices. The drives are worked on
+  from the host (`ssh root@10.0.0.200`, `root@m5`).
+- `cryptsetup` is not installed on Proxmox by default.
+
+**Resolution:**
+- Both installed with `apt` on the host.
+
+**Notes / next steps:**
+- **Lost the passphrase?** It is in Google Password Manager under
+  `hl-backup.m5`. It is the only way into the backup drive from another
+  machine; `/root/.hl-backup.key` dies with the host. Unlock elsewhere:
+  `cryptsetup open /dev/sdX1 hl-backup` (runbook §5).
+- Store the restic password the same way, as `https://hl-restic.m5`.
+- Still to do: keyfile + `luksAddKey`, `mkfs`, crypttab/fstab, `pvesm add`,
+  hook, the first timed vzdump (record its size and time here), the 02:30
+  schedule. Then the media drive (runbook §3) and Jellyfin.
+
+---
+
 ## 2026-10-11 — Home Assistant: Jax's litter box keeps its last reading
 
 **Goal:** The Jax report (an HA script that Alexa runs) said only "offline"
