@@ -64,6 +64,48 @@ day from a closet far from the gateway.
 
 ---
 
+## 2026-10-11 — Concierge phase 4: calendar, drafts and scenes behind ✅/❌
+
+**Goal:** Let the act lane do things, not just answer: create and move
+calendar events, save Gmail drafts and run Home Assistant scenes, each only
+after an allowlisted ✅ on the exact arguments (`docs/design/tsd-personal-assistant.md`, phase 4).
+
+**Steps:**
+1. `docker/concierge/app/actions.py`: pure argument checks per tool, an
+   in-memory `Pending` store (16 min, single use, exact-match), MIME building
+   for drafts and replies, and `execute()`.
+2. New propose-tier tools in `app/tools.py`: `create_event`, `move_event`,
+   `draft_email`, `run_scene`. They record proposals and change nothing.
+3. `POST /v1/execute` in `app/server.py`: acts only on a live id whose tool
+   and arguments match what was stored, then forgets it.
+4. Google scopes widened to `calendar.events`, `gmail.readonly`,
+   `gmail.compose`. Three write calls in `app/google.py`; tests fail on any
+   send, delete or modify URL.
+5. `app/scenes.py`: `scene.turn_on` over REST for scenes in `HA_SCENES` only.
+6. Bot: per-tool ✅/❌ prompts showing every field, a ✅ calls `/v1/execute`
+   and posts the result under the prompt; only allowlisted clicks reach the
+   buttons (and restart their timer).
+
+**Issues encountered:**
+- Holding an agent run open across a 15-minute approval would tie the run
+  to two processes and let the model act on a write's result.
+- `gmail.compose` can send drafts; no narrower scope creates them.
+- Moving an event with guests under `sendUpdates=none` silently moves it on
+  their calendars.
+
+**Resolution:**
+- Propose-then-execute instead of a mid-run pause (Decision 2 amendment).
+- "Never sends" rests on code and a test (Decision 4 amendment).
+- `move_event` refuses events with other people on them.
+
+**Notes / next steps (on the box):**
+- Rebuild both stacks (`up -d --build` for assistant, then concierge).
+- Rerun the concierge's `--google-auth` and paste the new refresh token. With
+  the phase 3 token every approved write fails with a 403 and says so.
+- Optional: `HA_SCENES` in `docker/concierge/.env`, after reading each scene.
+
+---
+
 ## 2026-10-11 — #alerts: "node has no crontab entry" and the concierge page
 
 **Goal:** Stop the two alerts that kept repeating in `#alerts`.

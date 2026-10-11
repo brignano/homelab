@@ -1279,12 +1279,36 @@ def _():
 
 @check("concierge: unknown or malformed proposals are never approvable")
 def _():
-    from app.concierge import APPROVABLE, Proposal, fact_of, render_proposal
-    assert APPROVABLE == {"remember"}
+    from app.concierge import APPROVABLE, Proposal, approvable, fact_of, render_proposal
+    assert APPROVABLE == {"remember", "create_event", "move_event", "draft_email", "run_scene"}
     for p in (Proposal("send_email", {"to": "a@b"}), Proposal("remember", {"fact": ""}),
               Proposal("remember", {"fact": 7}), Proposal("remember", {})):
         assert fact_of(p) is None, p
         assert "can't carry out" in render_proposal(p), p
+    ev = {"title": "x", "start": "2026-10-14", "end": "2026-10-15", "calendar": "primary"}
+    for p in (Proposal("create_event", ev),                              # no id
+              Proposal("create_event", ev, "../x"),                      # bad id
+              Proposal("create_event", {**ev, "title": ""}, "a1"),       # missing field
+              Proposal("create_event", {**ev, "extra": {"x": 1}}, "a1"),  # unrenderable field
+              Proposal("draft_email", {"to": ["a@b.c"], "body": "x" * 1900}, "a1")):  # too long to show
+        assert not approvable(p) and "can't carry out" in render_proposal(p), p
+    assert approvable(Proposal("create_event", ev, "a1"))
+
+
+@check("concierge: write prompts show every field the concierge will act on, inert")
+def _():
+    from app.concierge import Proposal, render_proposal
+    text = render_proposal(Proposal("draft_email", {
+        "to": ["ann@example.com"], "subject": "@everyone ```", "in_reply_to": "Lunch? — from Ann",
+        "body": "Sure,\nsee you at 1.", "reply_to_message_id": "m1"}, "a1"))
+    body = text.split("```\n", 1)[1]
+    assert body.count("```") == 1, text
+    assert "to: ann@example.com" in body and "  see you at 1." in body and "Lunch?" in body, text
+    assert text.startswith("**Save this Gmail draft?**")
+    mv = render_proposal(Proposal("move_event", {"calendar": "primary", "event_id": "e1", "title": "Dentist",
+                                                 "was": "2026-10-14T09:00", "start": "2026-10-15T09:00",
+                                                 "end": "2026-10-15T10:00"}, "b2"))
+    assert "was: 2026-10-14T09:00" in mv and "event_id: e1" in mv, mv
 
 
 @check("concierge: reply parsing tolerates junk, footer says what it cost")

@@ -1,17 +1,22 @@
-"""Read-only Google Calendar and Gmail, for the concierge's tools.
+"""Google Calendar and Gmail, for the concierge's tools.
 
 See docs/design/tsd-personal-assistant.md, Decision 4.
 
-Scopes are the capability ceiling
----------------------------------
-  calendar.events.readonly   read events. No writes, no calendar settings.
-  gmail.readonly             read and search mail, bodies included. No drafts,
-                             no labels, no send, no delete.
+Scopes
+------
+  calendar.events   read events, and create or change them. No calendar
+                    settings, sharing or ACLs.
+  gmail.readonly    read and search mail, bodies included.
+  gmail.compose     create drafts. Google also lets this scope SEND a draft,
+                    so "never sends" is held by this file, not by the scope:
+                    the only write calls here are `events.insert`,
+                    `events.patch` and `drafts.create`, and a test fails if a
+                    send, delete or modify URL appears. `gmail.send` and
+                    `gmail.modify` are never requested.
 
-Phase 4 widens this to `gmail.compose` and `calendar.events` for the write tools,
-by running `--google-auth` once more. It is narrow now because nothing in phase 3
-writes, and a token that cannot write is a write that cannot go wrong.
-`gmail.send` is never requested by anything in this repo.
+Phase 4 widened this from the read-only pair; rerun `--google-auth` after
+upgrading. Every write here runs only from actions.execute(), after a person
+approved the exact arguments in Discord (Decision 2).
 
 This is the act lane's own sign-in, separate from the digest's in
 docker/assistant/ (which holds `gmail.metadata` and can never see a body). The
@@ -45,8 +50,9 @@ CALENDAR_API = "https://www.googleapis.com/calendar/v3"
 GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
 
 SCOPES = (
-    "https://www.googleapis.com/auth/calendar.events.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/gmail.readonly",
+    "https://www.googleapis.com/auth/gmail.compose",
 )
 
 REDIRECT_URI = "http://127.0.0.1:8765"
@@ -76,6 +82,7 @@ def parse_events(payload: dict) -> list[dict]:
                for a in item.get("attendees", [])):
             continue
         out.append({
+            "id": item.get("id", ""),
             "title": (item.get("summary") or "(no title)").strip(),
             "start": _when(item.get("start", {})),
             "end": _when(item.get("end", {})),
@@ -83,6 +90,16 @@ def parse_events(payload: dict) -> list[dict]:
             "busy": item.get("transparency") != "transparent",
         })
     return out
+
+
+def other_attendees(item: dict) -> int:
+    """How many people besides the user are on an event, organizer included."""
+    others = sum(1 for a in item.get("attendees", []) if not a.get("self") and not a.get("resource"))
+    organizer = item.get("organizer") or {}
+    if organizer and not organizer.get("self") and not any(
+            a.get("organizer") for a in item.get("attendees", []) if not a.get("self")):
+        others += 1
+    return others
 
 
 def headers_of(payload: dict) -> dict[str, str]:
@@ -217,14 +234,18 @@ class Google:
         async with self._lock:
             if self._access and self._access[1] > time.time() + 60:
                 return self._access[0]
-            async with self._session.post(TOKEN_URL, data={
-                "client_id": self._client_id,
-                "client_secret": self._client_secret,
-                "refresh_token": self._refresh_token,
-                "grant_type": "refresh_token",
-            }, timeout=aiohttp.ClientTimeout(total=20)) as resp:
-                body = await resp.json(content_type=None)
-            if "access_token" not in body:
+            try:
+                async with self._session.post(TOKEN_URL, data={
+                    "client_id": self._client_id,
+                    "client_secret": self._client_secret,
+                    "refresh_token": self._refresh_token,
+                    "grant_type": "refresh_token",
+                }, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+                    body = await resp.json(content_type=None)
+            except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+                raise GoogleError(f"Google sign-in did not answer ({exc.__class__.__name__})") from exc
+            if not isinstance(body, dict) or "access_token" not in body:
+                body = body if isinstance(body, dict) else {}
                 reason = body.get("error") or f"HTTP {resp.status}"
                 raise GoogleError(f"Google sign-in no longer valid ({reason}) — rerun --google-auth")
             self._access = (body["access_token"], time.time() + int(body.get("expires_in", 3600)))
@@ -232,16 +253,40 @@ class Google:
 
     async def _get(self, url: str, params: list[tuple[str, str]] | dict) -> dict:
         token = await self._token()
-        async with self._session.get(
-            url, params=params,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=aiohttp.ClientTimeout(total=20),
-        ) as resp:
-            body = await resp.json(content_type=None)
-            if resp.status != 200:
-                message = (body.get("error") or {}).get("message") if isinstance(body, dict) else None
-                raise GoogleError(f"HTTP {resp.status}: {message or 'request failed'}")
-            return body
+        try:
+            async with self._session.get(
+                url, params=params,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                body = await resp.json(content_type=None)
+                status = resp.status
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            raise GoogleError(f"Google did not answer ({exc.__class__.__name__})") from exc
+        if status != 200:
+            message = (body.get("error") or {}).get("message") if isinstance(body, dict) else None
+            raise GoogleError(f"HTTP {status}: {message or 'request failed'}")
+        return body
+
+    async def _send(self, method: str, url: str, body: dict) -> dict:
+        """A write. Called only from actions.execute(), after approval."""
+        token = await self._token()
+        try:
+            async with self._session.request(
+                method, url, json=body,
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                status = resp.status
+                out = await resp.json(content_type=None)
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            # The write may have landed before the connection dropped.
+            raise GoogleError(f"no clear answer from Google ({exc.__class__.__name__}) — "
+                              "check before asking again, it may have gone through") from exc
+        if status not in (200, 201):
+            message = (out.get("error") or {}).get("message") if isinstance(out, dict) else None
+            raise GoogleError(f"HTTP {status}: {message or 'request failed'}")
+        return out
 
     async def check(self) -> None:
         """Refresh the access token. Proves the sign-in still works; reads nothing."""
@@ -275,3 +320,49 @@ class Google:
     async def read(self, message_id: str) -> dict:
         payload = await self._get(f"{GMAIL_API}/messages/{quote(message_id, safe='')}", {"format": "full"})
         return {**summarize_message(payload), "body": extract_text(payload)}
+
+    async def event(self, calendar_id: str, event_id: str) -> dict:
+        """One event, as parse_events shapes it, plus who else is on it. Read."""
+        item = await self._get(
+            f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events/{quote(event_id, safe='')}", {})
+        parsed = parse_events({"items": [item]})
+        if not parsed:
+            raise GoogleError("that event is cancelled or declined")
+        return {**parsed[0], "others": other_attendees(item)}
+
+    async def reply_context(self, message_id: str) -> dict:
+        """What a reply to this message needs: thread, headers, sender. Read."""
+        payload = await self._get(
+            f"{GMAIL_API}/messages/{quote(message_id, safe='')}",
+            [("format", "metadata"), ("metadataHeaders", "From"), ("metadataHeaders", "Reply-To"),
+             ("metadataHeaders", "Subject"), ("metadataHeaders", "Message-ID"),
+             ("metadataHeaders", "References")],
+        )
+        h = headers_of(payload)
+        return {
+            "thread_id": payload.get("threadId", ""),
+            "from": h.get("from", ""),
+            "reply_to": h.get("reply-to") or h.get("from", ""),
+            "subject": h.get("subject", ""),
+            "message_id": h.get("message-id", ""),
+            "references": h.get("references", ""),
+        }
+
+    # --- writes: only actions.execute() calls these -----------------------------
+
+    async def insert_event(self, calendar_id: str, body: dict) -> dict:
+        # sendUpdates=none: no attendees are ever set, and nobody is emailed.
+        return await self._send(
+            "POST", f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events?sendUpdates=none", body)
+
+    async def patch_event(self, calendar_id: str, event_id: str, body: dict) -> dict:
+        return await self._send(
+            "PATCH",
+            f"{CALENDAR_API}/calendars/{quote(calendar_id, safe='')}/events/"
+            f"{quote(event_id, safe='')}?sendUpdates=none", body)
+
+    async def create_draft(self, raw: str, thread_id: str = "") -> dict:
+        message: dict = {"raw": raw}
+        if thread_id:
+            message["threadId"] = thread_id
+        return await self._send("POST", f"{GMAIL_API}/drafts", {"message": message})
