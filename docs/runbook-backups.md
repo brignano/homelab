@@ -28,6 +28,10 @@ with it:
 Generate the two passwords with the password manager itself, save them, then
 paste them where the steps below say.
 
+**Where they are:** Google Password Manager. The LUKS passphrase is the entry
+`https://hl-backup.m5` (username `luks`, saved 2026-10-11), and the restic
+password goes under `https://hl-restic.m5`. The values are never written here.
+
 ## 1. Offsite copy (do it now)
 
 **Backblaze** (web console):
@@ -95,20 +99,32 @@ Below, `/dev/sdX` is the 2 TB WD drive from that list. **Check twice.** The
 next commands erase it.
 
 ```bash
+# 0. Proxmox does not ship cryptsetup.
+apt update && apt install -y cryptsetup
+
 # 1. One GPT partition across the drive.
 sgdisk --zap-all /dev/sdX && sgdisk -n1:0:0 -c1:hl-backup /dev/sdX
 
-# 2. LUKS, with the passphrase from your password manager (it prompts twice).
-cryptsetup luksFormat /dev/sdX1
-
-# 3. A keyfile on the host, so nightly backups unlock it unattended.
+# 2. A keyfile on the host, so nightly backups unlock it unattended,
+#    and LUKS with that keyfile as the first key. Nothing is pasted yet.
 dd if=/dev/urandom of=/root/.hl-backup.key bs=512 count=8 && chmod 400 /root/.hl-backup.key
-cryptsetup luksAddKey /dev/sdX1 /root/.hl-backup.key
+cryptsetup luksFormat --key-file /root/.hl-backup.key /dev/sdX1
+
+# 3. The passphrase as a second key. Paste it FROM the password manager at
+#    both prompts, then prove that saved copy opens the drive.
+cryptsetup luksAddKey --key-file /root/.hl-backup.key /dev/sdX1
+cryptsetup open --test-passphrase /dev/sdX1 && echo MATCHES
 
 # 4. Open it and make the filesystem.
 cryptsetup open --key-file /root/.hl-backup.key /dev/sdX1 hl-backup
 mkfs.ext4 -L hl-backup /dev/mapper/hl-backup
 ```
+
+Do not go past step 3 without `MATCHES`. Keyfile first is deliberate: the
+first time, the passphrase went into `luksFormat` from one clipboard and into
+`luksAddKey` from another, they did not match, and the drive had a key nobody
+knew. The keyfile cannot be mistyped, and `--test-passphrase` proves the copy
+you will actually have on the bad day.
 
 Unlock and mount at boot, without blocking boot if the drive is unplugged:
 
