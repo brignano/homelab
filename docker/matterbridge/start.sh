@@ -92,4 +92,11 @@ matterbridge --add matterbridge-hass --no-ansi >/dev/null
 # --novirtual: without it Matterbridge adds its own Restart and Update
 # switches to the bridge, and Alexa would offer them. "Update" runs npm inside
 # the container, around the versions the Dockerfile pins.
-exec matterbridge --docker --bridge --novirtual --bind "$BIND" --frontend 8283 --no-ansi
+# --mdnsinterface: advertise on the LAN interface only. On host networking
+# Matterbridge otherwise announces on every interface CT 100 has, docker0 and
+# each container's veth included, and an Echo given an address it cannot reach
+# reads every device as "unresponsive". Upstream says to set it for any Docker
+# host with more than one interface. A name that does not exist is logged
+# ("Invalid mdnsinterface") and Matterbridge falls back to all interfaces.
+exec matterbridge --docker --bridge --novirtual --bind "$BIND" --frontend 8283 \
+  --mdnsinterface "${MDNS_INTERFACE:-eth0}" --no-ansi
