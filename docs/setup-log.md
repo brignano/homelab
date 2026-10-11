@@ -27,6 +27,32 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Matterbridge: Alexa paired, entities split for their names
+
+**Goal:** Usable names in Alexa.
+
+**Steps:**
+1. Alexa paired (fabric `Alexa-1`). The car's entities arrived as "Fifth
+   contact sensor", "Seventh plug" and so on, and every device read "Device is
+   unresponsive".
+2. `start.sh`: `splitByLabel` set to `HA_LABEL`, `splitNameStrategy:
+   "Friendly name"`. Each labelled entity is now a Matter device of its own,
+   named like "Spaceship Front driver door".
+
+**Issues encountered:**
+- With the default merge, a device's entities share one bridged node, and
+  Alexa reads only the node's name and numbers the rest. The plugin README
+  documents this exact Alexa behaviour.
+- "Unresponsive": the log showed Matterbridge restarted many times during
+  setup (run count 30), and Alexa re-established 0 of 2 subscriptions after
+  one restart. Checked separately after the split.
+
+**Resolution:**
+- On the box: delete the generic devices in the Alexa app, then "discover
+  devices". The fabric survives, so no re-pairing should be needed.
+
+---
+
 ## 2026-10-11 — Matterbridge: a device label exposes the whole device
 
 **Goal:** Choose what Alexa gets before pairing.

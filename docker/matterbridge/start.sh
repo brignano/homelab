@@ -62,8 +62,13 @@ const config = {
   entityBlackList: ["lock", "cover", "valve", "alarm_control_panel", "button", "remote", "media_player"],
   deviceEntityBlackList: {},
   splitEntities: [],
-  splitByLabel: "",
-  splitNameStrategy: "Entity name",
+  // Every labelled entity becomes a Matter device of its own, named after the
+  // HA friendly name ("Spaceship Front driver door"). Merged, Alexa reads the
+  // device name only and numbers the rest: "Fifth contact sensor", "Seventh
+  // plug" (first pairing, 2026-10-11; plugin README, "Split Entities").
+  // Changing either line orphans the devices Alexa already has.
+  splitByLabel: process.env.HA_LABEL,
+  splitNameStrategy: "Friendly name",
   controllerStrategy: "Merge",
   namePostfix: "",
   postfix: "",
