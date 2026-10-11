@@ -71,7 +71,7 @@ docker exec prometheus wget -qO- \
   | grep -i 'storage.*local-lvm'
 ```
 
-**Three things grow. Two of them now have a ceiling** (a fourth, media, is planned):
+**Three things grow. Two of them now have a ceiling** (a fourth, media, lives on its own drive):
 
 - **Prometheus** — 30d (`--storage.tsdb.retention.time`), **Loki** — 30d
   (`retention_period`). Both are at steady state.
@@ -81,7 +81,7 @@ docker exec prometheus wget -qO- \
   week-old `builder prune` after its pulls, and reports what it freed.
   **Never `image prune -a` on this box** — Sablier scales the Kali webtop to
   zero, so `-a` deletes a GB-scale image that has no container on it by design.
-- **Media (planned).** Jellyfin's library goes on its own drive, never the
+- **Media.** Jellyfin's library is on its own 5 TB drive, never the
   backup drive, and its mount point on CT 100 carries `backup=0` — otherwise the
   nightly vzdump tries to copy the library and fails. See
   `docs/design/tsd-backups-and-monitoring.md`, Phase 1 step 7.
@@ -136,7 +136,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Kali webtop | `docker/desktops/` | LAN + tailnet (via Caddy, `kali.home`, on-demand) |
 | Home Assistant | `docker/homeassistant/` | LAN + tailnet: **host networking** (`:8123` direct, and via Caddy at `ha.$HOMELAB_DOMAIN`), for HomeKit/Matter/discovery. Reached by other containers as `host.docker.internal:8123`. |
 | Matterbridge | `docker/matterbridge/` | **host networking** for Matter: UDP 5540 (LAN + tailnet, authenticated), mDNS 5353 (LAN), needs IPv6. Web UI on `127.0.0.1:8283` only, no Caddy route, opened over SSH. Offers HA entities labelled `Alexa` to an Echo |
-| Jellyfin | `docker/jellyfin/` (built; started on drive day) | LAN + tailnet (via Caddy, `jellyfin.$HOMELAB_DOMAIN`) — **not** Cloudflare Tunnel; joins `proxy_proxy`; iGPU via `dev0`; library read-only on its own drive (`backup=0`) |
+| Jellyfin | `docker/jellyfin/` (running since 2026-10-11) | LAN + tailnet (via Caddy, `jellyfin.$HOMELAB_DOMAIN`) — **not** Cloudflare Tunnel; joins `proxy_proxy`; iGPU via `dev0`; library read-only on its own drive (`backup=0`) |
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC — `/dev/net/tun` isn't exposed to the container.)
@@ -224,7 +224,7 @@ injection) and the two rules for extending it are in
 
 ## Planned / proposals (not yet deployed)
 - [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **🚧 Phases 0–1 running.** Since 2026-10-11 a nightly 02:30 `vzdump` images all of CT 100 (every volume and `.env`) to the 2 TB LUKS drive on the host, verified with `zstd -t` and watched by Healthchecks. ⚠️ **That copy is on the same desk as the original** — fire, theft or a surge takes both — and it has **never been restored** (the drill, Phase 1 step 6, is still to do). Offsite (restic → B2, Phase 2) is built and waits on the B2 account. The media drive is `backup=0` and has no copy by design.
-- [`docs/design/tsd-jellyfin.md`](docs/design/tsd-jellyfin.md) — **✅ approved; stack built** in `docker/jellyfin/`, started on drive day (it refuses to start without the GPU and the media drive, on purpose). Phase 1, passing the iGPU into CT 100, can be done now: `docker/jellyfin/README.md`.
+- [`docs/design/tsd-jellyfin.md`](docs/design/tsd-jellyfin.md) — **✅ deployed 2026-10-11.** Running in `docker/jellyfin/` with VA-API transcoding (verified ~40x real time); library on the 5 TB drive at `/media` (`backup=0`). It still refuses to start without the GPU and the media drive, on purpose.
 - [`docs/design/tsd-photo-library.md`](docs/design/tsd-photo-library.md) — **📝 draft.** A nightly, download-only `icloudpd` mirror of iCloud Photos onto the 5 TB drive (the second copy; iCloud stays primary and offsite), plus a Mac-side cleanup that reads Apple's own quality scores and *proposes* deletions into review albums. No script ever deletes a photo.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — future auto-remediation layer; depends on the above.
 - [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–4 built** (calendar, mail metadata and Home Assistant states in the digest; the concierge answering in `#ask`, proposing calendar events, Gmail drafts and allowlisted scenes that run only on a ✅; see `docker/assistant/README.md` → "Today", `docker/homeassistant/README.md` and `docker/concierge/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot in `#ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.

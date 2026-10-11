@@ -1,7 +1,7 @@
 # TSD: Jellyfin, with the iGPU doing the transcoding
 
-**Status:** ✅ approved 2026-10-10; ✅ phase 1 (GPU) done 2026-10-10; 🚧 stack
-built (`docker/jellyfin/`), deployed on drive day. See [Revisions](#revisions)
+**Status:** ✅ approved 2026-10-10; ✅ phase 1 (GPU) done 2026-10-10; ✅ deployed
+2026-10-11 (drive day): running, VA-API encode verified at ~40x real time. See [Revisions](#revisions)
 for what building it changed.
 **Date:** 2026-10-10
 **Owner:** Anthony
