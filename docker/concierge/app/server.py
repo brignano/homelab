@@ -7,6 +7,11 @@ that one day lands on that network by mistake still cannot spend the API budget.
 
 One task at a time. Nobody but one person asks, and a second request arriving
 mid-task waits rather than running two agents against the same spend limit.
+
+Two routes: /v1/ask runs the agent and returns its answer and proposals;
+/v1/execute carries out ONE proposal after the bot saw a ✅ for it. The second
+never runs the model, and only acts on an id this process handed out, with
+exactly the tool and arguments it stored (app/actions.py).
 """
 
 from __future__ import annotations
@@ -18,10 +23,11 @@ import logging
 import aiohttp
 from aiohttp import web
 
-from . import agent
+from . import actions, agent, audit
 from .config import Config
 from .google import Google
 from .home import Home
+from .scenes import Scenes
 
 log = logging.getLogger(__name__)
 
@@ -67,6 +73,8 @@ class Concierge:
         self._session: aiohttp.ClientSession | None = None
         self.google: Google | None = None
         self.home: Home | None = None
+        self.scenes: Scenes | None = None
+        self.pending = actions.Pending()
 
     async def start(self, app: web.Application) -> None:
         self._session = aiohttp.ClientSession()
@@ -75,8 +83,11 @@ class Concierge:
                                  self.cfg.google_client_secret, self.cfg.google_refresh_token)
         if self.cfg.home_enabled:
             self.home = Home(self.cfg.ha_url, self.cfg.ha_token)
-        log.info("concierge ready: model=%s google=%s home=%s",
-                 self.cfg.model, self.google is not None, self.home is not None)
+        if self.cfg.scenes_enabled:
+            self.scenes = Scenes(self._session, self.cfg.ha_url, self.cfg.ha_token, self.cfg.ha_scenes)
+        log.info("concierge ready: model=%s google=%s home=%s scenes=%d",
+                 self.cfg.model, self.google is not None, self.home is not None,
+                 len(self.cfg.ha_scenes) if self.scenes else 0)
 
     async def stop(self, app: web.Application) -> None:
         if self._session is not None:
@@ -126,6 +137,10 @@ class Concierge:
         finally:
             self._in_flight -= 1
 
+        for p in outcome.proposals:
+            if p["tool"] in actions.EXECUTABLE:
+                self.pending.add(p)
+
         return web.json_response({
             "ok": outcome.ok,
             "task": outcome.task_id,
@@ -140,6 +155,35 @@ class Concierge:
         })
 
 
+    async def execute(self, request: web.Request) -> web.Response:
+        if not self._authorised(request):
+            log.warning("refused /v1/execute from %s: bad or missing token", request.remote)
+            return _bad("unauthorised", 401)
+        try:
+            body = await request.json()
+        except ValueError:
+            return _bad("body is not JSON")
+        if not isinstance(body, dict):
+            return _bad("body must be a JSON object")
+        taken = self.pending.take(body.get("id"), body.get("tool"), body.get("args"))
+        if isinstance(taken, str):
+            audit.emit("execute", id=str(body.get("id"))[:32], tool=str(body.get("tool"))[:40],
+                       ok=False, error=taken)
+            return _bad(taken, 410 if taken.startswith("expired") else 409)
+        tool, args = taken
+        try:
+            summary = await actions.execute(tool, args, self.google, self.scenes)
+        except actions.ActionError as exc:
+            audit.emit("execute", id=body["id"], tool=tool, ok=False, error=str(exc))
+            return _bad(str(exc), 502)
+        except Exception as exc:  # noqa: BLE001 — a ✅ must always get an answer
+            log.exception("execute failed")
+            audit.emit("execute", id=body["id"], tool=tool, ok=False, error=repr(exc))
+            return _bad(f"outcome unknown ({exc.__class__.__name__}) — check before asking again", 502)
+        audit.emit("execute", id=body["id"], tool=tool, ok=True)
+        return web.json_response({"ok": True, "summary": summary})
+
+
 def make_app(cfg: Config) -> web.Application:
     concierge = Concierge(cfg)
     app = web.Application(client_max_size=256 * 1024)
@@ -147,6 +191,7 @@ def make_app(cfg: Config) -> web.Application:
     app.on_cleanup.append(concierge.stop)
     app.router.add_get("/healthz", concierge.healthz)
     app.router.add_post("/v1/ask", concierge.ask)
+    app.router.add_post("/v1/execute", concierge.execute)
     return app
 
 

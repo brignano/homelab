@@ -10,14 +10,14 @@ name it made up) is not in these tables and is therefore **never**.
 Tiers
 -----
   read     runs without asking. Looks things up; changes nothing anywhere.
-  propose  the write-tier tools whose effect happens OUTSIDE this process, only
-           after a person approves it in Discord. The call itself records a
-           proposal and nothing else, so allowing it here is safe: the bot
-           renders the arguments verbatim with ✅/❌, and only a ✅ from an
-           allowlisted user carries it out. Phase 3 has one: `remember`.
-  write    tools that act from inside this process. Phase 4 adds them behind an
-           approval gate that pauses the run; until that gate exists, a write
-           tool is refused even if someone registers one.
+  propose  every write. The call records a proposal and nothing else, so
+           allowing it here is safe: the bot renders the arguments verbatim with
+           ✅/❌, and only a ✅ from an allowlisted user carries it out — in the
+           bot for `remember`, through /v1/execute for phase 4's calendar,
+           draft and scene tools (app/actions.py), never during the run.
+  write    a tool that would act from inside the run. There are none, and
+           decide() refuses one even if someone registers it: every write goes
+           through propose, so the agent never holds a pause open.
   never    everything else. Not registered with the agent at all: send mail,
            delete, unlock, disarm, open the garage, buy anything.
 
@@ -40,8 +40,8 @@ READ = frozenset({
     "mail_read",
     "home_overview",
 })
-PROPOSE = frozenset({"remember"})
-# Phase 4. Empty on purpose: see the module docstring.
+PROPOSE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene"})
+# Empty on purpose: see the module docstring.
 WRITE: frozenset[str] = frozenset()
 
 assert not (READ & PROPOSE) and not (READ & WRITE) and not (PROPOSE & WRITE)
@@ -79,5 +79,5 @@ def decide(tool_name: str) -> Decision:
         return Decision(tool_name, tier, True, f"{tier} tier")
     if tier == "write":
         return Decision(tool_name, tier, False,
-                        "write tools need the approval gate, which is not built yet (phase 4)")
+                        "tools that act during the run are not allowed; writes are proposals")
     return Decision(tool_name, tier, False, "not a tool this assistant may use")

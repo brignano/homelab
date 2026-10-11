@@ -1,6 +1,6 @@
 """The bot's side of the act lane: forward #ask to the concierge, render the reply.
 
-See docs/design/tsd-personal-assistant.md, phase 3, and docker/concierge/.
+See docs/design/tsd-personal-assistant.md, phases 3–4, and docker/concierge/.
 
 The bot is the only front door (Decision 1). It does three things here and
 nothing else: gather the conversation and the approved memories out of Discord,
@@ -27,12 +27,35 @@ log = logging.getLogger(__name__)
 # prompt nobody looked at must never turn into a yes.
 APPROVAL_TIMEOUT_S = 15 * 60
 
-# Every tool the bot knows how to carry out after approval. A proposal naming
-# anything else is shown as refused, never executed.
-APPROVABLE = frozenset({"remember"})
+# Every tool the bot knows how to render for approval. `remember` is carried
+# out here (a post to #memory); the rest go back to the concierge's
+# /v1/execute with the id it issued. A proposal naming anything else is shown
+# as refused, never executed.
+APPROVABLE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene"})
+
+# How each executable proposal is shown: a heading, then the fields in order.
+# Every field the concierge acts on is listed, except draft_email's
+# reply_to_message_id, which `in_reply_to` (built by the concierge from that
+# message) stands in for.
+_LAYOUT: dict[str, tuple[str, tuple[str, ...]]] = {
+    "create_event": ("**Create this event?** Nobody is invited.",
+                     ("title", "start", "end", "location", "description", "calendar")),
+    "move_event": ("**Move this event?** Only the time changes; nobody is notified.",
+                   ("title", "was", "start", "end", "calendar", "event_id")),
+    "draft_email": ("**Save this Gmail draft?** It is not sent; you send it from Gmail.",
+                    ("to", "subject", "in_reply_to", "body")),
+    "run_scene": ("**Run this Home Assistant scene?**", ("entity_id",)),
+}
+_REQUIRED = {
+    "create_event": ("title", "start", "end", "calendar"),
+    "move_event": ("event_id", "start", "end", "calendar"),
+    "draft_email": ("to", "body"),
+    "run_scene": ("entity_id",),
+}
 
 MAX_FACT_CHARS = 300
 MEMORY_SCAN = 200
+EXECUTE_TIMEOUT_S = 90
 
 
 class ConciergeError(RuntimeError):
@@ -43,6 +66,7 @@ class ConciergeError(RuntimeError):
 class Proposal:
     tool: str
     args: dict
+    id: str = ""
 
 
 @dataclass
@@ -61,7 +85,8 @@ def parse_reply(body: dict) -> Reply:
     proposals = []
     for p in body.get("proposals") or []:
         if isinstance(p, dict) and isinstance(p.get("tool"), str) and isinstance(p.get("args"), dict):
-            proposals.append(Proposal(p["tool"], p["args"]))
+            pid = p.get("id") if isinstance(p.get("id"), str) else ""
+            proposals.append(Proposal(p["tool"], p["args"], pid))
     cost = body.get("cost_usd")
     return Reply(
         ok=bool(body.get("ok")),
@@ -119,17 +144,60 @@ def fact_of(proposal: Proposal) -> str | None:
     return fact or None
 
 
+def approvable(proposal: Proposal) -> bool:
+    """Can a ✅ on this proposal do anything? Unknown or malformed: no."""
+    if proposal.tool == "remember":
+        return fact_of(proposal) is not None
+    if proposal.tool not in APPROVABLE or not proposal.id.isalnum():
+        return False
+    for key in _REQUIRED[proposal.tool]:
+        value = proposal.args.get(key)
+        if not value or not isinstance(value, (str, list)):
+            return False
+    if not all(isinstance(v, (str, list)) for v in proposal.args.values()):
+        return False
+    # What cannot be shown in full is not approvable: a cut prompt hides part
+    # of what would run.
+    return len(_show(proposal)) <= MAX_PROMPT_CHARS
+
+
+MAX_PROMPT_CHARS = 1900  # under Discord's 2000, with room to spare
+
+
+def _inert(value: object) -> str:
+    text = ", ".join(map(str, value)) if isinstance(value, list) else str(value)
+    return text.replace("`", "ˋ")
+
+
+def _show(proposal: Proposal) -> str:
+    heading, order = _LAYOUT[proposal.tool]
+    lines = []
+    for key in order:
+        value = proposal.args.get(key)
+        if not value:
+            continue
+        text = _inert(value)
+        if "\n" in text:
+            lines.append(f"{key}:")
+            lines.extend("  " + ln for ln in text.split("\n"))
+        else:
+            lines.append(f"{key}: {text}")
+    return f"{heading}\n```\n" + "\n".join(lines) + "\n```"
+
+
 def render_proposal(proposal: Proposal) -> str:
     """The approval prompt, built from the arguments alone.
 
-    Inside a code block, so the fact cannot ping anyone, render a link, or
+    Inside a code block, so no field can ping anyone, render a link, or
     format itself into something that looks like a different message. Backticks
-    are swapped out so it cannot close the block early.
+    are swapped out so nothing can close the block early.
     """
-    if proposal.tool not in APPROVABLE or fact_of(proposal) is None:
+    if not approvable(proposal):
         return f"⚠️ The assistant proposed `{proposal.tool[:40].replace('`', 'ˋ')}`, which I can't carry out. Ignored."
-    fact = fact_of(proposal).replace("`", "ˋ")
-    return f"**Remember this?** Saved to #memory only if you approve.\n```\nremember(fact={fact!r})\n```"
+    if proposal.tool == "remember":
+        fact = fact_of(proposal).replace("`", "ˋ")
+        return f"**Remember this?** Saved to #memory only if you approve.\n```\nremember(fact={fact!r})\n```"
+    return _show(proposal)
 
 
 def usable_memories(messages: list[tuple[bool, str]]) -> list[str]:
@@ -152,6 +220,7 @@ class Concierge:
                  timeout_s: int = 360) -> None:
         self._session = session
         self._url = base_url.rstrip("/") + "/v1/ask"
+        self._execute_url = base_url.rstrip("/") + "/v1/execute"
         self._token = token
         # Longer than the concierge's own CONCIERGE_TIMEOUT_S, so its timeout,
         # which says what happened, wins the race.
@@ -180,3 +249,29 @@ class Concierge:
         if status != 200:
             raise ConciergeError(f"HTTP {status}: {body.get('error') or 'request failed'}")
         return parse_reply(body)
+
+    async def execute(self, proposal: Proposal) -> str:
+        """Carry out one approved proposal. Returns the concierge's one-line result."""
+        try:
+            async with self._session.post(
+                self._execute_url,
+                json={"id": proposal.id, "tool": proposal.tool, "args": proposal.args},
+                headers={"Authorization": f"Bearer {self._token}"},
+                # Above the concierge's worst case (three 20s Google calls),
+                # so a slow write is not reported as failed after it landed.
+                timeout=aiohttp.ClientTimeout(total=EXECUTE_TIMEOUT_S),
+            ) as resp:
+                status = resp.status
+                body = await resp.json(content_type=None)
+        except aiohttp.ClientConnectorError as exc:
+            raise ConciergeError("the concierge isn't running, so nothing was done") from exc
+        except (aiohttp.ClientError, TimeoutError, ValueError) as exc:
+            raise ConciergeError(f"outcome unknown ({exc.__class__.__name__}) — "
+                                 "check before asking again, it may have gone through") from exc
+        if not isinstance(body, dict):
+            raise ConciergeError(f"HTTP {status}: unreadable reply")
+        if status == 410:
+            raise ConciergeError("expired (the concierge restarted or it timed out)")
+        if status != 200 or not body.get("ok"):
+            raise ConciergeError(str(body.get("error") or f"HTTP {status}"))
+        return str(body.get("summary") or "done")
