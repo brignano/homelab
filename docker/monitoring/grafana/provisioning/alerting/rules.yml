@@ -484,7 +484,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.job }} cannot arm its dead man's switch — the ping is failing or its URL is unset; see /var/log/{{ $labels.job }}.log on CT 100"
+          summary: "{{ $labels.exported_job }} cannot arm its dead man's switch — the ping is failing or its URL is unset; see /var/log/{{ $labels.exported_job }}.log on CT 100"
         data:
           - refId: A
             relativeTimeRange: { from: 86400, to: 0 }
@@ -512,7 +512,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "{{ $labels.job }} has no crontab entry — run ./scripts/install-cron.sh on CT 100"
+          summary: "{{ $labels.exported_job }} has no crontab entry — run ./scripts/install-cron.sh on CT 100"
         data:
           - refId: A
             relativeTimeRange: { from: 1800, to: 0 }

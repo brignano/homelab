@@ -102,6 +102,11 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
   group and arrive as one message listing each subject. Name the subject in the
   summary (`{{ $labels.stack }}`, `{{ $labels.container }}`), never rely on
   `instance` to say what broke.
+- **Neither is `job`.** A textfile label called `job` collides with the scrape
+  job: Prometheus keeps `job="node"` and renames ours to `exported_job`. So
+  `{{ $labels.job }}` paged "node has no crontab entry" for a missing
+  `offsite-backup.sh` (2026-10-11). Read `exported_job` in summaries and
+  dashboard tables, and name new labels anything but `job` or `instance`.
 - **Before re-diagnosing an alert you already fixed, check it is deployed.**
   `prometheus.yml`, the Caddyfile and `grafana/provisioning/` are all
   bind-mounted, so `git pull` changes the files while the containers keep

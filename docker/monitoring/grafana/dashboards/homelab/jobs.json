@@ -537,13 +537,16 @@
           "options": {
             "excludeByName": {
               "Time": true,
-              "__name__": true
+              "__name__": true,
+              "host": true,
+              "instance": true,
+              "job": true
             },
             "includeByName": {},
             "indexByName": {},
             "renameByName": {
               "Value": "Crontab",
-              "job": "Job"
+              "exported_job": "Job"
             }
           }
         },
