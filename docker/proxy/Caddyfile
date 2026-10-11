@@ -83,6 +83,26 @@ jellyfin.{$HOMELAB_DOMAIN} {
 	reverse_proxy jellyfin:8096
 }
 
+# Downloads (docker/downloads/). Like Jellyfin, these join the proxy network, so
+# this stack never depends on them being up. qBittorrent has no network of its
+# own: it lives inside gluetun's (the VPN), so it is reached as gluetun:8080.
+# LAN + tailnet only, never the tunnel. Each app has its own login.
+torrent.{$HOMELAB_DOMAIN} {
+	reverse_proxy gluetun:8080
+}
+
+sonarr.{$HOMELAB_DOMAIN} {
+	reverse_proxy sonarr:8989
+}
+
+radarr.{$HOMELAB_DOMAIN} {
+	reverse_proxy radarr:7878
+}
+
+prowlarr.{$HOMELAB_DOMAIN} {
+	reverse_proxy prowlarr:9696
+}
+
 # Open WebUI — AI chat (container listens on 8080)
 chat.{$HOMELAB_DOMAIN} {
 	reverse_proxy open-webui:8080

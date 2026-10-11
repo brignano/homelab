@@ -105,6 +105,16 @@ read, never as a side effect of the nightly auto-pull.",
       pinDigests: true,
     },
     {
+      description: "Downloads (docker/downloads/): gluetun, qBittorrent and \
+the *arr apps, pinned by tag and digest. Sonarr, Radarr and Prowlarr migrate \
+their databases one way on upgrade, and a gluetun bump can change how the VPN \
+or its kill switch behaves, so each is a PR to read, one per image.",
+      matchFileNames: ["docker/downloads/**"],
+      enabled: true,
+      pinDigests: true,
+      groupName: null,
+    },
+    {
       description: "Matterbridge (docker/matterbridge/): the base image, pinned \
 by tag and digest, and the matterbridge-hass plugin in the Dockerfile's ARG. One \
 group, because each plugin release names the Matterbridge it needs -- bumped \
