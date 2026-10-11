@@ -29,3 +29,72 @@ default_config:
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
+
+# Jax's litter box: the last good reading, kept through Wi-Fi drop-outs.
+#
+# The box (Tuya, cloud) drops off Wi-Fi and back several times a day, and
+# every one of its sensors reads `unavailable` while it is gone. These keep
+# the last real value instead. Trigger-based template entities restore their
+# state after an HA restart too. The Jax report script reads these, so Alexa
+# can say "offline right now; earlier today: …" instead of only "offline".
+#
+# A visit is recorded only when the daily count goes UP. The source counter's
+# own last_changed also moves on every reconnect (unavailable -> 1), which
+# made "last visit at …" report reconnects as visits.
+template:
+  - trigger:
+      - trigger: state
+        entity_id: sensor.jaxons_litter_box_excretion_times_day
+        not_to: [unavailable, unknown]
+    sensor:
+      - name: Jax litter visits today
+        unique_id: jax_litter_visits_today
+        state_class: measurement
+        state: "{{ trigger.to_state.state | int(0) }}"
+        attributes:
+          # The date of the reading, so a count carried over from yesterday
+          # is never read out as today's.
+          day: "{{ now().date().isoformat() }}"
+      - name: Jax last litter visit
+        unique_id: jax_last_litter_visit
+        device_class: timestamp
+        # Its own previous count and day are kept as attributes, so the
+        # comparison never depends on the order sibling sensors update in.
+        # A new day with a count above zero means he went while the box was
+        # offline across midnight; the time is then when the box came back.
+        state: >
+          {% set new = trigger.to_state.state | int(0) %}
+          {% set old = this.attributes.get('count') %}
+          {% set today = now().date().isoformat() %}
+          {% set went = old is not none and (
+               (this.attributes.get('day') == today and new > old | int(0))
+               or (this.attributes.get('day') != today and new > 0)) %}
+          {% if went %}{{ now().isoformat() }}
+          {% elif this.state not in ['unknown', 'unavailable', none] %}{{ this.state }}
+          {% else %}{{ none }}{% endif %}
+        attributes:
+          count: "{{ trigger.to_state.state | int(0) }}"
+          day: "{{ now().date().isoformat() }}"
+
+  - trigger:
+      - trigger: state
+        entity_id: sensor.jaxons_litter_box_excretion_duration
+        not_to: [unavailable, unknown]
+    sensor:
+      - name: Jax last litter visit duration
+        unique_id: jax_last_litter_visit_duration
+        device_class: duration
+        unit_of_measurement: s
+        state: "{{ trigger.to_state.state | float(0) }}"
+
+  - trigger:
+      - trigger: state
+        entity_id: sensor.jaxons_litter_box_cat_weight
+        not_to: [unavailable, unknown]
+    sensor:
+      - name: Jax weight
+        unique_id: jax_weight
+        state_class: measurement
+        # The box reports no unit; 12.5 only makes sense as pounds.
+        unit_of_measurement: lb
+        state: "{{ trigger.to_state.state | float(0) | round(1) }}"

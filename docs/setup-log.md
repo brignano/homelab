@@ -27,6 +27,43 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-11 — Home Assistant: Jax's litter box keeps its last reading
+
+**Goal:** The Jax report (an HA script that Alexa runs) said only "offline"
+whenever the litter box had dropped off Wi-Fi, which it does several times a
+day from a closet far from the gateway.
+
+**Steps:**
+1. `docker/homeassistant/config/configuration.yaml`: four trigger-based
+   template sensors (`sensor.jax_litter_visits_today`, `jax_last_litter_visit`,
+   `jax_last_litter_visit_duration`, `jax_weight`). Each updates only on a real
+   reading, so `unavailable` never overwrites the last one, and each restores
+   after an HA restart.
+2. The Jax report script (UI-managed, `scripts.yaml` in the volume) reads these
+   and says "offline right now, so this is its last reading" when it is.
+
+**Issues encountered:**
+- The old report took "last visit" from the counter's `last_changed`, which
+  also moves on every reconnect (`unavailable -> 1`). With the box flapping,
+  "last at 10:05 AM" could have been a reconnect. A visit is now recorded only
+  when the count goes up, compared with the sensor's own stored count.
+
+**Resolution:**
+- `hass --script check_config` (HA 2026.2.3, from PyPI) passes. It catches an
+  injected invalid option, so the pass is meaningful.
+- Run in-process: offline keeps the values; a reconnect at the same count is
+  not a visit; 1 -> 2 records a visit; a visit made while offline is recorded
+  when the box comes back. The report renders correctly for no data,
+  online and offline.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then recreate `homeassistant` (single-file mount). Until
+  the next real visit, "last visit" is empty; the count shows at once.
+- The Wi-Fi drop-outs themselves are a router question (2.4 GHz band
+  steering on the Xfinity gateway), not fixed here.
+
+---
+
 ## 2026-10-11 — #alerts: "node has no crontab entry" and the concierge page
 
 **Goal:** Stop the two alerts that kept repeating in `#alerts`.
