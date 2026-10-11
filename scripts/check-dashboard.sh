@@ -68,6 +68,31 @@ for href in $(grep -oE 'href: https://[a-z0-9-]+\.\{\{HOMEPAGE_VAR_DOMAIN\}\}' "
   fi
 done
 
+# Every section in services.yaml must be named in settings.yaml's `layout:`.
+# Homepage does not complain about one that is missing — it renders it after
+# all the listed sections, so the order quietly stops being the one you chose.
+# That is how Home Assistant sat at the bottom of the page.
+SETTINGS="$REPO/docker/dashboard/config/settings.yaml"
+unlaid=""
+layout=$(awk '
+  /^layout:/ { on = 1; next }
+  on && /^[^ \t#]/ { exit }
+  on && /^  [^ #][^:]*:[[:space:]]*$/ { sub(/^  /, ""); sub(/:[[:space:]]*$/, ""); print }
+' "$SETTINGS")
+sections=$(sed -n 's/^- \(.*\):[[:space:]]*$/\1/p' "$SERVICES")
+old_ifs=$IFS
+IFS='
+'
+for section in $sections; do
+  if printf '%s\n' "$layout" | grep -qxF "$section"; then
+    echo "ok       section '$section' is in the layout"
+  else
+    echo "MISSING  section '$section' is not in settings.yaml layout — it will render last"
+    unlaid="$unlaid '$section'"
+  fi
+done
+IFS=$old_ifs
+
 # Homepage rejects any Host header it was not told to expect, so the address
 # Caddy serves the dashboard at and HOMEPAGE_ALLOWED_HOSTS must be the same
 # string. They live in different files, and a mismatch does not fail the
@@ -219,10 +244,11 @@ for icon in m.get("icons", []):
   fi
 fi
 
-if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
+if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$unlaid" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
   echo >&2
   [ -z "$missing" ] || echo "Add a tile to docker/dashboard/config/services.yaml for:$missing" >&2
   [ -z "$stale" ]   || echo "Remove or fix tiles pointing at:$stale" >&2
+  [ -z "$unlaid" ]  || echo "Add these sections to layout: in docker/dashboard/config/settings.yaml:$unlaid" >&2
   [ -z "$mismatch" ] || echo "HOMEPAGE_ALLOWED_HOSTS must equal the site address Caddy serves the dashboard at." >&2
   [ -z "$asset_err" ] || echo "Every /<dir>/... path in settings.yaml or custom.css must exist under docker/dashboard/<dir>, and that directory must be mounted at /app/public/<dir>." >&2
   echo "(If a site genuinely should have no tile, add it to EXEMPT in $0 with a reason.)" >&2
