@@ -192,6 +192,7 @@ stop gets 60s (`stop_grace_period`) to write it out. Don't `docker kill` it.
 | `Label "Alexa" not found in Home Assistant` | No HA label named exactly `Alexa` (case matters). Create it, label some entities, `docker restart matterbridge`. |
 | Logs show `401` or "unauthorized" from HA | The `matterbridge` user's token was deleted or the user removed. Make a new token, update `HA_TOKEN`, then `up -d --force-recreate`. |
 | Alexa has controls you never labelled (sentry mode, charging) | The `Alexa` label is on the device, which exposes every entity on it. Move it to the entities ("Home Assistant user"), restart, and check the log before re-pairing. |
+| Alexa shows "Fifth contact sensor", "Seventh plug" | Entities merged into one Matter device: Alexa names only the device and numbers its parts. `start.sh` splits every labelled entity into its own device (`splitByLabel`), named after its HA friendly name. After a change to splitting, delete the old devices in the Alexa app, then "Alexa, discover devices". |
 | An entity is not in Alexa | It lacks the `Alexa` label, its domain is blacklisted (lock, cover, valve, alarm, button, remote, media player), or it is hidden in HA. Fix it, then `docker restart matterbridge`. |
 | Alexa cannot find the bridge while pairing | The phone and the Echo must be on the same LAN as CT 100, not the tailnet. Check `docker logs matterbridge` for mDNS errors. |
 | Every device shows up twice | The Home Assistant Cloud Alexa skill is still linked. See "Before you start" step 3. |
