@@ -91,6 +91,9 @@ in this repo. Two things in the compose file shape them:
 - **Recordings go to `/recordings`**, which is `/media/jellyfin/recordings` on
   the media drive. Set it under *Live TV → Recording path*. The library mount is
   read-only, so the DVR has nowhere else to write.
+- **Guide data comes from `docker/epg/`**: add an XMLTV provider with URL
+  `http://epg:3000/guide.xml`. It covers the channels in the playlists listed
+  in `docker/epg/.env`, so keep those in step with the tuners here.
 
 Live TV traffic leaves through the house's connection, not the VPN: only
 qBittorrent is inside gluetun (`docker/downloads/`).

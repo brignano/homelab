@@ -27,9 +27,10 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
-## 2026-10-12 — Jellyfin Live TV (iptv-org M3U) and a recordings mount
+## 2026-10-12 — Jellyfin Live TV (iptv-org M3U), recordings mount, TV guide
 
-**Goal:** Live TV in Jellyfin, with somewhere for the DVR to write.
+**Goal:** Live TV in Jellyfin, with a programme guide and somewhere for the DVR
+to write.
 
 **Steps:**
 1. *Live TV → Tuner Devices → M3U Tuner*:
@@ -54,8 +55,17 @@ Chronological record of significant configuration steps, decisions, and issues.
   *Live TV → Recording path* to `/recordings`. Do the `mkdir` before the next
   04:00 `repo-sync.sh`, which will recreate Jellyfin on its own and fail
   without the folder.
-- No guide data yet. iptv-org no longer hosts EPG files; `iptv-org/epg` is a
-  grabber to run ourselves, and as a scheduled job it needs a Healthchecks ping.
+- Guide data: `docker/epg/` (iptv-org/epg's grabber), added the same day.
+  Its schedule runs inside the container, so its dead man's switch is the
+  guide's age (`homelab_epg_guide_timestamp_seconds`, `hl-epg-stale`), the
+  digest's pattern, rather than a Healthchecks ping. A programme count
+  (`hl-epg-empty`) covers the grab that finishes but finds nothing, which
+  still rewrites the file. Built for the playlist's
+  own channels: 561 of 1,109 in the US + Pluto lists have a source.
+  To deploy: `cp docker/epg/.env.example docker/epg/.env`, `up -d`, then
+  Jellyfin → *TV Guide Data Providers → XMLTV* →
+  `http://epg:3000/guide.xml`. Restart grafana for the two new alert rules.
+  See `docker/epg/README.md`.
 - Live TV goes out through the house connection, not the VPN. Only qBittorrent
   is inside gluetun, by design.
 

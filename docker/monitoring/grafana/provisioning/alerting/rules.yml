@@ -365,6 +365,83 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [25] }
 
+      # --- The TV guide stopped updating ---
+      #
+      # docker/epg grabs Jellyfin's Live TV guide nightly at 01:00, on a
+      # schedule inside its own container that cron cannot see. Its output's
+      # age, published by heartbeat.sh from the host, notices the grab no longer
+      # finishing: the container gone, a run killed, a crash. Without it the
+      # guide just goes blank a few days later, which looks like a Jellyfin
+      # problem. A grab that finishes but finds nothing still writes the file,
+      # so it stays young; hl-epg-empty below is what covers that.
+      #
+      # 30h: a daily grab, plus room for a long run (it can take an hour or
+      # more at two connections). Absent until docker/epg/.env exists, and
+      # noDataState OK makes that silence.
+      - uid: hl-epg-stale
+        title: TV guide has not updated
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "TV guide (docker/epg) last written {{ printf \"%.0f\" $values.A.Value }}h ago; check `docker logs epg`"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_epg_guide_timestamp_seconds) / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [30] }
+
+      # --- The TV guide is empty ---
+      #
+      # The grabber logs each failed channel and moves on, then writes
+      # guide.xml regardless, so when every scraper breaks (a site redesign,
+      # the box blocked) the file is rewritten nightly with no programmes and
+      # hl-epg-stale stays quiet. Zero is the case worth paging: some channels
+      # always lack a source, so a partial guide is normal. 2h `for`, so a file
+      # caught mid-rewrite cannot page.
+      - uid: hl-epg-empty
+        title: TV guide has no programmes
+        condition: C
+        for: 2h
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "TV guide (docker/epg) has no programmes; the last grab found nothing. Check `docker logs epg`"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_epg_guide_programmes
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- The digest stopped reading one of its sources ---
       #
       # The digest's "Today" section (docs/design/tsd-personal-assistant.md):

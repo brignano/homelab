@@ -75,9 +75,11 @@ REQUIRED="grafana prometheus"
 OPTIONAL_CONTAINERS="${HL_OPTIONAL_CONTAINERS:-kali-linux cloudflared}"
 # Stacks that only become required once they are set up on this box, i.e. once
 # docker/<stack>/.env exists. See the inventory loop below.
-SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin matterbridge concierge downloads}"
+SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin matterbridge concierge downloads epg}"
 # Written by the assistant after each scheduled digest; see app/stamp.py.
 DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
+# Written by the TV guide grabber in docker/epg/; see the guide metric below.
+EPG_GUIDE="${HL_EPG_GUIDE:-/var/lib/homelab/epg/guide.xml}"
 
 # Kept identical to the job list in install-cron.sh; CI fails if they drift
 # (scripts/check-observability.sh). Two lists of the same thing is exactly how
@@ -228,6 +230,39 @@ publish_metrics() {
       metric homelab_jellyfin_gpu_present 1
     else
       metric homelab_jellyfin_gpu_present 0
+    fi
+  fi
+
+  # When the TV guide was last written. The grab is scheduled inside the epg
+  # container (pm2), where cron and install-cron.sh cannot see it, so the file's
+  # age is its dead man's switch: hl-epg-stale fires when it stops changing.
+  # Read from the host, like the digest stamp, so it still answers while the
+  # container is down.
+  #
+  # Only once the stack is set up (its .env exists). Until the first grab
+  # finishes there is no guide, and the .env's own mtime stands in for it: a
+  # grab that has never worked still ages into the alert instead of publishing
+  # nothing. See docker/epg/README.md.
+  if [ -f "$REPO/docker/epg/.env" ]; then
+    _epg_ts=$(stat -c %Y "$EPG_GUIDE" 2>/dev/null \
+      || stat -c %Y "$REPO/docker/epg/.env" 2>/dev/null || true)
+    if [ -n "$_epg_ts" ] && [ "$_epg_ts" -gt 0 ] 2>/dev/null; then
+      metric_help homelab_epg_guide_timestamp_seconds gauge \
+        "Unix time the TV guide (docker/epg guide.xml) was last written"
+      metric homelab_epg_guide_timestamp_seconds "$_epg_ts"
+    fi
+    # A fresh file is not a working grab. The grabber skips every channel that
+    # errors and still writes guide.xml, so a scraper broken by a site change,
+    # or a box the listings sites have blocked, rewrites it nightly with
+    # channels and no programmes. The mtime stays young and Jellyfin shows "no
+    # information" everywhere; this count is what notices (hl-epg-empty).
+    # A few MB every five minutes; grep reads that in milliseconds.
+    if [ -r "$EPG_GUIDE" ]; then
+      # Matches, not lines: the guide may be written as one long line.
+      _epg_n=$(grep -o '<programme ' "$EPG_GUIDE" 2>/dev/null | wc -l | tr -d ' ' || true)
+      metric_help homelab_epg_guide_programmes gauge \
+        "Programmes in the TV guide (docker/epg guide.xml)"
+      metric homelab_epg_guide_programmes "${_epg_n:-0}"
     fi
   fi
 
