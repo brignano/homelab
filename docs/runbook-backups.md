@@ -224,6 +224,29 @@ echo '*/15 * * * * root /usr/local/bin/hl-vzdump-hook temp' > /etc/cron.d/hl-dri
 backlog, silence `Drive running hot` in Grafana rather than raise the
 threshold.
 
+### Drive usage on the host (since 2026-10-12)
+
+**Debian's `prometheus-node-exporter` does not report anything under `/mnt` or
+`/media`.** Its built-in `--collector.filesystem.mount-points-exclude` is
+`^/(dev|proc|run|sys|mnt|media|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)`,
+so the media drive at `/mnt/media` never appeared: `hl-disk-full` and
+`hl-disk-filling` did not cover it, and the *Drives* row of the Capacity
+dashboard was empty, with nothing erroring. CT 100's node-exporter cannot stand
+in, because it only sees the container's own root filesystem. The host flag is
+the same default with `mnt|media` removed:
+
+```bash
+# on m5. ARGS was "" here; if it holds flags already, add this one beside them
+# by hand: a repeated flag stops the exporter starting.
+sed -i 's#^ARGS=""$#ARGS="--collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"#' /etc/default/prometheus-node-exporter
+systemctl restart prometheus-node-exporter && systemctl is-active prometheus-node-exporter
+curl -s localhost:9100/metrics | grep 'node_filesystem_avail_bytes.*mountpoint="/mnt/'
+```
+
+It should print a line for `/mnt/media` and one for `/mnt/hl-backup`. If it
+prints nothing straight after the restart, give it a few seconds and run the
+`curl` again; nothing for `/mnt/media` after that means no disk alert covers it.
+
 ### Schedule it
 
 ```bash
