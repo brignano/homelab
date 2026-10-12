@@ -23,10 +23,15 @@ services:
     image: ghcr.io/iptv-org/epg:master
     container_name: epg
     restart: unless-stopped
-    # A grab is mostly waiting on HTTP. One core and a gigabyte keep a bad night
-    # from touching Ollama's four cores or anyone else's memory.
+    # A grab is mostly waiting on HTTP. One core keeps a bad night off Ollama's
+    # four. Memory is the real need: before fetching anything, the grabber loads
+    # the whole iptv-org database (every channel, feed and stream) into the
+    # heap. Node sizes its heap from the container limit, roughly half, and at
+    # 1g that is ~510 MB: the first grab died at request 21 of 1,842 with
+    # "JavaScript heap out of memory" (2026-10-11). So the heap is set
+    # explicitly, with the limit above it for Node's own non-heap memory.
     cpus: 1
-    mem_limit: 1g
+    mem_limit: 2g
     command: ["sh", "/hl/start.sh"]
     environment:
       TZ: ${TZ:-UTC}
@@ -38,6 +43,9 @@ services:
       # The grabber's own advice: more connections get you blocked by the
       # listings sites.
       MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-2}
+      # Inherited by every node process pm2 starts: the scheduled grab, the
+      # startup grab and the server. See mem_limit above.
+      NODE_OPTIONS: --max-old-space-size=1536
     volumes:
       # Directory mount: start.sh and make-channels.mjs are read at container
       # start, so a change to either needs a recreate (README → Deploy).

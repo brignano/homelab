@@ -84,6 +84,7 @@ cannot see it. The file's age is its dead man's switch.
 
 | Symptom | Likely cause |
 |---|---|
+| `grab-at-startup` exits with code 134; log shows `JavaScript heap out of memory` | Node's heap is too small for the grabber's database load. `NODE_OPTIONS` sets it to 1.5 GB under a 2g limit; raise both together if the database outgrows it. |
 | `up` fails: `set EPG_PLAYLISTS` | `.env` not created from `.env.example`. |
 | Log says `keeping the existing channel list` | A playlist URL did not answer at start. The previous list is used; recreate later to retry. |
 | Guide shows "no information" for some channels | No listings site covers them (see Coverage), or Jellyfin has not refreshed: *Scheduled Tasks → Refresh Guide*. |

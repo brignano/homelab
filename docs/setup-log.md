@@ -27,6 +27,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — TV guide: first grab ran out of memory
+
+**Goal:** First run of `docker/epg/`.
+
+**Steps:**
+1. `.env` from `.env.example`, `up -d`. The channel list built: 614 of 1,481
+   playlist channels have a guide source.
+
+**Issues encountered:**
+- The startup grab died at request 21 of 1,842 (exit 134, `JavaScript heap out
+  of memory` at ~510 MB). Node sizes its heap to about half the container's
+  1g limit, and the grabber loads the whole iptv-org database before it
+  fetches anything.
+- The `Flash` feed on i.mjh.nz returns 404, so CNN, Fox News, NBC News NOW,
+  Bloomberg Originals and USA Today get no guide from it.
+
+**Resolution:**
+- `NODE_OPTIONS=--max-old-space-size=1536` and `mem_limit: 2g`.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then `up -d` for epg. The service definition changed, so
+  it recreates, and with no `guide.xml` yet the startup grab runs again.
+- The dead `Flash` feed is left for now; see what else comes back empty after
+  a full grab.
+
+---
+
 ## 2026-10-12 — Jellyfin Live TV (iptv-org M3U), recordings mount, TV guide
 
 **Goal:** Live TV in Jellyfin, with a programme guide and somewhere for the DVR
