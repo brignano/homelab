@@ -112,8 +112,15 @@ It cannot catch a stream that plays for a minute and then stalls, such as a
 Pluto channel freezing at an ad break. Those still need trying in Jellyfin.
 
 - `EPG_STREAM_SKIP`: hosts to leave out without checking, such as `jmp2.uk`.
-- `EPG_REQUIRE_GUIDE=true`: also leave out channels with no guide source, so
-  every channel in Jellyfin has listings.
+- `EPG_REQUIRE_GUIDE=true`: also leave out channels with no listings in the
+  last grab's `guide.xml`, so every channel in Jellyfin has a filled row.
+  Having a guide source is not enough: some sources grab nothing. Before the
+  first grab, a guide source is required instead. A channel whose listings
+  come back is listed again after the next nightly run.
+- `EPG_LANGS=en,es`: keep only channels whose guide source is in one of these
+  languages (the `lang` of its entry in `channels.xml`). The US playlist also
+  carries Arabic-language channels; this leaves them out. Channels without a
+  guide source are kept unless `EPG_REQUIRE_GUIDE` drops them.
 
 Jellyfin re-reads the tuner on its daily *Refresh Guide* task, or straight
 away with *Live TV → Refresh Guide Data*.
