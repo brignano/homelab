@@ -55,6 +55,61 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Drive health and media-drive capacity in Grafana
+
+**Goal:** See the 5 TB media drive filling, and hear about a failing drive
+before it fails. The media drive has no backup by design (`backup=0`), so its
+health is the only warning before the library is lost.
+
+**Steps:**
+1. `scripts/host/hl-vzdump-hook` now writes each drive's SMART verdict and
+   sector counts (reallocated, pending, offline uncorrectable, temperature) to
+   the host node-exporter's textfile directory at `job-end`, as
+   `homelab_smart_*{drive="hl-backup"|"media"}`.
+2. Alerts: `hl-smart-pending` (critical, any unreadable sector),
+   `hl-smart-reallocating` (remapped sectors climbing over a week),
+   `hl-smart-unreadable` (the enclosure hides SMART, so nothing is watching),
+   `hl-smart-stale` (no SMART reading for 36h).
+3. Capacity dashboard: a *Drives* row with media drive used, free, a 30-day
+   trend and a SMART table.
+4. `check-observability.sh` also scans `scripts/host/` for emitted metrics.
+
+**Issues encountered:**
+- The hook already ran `smartctl -H`, but that verdict says PASSED until a
+  drive is nearly gone, and it left nothing behind for Grafana.
+
+**Notes / next steps:**
+- **Host step:** re-copy the hook (`docs/runbook-backups.md` → "SMART
+  metrics") and check `hl_smart.prom` appears. Grafana needs a restart for the
+  new rules and dashboard.
+- Confirm the media drive is visible at all:
+  `node_filesystem_avail_bytes{mountpoint="/mnt/media"}` in Explore. If empty,
+  `hl-disk-full` and `hl-disk-filling` do not cover it either.
+
+---
+
+## 2026-10-12 — Sonarr/Radarr size caps and seeding limits
+
+**Goal:** Stop one show from eating the 5 TB media drive.
+
+**Issues encountered:**
+- Survivor seasons 42–46 came to 307 GiB between them, ~4 GB per 43-minute
+  episode: Sonarr's default quality sizes have no practical ceiling, so it
+  grabbed untouched web releases. All ~49 seasons at that rate is 1.5–2.7 TiB
+  of the 4 TiB free. A HEVC release of season 48 was half the size.
+
+**Resolution:**
+- Documented in `docker/downloads/README.md`: per-quality **Max** of 35 MB/min
+  for 1080p web/HDTV (~1.5 GB an episode), 45 for Bluray; an `x265` custom
+  format scored 100; qBittorrent seeding limit (ratio 1.0 or 14 days, then
+  pause) with *Remove Completed* in both apps.
+
+**Notes / next steps:**
+- Caps only affect future grabs. Unwanted seasons already queued have to be
+  unmonitored and removed from *Activity → Queue* by hand.
+
+---
+
 ## 2026-10-12 — qBittorrent queueing limits
 
 **Goal:** Stop a stalled torrent from holding up the rest of the download queue.

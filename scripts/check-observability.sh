@@ -130,7 +130,9 @@ if not rules_text:
 used = set(re.findall(r"\bhomelab_[a-z0-9_]+\b", dash_text + rules_text))
 
 emitted = set()
-for s in sorted(scripts.glob("*.sh")):
+# scripts/host/ holds what runs on the Proxmox host (copied there, not run
+# from git); its metrics reach Prometheus through the host's node-exporter.
+for s in sorted(scripts.glob("*.sh")) + sorted(p for p in (scripts / "host").glob("*") if p.is_file()):
     for m in re.findall(r"\bhomelab_[a-z0-9_]+\b", s.read_text()):
         emitted.add(m)
 

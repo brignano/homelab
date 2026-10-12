@@ -87,6 +87,14 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   sat *queued* behind the one that was moving.
   *Active torrents* counts seeding as well as downloading, so keep it above
   *downloads* or seeding will hold the downloads back.
+- **BitTorrent → Seeding Limits:** ratio **1.0** or seeding time **20160**
+  minutes (14 days), then **Stop torrent** (*Pause torrent* before
+  qBittorrent 5). Sonarr and Radarr remove stopped, imported torrents
+  themselves (*Remove Completed*, step 5). Choose *Stop* over either
+  *Remove*: removing behind the apps' backs can beat their import.
+  While a torrent seeds it costs no extra space (the library copy is a
+  hardlink), but a file deleted from the library still fills the drive until
+  its torrent goes.
 - **Advanced:** Network interface **tun0**. Belt and braces: the namespace
   already has no other way out.
 
@@ -110,9 +118,47 @@ required for all addresses). Save each in Google Password Manager.
   Paths To** `/media/`: Sonarr sees the library at `/data/library`, Jellyfin
   at `/media`, and without the mapping Jellyfin is told to scan a folder it
   does not have.
+- *Settings → Download Clients → qBittorrent*: tick **Remove Completed**, so
+  a torrent goes once it is imported and has finished seeding (step 4's
+  seeding limit stops it, then Sonarr removes it).
+- **Size caps** (*Settings → Quality*): the defaults have no real ceiling, and
+  an untouched 1080p web release runs ~4 GB per 43-minute episode, ~60 GiB a
+  season. On 2026-10-12 five seasons of one show came to 307 GiB. Units are
+  **MB per minute of runtime**, so one number covers every episode length.
+  Set **Max** on these rows; leave **Min** alone:
+
+  | Quality | Preferred | Max | ≈ per 43-min episode |
+  |---|---|---|---|
+  | WEBDL-1080p | 15 | 35 | 0.6–1.5 GB |
+  | WEBRip-1080p | 15 | 35 | 0.6–1.5 GB |
+  | HDTV-1080p | 15 | 35 | 0.6–1.5 GB |
+  | Bluray-1080p | 20 | 45 | 0.9–1.9 GB |
+
+  *Preferred* only ranks releases that pass; *Max* rejects. Season packs are
+  judged per episode (pack size ÷ episodes). Caps apply to the **next** grab:
+  what is already queued keeps downloading until removed from *Activity →
+  Queue*.
+- **Prefer HEVC** (*Settings → Custom Formats → +*): name `x265`, condition
+  *Release Title*, value `\b(x265|h\.?265|HEVC)\b`. Then in *Settings →
+  Profiles*, open the profile your shows use and give `x265` a score of
+  **100**. Same picture at about half the bitrate; Jellyfin transcodes it on
+  the iGPU for anything that cannot play it.
 
 **Radarr** (`radarr.`): the same, with root folder **`/data/library/movies`**
-and category `movies`.
+and category `movies`, and the same `x265` custom format and *Remove
+Completed*. Size caps, still MB per minute, so a long film is allowed more:
+
+| Quality | Preferred | Max | ≈ per 2-hour film |
+|---|---|---|---|
+| HDTV-1080p | 30 | 60 | 3.6–7 GB |
+| WEBDL-1080p | 30 | 60 | 3.6–7 GB |
+| WEBRip-1080p | 30 | 60 | 3.6–7 GB |
+| Bluray-1080p | 30 | 60 | 3.6–7 GB |
+
+In the profile (usually *HD-1080p*), untick **Remux-1080p** and every 2160p
+quality: they have no cap, and a remux is 20–40 GB. If *Upgrades Allowed* is
+on, set *Upgrade Until Custom Format Score* to 0, or Radarr re-downloads
+every film it has to get an HEVC copy.
 
 **Prowlarr** (`prowlarr.`):
 - *Settings → Apps → + Sonarr*: Prowlarr server `http://prowlarr:9696`, Sonarr
@@ -148,6 +194,7 @@ appears there.
 | Downloads stuck at 0 B/s, firewall icon in qBittorrent | No forwarded port reached qBittorrent: check *Bypass authentication for clients on localhost* (step 4), then `docker logs gluetun 2>&1 \| grep -i 'port forward'`. |
 | Most of the queue says *queued* at 0 B/s while one or two download, even with peers listed | qBittorrent's queue limits, not the network: see *Torrent Queueing* in step 4. Entries that still show 0 (0) seeds and peers once they get a slot are dead; remove them from Sonarr/Radarr's *Activity → Queue* with *Blocklist release* so a different release is searched for. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
+| A search finds releases but grabs none; *Interactive Search* says "size too large" | The size caps in step 5. Raise **Max** on that quality a step, or accept it has no small release. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |
 | Indexer: "blocked by CloudFlare Protection" | It is not tagged `flaresolverr`, or the FlareSolverr proxy in Prowlarr has no tag (then it applies to nothing). |
 | FlareSolverr: "Captcha detected but no automatic solver is configured" | That site shows a real captcha, not just the browser check. FlareSolverr cannot solve those; use another indexer. |

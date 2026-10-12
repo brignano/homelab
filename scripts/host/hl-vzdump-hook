@@ -25,6 +25,13 @@
 #      only mails root, which on this box reaches nobody. A failing drive now
 #      fails the night's check-in instead.
 #
+#      The overall verdict is the last thing to change: a drive reports PASSED
+#      until it is nearly gone. The early signs are the sector counts, so they
+#      are left behind as metrics for Grafana (hl-smart-* in rules.yml) through
+#      the host node-exporter's textfile collector. The media drive has no
+#      backup by design, so its health is the only warning before the library
+#      goes.
+#
 # Phases (vzdump calls this with the phase as $1):
 #   job-start     -> /start ping, reset this run's state
 #   backup-end    -> verify the archive ($TARGET)
@@ -46,6 +53,10 @@ STATE="${HL_HOOK_STATE:-/run/hl-vzdump-hook.state}"
 # Mount points whose drives get a SMART check. One that is not mounted is
 # skipped (the media drive may not exist yet).
 SMART_MOUNTS="${HL_SMART_MOUNTS:-/mnt/hl-backup /mnt/media}"
+# The host node-exporter's textfile directory: the Debian package's default
+# (--collector.textfile.directory in /etc/default/prometheus-node-exporter).
+# Absent means no metrics, never a failed hook.
+TEXTFILE_DIR="${HL_TEXTFILE_DIR:-/var/lib/prometheus/node-exporter}"
 
 phase="${1:-}"
 
@@ -88,19 +99,76 @@ disk_of() {
   printf '%s' "$_dev"
 }
 
+# Raw value of one SMART attribute by ID from `smartctl -A`, first token only
+# ("34 (Min/Max 18/45)" -> 34). Prints nothing if the drive does not have it.
+smart_attr() {
+  printf '%s\n' "$1" | awk -v id="$2" '$1 == id && NF >= 10 { split($10, v, /[^0-9]/); print v[1]; exit }'
+}
+
 smart_check() {
+  _prom=""
   command -v smartctl >/dev/null 2>&1 || { note "SMART: smartctl not installed"; return; }
   for _m in $SMART_MOUNTS; do
     mountpoint -q "$_m" || continue
-    _disk=$(disk_of "$_m") || { note "SMART $_m: could not find its disk"; continue; }
-    # USB enclosures usually need -d sat; try the default first.
-    _out=$(smartctl -H "$_disk" 2>&1) || _out=$(smartctl -d sat -H "$_disk" 2>&1) || true
+    _drive=$(basename "$_m")
+    _disk=$(disk_of "$_m") || {
+      note "SMART $_m: could not find its disk"
+      _prom="${_prom}homelab_smart_readable{drive=\"$_drive\"} 0
+"
+      continue
+    }
+    # USB enclosures usually need -d sat; try the default first. Retry only
+    # when there is no verdict: smartctl's exit status is a bitmask that is
+    # non-zero on a good read of an ageing drive (error log entries, an
+    # attribute that once crossed its threshold), and that read must be kept.
+    _out=$(smartctl -H -A "$_disk" 2>&1)
     case "$_out" in
-      *PASSED*|*"Health Status: OK"*) note "SMART $_m ($_disk): PASSED" ;;
-      *FAILED*) fail "SMART $_m ($_disk) reports FAILING health — replace this drive" ;;
-      *) note "SMART $_m ($_disk): not readable through this enclosure" ;;
+      *PASSED*|*FAILED*|*"Health Status"*) ;;
+      *) _out=$(smartctl -d sat -H -A "$_disk" 2>&1) ;;
     esac
+    case "$_out" in
+      *PASSED*|*"Health Status: OK"*) note "SMART $_m ($_disk): PASSED"; _ok=1 ;;
+      *FAILED*) fail "SMART $_m ($_disk) reports FAILING health — replace this drive"; _ok=0 ;;
+      *) note "SMART $_m ($_disk): not readable through this enclosure"
+         _prom="${_prom}homelab_smart_readable{drive=\"$_drive\"} 0
+"
+         continue ;;
+    esac
+    _prom="${_prom}homelab_smart_readable{drive=\"$_drive\"} 1
+homelab_smart_healthy{drive=\"$_drive\"} $_ok
+"
+    # 5 reallocated, 197 pending, 198 offline uncorrectable, 194 temperature.
+    # NVMe and some bridges report none of these; then only the verdict exists.
+    # Names spelled out in full so a grep (and check-observability.sh) finds them.
+    for _a in 5:homelab_smart_reallocated_sectors 197:homelab_smart_pending_sectors \
+              198:homelab_smart_uncorrectable_sectors 194:homelab_smart_temperature_celsius; do
+      _v=$(smart_attr "$_out" "${_a%%:*}")
+      [ -n "$_v" ] || continue
+      _prom="${_prom}${_a#*:}{drive=\"$_drive\"} $_v
+"
+    done
   done
+  write_smart_metrics "$_prom"
+}
+
+# Same rules as scripts/metrics.sh, which the host does not have: write beside
+# the target and rename, so a scrape never reads half a file, and never fail.
+write_smart_metrics() {
+  [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ] || {
+    note "SMART metrics: $TEXTFILE_DIR missing or not writable, nothing written for Grafana"
+    return 0
+  }
+  _tmp="$TEXTFILE_DIR/.hl_smart.prom.$$"
+  {
+    echo "# HELP homelab_smart_check_timestamp_seconds When the nightly hook last read SMART."
+    echo "# TYPE homelab_smart_check_timestamp_seconds gauge"
+    echo "homelab_smart_check_timestamp_seconds $(date +%s)"
+    # Per drive: readable, healthy (1 = PASSED), and the raw counts. Sorted,
+    # so each metric's lines sit together as the text format expects.
+    printf '%s' "$1" | sort
+  } > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$TEXTFILE_DIR/hl_smart.prom" 2>/dev/null \
+    || rm -f "$_tmp" 2>/dev/null
+  return 0
 }
 
 verify() {
