@@ -1,0 +1,167 @@
+# The "Home" dashboard: one sections view, built around what gets checked
+# or done most: is the house secure, how warm is it, the car, and Jax.
+#
+# NOT loaded by Home Assistant from this file. Dashboards are UI state and
+# live in the volume (see the top of config/configuration.yaml), so this is the
+# source to paste, kept in git so it can be rebuilt and reviewed:
+#   Settings → Dashboards → + Add dashboard → New dashboard from scratch,
+#   title "Home", then open it → ✏️ → ⋮ → Raw configuration editor → paste → Save.
+# README → "Dashboard" has the rest, including making it the default.
+#
+# HA strips these comments when you save in the raw editor. That is fine: git
+# keeps them, and a later edit made in the UI can be copied back here.
+#
+# Entity IDs marked `# check` are inferred, not read from the running HA. A
+# wrong one shows as a yellow "Entity not available" tile; click it and pick
+# the right entity from the list.
+
+title: Home
+views:
+  - title: Home
+    path: home
+    icon: mdi:home
+    type: sections
+    max_columns: 3
+    # The glanceable strip across the top: who is home, the weather, indoors.
+    badges:
+      - type: entity
+        entity: person.anthony_brignano  # check
+        show_name: false
+        show_state: true
+        show_icon: true
+      - type: entity
+        entity: weather.forecast_home
+        show_name: false
+      - type: entity
+        entity: sensor.apartment_temperature  # check
+        name: Inside
+        show_name: true
+      - type: entity
+        entity: sensor.spaceship_battery_level
+        name: Tesla
+        show_name: true
+    sections:
+      # Security first: the one thing worth acting on from the dashboard.
+      # The presence automations arm and disarm Blink on their own; these
+      # buttons are the override.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Security
+            icon: mdi:shield-home
+          - type: tile
+            entity: alarm_control_panel.blink_home  # check: Blink names it after the sync module
+            name: Blink cameras
+            grid_options:
+              columns: full
+            features:
+              - type: alarm-modes
+                modes:
+                  - armed_away
+                  - disarmed
+          - type: tile
+            entity: automation.blink_arm_when_everyone_leaves
+            name: Auto-arm when away
+            grid_options:
+              columns: full
+
+      - type: grid
+        cards:
+          - type: heading
+            heading: Climate
+            icon: mdi:home-thermometer
+          - type: tile
+            entity: sensor.apartment_temperature  # check
+            name: Inside
+          - type: tile
+            entity: weather.forecast_home
+            name: Outside
+          - type: weather-forecast
+            entity: weather.forecast_home
+            show_current: false
+            show_forecast: true
+            forecast_type: daily
+            grid_options:
+              columns: full
+          # Add once the T6 Pro is paired over HomeKit (tsd-personal-assistant.md):
+          # - type: tile
+          #   entity: climate.thermostat  # check
+          #   name: Thermostat
+          #   grid_options:
+          #     columns: full
+          #   features:
+          #     - type: target-temperature
+          #     - type: climate-hvac-modes
+          #       hvac_modes: [heat, cool, off]
+
+      # Tesla Fleet, car named "Spaceship" (README → "Asking Alexa questions").
+      # Values are the car's last report; Tesla Fleet does not wake it to read.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Tesla
+            icon: mdi:car-electric
+          - type: tile
+            entity: sensor.spaceship_battery_level
+            name: Battery
+          - type: tile
+            entity: sensor.spaceship_battery_range
+            name: Range
+          - type: tile
+            entity: sensor.spaceship_charging
+            name: Charging
+          - type: tile
+            entity: lock.spaceship_lock  # check
+            name: Doors
+          - type: tile
+            entity: climate.spaceship_climate
+            name: Climate
+            grid_options:
+              columns: full
+            features:
+              - type: climate-hvac-modes
+                hvac_modes:
+                  - heat_cool
+                  - "off"
+              - type: target-temperature
+          - type: tile
+            entity: switch.spaceship_sentry_mode  # check
+            name: Sentry mode
+            grid_options:
+              columns: full
+
+      # The litter box's last good readings (template sensors in
+      # config/configuration.yaml), which survive its Wi-Fi drop-outs.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Jax
+            icon: mdi:cat
+          - type: tile
+            entity: sensor.jax_last_litter_visit
+            name: Last visit
+          - type: tile
+            entity: sensor.jax_litter_visits_today
+            name: Visits today
+          - type: tile
+            entity: sensor.jax_weight
+            name: Weight
+          - type: tile
+            entity: sensor.jax_last_litter_visit_duration
+            name: Last visit length
+
+      # Where you and the car are. Clicking a marker opens its history.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Map
+            icon: mdi:map-marker-radius
+          - type: map
+            entities:
+              - person.anthony_brignano  # check
+              - device_tracker.spaceship_location  # check
+            default_zoom: 13
+            hours_to_show: 0
+            grid_options:
+              columns: full
+              rows: 5
