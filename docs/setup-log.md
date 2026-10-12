@@ -60,6 +60,28 @@ health is the only warning before the library is lost.
 
 ---
 
+## 2026-10-12 — Sonarr/Radarr size caps and seeding limits
+
+**Goal:** Stop one show from eating the 5 TB media drive.
+
+**Issues encountered:**
+- Survivor seasons 42–46 came to 307 GiB between them, ~4 GB per 43-minute
+  episode: Sonarr's default quality sizes have no practical ceiling, so it
+  grabbed untouched web releases. All ~49 seasons at that rate is 1.5–2.7 TiB
+  of the 4 TiB free. A HEVC release of season 48 was half the size.
+
+**Resolution:**
+- Documented in `docker/downloads/README.md`: per-quality **Max** of 35 MB/min
+  for 1080p web/HDTV (~1.5 GB an episode), 45 for Bluray; an `x265` custom
+  format scored 100; qBittorrent seeding limit (ratio 1.0 or 14 days, then
+  pause) with *Remove Completed* in both apps.
+
+**Notes / next steps:**
+- Caps only affect future grabs. Unwanted seasons already queued have to be
+  unmonitored and removed from *Activity → Queue* by hand.
+
+---
+
 ## 2026-10-12 — qBittorrent queueing limits
 
 **Goal:** Stop a stalled torrent from holding up the rest of the download queue.
@@ -106,6 +128,29 @@ health is the only warning before the library is lost.
   limit (*Options → BitTorrent → Torrent Queueing*) counts stalled torrents.
   Raise *Maximum active downloads* and tick *Do not count slow torrents*.
 - Deploy: `docker/concierge` needs `--build` (`./scripts/deploy-plan.sh`).
+
+---
+
+## 2026-10-12 — TV guide: first complete run; batches of 50
+
+**Goal:** First full grab with batching.
+
+**Steps:**
+1. `grab-all: wrote public/guide.xml: 414 channels, 14453 programmes from
+   5/7 batches`.
+
+**Issues encountered:**
+- Two of the seven 100-channel batches still ran out of memory: batch 4
+  exited 134 (heap limit) and batch 6 exited 137 (killed at the 2g
+  `mem_limit`). Batches are not equal; the i.mjh.nz Plex channels parse a
+  15 MB feed on every request.
+
+**Resolution:**
+- `EPG_BATCH` default lowered to 50.
+
+**Notes / next steps:**
+- Deploy: `git pull`, `up -d --force-recreate` for epg, then
+  `docker exec -d epg node /hl/grab-all.mjs` for a full guide before 01:00.
 
 ---
 
