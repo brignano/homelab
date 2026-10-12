@@ -52,7 +52,9 @@ services:
       MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-2}
       # Channels per grab process (bin/grab-all.mjs). Each batch's memory is
       # returned when it exits, so this, not the channel count, sets the peak.
-      EPG_BATCH: ${EPG_BATCH:-100}
+      # 100 was too many for some batches on 2026-10-12: 2 of 7 died, one at
+      # the heap limit (exit 134) and one killed at mem_limit (exit 137).
+      EPG_BATCH: ${EPG_BATCH:-50}
       # Inherited by every node process pm2 starts: the scheduled grab, the
       # startup grab and the server. See mem_limit above.
       NODE_OPTIONS: --max-old-space-size=1536

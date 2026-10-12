@@ -76,7 +76,7 @@ names what it skipped.
 The grabber keeps everything it fetches until it writes the guide at the end,
 so one process for every channel grows until it runs out of memory. With ~600
 channels it died at request 1,185 of 1,842 with a 1.5 GB heap. `bin/grab-all.mjs`
-splits `channels.xml` into batches of `EPG_BATCH` (default 100), runs the stock
+splits `channels.xml` into batches of `EPG_BATCH` (default 50), runs the stock
 grab once per batch, and merges the results into `guide.xml`. Each batch
 returns its memory when it exits.
 
@@ -121,7 +121,7 @@ cannot see it. The file's age is its dead man's switch.
 | Log says `keeping the existing channel list` | A playlist URL did not answer at start. The previous list is used; recreate later to retry. |
 | Guide shows "no information" for some channels | No listings site covers them (see Coverage), or Jellyfin has not refreshed: *Scheduled Tasks → Refresh Guide*. |
 | `hl-epg-stale` | The grab is not finishing: `docker logs epg`, and whether the container is running. |
-| Log shows `JavaScript heap out of memory` inside a batch | Lower `EPG_BATCH` in `.env` (e.g. 50), then `up -d --force-recreate`. |
+| Log shows `JavaScript heap out of memory` inside a batch | Lower `EPG_BATCH` in `.env` (e.g. 25). Exit 134 is the heap limit, exit 137 the container's `mem_limit`, then `up -d --force-recreate`. |
 | `grab-all: another grab is running` | A grab is already going. A lock older than 12h is treated as left over and removed. |
 | `hl-epg-empty` | Every scraper failed: `docker logs epg` shows `ERR:` per channel. Usually a site change, which the next nightly image pull often fixes, or the box being blocked. |
 | Jellyfin cannot load `http://epg:3000/guide.xml` | The `epg` container is down, or the first grab has not finished. |

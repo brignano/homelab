@@ -54,6 +54,29 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — TV guide: first complete run; batches of 50
+
+**Goal:** First full grab with batching.
+
+**Steps:**
+1. `grab-all: wrote public/guide.xml: 414 channels, 14453 programmes from
+   5/7 batches`.
+
+**Issues encountered:**
+- Two of the seven 100-channel batches still ran out of memory: batch 4
+  exited 134 (heap limit) and batch 6 exited 137 (killed at the 2g
+  `mem_limit`). Batches are not equal; the i.mjh.nz Plex channels parse a
+  15 MB feed on every request.
+
+**Resolution:**
+- `EPG_BATCH` default lowered to 50.
+
+**Notes / next steps:**
+- Deploy: `git pull`, `up -d --force-recreate` for epg, then
+  `docker exec -d epg node /hl/grab-all.mjs` for a full guide before 01:00.
+
+---
+
 ## 2026-10-12 — TV guide: grab in batches after a second out-of-memory
 
 **Goal:** Get a complete first grab.
