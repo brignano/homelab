@@ -145,9 +145,20 @@ required for all addresses). Save each in Google Password Manager.
   the iGPU for anything that cannot play it.
 
 **Radarr** (`radarr.`): the same, with root folder **`/data/library/movies`**
-and category `movies`. Size caps there, for a 2-hour film: WEBDL/WEBRip/
-Bluray-1080p **Max 60** (~7 GB), Remux-1080p left uncapped only if you mean
-to grab remuxes.
+and category `movies`, and the same `x265` custom format and *Remove
+Completed*. Size caps, still MB per minute, so a long film is allowed more:
+
+| Quality | Preferred | Max | ≈ per 2-hour film |
+|---|---|---|---|
+| HDTV-1080p | 30 | 60 | 3.6–7 GB |
+| WEBDL-1080p | 30 | 60 | 3.6–7 GB |
+| WEBRip-1080p | 30 | 60 | 3.6–7 GB |
+| Bluray-1080p | 30 | 60 | 3.6–7 GB |
+
+In the profile (usually *HD-1080p*), untick **Remux-1080p** and every 2160p
+quality: they have no cap, and a remux is 20–40 GB. If *Upgrades Allowed* is
+on, set *Upgrade Until Custom Format Score* to 0, or Radarr re-downloads
+every film it has to get an HEVC copy.
 
 **Prowlarr** (`prowlarr.`):
 - *Settings → Apps → + Sonarr*: Prowlarr server `http://prowlarr:9696`, Sonarr
