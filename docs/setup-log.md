@@ -71,6 +71,82 @@ to write.
 
 ---
 
+## 2026-10-12 — #ask gets the weather forecast and server health
+
+**Goal:** Answer "will it rain tonight?" and "how's the server doing?" in
+`#ask`. GetLiveContext has current states only, and removing `#chat` took
+the live server readings with it.
+
+**Steps:**
+1. `app/forecast.py`: HA `weather.get_forecasts` over REST for one entity,
+   `HA_WEATHER_ENTITY` (default `weather.forecast_home`). A fixed path and a
+   config-only entity, trimmed to 7 days or 24 hours of known fields. Read
+   tool `weather_forecast`.
+2. `app/homelab.py`: fixed Prometheus instant queries through
+   `host.docker.internal:9090`. The `#chat` readings, plus thin-pool percentage
+   and `homelab_container_running{required="yes"} == 0`. Read tool
+   `homelab_status`, no arguments.
+3. Both are in the selftest, the system prompt and tests. Blanking either
+   variable turns its tool off.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then `up -d --build` for the concierge. No `.env`
+  change is needed: the defaults match this box.
+
+---
+
+## 2026-10-12 — Concierge reads Home Assistant (GetLiveContext renamed)
+
+**Goal:** Give `#ask` the house: weather and anything else exposed to Assist.
+
+**Steps:**
+1. HA: non-admin `concierge` user (local access only) and a long-lived token
+   in `docker/concierge/.env` as `HA_TOKEN`.
+2. HA: the Model Context Protocol Server integration, with the **Assist** API
+   only ("Expose all LLM APIs" off) and **"Require an administrator account"
+   off**. With it on, the non-admin user is refused.
+3. Exposed to Assist: Forecast Home (Met.no weather). No locks, alarm or
+   garage.
+
+**Issues encountered:**
+- `404` on `/api/mcp`: the integration did not exist yet.
+- `Tool "GetLiveContext" not found`, with Assist selected and an entity
+  exposed. Listing the tools showed that this HA version prefixes every MCP
+  tool with its integration: `homeassistant__GetLiveContext`,
+  `intent__HassTurnOn` and so on.
+
+**Resolution:**
+- `app/home.py` reads HA's tool list and calls GetLiveContext under either
+  exact name, `homeassistant__GetLiveContext` or `GetLiveContext`. It never
+  matches by suffix and never calls any other tool, and the test pins both.
+  It now raises its "offers no GetLiveContext" error after the MCP session
+  closes, because one raised inside it arrived wrapped in an ExceptionGroup
+  with the reason lost.
+
+---
+
+## 2026-10-12 — #chat removed; #ask is the one conversational channel
+
+**Goal:** Fewer Discord channels. `#ask` (Claude) does everything `#chat` (the
+local 3B) did and more, so `#chat` was noise.
+
+**Steps:**
+1. `chat` removed from `docker/assistant/guild.yml`. The `#digest` and `#ask`
+   topics no longer point to it, and `#ask`'s topic now explains reply/thread
+   scope itself.
+2. The feature stays in the bot, off while `DISCORD_CHAT_CHANNEL_ID` is blank.
+   `.env.example` and the README say how to bring it back.
+3. Provisioning tests use `#ask` as their example and assert `chat` is gone.
+
+**Notes / next steps:**
+- On the box: blank `DISCORD_CHAT_CHANNEL_ID` in `docker/assistant/.env`,
+  `--provision --apply` (it updates the topics and reports `#chat` as an extra
+  channel, never deleting it), recreate the bot, then delete `#chat` in Discord
+  by hand. Its history goes with it.
+- Channels now: HOMELAB (`#digest`, `#alerts`), ASSISTANT (`#ask`, `#memory`).
+
+---
+
 ## 2026-10-12 — Concierge live: #ask answering, first download approved from Discord
 
 **Goal:** Deploy the concierge (never set up until now) with the Radarr/Sonarr

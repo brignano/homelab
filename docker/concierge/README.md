@@ -16,6 +16,8 @@ flowchart LR
   c -->|"GetLiveContext only"| ha[Home Assistant MCP]
   c -->|"scene.turn_on, HA_SCENES only"| har[Home Assistant REST]
   c -->|"lookup, queue, add<br/>proxy_proxy network"| arr[Radarr / Sonarr]
+  c -->|"weather.get_forecasts, one entity"| ha
+  c -->|"fixed instant queries, host :9090"| prom[Prometheus]
   c -->|answer + proposals| bot
   bot -->|"✅ remember"| mem
   bot -->|"✅ anything else: POST /v1/execute"| c
@@ -26,7 +28,8 @@ flowchart LR
   Home Assistant and Radarr/Sonarr. It shares `proxy_proxy` with them, so the
   containers there can reach its port; the bearer token keeps them out.
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
-  `home_overview`, `media_search`, `media_downloads`.
+  `home_overview`, `weather_forecast`, `homelab_status`, `media_search`,
+  `media_downloads`.
 - **Every write is a proposal.** `remember`, `create_event`, `move_event`,
   `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
@@ -84,7 +87,7 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 This creates **#ask** (open) and **#memory** (bot-only) and prints their IDs.
 Put them in `docker/assistant/.env` as `DISCORD_ASK_CHANNEL_ID` and
 `DISCORD_MEMORY_CHANNEL_ID`. #ask needs the **Message Content** intent, the
-same toggle #chat uses.
+same Developer Portal toggle (Bot → Privileged Gateway Intents).
 
 ### 4. Google (optional, you)
 
@@ -171,7 +174,25 @@ The concierge reaches them by name over `proxy_proxy`, so the downloads stack
 must be up. If it is not, the tools report "could not reach it" and nothing
 else is affected.
 
-### 7. Bring it up
+### 7. Weather forecast and server health (on by default)
+
+- **`weather_forecast`**: the daily (7 days) or hourly (24 hours) forecast
+  for **one** weather entity, `HA_WEATHER_ENTITY` (default
+  `weather.forecast_home`, the Met.no one). It calls HA's
+  `weather.get_forecasts` service over REST, which returns data and changes
+  nothing. The path is fixed, and the entity comes from config, never from the
+  model. It needs `HA_TOKEN` (step 5). Set `HA_WEATHER_ENTITY=` blank to turn
+  it off.
+- **`homelab_status`**: *"how's the server doing?"*. Fixed Prometheus instant
+  queries: targets up and down, CPU (1h), RAM, root disk, thin pool,
+  restarts in 24h, and required containers that are not running. The model
+  passes no PromQL. It reaches Prometheus through the port it publishes
+  (`host.docker.internal:9090`), so the concierge joins no monitoring network.
+  Set `PROMETHEUS_URL=` blank to turn it off.
+
+`--selftest` checks both (`Forecast ok`, `Prometheus ok`).
+
+### 8. Bring it up
 
 The assistant stack owns the `assistant_concierge` network, so it comes up first:
 
@@ -210,12 +231,14 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | Token mismatch | "refused: CONCIERGE_TOKEN differs between the two .env files" |
 | Google sign-in revoked/expired | the agent reports the tool error, "rerun --google-auth" |
 | HA unreachable / token revoked | `home_overview` reports the error; nothing else is affected |
+| Forecast fails | "HTTP 4xx … is weather.x the right entity?": `HA_WEATHER_ENTITY` names an entity that does not exist. Check *Settings → Entities* |
+| Prometheus unreachable | `homelab_status` reports "could not reach Prometheus"; nothing else is affected. One unreadable query shows in `could_not_read` |
 | Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |
 | ✅ but nothing downloads | Radarr/Sonarr added it and searched; no indexer had a release yet. It stays monitored and grabs one when it appears. Check *Wanted* in the app |
-| Spend limit reached | the run fails with the API error; the digest and #chat are unaffected |
+| Spend limit reached | the run fails with the API error; the digest is unaffected |
 | Busy | a second request waits; past 3 in flight, "busy — try again in a minute" |
 | ✅ after the concierge restarted | "failed: expired" under the prompt; nothing runs. Ask again |
 | Write with a pre-phase-4 Google token | "failed: HTTP 403 … rerun --google-auth" |
 
-The act lane being down never affects the watch lane: the digest, #chat and
+The act lane being down never affects the watch lane: the digest and
 the alerts carry on without it.

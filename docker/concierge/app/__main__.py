@@ -90,6 +90,30 @@ async def _selftest_async(cfg: Config) -> int:
             failed = True
     else:
         print("Home Assistant   off (no HA_TOKEN) — home_overview not registered")
+
+    from .forecast import Forecast
+    from .homelab import Homelab
+    async with aiohttp.ClientSession() as session:
+        if cfg.forecast_enabled:
+            try:
+                rows = await Forecast(session, cfg.ha_url, cfg.ha_token, cfg.ha_weather_entity).get("daily")
+                print(f"Forecast         ok ({len(rows)} days from {cfg.ha_weather_entity})")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Forecast         FAILED: {exc}")
+                failed = True
+        else:
+            print("Forecast         off (needs HA_TOKEN and HA_WEATHER_ENTITY)")
+        if cfg.prometheus_url:
+            try:
+                status = await Homelab(session, cfg.prometheus_url).status()
+                print(f"Prometheus       ok (targets up {status.get('targets_up', '?')}"
+                      + (f", could not read: {', '.join(status['could_not_read'])}" if status.get("could_not_read") else "")
+                      + ")")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Prometheus       FAILED: {exc}")
+                failed = True
+        else:
+            print("Prometheus       off (no PROMETHEUS_URL) — homelab_status not registered")
     return 1 if failed else 0
 
 
@@ -104,7 +128,13 @@ async def _ask_async(cfg: Config, question: str) -> int:
         home = Home(cfg.ha_url, cfg.ha_token) if cfg.home_enabled else None
         from .server import media_from
         media = media_from(cfg, session) if cfg.media_enabled else None
-        out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[], media=media)
+        from .forecast import Forecast
+        from .homelab import Homelab
+        forecast = Forecast(session, cfg.ha_url, cfg.ha_token, cfg.ha_weather_entity) \
+            if cfg.forecast_enabled else None
+        homelab = Homelab(session, cfg.prometheus_url) if cfg.prometheus_url else None
+        out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[],
+                              media=media, forecast=forecast, homelab=homelab)
     print(out.answer)
     for p in out.proposals:
         print(f"[proposal] {p['tool']}({p['args']})")

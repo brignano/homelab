@@ -39,7 +39,7 @@ categories:
           Daily health digest, posted automatically each morning — services up,
           CPU/RAM/disk, container restarts, log-error counts. Bot posts only, so
           it stays a clean timeline you can scroll back through to spot drift
-          that no single alert would ever fire on. Talk to the model in #chat.
+          that no single alert would ever fire on. Ask questions in #ask.
         bot_only: true
 
       # Fed by webhooks, never by the bot — that's the point. See
@@ -55,29 +55,22 @@ categories:
   # ── Input: things you ask it ────────────────────────────────────────────
   - name: ASSISTANT
     channels:
-      # Conversational. Every message here goes to the local model, with recent
-      # messages as context. No slash command needed.
-      - name: chat
-        topic: >-
-          Just type — no command needed. Where you type decides what it
-          remembers: a plain message is a one-off with no history; REPLY to a
-          message and it follows that reply chain; inside a THREAD it reads the
-          whole thread, so threads are your named, persistent conversations
-          (right-click any message -> Create Thread). Prefix a line with // to
-          leave a note without getting a reply. Slash commands work here too.
-        bot_only: false
+      # #chat (conversational, local model) was removed on 2026-10-12: #ask
+      # covers it. The feature is still in the bot, off while
+      # DISCORD_CHAT_CHANNEL_ID is blank. To bring it back, restore the block
+      # from git history here, provision, and set that ID.
 
       # The act lane: Claude, with read access to calendar, mail and the house.
-      # Same scope rules as #chat. Routed to docker/concierge/, never to Ollama.
+      # Routed to docker/concierge/, never to Ollama.
       # See docs/design/tsd-personal-assistant.md, phase 3.
       - name: ask
         topic: >-
           Ask Claude about your calendar, email, home or movies — it looks
           things up before answering. It can propose a calendar event, a Gmail
           draft, a scene or a movie/show download; nothing happens until you
-          press ✅. Same scope as #chat: a thread is one conversation, a reply
-          follows its chain, anything else is a one-off. Costs a few cents per
-          question.
+          press ✅. REPLY to a message to continue that conversation, or start a
+          THREAD for a longer one; a plain message is a one-off with no history.
+          Costs a few cents per question.
         bot_only: false
 
       # One message per remembered fact, read by the concierge before every
