@@ -90,6 +90,32 @@ health is the only warning before the library is lost.
 
 ---
 
+## 2026-10-12 — Media drive missing from host node-exporter
+
+**Goal:** Answer the open question in the SMART entry: does any disk alert
+cover the 5 TB media drive?
+
+**Issues encountered:**
+- No. Prometheus held filesystem series for `/`, `/boot/efi`, `/etc/pve`,
+  `/tmp` and `/var/lib/lxcfs` on the host, and nothing under `/mnt`. Debian's
+  `prometheus-node-exporter` excludes `^/(…|mnt|media|…)` by default, so
+  `hl-disk-full`, `hl-disk-filling` and the Capacity dashboard's *Drives* row
+  had never seen the drive.
+
+**Resolution:**
+- On m5, `ARGS` in `/etc/default/prometheus-node-exporter` now sets
+  `--collector.filesystem.mount-points-exclude` to Debian's default without
+  `mnt|media`. Recorded in `docs/runbook-backups.md` → "Drive usage on the
+  host", since nothing in this repo deploys it.
+- Verified: `/mnt/media` (4.9 TB free) and `/mnt/hl-backup` (1.8 TB free) now
+  report, `device_error` 0. The backup drive was missing for the same reason
+  and is covered too.
+
+**Notes / next steps:**
+- A rebuilt host needs the same line, or the drive goes unwatched again.
+
+---
+
 ## 2026-10-12 — Sonarr/Radarr size caps and seeding limits
 
 **Goal:** Stop one show from eating the 5 TB media drive.
