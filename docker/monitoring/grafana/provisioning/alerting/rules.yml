@@ -993,18 +993,24 @@ groups:
       # A drive running hot wears out faster. Hard drives are happiest under
       # ~45C and many are rated to 60C. The media drive read 57C on 2026-10-12
       # in its USB enclosure, mid-download. 55C leaves room to act before the
-      # rating. This is the 02:30 reading, so one hot afternoon cannot fire it,
-      # and once it does it stays firing until a night reads cooler.
+      # rating.
+      #
+      # Read every 15 minutes (the hook's `temp` phase, from cron on m5). The
+      # rule looks at the hour's average, not the latest reading: one hot
+      # reading cannot fire it, and a drive hovering around 55C moves the
+      # average slowly, so it pages once rather than on every crossing. While
+      # the drive is busy for days on end (an initial library download),
+      # silence it in Grafana for that stretch rather than raise the threshold.
       - uid: hl-smart-hot
         title: Drive running hot
         condition: C
-        for: 5m
+        for: 15m
         noDataState: OK
         execErrState: Error
         labels:
           severity: warning
         annotations:
-          summary: "The {{ $labels.drive }} drive was at {{ printf \"%.0f\" $values.A.Value }}C at the 02:30 SMART check; give its enclosure more air"
+          summary: "The {{ $labels.drive }} drive averaged {{ printf \"%.0f\" $values.A.Value }}C over the last hour; give its enclosure more air or slow the downloads"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }
@@ -1013,7 +1019,7 @@ groups:
               refId: A
               instant: true
               expr: >-
-                homelab_smart_temperature_celsius
+                avg_over_time(homelab_drive_temperature_celsius[1h])
           - refId: C
             relativeTimeRange: { from: 3600, to: 0 }
             datasourceUid: __expr__
@@ -1023,6 +1029,38 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: gt, params: [55] }
+
+      # The temperature read is a cron job on m5, so it needs its own dead
+      # man's switch: without it, a removed /etc/cron.d file would leave
+      # hl-smart-hot silent forever. 1h is four missed runs. Absent until the
+      # cron file is installed, and noDataState OK keeps that quiet.
+      - uid: hl-drive-temp-stale
+        title: Drive temperature check has not run
+        condition: C
+        for: 15m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Drive temperatures on m5 were last read {{ printf \"%.0f\" $values.A.Value }} minutes ago; check /etc/cron.d/hl-drive-temp on the host"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_drive_temp_check_timestamp_seconds) / 60
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [60] }
 
       # The hook writes these once a night (02:30). If they stop, every rule
       # above goes quiet without erroring. 36h: a night plus slack. A missed
