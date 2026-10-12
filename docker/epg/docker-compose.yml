@@ -57,9 +57,11 @@ services:
       # the heap limit (exit 134) and one killed at mem_limit (exit 137).
       EPG_BATCH: ${EPG_BATCH:-50}
       # The checked playlist (bin/check-streams.mjs). Hosts to leave out
-      # without checking, and whether to drop channels with no guide source.
+      # without checking, whether to drop channels with no listings, and the
+      # guide languages to keep (empty keeps all).
       EPG_STREAM_SKIP: ${EPG_STREAM_SKIP:-}
       EPG_REQUIRE_GUIDE: ${EPG_REQUIRE_GUIDE:-false}
+      EPG_LANGS: ${EPG_LANGS:-}
       # Inherited by every node process pm2 starts: the scheduled grab, the
       # startup grab and the server. See mem_limit above.
       NODE_OPTIONS: --max-old-space-size=1536

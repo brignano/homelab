@@ -27,6 +27,44 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Blink arms itself when everyone leaves
+
+**Goal:** Blink records while nobody is home without arming it by hand.
+
+**Steps:**
+1. Two automations in HA's `configuration.yaml`: arm Away when `zone.home`
+   has read 0 for 10 minutes, disarm the moment it is above 0.
+2. Both do nothing while no person entity has a tracker, so a fresh HA
+   without the Companion app cannot arm the cameras forever.
+
+**Notes / next steps:**
+- Needs the HA Companion app with location on each resident's phone, linked
+  to their person (`docker/homeassistant/README.md` → "Arming Blink by presence").
+
+## 2026-10-12 — Blink clips saved into Jellyfin
+
+**Goal:** Keep Blink camera recordings on the media server, viewable in Jellyfin.
+
+**Steps:**
+1. Compared HA's Blink integration (`blink.save_recent_clips`), a standalone
+   blinkpy container (`download_videos`), and reading the Sync Module's USB
+   stick. Picked HA: it already runs, handles Blink's sign-in and 2FA re-auth
+   in the UI, and `save_recent_clips` covers both cloud and Sync Module local
+   storage. blinkpy's `download_videos` is cloud-only, and a second headless
+   login would need its own 2FA ritual.
+2. `configuration.yaml`: allowlist `/config/blink` and a `blink` automation
+   that saves every camera's recent clips every 5 minutes.
+3. `scripts/blink-clips.sh` (cron, 5 min): moves clips from HA's volume to
+   `library/cameras/<Camera>/<YYYY-MM>/`, 90-day retention, metrics,
+   Healthchecks ping, alert `hl-blink-clips-failed`.
+
+**Notes / next steps:**
+- HA writes only to its own volume; mounting the media drive into HA would
+  make HA's start depend on the drive. The script is the only writer to the
+  library and refuses to run when it is missing.
+- Clips recorded while HA is down for over an hour are not fetched later.
+- Setup: `docker/homeassistant/README.md` → "Blink recordings".
+
 ## 2026-10-12 — Live TV: tuner reads a checked playlist
 
 **Goal:** Stop Jellyfin's Live TV listing channels that never play.
@@ -52,6 +90,11 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Notes / next steps:**
 - Streams that stall after a while (Pluto at ad breaks) still pass the check.
 - `EPG_REQUIRE_GUIDE=true` would also hide channels without listings.
+- Later the same day, with `EPG_REQUIRE_GUIDE=true` (406 channels), Jellyfin
+  still showed empty rows (A&E, 3ABN) and Arabic-language channels. The tuner
+  and guide URLs had also been swapped in Jellyfin's dashboard; fixed by hand.
+  `EPG_REQUIRE_GUIDE` now means listings in `guide.xml`, not just a guide
+  source, and `EPG_LANGS` keeps only the listed guide languages.
 
 ---
 

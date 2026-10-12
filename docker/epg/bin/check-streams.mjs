@@ -31,14 +31,18 @@
 // Usage: node check-streams.mjs [output file]
 //   EPG_PLAYLISTS        whitespace- or comma-separated playlist URLs
 //   EPG_STREAM_SKIP      hosts to leave out without checking (default none)
-//   EPG_REQUIRE_GUIDE    "true" also leaves out channels with no guide source
-//                        in public/channels.xml (default false)
+//   EPG_REQUIRE_GUIDE    "true" also leaves out channels with no listings in
+//                        public/guide.xml (default false); see below
+//   EPG_LANGS            guide languages to keep, e.g. "en,es" (default all);
+//                        a channel's language is its guide source's lang
+//                        attribute in public/channels.xml
 import fs from 'node:fs'
 
 const outFile = process.argv[2] || 'public/playlist.m3u'
 const urls = (process.env.EPG_PLAYLISTS || '').split(/[\s,]+/).filter(Boolean)
 const skipHosts = (process.env.EPG_STREAM_SKIP || '').split(/[\s,]+/).filter(Boolean)
 const requireGuide = process.env.EPG_REQUIRE_GUIDE === 'true'
+const langs = (process.env.EPG_LANGS || '').split(/[\s,]+/).filter(Boolean)
 const CONCURRENCY = 8
 const TIMEOUT_MS = 10_000
 // Below this share of channels passing, assume the box, not the streams, is
@@ -93,6 +97,7 @@ async function get(url, headers) {
     throw new Error(`HTTP ${res.status}`)
   }
   const type = res.headers.get('content-type') || ''
+  if (!res.body) return { url: res.url, type, body: Buffer.alloc(0) }
   const reader = res.body.getReader()
   const chunks = []
   let size = 0
@@ -161,13 +166,45 @@ for (const url of urls) {
   }
 }
 
+// Which channels have a guide, and in which language.
+//
+// A guide source in channels.xml is not the same as listings: on 2026-10-12,
+// with EPG_REQUIRE_GUIDE on, Jellyfin still showed empty rows for A&E, 3ABN
+// and others whose source grabbed nothing. So "has a guide" means the last
+// grab's guide.xml has programmes for the channel. Before the first grab there
+// is no guide.xml, and channels.xml is used instead.
+//
+// The language comes from channels.xml, where each source carries the lang it
+// is grabbed in. The US playlist also lists Arabic-language channels whose
+// listings come in Arabic; EPG_LANGS=en,es leaves those out.
+const unescape = (s) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&')
 let guided
-if (requireGuide) {
+let langOf
+if (requireGuide || langs.length) {
+  let channelsXml = ''
   try {
-    const xml = fs.readFileSync('public/channels.xml', 'utf8')
-    guided = new Set([...xml.matchAll(/\bxmltv_id="([^"]+)"/g)].map((m) => m[1]))
+    channelsXml = fs.readFileSync('public/channels.xml', 'utf8')
   } catch {
-    log('EPG_REQUIRE_GUIDE is set but public/channels.xml is missing; not filtering on it')
+    log('public/channels.xml is missing; not filtering on guide or language')
+  }
+  if (channelsXml) {
+    langOf = new Map()
+    for (const m of channelsXml.matchAll(/<channel\b[^>]*>/g)) {
+      const id = /\bxmltv_id="([^"]+)"/.exec(m[0])?.[1]
+      const lang = /\blang="([^"]+)"/.exec(m[0])?.[1]
+      if (id) langOf.set(unescape(id), lang || '')
+    }
+    if (requireGuide) {
+      guided = new Set()
+      try {
+        const xml = fs.readFileSync('public/guide.xml', 'utf8')
+        for (const m of xml.matchAll(/<programme\b[^>]*\bchannel="([^"]+)"/g)) guided.add(unescape(m[1]))
+      } catch {}
+      if (guided.size === 0) {
+        log('public/guide.xml has no programmes yet; requiring a guide source instead')
+        guided = new Set(langOf.keys())
+      }
+    }
   }
 }
 
@@ -188,10 +225,17 @@ const candidates = entries.filter((e) => {
     note('skipped host')
     return false
   }
-  if (guided) {
-    const id = /tvg-id="([^"]+)"/.exec(e.lines.join(' '))?.[1]
-    if (!id || !guided.has(id)) {
-      note('no guide source')
+  const id = /tvg-id="([^"]+)"/.exec(e.lines.join(' '))?.[1]
+  if (guided && (!id || !guided.has(id))) {
+    note('no guide')
+    return false
+  }
+  if (langs.length && langOf) {
+    const lang = id && langOf.get(id)
+    // A channel with no guide source has no known language; keep it unless
+    // EPG_REQUIRE_GUIDE already left it out.
+    if (lang && !langs.includes(lang)) {
+      note(`language ${lang}`)
       return false
     }
   }

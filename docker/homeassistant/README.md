@@ -390,6 +390,83 @@ integration. If **Settings → Entities** shows other IDs, change the three
 `sensor.spaceship_*` lines. The values are the car's last report: Tesla
 Fleet does not wake a sleeping car to read them.
 
+## Blink recordings
+
+Every Blink clip lands in Jellyfin as **Cameras → <camera> → <month>**, kept
+for 90 days. Two halves:
+
+- **Home Assistant** saves each new clip. The Blink integration polls every
+  5 minutes, and the `blink` automation in `config/configuration.yaml` calls
+  `blink.save_recent_clips` into `/config/blink`, inside HA's own volume.
+- **`scripts/blink-clips.sh`** (cron, every 5 minutes) moves them to
+  `/media/jellyfin/library/cameras/<Camera>/<YYYY-MM>/<YYYY-MM-DD HH-MM-SS>.mp4`
+  and deletes clips older than `HL_BLINK_RETAIN_DAYS` (90; `0` keeps all).
+
+HA never touches the media drive. Mounting it into HA would either stop HA
+starting when the drive is missing, or write clips onto the thin pool; the
+script instead refuses to write when the library is absent, leaves the clips
+in staging, and `hl-blink-clips-failed` says so in `#alerts`.
+
+**What Blink must be doing for there to be clips:** a Blink subscription
+(cloud clips) **or** a Sync Module 2 with a USB stick (local storage). Both
+work. With neither, Blink records nothing to fetch. Clips are saved only while
+the system is armed, the same as the Blink app. Clips recorded while HA is down
+for more than an hour are not fetched afterwards; they stay in the Blink app.
+
+### Setting it up
+
+First, so nothing pages `#alerts` while you work: create a Healthchecks check
+(period 5m, grace 1h) and set `HEALTHCHECKS_BLINK_CLIPS_URL` in
+`docker/monitoring/.env`. Then, on CT 100, soon after the pull (heartbeat
+flags the new cron job as missing until `install-cron.sh` runs):
+
+```bash
+cd ~/homelab && git pull
+# Recreate, not restart: configuration.yaml is a single-file mount.
+docker compose -f docker/homeassistant/docker-compose.yml up -d --force-recreate
+docker compose -f docker/monitoring/docker-compose.yml restart grafana   # new alert rule
+./scripts/install-cron.sh            # adds blink-clips.sh
+```
+
+Then:
+
+1. **Add Blink** in HA: **Settings → Devices & services → Add integration →
+   Blink**, sign in, and enter the code Blink emails or texts you. Check that
+   a `camera.*` entity appears for each camera.
+2. **Check the automation**: **Settings → Automations** lists *Blink - save
+   recent clips*. Walk past a camera with the system armed; within ~10
+   minutes a file appears in `/media/jellyfin/library/cameras/` (or run
+   `./scripts/blink-clips.sh` to move it straight away).
+3. **Add the library in Jellyfin**: **Dashboard → Libraries → Add Media
+   Library**, content type **Home videos and photos**, name *Cameras*, folder
+   **`/media/cameras`** (Jellyfin sees the library drive at `/media`). Turn on
+   **Real time monitoring** so new clips show up without a scan.
+
+To keep clips longer or forever, set `HL_BLINK_RETAIN_DAYS` on the cron line
+(`crontab -e`), e.g. `HL_BLINK_RETAIN_DAYS=0 /root/homelab/scripts/blink-clips.sh ...`.
+
+## Arming Blink by presence
+
+Two automations in `config/configuration.yaml` arm every Blink sync module
+(**Away**) once everyone has been out of the Home zone for 10 minutes, and
+disarm it as soon as anyone is back. Clips are only recorded while armed, so
+this is also what feeds "Blink recordings" above.
+
+They need HA to know where you are:
+
+1. Install the **Home Assistant Companion app** on your phone, sign in, and
+   allow location **Always**.
+2. In **Settings → People**, open your person and add the phone's
+   `device_tracker` under *Track device*. Do the same for anyone else who
+   lives here; arming waits until *everyone* tracked is away.
+3. Check **Settings → Areas & zones → Home** has the right address and a
+   radius of ~100 m.
+
+Nobody tracked means both automations do nothing, rather than arming forever.
+To turn them off without a code change, disable them in **Settings →
+Automations** (they are read-only there, but can be disabled). After a pull,
+recreate HA as usual (`up -d --force-recreate homeassistant`).
+
 ## Updating
 
 Not automatic. Read the [release notes](https://www.home-assistant.io/blog/categories/release-notes/)
