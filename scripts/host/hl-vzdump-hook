@@ -111,9 +111,21 @@ smart_check() {
   for _m in $SMART_MOUNTS; do
     mountpoint -q "$_m" || continue
     _drive=$(basename "$_m")
-    _disk=$(disk_of "$_m") || { note "SMART $_m: could not find its disk"; continue; }
-    # USB enclosures usually need -d sat; try the default first.
-    _out=$(smartctl -H -A "$_disk" 2>&1) || _out=$(smartctl -d sat -H -A "$_disk" 2>&1) || true
+    _disk=$(disk_of "$_m") || {
+      note "SMART $_m: could not find its disk"
+      _prom="${_prom}homelab_smart_readable{drive=\"$_drive\"} 0
+"
+      continue
+    }
+    # USB enclosures usually need -d sat; try the default first. Retry only
+    # when there is no verdict: smartctl's exit status is a bitmask that is
+    # non-zero on a good read of an ageing drive (error log entries, an
+    # attribute that once crossed its threshold), and that read must be kept.
+    _out=$(smartctl -H -A "$_disk" 2>&1)
+    case "$_out" in
+      *PASSED*|*FAILED*|*"Health Status"*) ;;
+      *) _out=$(smartctl -d sat -H -A "$_disk" 2>&1) ;;
+    esac
     case "$_out" in
       *PASSED*|*"Health Status: OK"*) note "SMART $_m ($_disk): PASSED"; _ok=1 ;;
       *FAILED*) fail "SMART $_m ($_disk) reports FAILING health — replace this drive"; _ok=0 ;;
@@ -142,7 +154,10 @@ homelab_smart_healthy{drive=\"$_drive\"} $_ok
 # Same rules as scripts/metrics.sh, which the host does not have: write beside
 # the target and rename, so a scrape never reads half a file, and never fail.
 write_smart_metrics() {
-  [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ] || return 0
+  [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ] || {
+    note "SMART metrics: $TEXTFILE_DIR missing or not writable, nothing written for Grafana"
+    return 0
+  }
   _tmp="$TEXTFILE_DIR/.hl_smart.prom.$$"
   {
     echo "# HELP homelab_smart_check_timestamp_seconds When the nightly hook last read SMART."

@@ -890,7 +890,9 @@ groups:
 
       # Reallocated sectors are bad ones already remapped to spares. Many drives
       # ship with a few, so the count alone means little; a count that is
-      # *climbing* is the drive wearing out. Week-over-week, from a nightly gauge.
+      # *climbing* is the drive wearing out. Today against the week's low, not
+      # max minus min: the drive label is the mount, so a replacement drive
+      # starting at 0 must read as a drop, not as a week of new damage.
       - uid: hl-smart-reallocating
         title: Drive is reallocating sectors
         condition: C
@@ -909,7 +911,7 @@ groups:
               refId: A
               instant: true
               expr: >-
-                max_over_time(homelab_smart_reallocated_sectors[7d]) - min_over_time(homelab_smart_reallocated_sectors[7d])
+                homelab_smart_reallocated_sectors - min_over_time(homelab_smart_reallocated_sectors[7d])
           - refId: C
             relativeTimeRange: { from: 604800, to: 0 }
             datasourceUid: __expr__

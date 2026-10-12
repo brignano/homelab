@@ -1888,7 +1888,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_readable",
+          "expr": "max by (drive) (homelab_smart_readable)",
           "instant": true,
           "range": false,
           "refId": "A",
@@ -1900,7 +1900,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_healthy",
+          "expr": "max by (drive) (homelab_smart_healthy)",
           "instant": true,
           "range": false,
           "refId": "B",
@@ -1912,7 +1912,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_pending_sectors",
+          "expr": "max by (drive) (homelab_smart_pending_sectors)",
           "instant": true,
           "range": false,
           "refId": "C",
@@ -1924,7 +1924,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_uncorrectable_sectors",
+          "expr": "max by (drive) (homelab_smart_uncorrectable_sectors)",
           "instant": true,
           "range": false,
           "refId": "D",
@@ -1936,7 +1936,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_reallocated_sectors",
+          "expr": "max by (drive) (homelab_smart_reallocated_sectors)",
           "instant": true,
           "range": false,
           "refId": "E",
@@ -1948,7 +1948,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_temperature_celsius",
+          "expr": "max by (drive) (homelab_smart_temperature_celsius)",
           "instant": true,
           "range": false,
           "refId": "F",
@@ -1960,7 +1960,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "homelab_smart_readable * 0 + on() group_left() (homelab_smart_check_timestamp_seconds * 1000)",
+          "expr": "max by (drive) (homelab_smart_readable * 0 + on() group_left() (homelab_smart_check_timestamp_seconds * 1000))",
           "instant": true,
           "range": false,
           "refId": "G",
@@ -1976,11 +1976,7 @@
           "id": "organize",
           "options": {
             "excludeByName": {
-              "Time": true,
-              "__name__": true,
-              "host": true,
-              "instance": true,
-              "job": true
+              "Time": true
             },
             "indexByName": {
               "drive": 0,
