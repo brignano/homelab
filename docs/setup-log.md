@@ -90,6 +90,11 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Notes / next steps:**
 - Streams that stall after a while (Pluto at ad breaks) still pass the check.
 - `EPG_REQUIRE_GUIDE=true` would also hide channels without listings.
+- Later the same day, with `EPG_REQUIRE_GUIDE=true` (406 channels), Jellyfin
+  still showed empty rows (A&E, 3ABN) and Arabic-language channels. The tuner
+  and guide URLs had also been swapped in Jellyfin's dashboard; fixed by hand.
+  `EPG_REQUIRE_GUIDE` now means listings in `guide.xml`, not just a guide
+  source, and `EPG_LANGS` keeps only the listed guide languages.
 
 ---
 
