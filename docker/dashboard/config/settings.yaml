@@ -22,29 +22,18 @@ favicon: /icons/favicon.svg
 # after the listed ones, which is how Home Assistant, the tile most often
 # reached for, ended up last. scripts/check-dashboard.sh now fails on that.
 #
-# Home first: the house is what this page is opened for most.
+# Everyday is a full-width row of the three things this page is opened for.
+# Media and Lab have no `style:`, which makes them columns: Homepage sets
+# column sections side by side (two up on a laptop, stacked on a phone) and
+# grows them to fill the width. Every section used to be `style: row`, which
+# is always full width whatever its `columns:` says — so a one-tile section
+# drew one tile and a band of empty card, seven times down the page.
 layout:
-  Home:
-    style: row
-    columns: 2
-  Web:
-    style: row
-    columns: 2
-  Monitoring:
+  Everyday:
     style: row
     columns: 3
-  AI:
-    style: row
-    columns: 2
-  Network:
-    style: row
-    columns: 2
   Media:
-    style: row
-    columns: 2
-  Desktops:
-    style: row
-    columns: 2
+  Lab:
 
 # Appearance. These are the knobs Homepage gives you; the look itself comes
 # from config/custom.css, which imports the shared design system.

@@ -20,58 +20,31 @@
 # projects' own marks, left as drawn, because recognising Grafana's G at a
 # glance is the whole job of a tile icon.
 
-- Monitoring:
-    - Grafana:
-        href: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Dashboards, metrics and alert rules
-        icon: /icons/grafana.svg
+# Three sections, sized by how often each is opened. settings.yaml lays out
+# Everyday as one full-width row and Media and Lab as two columns beneath it;
+# the sections used to be seven one-row-each lists, which put one tile on the
+# left of an otherwise empty band and pushed Media below the fold.
 
-    - Portainer:
-        href: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Containers, images and volumes
-        icon: /icons/portainer.svg
-
-# Not on this box, but externally reachable — so unlike a bookmark it can carry
-# a real status check, and "is my site up?" is worth answering at a glance.
-# The Caddyfile-coverage check ignores hrefs without {{HOMEPAGE_VAR_DOMAIN}},
-# so an external service here is not mistaken for a tile pointing at a deleted
-# site block.
-- Web:
-    - brignano.io:
-        href: https://brignano.io
-        siteMonitor: https://brignano.io
-        description: Personal site
-        icon: /icons/brignano.svg
-
-- AI:
+- Everyday:
+    - Home Assistant:
+        href: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Doors, locks, sensors and cameras — read by the digest
+        icon: /icons/home-assistant.svg
+    - Jellyfin:
+        href: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Movies, shows and home videos — LAN and tailnet only
+        icon: /icons/jellyfin.svg
     - Open WebUI:
         href: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://chat.{{HOMEPAGE_VAR_DOMAIN}}
         description: Local model chat — slow by design, prefer Otto in Discord
         icon: /icons/open-webui.svg
 
-- Network:
-    - AdGuard Home:
-        href: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
-        description: DNS resolver and ad blocking for the house
-        icon: /icons/adguard-home.svg
-
-- Home:
-    - Home Assistant:
-        href: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://ha.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Doors, locks, sensors and cameras — read by the digest
-        icon: /icons/home-assistant.svg
-
+# Jellyfin is in Everyday because it is what gets watched; these are the
+# machinery that fills it.
 - Media:
-    - Jellyfin:
-        href: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://jellyfin.{{HOMEPAGE_VAR_DOMAIN}}
-        description: Movies, shows and home videos — LAN and tailnet only
-        icon: /icons/jellyfin.svg
     - Sonarr:
         href: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://sonarr.{{HOMEPAGE_VAR_DOMAIN}}
@@ -93,10 +66,35 @@
         description: Downloads — only through the VPN (gluetun)
         icon: /icons/qbittorrent.svg
 
-- Desktops:
+- Lab:
+    - Grafana:
+        href: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://stats.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Dashboards, metrics and alert rules
+        icon: /icons/grafana.svg
+    - Portainer:
+        href: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://apps.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Containers, images and volumes
+        icon: /icons/portainer.svg
+    - AdGuard Home:
+        href: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://dns.{{HOMEPAGE_VAR_DOMAIN}}
+        description: DNS resolver and ad blocking for the house
+        icon: /icons/adguard-home.svg
     - Kali:
         href: https://kali.{{HOMEPAGE_VAR_DOMAIN}}
         description: On-demand desktop — Sablier boots it on first request
         icon: /icons/kali-linux.svg
         # No siteMonitor on purpose: polling this URL would boot the container
         # every time the dashboard refreshes, which defeats scale-to-zero.
+    # Not on this box, but externally reachable — so unlike a bookmark it can
+    # carry a real status check, and "is my site up?" is worth answering at a
+    # glance. The Caddyfile-coverage check ignores hrefs without
+    # {{HOMEPAGE_VAR_DOMAIN}}, so an external service here is not mistaken for
+    # a tile pointing at a deleted site block.
+    - brignano.io:
+        href: https://brignano.io
+        siteMonitor: https://brignano.io
+        description: Personal site
+        icon: /icons/brignano.svg
