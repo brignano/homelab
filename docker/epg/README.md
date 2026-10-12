@@ -58,7 +58,7 @@ rebuild the channel list. Then grab now, or wait for 01:00:
 
 ```bash
 docker compose -f docker/epg/docker-compose.yml up -d --force-recreate
-docker exec epg npm run grab -- --channels=public/channels.xml --output=public/guide.xml
+docker exec -d epg node /hl/grab-all.mjs
 ```
 
 ## A source has gone dead
@@ -70,6 +70,23 @@ failed with status code 404` against the same site, or the same prefix of
 `<site>/<site_id prefix>`. Setting it replaces the default, so keep
 `i.mjh.nz/Flash/`. Then recreate the container and grab. The startup log line
 names what it skipped.
+
+## Why the grab runs in batches
+
+The grabber keeps everything it fetches until it writes the guide at the end,
+so one process for every channel grows until it runs out of memory. With ~600
+channels it died at request 1,185 of 1,842 with a 1.5 GB heap. `bin/grab-all.mjs`
+splits `channels.xml` into batches of `EPG_BATCH` (default 100), runs the stock
+grab once per batch, and merges the results into `guide.xml`. Each batch
+returns its memory when it exits.
+
+- If a batch fails, it is logged and its channels are left out of that night's
+  guide.
+- If every batch fails, `guide.xml` is not touched, so `hl-epg-stale` fires.
+- A lock file stops a second grab, scheduled or by hand, while one is running.
+
+It replaces the image's `pm2.config.js` with `bin/pm2.config.cjs`, which runs
+the same three apps but uses this grab command.
 
 ## Deploy
 
@@ -104,5 +121,7 @@ cannot see it. The file's age is its dead man's switch.
 | Log says `keeping the existing channel list` | A playlist URL did not answer at start. The previous list is used; recreate later to retry. |
 | Guide shows "no information" for some channels | No listings site covers them (see Coverage), or Jellyfin has not refreshed: *Scheduled Tasks → Refresh Guide*. |
 | `hl-epg-stale` | The grab is not finishing: `docker logs epg`, and whether the container is running. |
+| Log shows `JavaScript heap out of memory` inside a batch | Lower `EPG_BATCH` in `.env` (e.g. 50), then `up -d --force-recreate`. |
+| `grab-all: another grab is running` | A grab is already going. A lock older than 12h is treated as left over and removed. |
 | `hl-epg-empty` | Every scraper failed: `docker logs epg` shows `ERR:` per channel. Usually a site change, which the next nightly image pull often fixes, or the box being blocked. |
 | Jellyfin cannot load `http://epg:3000/guide.xml` | The `epg` container is down, or the first grab has not finished. |

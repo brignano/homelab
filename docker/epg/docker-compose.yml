@@ -5,8 +5,9 @@ services:
   #
   #   Jellyfin → http://epg:3000/guide.xml   (over proxy_proxy; no port, no route)
   #
-  # The image runs two things under pm2: a static server for public/ on :3000,
-  # and the grab on CRON_SCHEDULE. Our start.sh runs first: it rebuilds
+  # Two things run under pm2: a static server for public/ on :3000, and the
+  # grab on CRON_SCHEDULE, run in batches by bin/grab-all.mjs because one
+  # process for every channel ran out of memory. Our start.sh runs first: it rebuilds
   # public/channels.xml from the playlists, so the guide follows the playlist
   # without a list kept by hand, and asks for a grab at startup only when there
   # is no guide yet.
@@ -29,7 +30,9 @@ services:
     # heap. Node sizes its heap from the container limit, roughly half, and at
     # 1g that is ~510 MB: the first grab died at request 21 of 1,842 with
     # "JavaScript heap out of memory" (2026-10-11). So the heap is set
-    # explicitly, with the limit above it for Node's own non-heap memory.
+    # explicitly, with the limit above it for Node's own non-heap memory. The
+    # heap also grows with every request, and at 1.5 GB a single process still
+    # died at request 1,185; batching (EPG_BATCH) is what bounds it.
     cpus: 1
     mem_limit: 2g
     command: ["sh", "/hl/start.sh"]
@@ -47,6 +50,9 @@ services:
       # The grabber's own advice: more connections get you blocked by the
       # listings sites.
       MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-2}
+      # Channels per grab process (bin/grab-all.mjs). Each batch's memory is
+      # returned when it exits, so this, not the channel count, sets the peak.
+      EPG_BATCH: ${EPG_BATCH:-100}
       # Inherited by every node process pm2 starts: the scheduled grab, the
       # startup grab and the server. See mem_limit above.
       NODE_OPTIONS: --max-old-space-size=1536

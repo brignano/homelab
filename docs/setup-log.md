@@ -27,6 +27,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — TV guide: grab in batches after a second out-of-memory
+
+**Goal:** Get a complete first grab.
+
+**Issues encountered:**
+- With the 1.5 GB heap from earlier today, the startup grab still died, at
+  request 1,185 of 1,842 (`Reached heap limit`, after about 48 minutes). The
+  grabber holds everything it fetches until it writes the guide, so one process
+  for every channel outgrows any fixed heap.
+
+**Resolution:**
+- `bin/grab-all.mjs` runs the stock grab once per batch of 100 channels
+  (`EPG_BATCH`), each in its own process, and merges the parts into
+  `guide.xml` with a temp file and a rename. If a batch fails, its channels
+  are left out. If every batch fails, the old guide stays and `hl-epg-stale`
+  fires. A lock stops two grabs at once.
+- `bin/pm2.config.cjs` replaces the image's pm2 config, with the same
+  server, schedule and startup grab.
+- Tested with a stand-in grabber: batching, a failed batch, all batches
+  failing, and the lock.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then `up -d --force-recreate` for epg. With no
+  `guide.xml` yet, the startup grab runs in batches.
+
+---
+
 ## 2026-10-12 — TV guide: 109 Plex channels grabbed nothing
 
 **Goal:** Find out why most i.mjh.nz channels returned `0 programs` without an
