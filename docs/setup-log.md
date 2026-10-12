@@ -49,8 +49,11 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Notes / next steps:**
 - Deploy: `git pull`, then `up -d` for epg. The service definition changed, so
   it recreates, and with no `guide.xml` yet the startup grab runs again.
-- The dead `Flash` feed is left for now; see what else comes back empty after
-  a full grab.
+- The dead `Flash` feed is now skipped (`EPG_SKIP`, default
+  `i.mjh.nz/Flash/`). CNN comes from tvtv.us, NBC News NOW and Bloomberg
+  Originals from i.mjh.nz's Plex US feed, and Fox News from its Foxtel feed.
+  Within a site the generator now prefers the channel's own country, which
+  also moved one other US channel off a foreign feed.
 
 ---
 

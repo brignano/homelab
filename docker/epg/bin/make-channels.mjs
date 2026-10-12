@@ -21,13 +21,43 @@
 // Runs at container start (start.sh). A failure here keeps the previous list:
 // a playlist host being down for a minute is no reason to lose the guide.
 //
+// Two rules choose between several entries for the same channel:
+//
+//   - EPG_SKIP drops sources known to be dead, so the channel falls through
+//     to the next site that lists it. Entries are "<site>" or
+//     "<site>/<site_id prefix>": i.mjh.nz/Flash/ is one feed of a site whose
+//     other feeds (Plex, Pluto, Roku) work. Found from `docker logs epg`: a dead
+//     feed returns 404 for every request.
+//   - Within a site, an entry for the channel's own country wins. i.mjh.nz
+//     lists NBC News NOW under Foxtel (Australia) as well as Plex/us, and file
+//     order would otherwise pick Australia's.
+//
 // Usage: node make-channels.mjs <sites dir> <output file>
 //   EPG_PLAYLISTS  whitespace- or comma-separated playlist URLs
+//   EPG_SKIP       whitespace- or comma-separated sources to leave out
 import fs from 'node:fs'
 import path from 'node:path'
 
 const [sitesDir = 'sites', outFile = 'public/channels.xml'] = process.argv.slice(2)
 const urls = (process.env.EPG_PLAYLISTS || '').split(/[\s,]+/).filter(Boolean)
+const skip = (process.env.EPG_SKIP || '').split(/[\s,]+/).filter(Boolean)
+
+function skipped(site, siteId) {
+  const key = `${site}/${siteId}`
+  return skip.some((s) => site === s || key.startsWith(s))
+}
+
+// "CNN.us@SD" -> "us". The same code appears in i.mjh.nz's feed ids
+// ("Plex/us#...", "SamsungTVPlus/us#..."), which is what lets a site's US entry
+// be preferred over another country's.
+function countryOf(id) {
+  return /\.([a-z]{2})(?:@|$)/.exec(id)?.[1] || ''
+}
+
+function localTo(id, siteId) {
+  const cc = countryOf(id)
+  return cc !== '' && new RegExp(`(^|[/#])${cc}([/#]|$)`).test(siteId)
+}
 
 function log(msg) {
   console.log(`make-channels: ${msg}`)
@@ -71,9 +101,15 @@ for (const site of fs.readdirSync(sitesDir)) {
       const el = m[0]
       const id = /\bxmltv_id="([^"]+)"/.exec(el)?.[1]
       const s = /\bsite="([^"]+)"/.exec(el)?.[1]
-      if (!id || !s || !wanted.has(id)) continue
+      const siteId = /\bsite_id="([^"]*)"/.exec(el)?.[1] || ''
+      if (!id || !s || !wanted.has(id) || skipped(s, siteId)) continue
       if (!bySite.has(s)) bySite.set(s, new Map())
-      if (!bySite.get(s).has(id)) bySite.get(s).set(id, el)
+      const have = bySite.get(s).get(id)
+      // First entry wins, unless a later one is for the channel's own country
+      // and the first was not.
+      if (!have || (!have.local && localTo(id, siteId))) {
+        bySite.get(s).set(id, { el, local: localTo(id, siteId) })
+      }
     }
   }
 }
@@ -82,7 +118,7 @@ const sites = [...bySite.entries()].sort((a, b) => b[1].size - a[1].size || a[0]
 const chosen = new Map()
 const used = new Map()
 for (const [site, channels] of sites) {
-  for (const [id, el] of channels) {
+  for (const [id, { el }] of channels) {
     if (chosen.has(id)) continue
     chosen.set(id, el)
     used.set(site, (used.get(site) || 0) + 1)
@@ -103,4 +139,5 @@ fs.writeFileSync(tmp, xml)
 fs.renameSync(tmp, outFile)
 
 const summary = [...used.entries()].map(([s, n]) => `${s} ${n}`).join(', ')
-log(`${chosen.size} of ${wanted.size} playlist channels have a guide source (${summary})`)
+const skipNote = skip.length ? `; skipping ${skip.join(', ')}` : ''
+log(`${chosen.size} of ${wanted.size} playlist channels have a guide source (${summary})${skipNote}`)
