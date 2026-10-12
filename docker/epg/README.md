@@ -1,10 +1,16 @@
 # TV guide (iptv-org/epg)
 
-Programme listings for Jellyfin's Live TV. It runs
+Programme listings and a checked channel list for Jellyfin's Live TV. It runs
 [iptv-org/epg](https://github.com/iptv-org/epg)'s grabber for the channels in
-Jellyfin's M3U playlists and serves the result as XMLTV at
-`http://epg:3000/guide.xml`. The URL works only on `proxy_proxy`, where
-Jellyfin is. There is no port and no Caddy route.
+Jellyfin's M3U playlists and serves two files:
+
+- `http://epg:3000/guide.xml`: the guide, as XMLTV.
+- `http://epg:3000/playlist.m3u`: the same playlists, with only the channels
+  whose streams answered at the last check. Jellyfin's M3U tuner reads this
+  one, so channels that only spin never show up.
+
+Both URLs work only on `proxy_proxy`, where Jellyfin is. There is no port and
+no Caddy route.
 
 ## How it fits together
 
@@ -23,7 +29,12 @@ Jellyfin is. There is no port and no Caddy route.
 2. **Grabs:** nightly at 01:00 (`EPG_CRON_SCHEDULE`), plus one at start if
    there is no guide yet. Each fetches `EPG_DAYS` days (default 3) and writes
    `guide.xml`.
-3. **Jellyfin** reads `guide.xml` through its XMLTV provider.
+3. **Stream check:** at container start and at the start of every grab,
+   `bin/check-streams.mjs` tries every channel in `EPG_PLAYLISTS` the way a
+   player would and writes `playlist.m3u` with the ones that answer (see
+   "Why the channel list is checked").
+4. **Jellyfin** reads `playlist.m3u` through its M3U tuner and `guide.xml`
+   through its XMLTV provider.
 
 Both files live in `/var/lib/homelab/epg` on CT 100. That folder is small, on the
 rootfs, and included in the vzdump.
@@ -46,7 +57,12 @@ docker logs -f epg        # "make-channels: N of M playlist channels...", then t
 The first grab can take an hour or more. It is finished when
 `/var/lib/homelab/epg/guide.xml` exists.
 
-Then in Jellyfin, go to *Dashboard → Live TV → TV Guide Data Providers → + →
+Then in Jellyfin, point the tuner at the checked playlist. In *Dashboard →
+Live TV → Tuner Devices*, edit the M3U tuner (or add one) and set **File or
+URL** to `http://epg:3000/playlist.m3u`. It exists a few minutes after the
+container starts (`docker logs epg 2>&1 | grep check-streams`).
+
+Then add the guide: *Dashboard → Live TV → TV Guide Data Providers → + →
 XMLTV*:
 - **File or URL:** `http://epg:3000/guide.xml`
 - Leave the rest at their defaults. Save, then run
@@ -70,6 +86,37 @@ failed with status code 404` against the same site, or the same prefix of
 `<site>/<site_id prefix>`. Setting it replaces the default, so keep
 `i.mjh.nz/Flash/`. Then recreate the container and grab. The startup log line
 names what it skipped.
+
+## Why the channel list is checked
+
+iptv-org's playlists list every stream someone found once, and many no longer
+play from here. On 2026-10-12, with the US list as the tuner, Pluto channels
+behind `jmp2.uk` were answered 403 by Pluto's stitcher, WFTV's variant
+playlists could not be parsed, and three Stirr channels answered 503. Jellyfin
+shows every channel in its tuner whether it plays or not, so the channel list
+filled with channels that only spin.
+
+`bin/check-streams.mjs` checks each channel with the headers its playlist asks
+for, or the browser user agent Jellyfin sends:
+
+1. The URL answers with an HLS playlist, or with video.
+2. For a master playlist, its first variant answers with a media playlist.
+3. That playlist's first segment answers.
+
+Channels that pass go into `playlist.m3u`; the log line counts what was left
+out and why. The file is replaced only when every playlist answered and at
+least a fifth of the channels passed. Below that, the box is more likely
+offline than the streams dead, and the previous list is kept.
+
+It cannot catch a stream that plays for a minute and then stalls, such as a
+Pluto channel freezing at an ad break. Those still need trying in Jellyfin.
+
+- `EPG_STREAM_SKIP`: hosts to leave out without checking, such as `jmp2.uk`.
+- `EPG_REQUIRE_GUIDE=true`: also leave out channels with no guide source, so
+  every channel in Jellyfin has listings.
+
+Jellyfin re-reads the tuner on its daily *Refresh Guide* task, or straight
+away with *Live TV → Refresh Guide Data*.
 
 ## Why the grab runs in batches
 
@@ -107,6 +154,7 @@ exists. Scraping the listings sites twice a night is how you get blocked.
 |---|---|
 | Container stopped | `homelab_container_running{container="epg"}`, automatic from this compose file. **Required only once `docker/epg/.env` exists** (`SETUP_GATED_STACKS` in `heartbeat.sh`). |
 | Guide not updating | `homelab_epg_guide_timestamp_seconds`, guide.xml's mtime read from the host by `heartbeat.sh`. `hl-epg-stale` fires past 30h. Before the first grab finishes, the `.env`'s mtime stands in, so a grab that never worked still alerts. |
+| Channel list not updating | `homelab_epg_playlist_timestamp_seconds`, playlist.m3u's mtime. `hl-epg-playlist-stale` fires past 30h. `homelab_epg_playlist_channels` counts the channels in it. |
 | Guide empty | `homelab_epg_guide_programmes`. The grabber skips channels that fail and still writes the file, so a broken scraper keeps the mtime fresh. `hl-epg-empty` fires when the count is 0 for 2h. A partial guide is normal and does not page. |
 
 The schedule runs inside the container (pm2), where cron and `install-cron.sh`
@@ -124,4 +172,6 @@ cannot see it. The file's age is its dead man's switch.
 | Log shows `JavaScript heap out of memory` inside a batch | Lower `EPG_BATCH` in `.env` (e.g. 25). Exit 134 is the heap limit, exit 137 the container's `mem_limit`, then `up -d --force-recreate`. |
 | `grab-all: another grab is running` | A grab is already going. A lock older than 12h is treated as left over and removed. |
 | `hl-epg-empty` | Every scraper failed: `docker logs epg` shows `ERR:` per channel. Usually a site change, which the next nightly image pull often fixes, or the box being blocked. |
+| A channel in Jellyfin spins and never plays | It passed the last check but has died since, or stalls after its first segment. It drops out at the next check if it is dead. |
+| Log says `only N of M streams answered; keeping the existing playlist` | Most streams failed at once, which usually means the box's internet connection, not the streams. The previous list stays. |
 | Jellyfin cannot load `http://epg:3000/guide.xml` | The `epg` container is down, or the first grab has not finished. |

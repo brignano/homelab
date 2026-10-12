@@ -80,6 +80,7 @@ SETUP_GATED_STACKS="${HL_SETUP_GATED_STACKS:-jellyfin matterbridge concierge dow
 DIGEST_STAMP="${HL_DIGEST_STAMP:-/var/lib/homelab/assistant/last-digest}"
 # Written by the TV guide grabber in docker/epg/; see the guide metric below.
 EPG_GUIDE="${HL_EPG_GUIDE:-/var/lib/homelab/epg/guide.xml}"
+EPG_PLAYLIST="${HL_EPG_PLAYLIST:-/var/lib/homelab/epg/playlist.m3u}"
 
 # Kept identical to the job list in install-cron.sh; CI fails if they drift
 # (scripts/check-observability.sh). Two lists of the same thing is exactly how
@@ -263,6 +264,26 @@ publish_metrics() {
       metric_help homelab_epg_guide_programmes gauge \
         "Programmes in the TV guide (docker/epg guide.xml)"
       metric homelab_epg_guide_programmes "${_epg_n:-0}"
+    fi
+    # When the checked playlist Jellyfin's tuner reads was last written
+    # (docker/epg check-streams.mjs). It is rebuilt at the start of every grab
+    # and keeps the old file when the checks look like the box is offline, so
+    # a stuck file means dead channels creep back in unseen
+    # (hl-epg-playlist-stale). The .env's mtime stands in until the first one.
+    _epg_pl=$(stat -c %Y "$EPG_PLAYLIST" 2>/dev/null \
+      || stat -c %Y "$REPO/docker/epg/.env" 2>/dev/null || true)
+    if [ -n "$_epg_pl" ] && [ "$_epg_pl" -gt 0 ] 2>/dev/null; then
+      metric_help homelab_epg_playlist_timestamp_seconds gauge \
+        "Unix time the checked Live TV playlist (docker/epg playlist.m3u) was last written"
+      metric homelab_epg_playlist_timestamp_seconds "$_epg_pl"
+    fi
+    # How many channels passed the last check: a fresh file can still have
+    # lost most of its channels while clearing the script's 20% floor.
+    if [ -r "$EPG_PLAYLIST" ]; then
+      _epg_ch=$(grep -c '^#EXTINF' "$EPG_PLAYLIST" 2>/dev/null || true)
+      metric_help homelab_epg_playlist_channels gauge \
+        "Channels in the checked Live TV playlist (docker/epg playlist.m3u)"
+      metric homelab_epg_playlist_channels "${_epg_ch:-0}"
     fi
   fi
 

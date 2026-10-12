@@ -27,6 +27,34 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Live TV: tuner reads a checked playlist
+
+**Goal:** Stop Jellyfin's Live TV listing channels that never play.
+
+**Issues encountered:**
+- Channels from the iptv-org US playlist failed in three ways. Pluto channels
+  behind `jmp2.uk` redirected to Pluto's stitcher, which answered 403, so
+  FFmpeg exited with code 8 at once. WFTV's master playlist answered, but none
+  of its variant playlists parsed ("Invalid data"), so playback hung. Three
+  Stirr channels on `frequency.stream` answered 503.
+- A first check from CT 100 showed `000` for every host. The playlist's CRLF
+  line endings put a carriage return on every URL; with `tr -d '\r'` the
+  hosts answered normally. The network was never the problem.
+
+**Resolution:**
+- `docker/epg/bin/check-streams.mjs` checks every channel the way a player
+  would (playlist, first variant, first segment) and writes
+  `/var/lib/homelab/epg/playlist.m3u` with the ones that pass. It runs at
+  container start and at the start of each nightly grab.
+- Jellyfin's M3U tuner points at `http://epg:3000/playlist.m3u` instead of the
+  iptv-org URL. `hl-epg-playlist-stale` watches the file's age.
+
+**Notes / next steps:**
+- Streams that stall after a while (Pluto at ad breaks) still pass the check.
+- `EPG_REQUIRE_GUIDE=true` would also hide channels without listings.
+
+---
+
 ## 2026-10-12 — Drive health and media-drive capacity in Grafana
 
 **Goal:** See the 5 TB media drive filling, and hear about a failing drive

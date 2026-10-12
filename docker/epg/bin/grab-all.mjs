@@ -16,6 +16,10 @@
 // of them. If every batch fails, guide.xml is left alone and its age makes
 // hl-epg-stale fire.
 //
+// Each run first rebuilds public/playlist.m3u (check-streams.mjs), so the
+// channel list Jellyfin plays is checked on the same nightly schedule. Its
+// failure never stops the grab.
+//
 // Run by pm2 (pm2.config.cjs) on CRON_SCHEDULE and at startup, or by hand:
 //   docker exec -d epg node /hl/grab-all.mjs
 //
@@ -63,6 +67,8 @@ if (!lock()) {
 
 let exitCode = 0
 try {
+  spawnSync('node', ['/hl/check-streams.mjs'], { stdio: 'inherit' })
+
   const channels = fs.readFileSync(CHANNELS, 'utf8').match(/<channel\b[^>]*>[^<]*<\/channel>/g) || []
   fs.rmSync(WORK, { recursive: true, force: true })
   fs.mkdirSync(WORK, { recursive: true })
