@@ -149,7 +149,10 @@ folder: /data/library/movies
 A ✅ adds it to Radarr (or Sonarr, every season) and starts a search. The
 download, the import into Jellyfin's library and the Jellyfin scan are the
 downloads stack's usual path (`docker/downloads/README.md`). *"What's
-downloading?"* reads both queues.
+downloading?"* reads both queues: the first 20 entries of each, with the total
+so the reply says how many it left out, and Radarr/Sonarr's own reason for a
+flagged entry (a message that quotes a path or any file or release name is
+dropped).
 
 - The **title and year shown come from Radarr/Sonarr's lookup of the id**, not
   from the model, so the prompt names what the id really is.

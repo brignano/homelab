@@ -22,6 +22,7 @@ text written by strangers than that.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import aiohttp
@@ -30,6 +31,8 @@ TIMEOUT_S = 20
 MAX_RESULTS = 8
 MAX_OVERVIEW = 200
 MAX_QUEUE = 20
+MAX_REASON = 160
+_NAMEISH = re.compile(r"\w\.\w")
 
 
 class MediaError(RuntimeError):
@@ -65,6 +68,37 @@ def lookup_rows(items: object, id_key: str) -> list[dict]:
     return rows
 
 
+def _reasons(r: dict) -> list[str]:
+    """Why Radarr/Sonarr flagged an entry, in their own words.
+
+    The messages are theirs ("The download is stalled with no connections"),
+    but some quote back a path, a release or folder name, or a file inside the
+    torrent. Any message that names anything is dropped rather than cleaned:
+    those names are text a stranger wrote. "Names anything" means a path
+    separator, one of the entry's own titles, or a word with a dot inside it
+    (Show.S01E02, x.mkv) — Radarr/Sonarr's own sentences have none.
+    """
+    names = {str(r.get("title") or "").strip().lower()}
+    found = [r.get("errorMessage")]
+    for sm in r.get("statusMessages") or []:
+        if isinstance(sm, dict):
+            names.add(str(sm.get("title") or "").strip().lower())
+            if isinstance(sm.get("messages"), list):
+                found += sm["messages"]
+    names.discard("")
+    out: list[str] = []
+    for m in found:
+        text = " ".join(m.split()) if isinstance(m, str) else ""
+        low = text.lower()
+        if (not text or text in out or "/" in text or "\\" in text
+                or _NAMEISH.search(text) or any(n in low for n in names)):
+            continue
+        out.append(text[:MAX_REASON])
+        if len(out) >= 3:
+            break
+    return out
+
+
 def queue_rows(records: object, app: str) -> list[dict]:
     """The download queue, without release names. Pure; tested."""
     rows = []
@@ -82,13 +116,28 @@ def queue_rows(records: object, app: str) -> list[dict]:
         size, left = r.get("size"), r.get("sizeleft")
         if isinstance(size, (int, float)) and isinstance(left, (int, float)) and size > 0:
             row["progress"] = f"{max(0, min(100, round(100 * (1 - left / size))))}%"
-        for key in ("status", "timeleft", "trackedDownloadState"):
+        for key in ("status", "timeleft", "trackedDownloadStatus", "trackedDownloadState"):
             if isinstance(r.get(key), str):
                 row[key] = r[key][:40]
+        if reasons := _reasons(r):
+            row["reasons"] = reasons
         rows.append(row)
         if len(rows) >= MAX_QUEUE:
             break
     return rows
+
+
+def queue_page(data: object, app: str) -> dict:
+    """One page of the queue and how many entries there are in all. Pure; tested.
+
+    The total is what stops the agent guessing whether a list of exactly
+    MAX_QUEUE was cut short.
+    """
+    data = data if isinstance(data, dict) else {}
+    items = queue_rows(data.get("records"), app)
+    total = data.get("totalRecords")
+    ok = isinstance(total, int) and not isinstance(total, bool) and total >= len(items)
+    return {"total": total if ok else len(items), "items": items}
 
 
 class _Arr:
@@ -158,9 +207,8 @@ class Radarr(_Arr):
     async def search(self, query: str) -> list[dict]:
         return lookup_rows(await self._get(self._lookup_path, term=query), "tmdbId")
 
-    async def queue(self) -> list[dict]:
-        data = await self._get("/queue", pageSize=MAX_QUEUE, includeMovie="true")
-        return queue_rows(data.get("records") if isinstance(data, dict) else None, "radarr")
+    async def queue(self) -> dict:
+        return queue_page(await self._get("/queue", pageSize=MAX_QUEUE, includeMovie="true"), "radarr")
 
     async def add(self, tmdb_id: str, profile: str, root: str) -> str:
         movie = await self.lookup_one("tmdb", tmdb_id)
@@ -183,9 +231,9 @@ class Sonarr(_Arr):
     async def search(self, query: str) -> list[dict]:
         return lookup_rows(await self._get(self._lookup_path, term=query), "tvdbId")
 
-    async def queue(self) -> list[dict]:
-        data = await self._get("/queue", pageSize=MAX_QUEUE, includeSeries="true", includeEpisode="true")
-        return queue_rows(data.get("records") if isinstance(data, dict) else None, "sonarr")
+    async def queue(self) -> dict:
+        return queue_page(await self._get("/queue", pageSize=MAX_QUEUE, includeSeries="true",
+                                          includeEpisode="true"), "sonarr")
 
     async def add(self, tvdb_id: str, profile: str, root: str) -> str:
         series = await self.lookup_one("tvdb", tvdb_id)
