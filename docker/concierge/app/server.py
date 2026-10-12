@@ -1,9 +1,10 @@
 """The internal HTTP endpoint the assistant bot calls. Not published anywhere.
 
-There is no `ports:` in docker-compose.yml. The only route here is the
-`assistant_concierge` Docker network, which the bot and this container share
-and nothing else joins. The bearer token is the second lock, so a container
-that one day lands on that network by mistake still cannot spend the API budget.
+There is no `ports:` in docker-compose.yml. The bot reaches this over the
+`assistant_concierge` network, which nothing else joins. The container is also
+on `proxy_proxy`, to reach Radarr and Sonarr, so the containers there could
+reach this port too: the bearer token is what stops them, and it is checked
+on every route but /healthz.
 
 One task at a time. Nobody but one person asks, and a second request arriving
 mid-task waits rather than running two agents against the same spend limit.
@@ -27,6 +28,7 @@ from . import actions, agent, audit
 from .config import Config
 from .google import Google
 from .home import Home
+from .media import Media, Radarr, Sonarr
 from .scenes import Scenes
 
 log = logging.getLogger(__name__)
@@ -65,6 +67,15 @@ def validate(body: object) -> tuple[str, list[dict], list[str]] | str:
     return prompt.strip(), turns, memories
 
 
+def media_from(cfg: Config, session: aiohttp.ClientSession | None) -> Media:
+    """Radarr and/or Sonarr, whichever has a key."""
+    return Media(
+        Radarr(session, "radarr", cfg.radarr_url, cfg.radarr_api_key) if cfg.radarr_api_key else None,
+        Sonarr(session, "sonarr", cfg.sonarr_url, cfg.sonarr_api_key) if cfg.sonarr_api_key else None,
+        cfg.media_quality_profile, cfg.radarr_root, cfg.sonarr_root,
+    )
+
+
 class Concierge:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
@@ -74,6 +85,7 @@ class Concierge:
         self.google: Google | None = None
         self.home: Home | None = None
         self.scenes: Scenes | None = None
+        self.media: Media | None = None
         self.pending = actions.Pending()
 
     async def start(self, app: web.Application) -> None:
@@ -85,9 +97,12 @@ class Concierge:
             self.home = Home(self.cfg.ha_url, self.cfg.ha_token)
         if self.cfg.scenes_enabled:
             self.scenes = Scenes(self._session, self.cfg.ha_url, self.cfg.ha_token, self.cfg.ha_scenes)
-        log.info("concierge ready: model=%s google=%s home=%s scenes=%d",
+        if self.cfg.media_enabled:
+            self.media = media_from(self.cfg, self._session)
+        log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
-                 len(self.cfg.ha_scenes) if self.scenes else 0)
+                 len(self.cfg.ha_scenes) if self.scenes else 0,
+                 bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr))
 
     async def stop(self, app: web.Application) -> None:
         if self._session is not None:
@@ -119,7 +134,8 @@ class Concierge:
         async def locked_run() -> agent.Outcome:
             async with self._lock:
                 return await agent.run(self.cfg, self.google, self.home,
-                                       prompt=prompt, history=history, memories=memories)
+                                       prompt=prompt, history=history, memories=memories,
+                                       media=self.media)
 
         self._in_flight += 1
         try:
@@ -172,7 +188,7 @@ class Concierge:
             return _bad(taken, 410 if taken.startswith("expired") else 409)
         tool, args = taken
         try:
-            summary = await actions.execute(tool, args, self.google, self.scenes)
+            summary = await actions.execute(tool, args, self.google, self.scenes, self.media)
         except actions.ActionError as exc:
             audit.emit("execute", id=body["id"], tool=tool, ok=False, error=str(exc))
             return _bad(str(exc), 502)

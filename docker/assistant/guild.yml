@@ -72,11 +72,12 @@ categories:
       # See docs/design/tsd-personal-assistant.md, phase 3.
       - name: ask
         topic: >-
-          Ask Claude about your calendar, email or home — it looks things up
-          before answering. Read-only: it cannot change anything, and a memory
-          is saved only when you press Approve. Same scope as #chat: a thread is
-          one conversation, a reply follows its chain, anything else is a
-          one-off. Costs a few cents per question.
+          Ask Claude about your calendar, email, home or movies — it looks
+          things up before answering. It can propose a calendar event, a Gmail
+          draft, a scene or a movie/show download; nothing happens until you
+          press ✅. Same scope as #chat: a thread is one conversation, a reply
+          follows its chain, anything else is a one-off. Costs a few cents per
+          question.
         bot_only: false
 
       # One message per remembered fact, read by the concierge before every

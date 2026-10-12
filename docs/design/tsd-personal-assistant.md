@@ -184,7 +184,8 @@ open for up to 15 minutes while a person decides means a long-lived HTTP
 request between bot and concierge, a run that dies with either process, and a
 model that keeps going after the approval and could act on what it learns from
 the result. Instead, `create_event`, `move_event`, `draft_email` and
-`run_scene` join `remember` in the **propose** tier. Each checks and
+`run_scene` join `remember` in the **propose** tier (and, from 2026-10-12,
+`add_movie` and `add_show`). Each checks and
 normalizes its arguments in code (`app/actions.py`), records a proposal with a
 random id, and changes nothing. When the run ends, the concierge keeps the
 proposals in memory for 16 minutes and returns them; the bot renders every
@@ -387,6 +388,11 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - [x] **Phase 4, writes behind approval.** `create_event`, `move_event`,
       `draft_email`, `run_scene` as proposals; `/v1/execute` in the
       concierge; per-tool ✅/❌ prompts and the result line in the bot.
+- [x] **Movies and shows** (2026-10-12). `media_search` and
+      `media_downloads` (read) and `add_movie` / `add_show` (propose) against
+      Radarr and Sonarr over `proxy_proxy`. The prompt's title and year come
+      from Radarr/Sonarr's lookup of the id; the quality profile and folder
+      come from config. No delete. `docker/concierge/README.md` step 6.
 - [ ] **Proactive triage** (proposed 2026-10-11): a morning and evening
       #ask run that triages the inbox, drafts replies and posts a short
       prioritized list, every change still a proposal. Needs its own cost
@@ -444,7 +450,10 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   open".
 - **Internal network:** `assistant_concierge`, owned by the assistant stack, so
   the watch lane never waits on the act lane. The concierge is the only other
-  member, and it still checks a bearer token.
+  member, and it still checks a bearer token. Since 2026-10-12 the concierge
+  is also on `proxy_proxy`, to reach Radarr and Sonarr for `add_movie` /
+  `add_show`; the token is then the only thing between its port and the
+  other containers there.
 - **Audit:** the concierge logs every tool call, its tier and the approval
   outcome to stdout, which reaches Loki through Alloy. "What did it do last
   Tuesday" is a LogQL query.

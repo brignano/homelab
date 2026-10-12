@@ -7,7 +7,7 @@ services:
   # takes a message in #ask, POSTs it here over the assistant_concierge network,
   # and renders the answer and any approval prompts. This container has no
   # Discord connection of its own. Outbound only: api.anthropic.com, Google,
-  # and Home Assistant on the host.
+  # Home Assistant on the host, and Radarr/Sonarr over proxy_proxy.
   concierge:
     build: .
     image: homelab-concierge:latest
@@ -52,6 +52,19 @@ services:
       # Scenes run_scene may propose (scene.* IDs). Blank = no run_scene tool.
       HA_SCENES: ${HA_SCENES:-}
 
+      # Optional: Radarr / Sonarr API keys (each app → Settings → General).
+      # Blank = no movie or show tools. Reached by name over proxy_proxy.
+      # Every add is a proposal approved in #ask with the exact title, id,
+      # quality profile and folder; nothing here can delete. See README.md →
+      # "Movies and shows".
+      RADARR_API_KEY: ${RADARR_API_KEY:-}
+      SONARR_API_KEY: ${SONARR_API_KEY:-}
+      MEDIA_QUALITY_PROFILE: ${MEDIA_QUALITY_PROFILE:-HD-1080p}
+      # Root folders as Radarr/Sonarr see them. Blank = the downloads stack's
+      # /data/library/movies and /data/library/shows (config.py).
+      RADARR_ROOT: ${RADARR_ROOT:-}
+      SONARR_ROOT: ${SONARR_ROOT:-}
+
       TZ: ${TZ:-UTC}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       # The bundled Claude Code CLI: no telemetry, error reporting or update
@@ -67,10 +80,20 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - assistant
+      - proxy
 
 # Created by the assistant stack, which is the front door. Bring that up first:
 # Compose will not create an external network.
+#
+# proxy_proxy is how this reaches Radarr and Sonarr (docker/downloads/), which
+# join it rather than a network of their own. It is the proxy stack's, always
+# up, so joining it adds no start-order dependency on the downloads stack. It
+# also puts this container's port in reach of everything else on proxy_proxy;
+# the bearer token on /v1/ask and /v1/execute is what keeps them out.
 networks:
   assistant:
     external: true
     name: assistant_concierge
+  proxy:
+    external: true
+    name: proxy_proxy

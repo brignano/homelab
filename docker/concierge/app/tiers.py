@@ -19,7 +19,8 @@ Tiers
            decide() refuses one even if someone registers it: every write goes
            through propose, so the agent never holds a pause open.
   never    everything else. Not registered with the agent at all: send mail,
-           delete, unlock, disarm, open the garage, buy anything.
+           delete, unlock, disarm, open the garage, buy anything, remove a
+           movie or show.
 
 The same `decide()` runs twice per call — in the PreToolUse hook, which the SDK
 runs before anything else, and in `can_use_tool`. The hook is the one that
@@ -39,8 +40,11 @@ READ = frozenset({
     "mail_search",
     "mail_read",
     "home_overview",
+    "media_search",
+    "media_downloads",
 })
-PROPOSE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene"})
+PROPOSE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene",
+                     "add_movie", "add_show"})
 # Empty on purpose: see the module docstring.
 WRITE: frozenset[str] = frozenset()
 

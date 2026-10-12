@@ -27,6 +27,32 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Download movies and shows from Discord (#ask)
+
+**Goal:** Ask for a movie or show in Discord and have it downloaded, without
+opening Radarr or Sonarr.
+
+**Steps:**
+1. Concierge: `app/media.py` (Radarr/Sonarr API v3: lookup, queue, quality
+   profiles, and one add each), read tools `media_search` and
+   `media_downloads`, propose tools `add_movie` and `add_show`. The approval
+   prompt shows the title and year from Radarr/Sonarr's own lookup of the id,
+   the quality profile and the folder, which come from config. Nothing can
+   delete; a test pins `media.py` to two writes.
+2. Bot: `add_movie` / `add_show` added to `APPROVABLE` with their prompt layout.
+3. Concierge joins `proxy_proxy` to reach `radarr:7878` and `sonarr:8989`. The
+   bearer token, not the network, is what keeps the other containers there out.
+4. `RADARR_API_KEY`, `SONARR_API_KEY`, `MEDIA_QUALITY_PROFILE` in
+   `docker/concierge/.env.example`; blank keys mean no media tools.
+
+**Notes / next steps:**
+- Deploy needs the concierge set up at all (README steps 1–3 and 7), which the
+  Discord server does not have yet: one channel, bot not provisioned. Then
+  step 6 (two API keys), `--selftest`, `up -d --build` for both
+  `assistant` and `concierge`.
+
+---
+
 ## 2026-10-12 — FlareSolverr added to the downloads stack
 
 **Goal:** Let Prowlarr use indexers that sit behind Cloudflare's browser check.

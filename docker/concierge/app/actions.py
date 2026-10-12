@@ -5,7 +5,7 @@ See docs/design/tsd-personal-assistant.md, Decision 2 (amended for phase 4).
 The flow
 --------
 1. During a run, a propose-tier tool (`create_event`, `move_event`,
-   `draft_email`, `run_scene`) checks and normalizes its arguments with the
+   `draft_email`, `run_scene`, `add_movie`, `add_show`) checks and normalizes its arguments with the
    pure functions below and records a proposal with a fresh random id. Nothing
    outside this process changes.
 2. The run ends. The server keeps each proposal in `Pending` and returns it to
@@ -33,11 +33,13 @@ from email.message import EmailMessage
 from email.utils import getaddresses, parseaddr
 
 from .google import Google, GoogleError
+from .media import Media, MediaError
 from .scenes import SceneError, Scenes
 
 # Proposals a person can act on. Mirrors the bot's APPROVABLE (minus remember,
 # whose effect happens in the bot). A test keeps the two in step with tiers.
-EXECUTABLE = frozenset({"create_event", "move_event", "draft_email", "run_scene"})
+EXECUTABLE = frozenset({"create_event", "move_event", "draft_email", "run_scene",
+                        "add_movie", "add_show"})
 
 # A little longer than the bot's 15-minute prompt, so the bot's own expiry is
 # always the one a person sees.
@@ -187,6 +189,18 @@ def scene_args(args: dict, allowed: tuple[str, ...]) -> dict:
     return {"entity_id": entity}
 
 
+_DIGITS = re.compile(r"^[0-9]{1,10}$")
+
+
+def media_args(args: dict, id_key: str) -> str:
+    """The TMDB or TVDB id add_movie/add_show was given, as digits. Raises ValueError."""
+    raw = args.get(id_key)
+    text = str(raw).strip() if isinstance(raw, (int, str)) and not isinstance(raw, bool) else ""
+    if not _DIGITS.match(text) or int(text) <= 0:
+        raise ValueError(f"{id_key} must be the numeric id media_search returned")
+    return text
+
+
 def new_id() -> str:
     return secrets.token_hex(8)
 
@@ -266,7 +280,8 @@ def mime_draft(args: dict, context: dict | None) -> tuple[str, str]:
     return raw, thread
 
 
-async def execute(tool: str, args: dict, google: Google | None, scenes: Scenes | None) -> str:
+async def execute(tool: str, args: dict, google: Google | None, scenes: Scenes | None,
+                  media: Media | None = None) -> str:
     """Make the one call `tool` names. Returns a short line for Discord."""
     try:
         if tool in ("create_event", "move_event", "draft_email") and google is None:
@@ -296,8 +311,18 @@ async def execute(tool: str, args: dict, google: Google | None, scenes: Scenes |
                 raise ActionError("Home Assistant scenes are not configured")
             await scenes.run(args["entity_id"])
             return f"Ran {args['entity_id']}"
-    except (GoogleError, SceneError) as exc:
+        if tool == "add_movie":
+            if media is None or media.radarr is None:
+                raise ActionError("Radarr is not configured")
+            title = await media.radarr.add(args["tmdb_id"], args["quality"], args["folder"])
+            return f"Added {title} to Radarr; it is searching now. Ask me \"what's downloading?\" to follow it."
+        if tool == "add_show":
+            if media is None or media.sonarr is None:
+                raise ActionError("Sonarr is not configured")
+            title = await media.sonarr.add(args["tvdb_id"], args["quality"], args["folder"])
+            return f"Added {title} to Sonarr, every season; it is searching now."
+    except (GoogleError, SceneError, MediaError) as exc:
         hint = " (rerun --google-auth: the sign-in predates write access)" \
-            if "403" in str(exc) and tool != "run_scene" else ""
+            if "403" in str(exc) and tool in ("create_event", "move_event", "draft_email") else ""
         raise ActionError(f"{exc}{hint}") from exc
     raise ActionError(f"{tool} is not something I can carry out")
