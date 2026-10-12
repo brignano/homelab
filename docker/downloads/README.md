@@ -88,9 +88,10 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   *Active torrents* counts seeding as well as downloading, so keep it above
   *downloads* or seeding will hold the downloads back.
 - **BitTorrent → Seeding Limits:** ratio **1.0** or seeding time **20160**
-  minutes (14 days), then **Pause torrent**. Sonarr and Radarr remove paused,
-  imported torrents themselves (*Remove Completed*, step 5). Choose *Pause*
-  over *Remove*: removing behind the apps' backs can beat their import.
+  minutes (14 days), then **Stop torrent** (*Pause torrent* before
+  qBittorrent 5). Sonarr and Radarr remove stopped, imported torrents
+  themselves (*Remove Completed*, step 5). Choose *Stop* over either
+  *Remove*: removing behind the apps' backs can beat their import.
   While a torrent seeds it costs no extra space (the library copy is a
   hardlink), but a file deleted from the library still fills the drive until
   its torrent goes.
@@ -119,7 +120,7 @@ required for all addresses). Save each in Google Password Manager.
   does not have.
 - *Settings → Download Clients → qBittorrent*: tick **Remove Completed**, so
   a torrent goes once it is imported and has finished seeding (step 4's
-  seeding limit pauses it, then Sonarr removes it).
+  seeding limit stops it, then Sonarr removes it).
 - **Size caps** (*Settings → Quality*): the defaults have no real ceiling, and
   an untouched 1080p web release runs ~4 GB per 43-minute episode, ~60 GiB a
   season. On 2026-10-12 five seasons of one show came to 307 GiB. Units are
