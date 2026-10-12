@@ -11,15 +11,18 @@
 # HA strips these comments when you save in the raw editor. That is fine: git
 # keeps them, and a later edit made in the UI can be copied back here.
 #
-# Entity IDs marked `# check` are inferred, not read from the running HA. A
-# wrong one shows as a yellow "Entity not available" tile; click it and pick
-# the right entity from the list.
+# Entity IDs marked `# check` are inferred, not read from the running HA. The
+# Blink and inside-temperature cards are hidden while their entity does not
+# exist (a missing entity reads as unavailable), so a wrong guess leaves a gap
+# rather than a yellow "Entity not found" card. To fix one, set its entity
+# (and the matching `visibility` entity) to the real ID.
 
 title: Home
 views:
   - title: Home
     path: home
-    icon: mdi:home
+    # Not mdi:home: the built-in Overview already uses it in the sidebar.
+    icon: mdi:view-dashboard
     type: sections
     max_columns: 3
     # The glanceable strip across the top: who is home, the weather, indoors.
@@ -36,6 +39,10 @@ views:
         entity: sensor.apartment_temperature  # check
         name: Inside
         show_name: true
+        visibility:
+          - condition: state
+            entity: sensor.apartment_temperature
+            state_not: unavailable
       - type: entity
         entity: sensor.spaceship_battery_level
         name: Tesla
@@ -54,6 +61,10 @@ views:
             name: Blink cameras
             grid_options:
               columns: full
+            visibility:
+              - condition: state
+                entity: alarm_control_panel.blink_home
+                state_not: unavailable
             features:
               - type: alarm-modes
                 modes:
@@ -73,6 +84,10 @@ views:
           - type: tile
             entity: sensor.apartment_temperature  # check
             name: Inside
+            visibility:
+              - condition: state
+                entity: sensor.apartment_temperature
+                state_not: unavailable
           - type: tile
             entity: weather.forecast_home
             name: Outside
@@ -119,10 +134,9 @@ views:
             grid_options:
               columns: full
             features:
+              # No hvac_modes list: it then offers whichever modes the car
+              # reports. Naming heat_cool left only the off button.
               - type: climate-hvac-modes
-                hvac_modes:
-                  - heat_cool
-                  - "off"
               - type: target-temperature
           - type: tile
             entity: switch.spaceship_sentry_mode  # check

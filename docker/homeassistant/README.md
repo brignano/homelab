@@ -480,14 +480,18 @@ HA does not read it from git. Dashboards are UI state, like automations, so
 the file is the source you paste:
 
 1. **Settings → Dashboards → + Add dashboard → New dashboard from scratch**,
-   title *Home*, icon `mdi:home`.
+   title *Home*, icon `mdi:view-dashboard` (Overview already has `mdi:home`).
 2. Open it, then **✏️ → ⋮ → Raw configuration editor**, replace everything
    with the file's contents, and **Save**.
-3. Fix any yellow "Entity not available" tile: in edit mode, click it and pick
-   the right entity. The IDs marked `# check` in the file were inferred, not
-   read from this HA (the Blink panel is named after your sync module).
+3. Point the Blink and inside-temperature cards at the right entities. The
+   IDs marked `# check` in the file were inferred, not read from this HA, and
+   those cards stay hidden until their entity exists. In edit mode, open the
+   Security and Climate sections' cards and pick the entity (the Blink one is
+   named after your sync module).
 4. To open it instead of Overview: **Settings → Dashboards**, select *Home*
-   and set it as the default dashboard. Overview stays in the sidebar.
+   and set it as the default dashboard. Then hide Overview from the sidebar:
+   long-press **Home Assistant** at the top of the sidebar and remove it.
+   It is still at `/home/overview` if you want it back.
 
 When you change it in the UI and like the result, copy the raw config back
 into the file so git has it.
