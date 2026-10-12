@@ -47,10 +47,14 @@ views:
         entity: sensor.spaceship_battery_level
         name: Tesla
         show_name: true
+    # Exactly three sections, one per column, each holding more than one
+    # heading. The sections view starts each row of sections below the tallest
+    # one in the row above, so five short sections left a screen of empty
+    # space under the shorter columns; three columns of similar height fit on
+    # one screen.
     sections:
-      # Security first: the one thing worth acting on from the dashboard.
-      # The presence automations arm and disarm Blink on their own; these
-      # buttons are the override.
+      # Column 1: the house. Security first: the presence automations arm and
+      # disarm Blink on their own, and these buttons are the override.
       - type: grid
         cards:
           - type: heading
@@ -61,21 +65,40 @@ views:
             name: Blink cameras
             grid_options:
               columns: full
-            visibility:
-              - condition: state
-                entity: alarm_control_panel.blink_home
-                state_not: unavailable
             features:
               - type: alarm-modes
                 modes:
                   - armed_away
                   - disarmed
+            visibility:
+              - condition: state
+                entity: alarm_control_panel.blink_home
+                state_not: unavailable
           - type: tile
             entity: automation.blink_arm_when_everyone_leaves
             name: Auto-arm when away
             grid_options:
               columns: full
+          # The litter box's last good readings (template sensors in
+          # config/configuration.yaml). They read unknown until the box
+          # reports once after they were created.
+          - type: heading
+            heading: Jax
+            icon: mdi:cat
+          - type: tile
+            entity: sensor.jax_last_litter_visit
+            name: Last visit
+          - type: tile
+            entity: sensor.jax_litter_visits_today
+            name: Visits today
+          - type: tile
+            entity: sensor.jax_weight
+            name: Weight
+          - type: tile
+            entity: sensor.jax_last_litter_visit_duration
+            name: Visit length
 
+      # Column 2: weather and where everyone is.
       - type: grid
         cards:
           - type: heading
@@ -88,12 +111,9 @@ views:
               - condition: state
                 entity: sensor.apartment_temperature
                 state_not: unavailable
-          - type: tile
-            entity: weather.forecast_home
-            name: Outside
           - type: weather-forecast
             entity: weather.forecast_home
-            show_current: false
+            show_current: true
             show_forecast: true
             forecast_type: daily
             grid_options:
@@ -102,15 +122,24 @@ views:
           # - type: tile
           #   entity: climate.thermostat  # check
           #   name: Thermostat
-          #   grid_options:
-          #     columns: full
           #   features:
           #     - type: target-temperature
-          #     - type: climate-hvac-modes
-          #       hvac_modes: [heat, cool, off]
+          - type: heading
+            heading: Map
+            icon: mdi:map-marker-radius
+          - type: map
+            entities:
+              - person.anthony_brignano  # check
+              - device_tracker.spaceship_location  # check
+            default_zoom: 13
+            hours_to_show: 0
+            grid_options:
+              columns: full
+              rows: 4
 
-      # Tesla Fleet, car named "Spaceship" (README → "Asking Alexa questions").
-      # Values are the car's last report; Tesla Fleet does not wake it to read.
+      # Column 3: the car. Tesla Fleet, car named "Spaceship" (README →
+      # "Asking Alexa questions"). Values are the car's last report; Tesla
+      # Fleet does not wake it to read them.
       - type: grid
         cards:
           - type: heading
@@ -128,54 +157,18 @@ views:
           - type: tile
             entity: lock.spaceship_lock  # check
             name: Doors
+          # A plain tile, no mode buttons: the car reports a single mode
+          # besides off, so the buttons were one full-width power bar. Tapping
+          # the icon turns climate on or off; tapping the tile opens the
+          # temperature control.
           - type: tile
             entity: climate.spaceship_climate
             name: Climate
-            grid_options:
-              columns: full
-            features:
-              # No hvac_modes list: it then offers whichever modes the car
-              # reports. Naming heat_cool left only the off button.
-              - type: climate-hvac-modes
-              - type: target-temperature
+            icon_tap_action:
+              action: perform-action
+              perform_action: climate.toggle
+              target:
+                entity_id: climate.spaceship_climate
           - type: tile
             entity: switch.spaceship_sentry_mode  # check
-            name: Sentry mode
-            grid_options:
-              columns: full
-
-      # The litter box's last good readings (template sensors in
-      # config/configuration.yaml), which survive its Wi-Fi drop-outs.
-      - type: grid
-        cards:
-          - type: heading
-            heading: Jax
-            icon: mdi:cat
-          - type: tile
-            entity: sensor.jax_last_litter_visit
-            name: Last visit
-          - type: tile
-            entity: sensor.jax_litter_visits_today
-            name: Visits today
-          - type: tile
-            entity: sensor.jax_weight
-            name: Weight
-          - type: tile
-            entity: sensor.jax_last_litter_visit_duration
-            name: Last visit length
-
-      # Where you and the car are. Clicking a marker opens its history.
-      - type: grid
-        cards:
-          - type: heading
-            heading: Map
-            icon: mdi:map-marker-radius
-          - type: map
-            entities:
-              - person.anthony_brignano  # check
-              - device_tracker.spaceship_location  # check
-            default_zoom: 13
-            hours_to_show: 0
-            grid_options:
-              columns: full
-              rows: 5
+            name: Sentry
