@@ -27,6 +27,39 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Drive health and media-drive capacity in Grafana
+
+**Goal:** See the 5 TB media drive filling, and hear about a failing drive
+before it fails. The media drive has no backup by design (`backup=0`), so its
+health is the only warning before the library is lost.
+
+**Steps:**
+1. `scripts/host/hl-vzdump-hook` now writes each drive's SMART verdict and
+   sector counts (reallocated, pending, offline uncorrectable, temperature) to
+   the host node-exporter's textfile directory at `job-end`, as
+   `homelab_smart_*{drive="hl-backup"|"media"}`.
+2. Alerts: `hl-smart-pending` (critical, any unreadable sector),
+   `hl-smart-reallocating` (remapped sectors climbing over a week),
+   `hl-smart-unreadable` (the enclosure hides SMART, so nothing is watching),
+   `hl-smart-stale` (no SMART reading for 36h).
+3. Capacity dashboard: a *Drives* row with media drive used, free, a 30-day
+   trend and a SMART table.
+4. `check-observability.sh` also scans `scripts/host/` for emitted metrics.
+
+**Issues encountered:**
+- The hook already ran `smartctl -H`, but that verdict says PASSED until a
+  drive is nearly gone, and it left nothing behind for Grafana.
+
+**Notes / next steps:**
+- **Host step:** re-copy the hook (`docs/runbook-backups.md` → "SMART
+  metrics") and check `hl_smart.prom` appears. Grafana needs a restart for the
+  new rules and dashboard.
+- Confirm the media drive is visible at all:
+  `node_filesystem_avail_bytes{mountpoint="/mnt/media"}` in Explore. If empty,
+  `hl-disk-full` and `hl-disk-filling` do not cover it either.
+
+---
+
 ## 2026-10-12 — qBittorrent queueing limits
 
 **Goal:** Stop a stalled torrent from holding up the rest of the download queue.
