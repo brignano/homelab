@@ -27,6 +27,30 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — TV guide: 109 Plex channels grabbed nothing
+
+**Goal:** Find out why most i.mjh.nz channels returned `0 programs` without an
+error.
+
+**Issues encountered:**
+- iptv-org/epg's `sites/i.mjh.nz` list is a snapshot of the feeds' channel ids.
+  Every Plex/us id in it began `5e20b730…-`, and the live feed now uses
+  `6a1610be…-`. The part after the dash is unchanged. The scraper filters by
+  exact id, so all 109 channels matched nothing. Pluto, Roku and Samsung ids
+  were current.
+
+**Resolution:**
+- `make-channels.mjs` reads each i.mjh.nz feed it would use (one fetch per
+  feed, about 7s at startup). Live ids are kept. An id that matches one live id
+  on the part after the last dash is rewritten. One that is gone is dropped,
+  so the channel falls through to the next entry or site. Tested: 111
+  repaired, 16 gone, coverage unchanged.
+
+**Notes / next steps:**
+- Worth reporting upstream (iptv-org/epg `sites/i.mjh.nz/i.mjh.nz_plex.channels.xml`).
+
+---
+
 ## 2026-10-12 — TV guide: first grab ran out of memory
 
 **Goal:** First run of `docker/epg/`.
