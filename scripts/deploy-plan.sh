@@ -115,6 +115,12 @@ plan_for() {
     say "    If it answers, a recreate can only make things worse. See /deploy Safety."
     quiet=0
   fi
+  if printf '%s\n' "$paths" | grep -qE '^scripts/host/'; then
+    say "scripts/host changed — the Proxmox host runs its own copy, git pull does not reach it."
+    say "    On m5: pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook"
+    say "    Then the check in docs/runbook-backups.md → SMART metrics."
+    quiet=0
+  fi
   if [ "$quiet" = 1 ]; then say "(nothing)"; fi
   # Explicit: a trailing conditional that happens to be false would otherwise
   # make this function "fail" and take the script down under `set -e`. It did.

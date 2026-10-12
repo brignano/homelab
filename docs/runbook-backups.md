@@ -182,7 +182,30 @@ the SMART result and the free space. **Write the archive size and the time in
 in the TSD).
 
 If SMART says "not readable through this enclosure", the USB bridge hides it.
-That is common and not a failure; the line says so every night.
+That does not fail the backup, but `hl-smart-unreadable` says so in `#alerts`,
+because then nothing is watching that drive's health. Try
+`smartctl -d sat -a /dev/sdX`; if no `-d` type reads it, the choice to live
+with that is a silence in Grafana, made on purpose.
+
+### SMART metrics (since 2026-10-12)
+
+At `job-end` the hook also writes each drive's SMART verdict and sector counts
+to `/var/lib/prometheus/node-exporter/hl_smart.prom`, the textfile directory
+the Debian `prometheus-node-exporter` reads by default. That is what the
+`hl-smart-*` alerts and the *Drives* row of the Capacity dashboard read. The
+copy on the host does not update itself: **re-run the `pct pull` above whenever
+`scripts/host/hl-vzdump-hook` changes.** To check it without waiting for 02:30
+(an empty env file means no Healthchecks ping):
+
+```bash
+HL_HOOK_ENV=/dev/null HL_HOOK_STATE=/tmp/hl-hook.test /usr/local/bin/hl-vzdump-hook job-end
+cat /var/lib/prometheus/node-exporter/hl_smart.prom
+curl -s localhost:9100/metrics | grep '^homelab_smart'
+```
+
+If the file is written but `curl` shows nothing, the exporter is reading a
+different directory: compare with `--collector.textfile.directory` in
+`/etc/default/prometheus-node-exporter`.
 
 ### Schedule it
 
