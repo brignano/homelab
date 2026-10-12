@@ -42,7 +42,7 @@ def check(name: str):
     return wrap
 
 
-from app import actions, agent, google, home, media, scenes, tiers, tools  # noqa: E402
+from app import actions, agent, forecast, google, home, homelab, media, scenes, tiers, tools  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.server import validate  # noqa: E402
 
@@ -63,13 +63,15 @@ def _media(radarr: bool = True, sonarr: bool = True) -> media.Media:
 
 def _ctx(google_on: bool = True, home_on: bool = True,
          scene_ids: tuple[str, ...] = ("scene.movie",),
-         media_on: media.Media | None = None) -> tools.TaskContext:
+         media_on: media.Media | None = None, extras: bool = False) -> tools.TaskContext:
     import datetime as _dt
     g = object.__new__(google.Google) if google_on else None
     h = home.Home("http://ha:8123", "t") if home_on else None
     return tools.TaskContext(task_id="t", tz=_dt.timezone.utc, google=g,
                              calendar_ids=("primary",), home=h, max_proposals=3,
-                             scenes=scene_ids if home_on else (), media=media_on)
+                             scenes=scene_ids if home_on else (), media=media_on,
+                             forecast=forecast.Forecast(None, "http://ha:8123", "t", "weather.home") if extras else None,
+                             homelab=homelab.Homelab(None, "http://prom:9090") if extras else None)
 
 
 # --- tiers ----------------------------------------------------------------------
@@ -122,7 +124,7 @@ def _():
 
 @check("every registered tool has a read or propose tier; nothing else is registered")
 def _():
-    _, names = tools.build(_ctx(media_on=_media()))
+    _, names = tools.build(_ctx(media_on=_media(), extras=True))
     assert set(names) == tiers.READ | tiers.PROPOSE, names
 
 
@@ -142,6 +144,8 @@ def _():
     assert "add_show" in names and "add_movie" not in names, names
     _, names = tools.build(_ctx(google_on=False, home_on=False, media_on=_media(False, False)))
     assert names == ["remember"], names
+    _, names = tools.build(_ctx(google_on=False, home_on=False, extras=True))
+    assert set(names) == {"remember", "weather_forecast", "homelab_status"}, names
 
 
 @check("remember records a bounded one-line proposal and nothing else")
@@ -486,6 +490,87 @@ def _():
         try:
             Config.from_env()
             raise AssertionError("relative root accepted")
+        except SystemExit:
+            pass
+    finally:
+        os.environ.clear()
+        os.environ.update(keep)
+
+
+# --- forecast and server health ------------------------------------------------
+
+@check("forecast: one fixed read-only service; reply trimmed to known fields")
+def _():
+    assert forecast.SERVICE_PATH == "/api/services/weather/get_forecasts?return_response"
+    src = inspect.getsource(forecast)
+    assert src.count("self._session.post(") == 1 and "/api/services/" in src
+    rows = [{"datetime": f"2026-10-{12 + i}", "condition": "rainy", "temperature": 55, "templow": 44,
+             "precipitation_probability": 80, "entity_picture": "x", "extra": {"a": 1}, "ok": True}
+            for i in range(10)]
+    out = forecast.trim({"changed_states": [], "service_response": {"weather.home": {"forecast": rows}}},
+                        "weather.home", "daily")
+    assert len(out) == 7 and out[0] == {"datetime": "2026-10-12", "condition": "rainy", "temperature": 55,
+                                        "templow": 44, "precipitation_probability": 80}, out[0]
+    assert len(forecast.trim({"weather.home": {"forecast": rows * 3}}, "weather.home", "hourly")) == 24
+    for bad in ({}, {"service_response": {"weather.other": {"forecast": rows}}}, None):
+        try:
+            forecast.trim(bad, "weather.home", "daily")
+        except forecast.ForecastError:
+            continue
+        raise AssertionError(bad)
+    try:
+        asyncio.run(forecast.Forecast(None, "http://ha", "t", "weather.home").get("weekly"))
+        raise AssertionError("weekly accepted")
+    except forecast.ForecastError:
+        pass
+
+
+@check("homelab_status: fixed GET instant queries only, readings summarized")
+def _():
+    src = inspect.getsource(homelab)
+    assert "self._session.get(" in src and ".post(" not in src and "/api/v1/query\"" in src
+    assert set(homelab.QUERIES) == {"up", "cpu", "mem", "disk", "thinpool", "restarts", "missing", "inventory"}
+
+    def vec(*items):
+        return {"status": "success", "data": {"result": [{"metric": m, "value": [0, str(v)]} for m, v in items]}}
+
+    out = homelab.summarize({
+        "up": vec(({"job": "node"}, 1), ({"job": "x", "service": "gluetun"}, 0)),
+        "cpu": vec(({}, 12.34)), "mem": vec(({}, 61.0)), "disk": vec(({}, 22.0)),
+        "thinpool": vec(({"id": "storage/m5/local-lvm"}, 48.6)),
+        "restarts": vec(({"name": "qbittorrent"}, 2)),
+        "missing": vec(({"container": "concierge", "required": "yes"}, 0)),
+        "inventory": vec(({}, 30)),
+    })
+    assert out == {"targets_up": "1/2", "targets_down": ["gluetun"], "cpu_pct_1h": 12.3, "ram_pct": 61.0,
+                   "disk_root_pct": 22.0, "thinpool_pct": 48.6, "restarts_24h": {"qbittorrent": 2},
+                   "required_containers_not_running": ["concierge"]}, out
+    partial = homelab.summarize({"up": RuntimeError("x"), "cpu": {"status": "error", "error": "bad"},
+                                 "mem": vec(({}, 50))})
+    assert partial["ram_pct"] == 50.0 and {"up", "cpu", "thinpool"} <= set(partial["could_not_read"]), partial
+    # Empty where a number belongs, or no inventory at all, is unknown, never "all clear".
+    empty = homelab.summarize({k: vec() for k in homelab.QUERIES})
+    assert {"cpu", "mem", "disk", "thinpool", "inventory"} <= set(empty["could_not_read"]), empty
+    assert "required_containers_not_running" not in empty and "thinpool_pct" not in empty, empty
+
+
+@check("config: HA_WEATHER_ENTITY must be weather.*; blanks turn tools off")
+def _():
+    keep = dict(os.environ)
+    try:
+        os.environ["CONCIERGE_TOKEN"] = "a" * 64
+        for k in ("HA_WEATHER_ENTITY", "PROMETHEUS_URL", "HA_TOKEN"):
+            os.environ.pop(k, None)
+        c = Config.from_env()
+        assert c.ha_weather_entity == "weather.forecast_home" and not c.forecast_enabled
+        assert c.prometheus_url == "http://host.docker.internal:9090"
+        os.environ.update(HA_TOKEN="t", HA_WEATHER_ENTITY="", PROMETHEUS_URL="")
+        c = Config.from_env()
+        assert not c.forecast_enabled and c.prometheus_url == ""
+        os.environ["HA_WEATHER_ENTITY"] = "lock.front_door"
+        try:
+            Config.from_env()
+            raise AssertionError("lock accepted as a weather entity")
         except SystemExit:
             pass
     finally:

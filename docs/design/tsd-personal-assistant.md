@@ -393,6 +393,10 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       Radarr and Sonarr over `proxy_proxy`. The prompt's title and year come
       from Radarr/Sonarr's lookup of the id; the quality profile and folder
       come from config. No delete. `docker/concierge/README.md` step 6.
+- [x] **Forecast and server health** (2026-10-12). Read tools
+      `weather_forecast` (HA `weather.get_forecasts` for one configured
+      entity, over REST) and `homelab_status` (fixed Prometheus instant
+      queries via the host port). README step 7.
 - [ ] **Proactive triage** (proposed 2026-10-11): a morning and evening
       #ask run that triages the inbox, drafts replies and posts a short
       prioritized list, every change still a proposal. Needs its own cost

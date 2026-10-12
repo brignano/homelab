@@ -41,6 +41,8 @@ from . import audit, tiers, tools
 from .config import Config
 from .google import Google
 from .home import Home
+from .forecast import Forecast
+from .homelab import Homelab
 from .media import Media
 
 MAX_MEMORIES_CHARS = 6000
@@ -49,7 +51,8 @@ MAX_HISTORY_CHARS = 12000
 SYSTEM = """\
 You are a personal assistant for one person, reached through their private \
 Discord server. You can look things up with the tools you have: their calendar, \
-their email, the state of their home, and their movie and TV library.
+their email, the state of their home and its weather forecast, the health of \
+their home server, and their movie and TV library.
 
 You can also PROPOSE a few changes, with whichever of these tools you have: \
 create or move a calendar event, save an email draft, run a home scene, add a \
@@ -188,7 +191,8 @@ def options_for(cfg: Config, task_id: str, server, system: str) -> ClaudeAgentOp
 
 async def run(cfg: Config, google: Google | None, home: Home | None, *,
               prompt: str, history: list[dict], memories: list[str],
-              media: Media | None = None) -> Outcome:
+              media: Media | None = None, forecast: Forecast | None = None,
+              homelab: Homelab | None = None) -> Outcome:
     task_id = uuid.uuid4().hex[:8]
     started = time.monotonic()
     now = dt.datetime.now(tz=cfg.tz)
@@ -197,7 +201,7 @@ async def run(cfg: Config, google: Google | None, home: Home | None, *,
         task_id=task_id, tz=cfg.tz, google=google, calendar_ids=cfg.google_calendar_ids,
         home=home, max_proposals=cfg.max_proposals,
         scenes=cfg.ha_scenes if cfg.scenes_enabled else (),
-        media=media,
+        media=media, forecast=forecast, homelab=homelab,
     )
     server, registered = tools.build(ctx)
     audit.emit("task_start", task=task_id, model=cfg.model, prompt=prompt,

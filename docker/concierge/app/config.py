@@ -57,6 +57,13 @@ def _scenes() -> tuple[str, ...]:
     return scenes
 
 
+def _weather() -> str:
+    entity = os.environ.get("HA_WEATHER_ENTITY", "weather.forecast_home").strip()
+    if entity and (not entity.startswith("weather.") or not entity[8:].replace("_", "").isalnum()):
+        raise SystemExit(f"config error: HA_WEATHER_ENTITY must be a weather.<id> entity ID, not {entity!r}")
+    return entity
+
+
 def _root(name: str, default: str) -> str:
     root = os.environ.get(name, "").strip().rstrip("/") or default
     if not root.startswith("/"):
@@ -90,6 +97,11 @@ class Config:
     # Scenes the agent may propose running. The allowlist IS the ceiling for
     # HA writes: Assist exposure does not govern the REST call (app/scenes.py).
     ha_scenes: tuple[str, ...] = ()
+    # The one weather entity weather_forecast reads (app/forecast.py). Blank = off.
+    ha_weather_entity: str = "weather.forecast_home"
+    # Prometheus, through the port it publishes on the host. Blank = no
+    # homelab_status tool (app/homelab.py).
+    prometheus_url: str = "http://host.docker.internal:9090"
 
     # Radarr / Sonarr. Each is on when its API key is set. The profile and the
     # folders are what every approved add uses; the model does not choose them.
@@ -112,6 +124,10 @@ class Config:
     @property
     def home_enabled(self) -> bool:
         return bool(self.ha_token)
+
+    @property
+    def forecast_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_weather_entity)
 
     @property
     def scenes_enabled(self) -> bool:
@@ -145,6 +161,8 @@ class Config:
             ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://host.docker.internal:8123",
             ha_token=os.environ.get("HA_TOKEN", "").strip(),
             ha_scenes=_scenes(),
+            ha_weather_entity=_weather(),
+            prometheus_url=os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090").strip().rstrip("/"),
             radarr_url=os.environ.get("RADARR_URL", "").strip().rstrip("/") or "http://radarr:7878",
             radarr_api_key=os.environ.get("RADARR_API_KEY", "").strip(),
             radarr_root=_root("RADARR_ROOT", "/data/library/movies"),

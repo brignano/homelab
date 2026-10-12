@@ -28,6 +28,8 @@ from . import actions, agent, audit
 from .config import Config
 from .google import Google
 from .home import Home
+from .forecast import Forecast
+from .homelab import Homelab
 from .media import Media, Radarr, Sonarr
 from .scenes import Scenes
 
@@ -86,6 +88,8 @@ class Concierge:
         self.home: Home | None = None
         self.scenes: Scenes | None = None
         self.media: Media | None = None
+        self.forecast: Forecast | None = None
+        self.homelab: Homelab | None = None
         self.pending = actions.Pending()
 
     async def start(self, app: web.Application) -> None:
@@ -99,10 +103,16 @@ class Concierge:
             self.scenes = Scenes(self._session, self.cfg.ha_url, self.cfg.ha_token, self.cfg.ha_scenes)
         if self.cfg.media_enabled:
             self.media = media_from(self.cfg, self._session)
-        log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s",
+        if self.cfg.forecast_enabled:
+            self.forecast = Forecast(self._session, self.cfg.ha_url, self.cfg.ha_token, self.cfg.ha_weather_entity)
+        if self.cfg.prometheus_url:
+            self.homelab = Homelab(self._session, self.cfg.prometheus_url)
+        log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s "
+                 "forecast=%s homelab=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
                  len(self.cfg.ha_scenes) if self.scenes else 0,
-                 bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr))
+                 bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr),
+                 self.forecast is not None, self.homelab is not None)
 
     async def stop(self, app: web.Application) -> None:
         if self._session is not None:
@@ -135,7 +145,8 @@ class Concierge:
             async with self._lock:
                 return await agent.run(self.cfg, self.google, self.home,
                                        prompt=prompt, history=history, memories=memories,
-                                       media=self.media)
+                                       media=self.media, forecast=self.forecast,
+                                       homelab=self.homelab)
 
         self._in_flight += 1
         try:
