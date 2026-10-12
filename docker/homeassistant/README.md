@@ -345,11 +345,13 @@ takes three parts:
    on the Echo you just talked to, through Alexa Media Player.
 2. **The `Alexa` label on that script.** Matterbridge offers it to Alexa as
    a switch that turns itself back off.
-3. **Alexa routines**, one per phrase: **When you say** "how's Jax doing
-   today" → **Smart Home** → the report's switch → **On**. Alexa matches the
-   phrase closely, so add one routine for each way you ask ("how's Jax", "how's
-   Jax doing today", "check on Jax"). There is no catch-all: a phrase with no
-   routine goes to Alexa's own answers.
+3. **Alexa routines**, one per phrase: **When you say** "car report" →
+   **Smart Home** → the report's switch → **On**. Use short command phrases
+   Alexa has no answer of its own for: "car report", "check the car", "Jax
+   report". Questions lose to Alexa's built-in answers: "what's the Tesla's
+   battery" read out Tesla's stock price instead of running the routine
+   (2026-10-12). Phrases cannot contain punctuation, so no apostrophes. There
+   is no catch-all: a phrase with no routine goes to Alexa's own answers.
 
 Reports so far: **Jax report** (UI-managed, reads the `jax_*` sensors in
 `configuration.yaml`) and **Tesla report**, below. Scripts live in the
@@ -421,6 +423,6 @@ until `tsd-backups-and-monitoring.md` lands.
 | `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
 | Alexa: "device is unresponsive", or does not know a device | Alexa goes through Matterbridge: see its [troubleshooting](../matterbridge/README.md#troubleshooting). |
 | Echos are `unavailable` | Alexa Media Player lost its Amazon session. Look for a notification asking for a CAPTCHA or a new login, then **Settings → Devices & services → Alexa Media Player → Reconfigure**. Right after an HA update, check HACS for an update first. |
-| Alexa says "I don't know that" or answers from the web instead of reading a report | No routine has that exact phrase. Add one (see "Asking Alexa questions"). |
+| Alexa says "I don't know that" or answers from the web instead of reading a report | No routine has that phrase, or the phrase sounds like a question Alexa answers itself (Tesla's stock price). Use a command phrase like "car report" (see "Asking Alexa questions"). Tap ▶ on the routine in the Alexa app to test the HA side alone. |
 | An announcement runs with no error and nothing plays | **Communications** is off for that Echo in the Alexa app, or it is on Do Not Disturb. |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |
