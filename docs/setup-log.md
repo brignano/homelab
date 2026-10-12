@@ -27,6 +27,20 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Blink arms itself when everyone leaves
+
+**Goal:** Blink records while nobody is home without arming it by hand.
+
+**Steps:**
+1. Two automations in HA's `configuration.yaml`: arm Away when `zone.home`
+   has read 0 for 10 minutes, disarm the moment it is above 0.
+2. Both do nothing while no person entity has a tracker, so a fresh HA
+   without the Companion app cannot arm the cameras forever.
+
+**Notes / next steps:**
+- Needs the HA Companion app with location on each resident's phone, linked
+  to their person (`docker/homeassistant/README.md` → "Arming Blink by presence").
+
 ## 2026-10-12 — Blink clips saved into Jellyfin
 
 **Goal:** Keep Blink camera recordings on the media server, viewable in Jellyfin.

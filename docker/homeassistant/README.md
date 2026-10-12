@@ -389,6 +389,28 @@ Then:
 To keep clips longer or forever, set `HL_BLINK_RETAIN_DAYS` on the cron line
 (`crontab -e`), e.g. `HL_BLINK_RETAIN_DAYS=0 /root/homelab/scripts/blink-clips.sh ...`.
 
+## Arming Blink by presence
+
+Two automations in `config/configuration.yaml` arm every Blink sync module
+(**Away**) once everyone has been out of the Home zone for 10 minutes, and
+disarm it as soon as anyone is back. Clips are only recorded while armed, so
+this is also what feeds "Blink recordings" above.
+
+They need HA to know where you are:
+
+1. Install the **Home Assistant Companion app** on your phone, sign in, and
+   allow location **Always**.
+2. In **Settings → People**, open your person and add the phone's
+   `device_tracker` under *Track device*. Do the same for anyone else who
+   lives here; arming waits until *everyone* tracked is away.
+3. Check **Settings → Areas & zones → Home** has the right address and a
+   radius of ~100 m.
+
+Nobody tracked means both automations do nothing, rather than arming forever.
+To turn them off without a code change, disable them in **Settings →
+Automations** (they are read-only there, but can be disabled). After a pull,
+recreate HA as usual (`up -d --force-recreate homeassistant`).
+
 ## Updating
 
 Not automatic. Read the [release notes](https://www.home-assistant.io/blog/categories/release-notes/)
