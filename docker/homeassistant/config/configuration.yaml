@@ -12,6 +12,14 @@
 # The standard set of built-in integrations a fresh install gets.
 default_config:
 
+# Directories HA services may write to. /config/blink is where the Blink
+# automation below saves clips; scripts/blink-clips.sh moves them from there
+# into Jellyfin's library. Only this key is set here, so the core settings in
+# Settings > System > General stay editable in the UI.
+homeassistant:
+  allowlist_external_dirs:
+    - /config/blink
+
 # NOT here any more: the http: block (reverse-proxy trust for Caddy).
 #
 # Home Assistant moved the http integration to the UI, and from 2027.2 it
@@ -29,6 +37,37 @@ default_config:
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
+
+# Blink: save every new clip, for scripts/blink-clips.sh to file into Jellyfin
+# (README > "Blink recordings"). Here rather than in automations.yaml because
+# it is part of how the lab is built, not something tuned in the UI; it shows
+# in the UI as read-only.
+#
+# The integration polls Blink every 5 minutes and lists each new clip, cloud or
+# Sync Module USB, in the camera's recent clips, where blinkpy keeps it for an
+# hour or until it is saved. Saving every 5 minutes therefore misses nothing
+# while HA is running. Clips recorded while HA is down for more than an hour
+# are not fetched afterwards; they are still in the Blink app.
+automation blink:
+  - id: blink_save_recent_clips
+    alias: Blink - save recent clips
+    mode: single
+    triggers:
+      - trigger: time_pattern
+        minutes: "/5"
+    variables:
+      cameras: "{{ integration_entities('blink') | select('match', 'camera[.]') | list }}"
+    conditions:
+      - condition: template
+        value_template: "{{ cameras | count > 0 }}"
+    actions:
+      - action: blink.save_recent_clips
+        target:
+          entity_id: "{{ cameras }}"
+        data:
+          file_path: /config/blink
+        # One camera that is offline must not stop the others being saved.
+        continue_on_error: true
 
 # Jax's litter box: the last good reading, kept through Wi-Fi drop-outs.
 #
