@@ -76,6 +76,10 @@ health is the only warning before the library is lost.
    on m5), firing on the hour's average, with `hl-drive-temp-stale` as its
    dead man's switch. Silenced in Grafana while the initial library
    downloads.
+   Then `hl-exporter-mount-blind`: the host node-exporter had no metrics for
+   `/mnt/media` until it restarted at 08:40 (it only sees mounts present
+   when it starts), so the disk alerts were deaf to the library drive. The
+   rule fires when SMART can read a drive the exporter cannot see.
 3. Capacity dashboard: a *Drives* row with media drive used, free, a 30-day
    trend and a SMART table.
 4. `check-observability.sh` also scans `scripts/host/` for emitted metrics.
