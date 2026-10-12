@@ -27,6 +27,57 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Concierge live: #ask answering, first download approved from Discord
+
+**Goal:** Deploy the concierge (never set up until now) with the Radarr/Sonarr
+tools, and the FlareSolverr proxy in Prowlarr.
+
+**Steps:**
+1. FlareSolverr up; added in Prowlarr (*Settings → Indexers*) with tag
+   `flaresolverr`. Indexers: 1337x (tagged), EZTV, Knaben, Internet Archive.
+2. Claude Console: `homelab` workspace, $20 monthly limit, API key for the
+   concierge.
+3. `docker/concierge/.env` created (`chmod 600`): API key, `CONCIERGE_TOKEN`,
+   `RADARR_API_KEY`, `SONARR_API_KEY`. `docker/assistant/.env` tightened to
+   `600`. It had been `644`, with the Discord bot token in it.
+4. `--provision --apply` created `#ask` and `#memory` under ASSISTANT. Their
+   IDs and the shared token went in `docker/assistant/.env`.
+5. `--selftest`: CLI, key, `Radarr ok (v6.4.4)`, `Sonarr ok (v4.0.20)`, both
+   with profile `HD-1080p`. `up -d --build` for both stacks.
+6. First run in `#ask`: "get hocus pocus" got a clarifying question (four films
+   share the title). A reply to it got one ✅/❌ card. ✅ added Hocus Pocus
+   (1993) to Radarr and started a search. $0.035 for both turns.
+
+**Issues encountered:**
+- **The FlareSolverr proxy showed "Disabled" and 1337x still failed.** A proxy
+  with no tag applies to no indexer, and Prowlarr labels it Disabled. The tag
+  was on the indexer but not on the proxy.
+- **"refused: CONCIERGE_TOKEN differs between the two .env files"** after both
+  files were believed to match. They did not: hashing each file's value showed
+  two different tokens (a prefix-only check had missed it), and
+  `--force-recreate` changed nothing until the files agreed.
+- **The concierge's .env lacked the media lines.** It was copied from
+  `.env.example` before the box had pulled #151, so the selftest printed no
+  Radarr/Sonarr lines at all, not even "off". The fix was to pull and add them.
+- **A message sent to `#ask` during the bot's recreate got no reply.** The bot
+  only reconnected about 40s later and never saw the message.
+
+**Resolution:**
+- Tag on the proxy. Token copied from the concierge's file into the bot's,
+  checked with `cut -d= -f2- | sha256sum` on each file and
+  `printenv CONCIERGE_TOKEN | sha256sum` in each container, then the bot
+  recreated. Message re-sent.
+
+**Notes / next steps:**
+- To compare tokens, compare hashes of the whole value, never prefixes or
+  the token itself.
+- Continuing a conversation in `#ask` needs a Discord **Reply** (or a thread).
+  A new message is a one-off with no context.
+- Google and Home Assistant are still off in the concierge. Both are optional
+  (README steps 4–5).
+
+---
+
 ## 2026-10-12 — Download movies and shows from Discord (#ask)
 
 **Goal:** Ask for a movie or show in Discord and have it downloaded, without
