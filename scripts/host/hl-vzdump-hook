@@ -87,16 +87,18 @@ note() { printf '%s\n' "$*" >> "$STATE"; }
 fail() { printf 'FAIL %s\n' "$*" >> "$STATE"; log "FAIL $*"; }
 
 # The whole disk behind a mount point, through LUKS and partitions:
-# /mnt/hl-backup -> /dev/mapper/hl-backup -> sdb1 -> sdb.
+# /mnt/hl-backup -> /dev/mapper/hl-backup -> sda1 -> sda.
+#
+# `lsblk -s` lists a device and everything under it, ending at the disk. The
+# first version walked PKNAME one step at a time instead, and on m5 PKNAME is
+# empty for the dm-crypt device, so the backup drive's SMART was asked of
+# /dev/mapper/hl-backup and read "not readable through this enclosure" every
+# night while the drive itself answered fine (found 2026-10-12).
 disk_of() {
   _src=$(findmnt -no SOURCE "$1" 2>/dev/null) || return 1
-  _dev=$_src
-  while :; do
-    _parent=$(lsblk -no PKNAME "$_dev" 2>/dev/null | head -n1)
-    [ -n "$_parent" ] || break
-    _dev=/dev/$_parent
-  done
-  printf '%s' "$_dev"
+  _disk=$(lsblk -lnspo NAME,TYPE "$_src" 2>/dev/null | awk '$2 == "disk" { print $1; exit }')
+  [ -n "$_disk" ] || return 1
+  printf '%s' "$_disk"
 }
 
 # Raw value of one SMART attribute by ID from `smartctl -A`, first token only
