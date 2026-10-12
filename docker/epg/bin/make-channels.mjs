@@ -89,7 +89,7 @@ if (fetched !== urls.length || wanted.size === 0) {
   process.exit(0)
 }
 
-// site -> Map(xmltv_id -> the <channel> element, verbatim)
+// site -> Map(xmltv_id -> [candidate entries, in file order])
 const bySite = new Map()
 for (const site of fs.readdirSync(sitesDir)) {
   const dir = path.join(sitesDir, site)
@@ -104,23 +104,103 @@ for (const site of fs.readdirSync(sitesDir)) {
       const siteId = /\bsite_id="([^"]*)"/.exec(el)?.[1] || ''
       if (!id || !s || !wanted.has(id) || skipped(s, siteId)) continue
       if (!bySite.has(s)) bySite.set(s, new Map())
-      const have = bySite.get(s).get(id)
-      // First entry wins, unless a later one is for the channel's own country
-      // and the first was not.
-      if (!have || (!have.local && localTo(id, siteId))) {
-        bySite.get(s).set(id, { el, local: localTo(id, siteId) })
+      if (!bySite.get(s).has(id)) bySite.get(s).set(id, [])
+      bySite.get(s).get(id).push({ el, siteId, local: localTo(id, siteId), dead: false })
+    }
+  }
+}
+
+// The entry a site would use for a channel: the first live one for the
+// channel's own country, else the first live one.
+function pick(entries) {
+  const live = entries.filter((e) => !e.dead)
+  return live.find((e) => e.local) || live[0]
+}
+
+// i.mjh.nz ids go stale. Its sites/ list is generated from the feeds at one
+// moment, and a feed can renumber afterwards: on 2026-10-12 every Plex/us id
+// in the list began 5e20b730...- while the live feed used 6a1610be...-, the
+// part after the dash unchanged, and 109 channels grabbed 0 programmes without
+// an error. So each i.mjh.nz feed this list would use is read once here:
+// an id the feed still has is kept, one that only matches on the part after
+// the last dash is rewritten to the live id, and one that is gone is marked
+// dead so the channel falls through to the next entry or site. A feed that
+// cannot be read is left as it is.
+const IMJH = 'i.mjh.nz'
+const imjhBase = (() => {
+  try {
+    const cfg = fs.readFileSync(path.join(sitesDir, IMJH, `${IMJH}.config.js`), 'utf8')
+    return /API_ENDPOINT\s*=\s*'([^']+)'/.exec(cfg)?.[1]
+  } catch {
+    return undefined
+  }
+})()
+const feedIds = new Map() // feed path -> Set of live channel ids, or null if unreadable
+let repaired = 0
+let dropped = 0
+
+async function readFeed(feed) {
+  try {
+    const res = await fetch(`${imjhBase}/${feed}.xml`, { signal: AbortSignal.timeout(120_000) })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const text = await res.text()
+    return new Set([...text.matchAll(/<channel id="([^"]+)"/g)].map((m) => m[1]))
+  } catch (err) {
+    log(`could not check ${IMJH} feed ${feed}: ${err.message}; using its ids as listed`)
+    return null
+  }
+}
+
+function check(entry, live) {
+  const [feed, chId] = entry.siteId.split('#')
+  if (live.has(chId)) return
+  const tail = chId.slice(chId.lastIndexOf('-') + 1)
+  const matches = [...live].filter((l) => l.slice(l.lastIndexOf('-') + 1) === tail)
+  if (chId.includes('-') && matches.length === 1) {
+    entry.siteId = `${feed}#${matches[0]}`
+    entry.el = entry.el.replace(/\bsite_id="[^"]*"/, `site_id="${entry.siteId}"`)
+    repaired++
+  } else {
+    entry.dead = true
+    dropped++
+  }
+}
+
+// Check the feeds the current picks use; a dead pick can promote another
+// entry from a feed not yet checked, so repeat until nothing changes.
+if (imjhBase && bySite.has(IMJH)) {
+  for (;;) {
+    const pending = new Set()
+    for (const entries of bySite.get(IMJH).values()) {
+      const e = pick(entries)
+      if (e && !feedIds.has(e.siteId.split('#')[0])) pending.add(e.siteId.split('#')[0])
+    }
+    if (pending.size === 0) break
+    for (const feed of pending) {
+      const live = await readFeed(feed)
+      feedIds.set(feed, live)
+      if (!live) continue
+      for (const entries of bySite.get(IMJH).values()) {
+        for (const e of entries) {
+          if (!e.dead && e.siteId.startsWith(`${feed}#`)) check(e, live)
+        }
       }
     }
   }
 }
 
-const sites = [...bySite.entries()].sort((a, b) => b[1].size - a[1].size || a[0].localeCompare(b[0]))
 const chosen = new Map()
 const used = new Map()
+const coverage = (channels) => [...channels.values()].filter((entries) => pick(entries)).length
+const sites = [...bySite.entries()].sort(
+  (a, b) => coverage(b[1]) - coverage(a[1]) || a[0].localeCompare(b[0])
+)
 for (const [site, channels] of sites) {
-  for (const [id, { el }] of channels) {
+  for (const [id, entries] of channels) {
     if (chosen.has(id)) continue
-    chosen.set(id, el)
+    const e = pick(entries)
+    if (!e) continue
+    chosen.set(id, e.el)
     used.set(site, (used.get(site) || 0) + 1)
   }
 }
@@ -140,4 +220,5 @@ fs.renameSync(tmp, outFile)
 
 const summary = [...used.entries()].map(([s, n]) => `${s} ${n}`).join(', ')
 const skipNote = skip.length ? `; skipping ${skip.join(', ')}` : ''
-log(`${chosen.size} of ${wanted.size} playlist channels have a guide source (${summary})${skipNote}`)
+const imjhNote = repaired || dropped ? `; ${IMJH}: ${repaired} stale ids repaired, ${dropped} gone` : ''
+log(`${chosen.size} of ${wanted.size} playlist channels have a guide source (${summary})${skipNote}${imjhNote}`)

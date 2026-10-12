@@ -14,7 +14,10 @@ Jellyfin is. There is no port and no Caddy route.
    (`/epg/sites`). It then writes `channels.xml` with one site per channel,
    preferring the sites that cover the most of the playlist and, within a
    site, the entry for the channel's own country. Sources in `EPG_SKIP` are
-   left out (see "A source has gone dead" below). The playlist's
+   left out (see "A source has gone dead" below). The ids for i.mjh.nz, the
+   largest source, are checked against its live feeds. Ids that have gone
+   stale are rewritten, and ids that are gone fall through to another site.
+   The startup line reports both counts. The playlist's
    `tvg-id` is the guide's `xmltv_id`, so Jellyfin matches them without any
    mapping. If any playlist fails to answer, the previous list is kept.
 2. **Grabs:** nightly at 01:00 (`EPG_CRON_SCHEDULE`), plus one at start if
