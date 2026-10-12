@@ -39,6 +39,11 @@
 #   job-end       -> SMART, then success or /fail ping with a summary body
 #   job-abort     -> /fail ping
 #
+# And one phase that is not vzdump's, run from cron every 15 minutes:
+#   temp          -> each drive's temperature, nothing else (see temp_check)
+#
+#   echo '*/15 * * * * root /usr/local/bin/hl-vzdump-hook temp' > /etc/cron.d/hl-drive-temp
+#
 # The ping URL lives in /etc/homelab/healthchecks.env (mode 600):
 #   HEALTHCHECKS_VZDUMP_URL=https://hc-ping.com/<uuid>
 #
@@ -173,6 +178,45 @@ write_smart_metrics() {
   return 0
 }
 
+# Drive temperature, every 15 minutes from cron (`temp` phase). The nightly
+# SMART read sees one moment at 02:30; a drive that cooks all afternoon under
+# downloads never shows up in it. Kept apart from smart_check on purpose: no
+# Healthchecks ping, no state file, its own .prom file, so it can neither
+# disturb a running backup's state nor overwrite the nightly sector counts.
+#
+# `-n standby` makes smartctl leave a sleeping drive asleep (exit 2, nothing
+# read). A drive that is asleep is cool, and its series simply goes missing
+# until it wakes, which the hot-drive alert treats as nothing to report.
+temp_check() {
+  command -v smartctl >/dev/null 2>&1 || return 0
+  _prom=""
+  for _m in $SMART_MOUNTS; do
+    mountpoint -q "$_m" || continue
+    _drive=$(basename "$_m")
+    _disk=$(disk_of "$_m") || continue
+    _out=$(smartctl -n standby -A "$_disk" 2>&1)
+    case "$_out" in
+      *STANDBY*|*SLEEP*) continue ;;
+      *Temperature*) ;;
+      *) _out=$(smartctl -d sat -n standby -A "$_disk" 2>&1) ;;
+    esac
+    _v=$(smart_attr "$_out" 194)
+    [ -n "$_v" ] || continue
+    _prom="${_prom}homelab_drive_temperature_celsius{drive=\"$_drive\"} $_v
+"
+  done
+  [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ] || return 0
+  _tmp="$TEXTFILE_DIR/.hl_drive_temp.prom.$$"
+  {
+    echo "# HELP homelab_drive_temp_check_timestamp_seconds When the 15-minute temperature read last ran."
+    echo "# TYPE homelab_drive_temp_check_timestamp_seconds gauge"
+    echo "homelab_drive_temp_check_timestamp_seconds $(date +%s)"
+    printf '%s' "$_prom" | sort
+  } > "$_tmp" 2>/dev/null && mv -f "$_tmp" "$TEXTFILE_DIR/hl_drive_temp.prom" 2>/dev/null \
+    || rm -f "$_tmp" 2>/dev/null
+  return 0
+}
+
 verify() {
   case "$1" in
     *.zst) zstd -tq "$1" 2>/dev/null ;;
@@ -183,6 +227,10 @@ verify() {
 }
 
 case "$phase" in
+  temp)
+    temp_check
+    ;;
+
   job-start)
     : > "$STATE"
     chmod 600 "$STATE" 2>/dev/null

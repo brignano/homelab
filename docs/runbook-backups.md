@@ -207,6 +207,23 @@ If the file is written but `curl` shows nothing, the exporter is reading a
 different directory: compare with `--collector.textfile.directory` in
 `/etc/default/prometheus-node-exporter`.
 
+### Drive temperature every 15 minutes (since 2026-10-12)
+
+The nightly read sees 02:30 only. The same hook has a `temp` phase that reads
+just the temperature, into its own `hl_drive_temp.prom`, and leaves a sleeping
+drive asleep. It runs from a cron file on the host (not root's crontab, so
+`crontab -l` will not show it):
+
+```bash
+echo '*/15 * * * * root /usr/local/bin/hl-vzdump-hook temp' > /etc/cron.d/hl-drive-temp
+/usr/local/bin/hl-vzdump-hook temp && curl -s localhost:9100/metrics | grep '^homelab_drive_temp'
+```
+
+`hl-smart-hot` reads this and fires on the hour's average above 55C;
+`hl-drive-temp-stale` fires if it stops for an hour. During a long download
+backlog, silence `Drive running hot` in Grafana rather than raise the
+threshold.
+
 ### Schedule it
 
 ```bash
