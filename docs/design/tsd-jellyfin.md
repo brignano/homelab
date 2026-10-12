@@ -108,6 +108,7 @@ should list H.264 and HEVC encode profiles.
   | `/config` (users, watch history, settings) | named volume `jellyfin_config` | ✅ in vzdump |
   | `/cache` (transcodes, image cache) | `/media/jellyfin/cache` on the 5 TB drive | ❌ no; rebuildable, and can grow to tens of GB |
   | `/media` (the library), **read-only** | `/media/jellyfin/library` | ❌ `backup=0` |
+  | `/recordings` (Live TV DVR), read-write | `/media/jellyfin/recordings` | ❌ `backup=0` |
 
   The cache lives on the media drive so transcodes never land in the nightly
   vzdump or on the thin pool. The library is mounted read-only: Jellyfin has no

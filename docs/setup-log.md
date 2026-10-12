@@ -27,6 +27,40 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Jellyfin Live TV (iptv-org M3U) and a recordings mount
+
+**Goal:** Live TV in Jellyfin, with somewhere for the DVR to write.
+
+**Steps:**
+1. *Live TV → Tuner Devices → M3U Tuner*:
+   `https://iptv-org.github.io/iptv/countries/us.m3u`, stream limit 1, stream
+   sharing on, fMP4 off. Ignore DTS and native frame rate left at their
+   defaults (on).
+2. Added a `/recordings` bind mount (`/media/jellyfin/recordings`, read-write,
+   `create_host_path: false`) to `docker/jellyfin/docker-compose.yml`.
+
+**Issues encountered:**
+- The library is mounted read-only, so the DVR had no path it could write to.
+- *Detect My Devices* cannot find an HDHomeRun from inside the `proxy_proxy`
+  bridge. Tuners are added by IP.
+
+**Resolution:**
+- Recordings get their own folder beside the library on the media drive
+  (`backup=0`), so the library stays read-only.
+
+**Notes / next steps:**
+- To deploy: `mkdir -p /media/jellyfin/recordings` **before**
+  `docker compose -f docker/jellyfin/docker-compose.yml up -d`, then set
+  *Live TV → Recording path* to `/recordings`. Do the `mkdir` before the next
+  04:00 `repo-sync.sh`, which will recreate Jellyfin on its own and fail
+  without the folder.
+- No guide data yet. iptv-org no longer hosts EPG files; `iptv-org/epg` is a
+  grabber to run ourselves, and as a scheduled job it needs a Healthchecks ping.
+- Live TV goes out through the house connection, not the VPN. Only qBittorrent
+  is inside gluetun, by design.
+
+---
+
 ## 2026-10-12 — Concierge live: #ask answering, first download approved from Discord
 
 **Goal:** Deploy the concierge (never set up until now) with the Radarr/Sonarr

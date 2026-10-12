@@ -43,7 +43,8 @@ for the drive's size instead:
 
 ```bash
 df -h /media                               # must show ~4.5T, not CT 100's own disk
-mkdir -p /media/jellyfin/library/{movies,shows,home-videos,music} /media/jellyfin/cache
+mkdir -p /media/jellyfin/library/{movies,shows,home-videos,music} /media/jellyfin/cache \
+         /media/jellyfin/recordings
 ```
 
 ## 3. Start it
@@ -78,6 +79,39 @@ Then in the web UI: create the admin user, add the libraries (`/media/movies`,
 H.264 and HEVC and hardware encoding. Set scheduled tasks (scans, trickplay) to
 03:30.
 
+## Live TV and DVR
+
+Tuners and guide data are configured in the web UI (*Dashboard → Live TV*), not
+in this repo. Two things in the compose file shape them:
+
+- **Tuners are added by IP, never by *Detect My Devices*.** Jellyfin is on the
+  `proxy_proxy` bridge, so HDHomeRun's discovery broadcast never reaches it. A
+  tuner on the LAN is still reachable at its address (give it a DHCP
+  reservation). M3U tuners are just a URL.
+- **Recordings go to `/recordings`**, which is `/media/jellyfin/recordings` on
+  the media drive. Set it under *Live TV → Recording path*. The library mount is
+  read-only, so the DVR has nowhere else to write.
+
+Live TV traffic leaves through the house's connection, not the VPN: only
+qBittorrent is inside gluetun (`docker/downloads/`).
+
+### Adding the recordings mount to a running box
+
+The mount has `create_host_path: false` like the others, so **create the folder
+before anything recreates Jellyfin**, or the new container will refuse to start:
+
+```bash
+df -h /media                                # the 5 TB drive, not CT 100's disk
+mkdir -p /media/jellyfin/recordings
+docker compose -f docker/jellyfin/docker-compose.yml up -d
+```
+
+There is a deadline: `repo-sync.sh` pulls at 04:00 and, finding the jellyfin
+container older than the last commit to `docker/jellyfin/`, recreates it by
+itself (`jellyfin` is not on `HL_NO_AUTOHEAL`). Without the folder that heal
+fails every night and the drift metric climbs, so do the `mkdir` before the
+first 04:00 after this change lands.
+
 ## Monitoring
 
 | Signal | Where |
@@ -94,4 +128,6 @@ H.264 and HEVC and hardware encoding. Set scheduled tasks (scans, trickplay) to
 | `up` fails: `error gathering device information ... renderD128` | GPU passthrough not done, or lost after a host update. Step 1. |
 | `required variable RENDER_GID is missing` | `.env` not created from `.env.example`. |
 | Playback stutters, CPU at 200% in the container | Transcoding on CPU: check the VA-API setting, and `hl-jellyfin-gpu-missing`. |
+| `up` fails: `bind source path does not exist: /media/jellyfin/recordings` | The recordings folder was never created. `mkdir -p /media/jellyfin/recordings`, then `up -d` again. |
+| Live TV channel won't play | Check the newest `FFmpeg.LiveTv-*` log under *Dashboard → Logs*. A `403`/`404` from an M3U source means the link is dead or geo-blocked. |
 | `jellyfin.` gives 502 | Jellyfin is down, or Caddy was restarted rather than recreated after the route was added. |
