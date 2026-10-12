@@ -27,6 +27,28 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — #chat removed; #ask is the one conversational channel
+
+**Goal:** Fewer Discord channels. `#ask` (Claude) does everything `#chat` (the
+local 3B) did and more, so `#chat` was noise.
+
+**Steps:**
+1. `chat` removed from `docker/assistant/guild.yml`. The `#digest` and `#ask`
+   topics no longer point to it, and `#ask`'s topic now explains reply/thread
+   scope itself.
+2. The feature stays in the bot, off while `DISCORD_CHAT_CHANNEL_ID` is blank.
+   `.env.example` and the README say how to bring it back.
+3. Provisioning tests use `#ask` as their example and assert `chat` is gone.
+
+**Notes / next steps:**
+- On the box: blank `DISCORD_CHAT_CHANNEL_ID` in `docker/assistant/.env`,
+  `--provision --apply` (it updates the topics and reports `#chat` as an extra
+  channel, never deleting it), recreate the bot, then delete `#chat` in Discord
+  by hand. Its history goes with it.
+- Channels now: HOMELAB (`#digest`, `#alerts`), ASSISTANT (`#ask`, `#memory`).
+
+---
+
 ## 2026-10-12 — Concierge live: #ask answering, first download approved from Discord
 
 **Goal:** Deploy the concierge (never set up until now) with the Radarr/Sonarr
