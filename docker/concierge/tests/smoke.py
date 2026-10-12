@@ -265,11 +265,19 @@ def _():
 
 # --- Home Assistant -------------------------------------------------------------
 
-@check("home.py calls exactly one HA tool, GetLiveContext")
+@check("home.py calls exactly one HA tool, GetLiveContext, by exact name only")
 def _():
     src = inspect.getsource(home)
     assert home.LIVE_CONTEXT_TOOL == "GetLiveContext"
-    assert src.count("call_tool(") == 1 and "call_tool(LIVE_CONTEXT_TOOL" in src
+    assert home.LIVE_CONTEXT_NAMES == ("homeassistant__GetLiveContext", "GetLiveContext")
+    assert src.count("call_tool(") == 1 and "call_tool(name, {})" in src
+    assert "name = live_context_name(offered)" in src
+    # Newer HA prefixes every tool; older HA does not.
+    offered = ["intent__HassTurnOn", "homeassistant__GetLiveContext", "llm__GetDateTime"]
+    assert home.live_context_name(offered) == "homeassistant__GetLiveContext"
+    assert home.live_context_name(["HassTurnOn", "GetLiveContext"]) == "GetLiveContext"
+    for offered in ([], ["intent__HassTurnOn"], ["evil__GetLiveContext"], ["GetLiveContextX"]):
+        assert home.live_context_name(offered) is None, offered
     for intent in ("HassTurnOn", "HassTurnOff", "HassLightSet", "HassClimateSet"):
         assert f'"{intent}"' not in src and f"'{intent}'" not in src
 
