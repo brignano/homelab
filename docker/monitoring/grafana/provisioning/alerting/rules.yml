@@ -1062,6 +1062,50 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [60] }
 
+      # The host node-exporter cannot see a drive that the hook can.
+      #
+      # Debian runs prometheus-node-exporter sandboxed, and it only saw mounts
+      # that existed when it started: the media drive was mounted on
+      # 2026-10-11 after the exporter, and had no disk metrics at all until the
+      # exporter restarted at 08:40 on 2026-10-12. Meanwhile hl-disk-full and
+      # hl-disk-filling had nothing to read and could not fire. Both drives
+      # are in fstab (nofail), so a reboot is fine; a USB drop and remount, or
+      # a mount by hand, brings it back.
+      #
+      # So compare two witnesses. The hook only reads SMART for a drive that is
+      # mounted, at /mnt/<drive>, so readable=1 means "mounted at 02:30". If
+      # the exporter has no filesystem at that path, either it has gone blind
+      # or the drive was unmounted since; both leave the disk alerts deaf.
+      - uid: hl-exporter-mount-blind
+        title: Host exporter cannot see a drive
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "node-exporter on m5 reports no filesystem at {{ $labels.mountpoint }}, so its disk alerts cannot fire; if the drive is mounted, run `systemctl restart prometheus-node-exporter` on m5"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                label_replace(homelab_smart_readable == 1, "mountpoint", "/mnt/$1", "drive", "(.+)")
+                unless on (mountpoint) node_filesystem_size_bytes{host="proxmox"}
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
       # The hook writes these once a night (02:30). If they stop, every rule
       # above goes quiet without erroring. 36h: a night plus slack. A missed
       # vzdump already pages through Healthchecks; this covers the hook running
