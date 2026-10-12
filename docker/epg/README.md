@@ -12,7 +12,9 @@ Jellyfin is. There is no port and no Caddy route.
    reads every playlist in `EPG_PLAYLISTS` and keeps each `tvg-id`. For every
    id, it looks for a listings site among the scrapers in the image
    (`/epg/sites`). It then writes `channels.xml` with one site per channel,
-   preferring the sites that cover the most of the playlist. The playlist's
+   preferring the sites that cover the most of the playlist and, within a
+   site, the entry for the channel's own country. Sources in `EPG_SKIP` are
+   left out (see "A source has gone dead" below). The playlist's
    `tvg-id` is the guide's `xmltv_id`, so Jellyfin matches them without any
    mapping. If any playlist fails to answer, the previous list is kept.
 2. **Grabs:** nightly at 01:00 (`EPG_CRON_SCHEDULE`), plus one at start if
@@ -55,6 +57,16 @@ rebuild the channel list. Then grab now, or wait for 01:00:
 docker compose -f docker/epg/docker-compose.yml up -d --force-recreate
 docker exec epg npm run grab -- --channels=public/channels.xml --output=public/guide.xml
 ```
+
+## A source has gone dead
+
+If one feed returns 404 for every request, its channels get no guide, even
+when another site lists them. In `docker logs epg`, look for a run of `ERR: Request
+failed with status code 404` against the same site, or the same prefix of
+`site_id`. Add that source to `EPG_SKIP` in `.env`, as `<site>` or
+`<site>/<site_id prefix>`. Setting it replaces the default, so keep
+`i.mjh.nz/Flash/`. Then recreate the container and grab. The startup log line
+names what it skipped.
 
 ## Deploy
 

@@ -36,6 +36,10 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       EPG_PLAYLISTS: ${EPG_PLAYLISTS:?set EPG_PLAYLISTS in docker/epg/.env (the same M3U URLs as Jellyfin's tuners)}
+      # Guide sources known to be dead, left out so their channels fall through
+      # to the next site that lists them (bin/make-channels.mjs). i.mjh.nz's
+      # Flash feed returned 404 for every request on 2026-10-11.
+      EPG_SKIP: ${EPG_SKIP:-i.mjh.nz/Flash/}
       # 01:00 local: clear of the 02:30 vzdump, Jellyfin's 03:30 tasks and the
       # 04:00 repo-sync.
       CRON_SCHEDULE: ${EPG_CRON_SCHEDULE:-0 1 * * *}
