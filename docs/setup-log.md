@@ -27,6 +27,28 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — qBittorrent queueing limits
+
+**Goal:** Stop a stalled torrent from holding up the rest of the download queue.
+
+**Issues encountered:**
+- `#ask` reported 40 entries with one downloading and 39 *queued*. qBittorrent
+  was on its default limits (3 downloads, 5 active torrents), and a stalled
+  release kept its slot while it sat at 93%.
+
+**Resolution:**
+- *Tools → Options → BitTorrent → Torrent Queueing:* **Do not count slow
+  torrents in these limits** on; active downloads 5, uploads 3, torrents 8.
+- Recorded in step 4 of `docker/downloads/README.md`, with a troubleshooting
+  row for "most of the queue is queued".
+
+**Notes / next steps:**
+- Entries at 0 (0) seeds/peers are dead releases: remove them in Sonarr/Radarr
+  with *Blocklist release*, not in qBittorrent, so a different release is
+  searched for.
+
+---
+
 ## 2026-10-12 — Concierge: download queue reports its total and why entries are flagged
 
 **Goal:** Make *"what's downloading?"* in `#ask` answerable without guessing.
