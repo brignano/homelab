@@ -27,6 +27,36 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Concierge reads Home Assistant (GetLiveContext renamed)
+
+**Goal:** Give `#ask` the house: weather and anything else exposed to Assist.
+
+**Steps:**
+1. HA: non-admin `concierge` user (local access only) and a long-lived token
+   in `docker/concierge/.env` as `HA_TOKEN`.
+2. HA: the Model Context Protocol Server integration, with the **Assist** API
+   only ("Expose all LLM APIs" off) and **"Require an administrator account"
+   off**. With it on, the non-admin user is refused.
+3. Exposed to Assist: Forecast Home (Met.no weather). No locks, alarm or
+   garage.
+
+**Issues encountered:**
+- `404` on `/api/mcp`: the integration did not exist yet.
+- `Tool "GetLiveContext" not found`, with Assist selected and an entity
+  exposed. Listing the tools showed that this HA version prefixes every MCP
+  tool with its integration: `homeassistant__GetLiveContext`,
+  `intent__HassTurnOn` and so on.
+
+**Resolution:**
+- `app/home.py` reads HA's tool list and calls GetLiveContext under either
+  exact name, `homeassistant__GetLiveContext` or `GetLiveContext`. It never
+  matches by suffix and never calls any other tool, and the test pins both.
+  It now raises its "offers no GetLiveContext" error after the MCP session
+  closes, because one raised inside it arrived wrapped in an ExceptionGroup
+  with the reason lost.
+
+---
+
 ## 2026-10-12 — #chat removed; #ask is the one conversational channel
 
 **Goal:** Fewer Discord channels. `#ask` (Claude) does everything `#chat` (the
