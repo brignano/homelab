@@ -87,6 +87,19 @@ services:
       # (scripts/update-design-tokens.sh) rather than drawn, and CI checks them
       # differently.
       - ./assets:/app/public/assets:ro
+
+      # The 5 TB media drive, for the header's second resources widget. That
+      # widget can only measure a filesystem it can see, and the container's
+      # own / is CT 100's root disk, not this one. /media is the drive's
+      # mountpoint inside CT 100 (pct set 100 -mp0 /mnt/media,mp=/media), and
+      # the widget matches the path in widgets.yaml against the container's
+      # mount table, so the two must agree. Read-only: the dashboard reads the
+      # drive's size and nothing else. A compose change, so it needs `up -d`,
+      # not a restart.
+      #
+      # The 2 TB backup drive is mounted on the Proxmox host only, so nothing
+      # in CT 100 can mount it; its fill level is in Grafana and alerts at 80%.
+      - /media:/mnt/media:ro
     networks:
       # Only the proxy network. Deliberately NOT joined to core/monitoring/ai:
       # the tiles are plain links, and the up/down checks go through Caddy over

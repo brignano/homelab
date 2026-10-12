@@ -10,6 +10,13 @@
     disk: /
     label: docker host
 
+# The media drive is the one that actually fills: recordings, downloads and the
+# library all land there. Mounted read-only by docker-compose.yml; see the note
+# there for why the backup drive cannot be shown the same way.
+- resources:
+    disk: /mnt/media
+    label: media drive
+
 - datetime:
     text_size: xl
     format:
