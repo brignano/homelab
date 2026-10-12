@@ -845,6 +845,52 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- Blink clips are stuck in staging ---
+      #
+      # scripts/blink-clips.sh, every 5 minutes: moves the clips Home
+      # Assistant saved into Jellyfin's library. It fails when the library is
+      # missing (the media drive is not mounted) or a copy fails; the clips
+      # then wait in HA's volume, which is on the thin pool and in every
+      # nightly vzdump, so this should not sit unnoticed. 30m rides out one
+      # bad run. It also fails when HA's volume cannot be found, since HA
+      # would then be saving clips nothing moves.
+      #
+      # Re-run by hand once fixed: ./scripts/blink-clips.sh
+      - uid: hl-blink-clips-failed
+        title: Blink clips not reaching the library
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Blink clips are not reaching Jellyfin's library; {{ printf \"%.0f\" $values.B.Value }} waiting in Home Assistant's volume. See /var/log/blink-clips.log on CT 100"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_blink_success
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              expr: homelab_blink_staged_files or on() vector(0)
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- The backup drive is filling ---
       #
       # The nightly vzdump keeps a fixed number of archives (prune-backups on

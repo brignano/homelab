@@ -53,7 +53,8 @@ services:
       - ./config/configuration.yaml:/config/configuration.yaml:ro
     network_mode: host
 
-  # One-shot: create the files configuration.yaml includes, if they are missing.
+  # One-shot: create the files configuration.yaml includes, and the Blink
+  # staging directory, if they are missing.
   #
   # HA's UI editors write automations.yaml, scripts.yaml and scenes.yaml, so git
   # must not track them (a UI edit would dirty the tree, and repo-sync's pull
@@ -74,6 +75,9 @@ services:
       - |
         [ -e /config/automations.yaml ] || { echo '[]' > /config/automations.yaml; echo created automations.yaml; }
         for f in scripts scenes; do [ -e "/config/$$f.yaml" ] || { : > "/config/$$f.yaml"; echo "created $$f.yaml"; }; done
+        # Where the Blink automation saves clips (configuration.yaml), for
+        # scripts/blink-clips.sh to move into Jellyfin's library.
+        [ -d /config/blink ] || { mkdir /config/blink; echo created blink/; }
     volumes:
       - homeassistant_config:/config
     network_mode: none
