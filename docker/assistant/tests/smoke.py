@@ -1280,7 +1280,8 @@ def _():
 @check("concierge: unknown or malformed proposals are never approvable")
 def _():
     from app.concierge import APPROVABLE, Proposal, approvable, fact_of, render_proposal
-    assert APPROVABLE == {"remember", "create_event", "move_event", "draft_email", "run_scene"}
+    assert APPROVABLE == {"remember", "create_event", "move_event", "draft_email", "run_scene",
+                          "add_movie", "add_show"}
     for p in (Proposal("send_email", {"to": "a@b"}), Proposal("remember", {"fact": ""}),
               Proposal("remember", {"fact": 7}), Proposal("remember", {})):
         assert fact_of(p) is None, p
@@ -1309,6 +1310,15 @@ def _():
                                                  "was": "2026-10-14T09:00", "start": "2026-10-15T09:00",
                                                  "end": "2026-10-15T10:00"}, "b2"))
     assert "was: 2026-10-14T09:00" in mv and "event_id: e1" in mv, mv
+    mo = render_proposal(Proposal("add_movie", {"title": "Hocus Pocus", "year": "1993", "tmdb_id": "10439",
+                                                "quality": "HD-1080p", "folder": "/data/library/movies"}, "c3"))
+    assert mo.startswith("**Download this movie?**"), mo
+    for line in ("title: Hocus Pocus", "year: 1993", "tmdb_id: 10439", "quality: HD-1080p",
+                 "folder: /data/library/movies"):
+        assert line in mo, (line, mo)
+    sh = render_proposal(Proposal("add_show", {"title": "The Haunting of Hill House", "tvdb_id": "349224",
+                                               "quality": "HD-1080p", "folder": "/data/library/shows"}, "d4"))
+    assert sh.startswith("**Download this show?**") and "tvdb_id: 349224" in sh, sh
 
 
 @check("concierge: reply parsing tolerates junk, footer says what it cost")

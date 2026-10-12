@@ -2,8 +2,9 @@
 
 Claude, through the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk/python),
 answering questions in Discord's **#ask** with read access to your calendar,
-mail and home, and proposing a few changes you approve one tap at a time:
-create or move a calendar event, save a Gmail draft, run a Home Assistant scene. Design: [`docs/design/tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md).
+mail, home and movie/TV library, and proposing a few changes you approve one tap
+at a time: create or move a calendar event, save a Gmail draft, run a Home
+Assistant scene, download a movie or show. Design: [`docs/design/tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md).
 
 ```mermaid
 flowchart LR
@@ -14,18 +15,20 @@ flowchart LR
   c -->|"events, read mail, drafts"| g[Google Calendar / Gmail]
   c -->|"GetLiveContext only"| ha[Home Assistant MCP]
   c -->|"scene.turn_on, HA_SCENES only"| har[Home Assistant REST]
+  c -->|"lookup, queue, add<br/>proxy_proxy network"| arr[Radarr / Sonarr]
   c -->|answer + proposals| bot
   bot -->|"✅ remember"| mem
   bot -->|"✅ anything else: POST /v1/execute"| c
 ```
 
 - **No published port, no Caddy route.** The bot is the only front door; this
-  container has no Discord connection. It reaches out to the Claude API, Google
-  and Home Assistant, and nothing reaches in except the bot.
+  container has no Discord connection. It reaches out to the Claude API, Google,
+  Home Assistant and Radarr/Sonarr. It shares `proxy_proxy` with them, so the
+  containers there can reach its port; the bearer token keeps them out.
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
-  `home_overview`.
+  `home_overview`, `media_search`, `media_downloads`.
 - **Every write is a proposal.** `remember`, `create_event`, `move_event`,
-  `draft_email` and `run_scene` check their arguments and record a proposal;
+  `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
   arguments under ✅/❌. A ✅ from an allowlisted user posts a memory to
   #memory, or sends the proposal's id, tool and arguments back to
@@ -33,8 +36,8 @@ flowchart LR
   within 16 minutes (`app/actions.py`). No answer within 15 minutes, a bot
   restart or a concierge restart all count as ❌.
 - **What it can never do:** send email (drafts only; you send from Gmail),
-  delete anything, invite or notify anyone, or touch a lock, alarm or garage
-  door. Those tools do not exist. Scenes are limited to the `HA_SCENES` list.
+  delete anything (no movie or show either), invite or notify anyone, or touch
+  a lock, alarm or garage door. Those tools do not exist. Scenes are limited to the `HA_SCENES` list.
 - **Tiers are enforced in code** (`app/tiers.py`), in a `PreToolUse` hook
   *and* in `can_use_tool`. No Claude Code built-ins (`tools=[]`), nothing
   pre-approved, `permission_mode="default"`, no settings files read.
@@ -126,7 +129,49 @@ to rerun this.
 The concierge calls only HA's `GetLiveContext` (`app/home.py`) and never any
 `Hass*` action. HA's own tool list is never given to the agent.
 
-### 6. Bring it up
+### 6. Movies and shows (optional, you)
+
+Ask in #ask, *"get Hocus Pocus and The Haunting of Hill House"*, and you get
+one ✅/❌ prompt per title:
+
+```
+Download this movie? Radarr adds it and searches now.
+title: Hocus Pocus
+year: 1993
+tmdb_id: 10439
+quality: HD-1080p
+folder: /data/library/movies
+```
+
+A ✅ adds it to Radarr (or Sonarr, every season) and starts a search. The
+download, the import into Jellyfin's library and the Jellyfin scan are the
+downloads stack's usual path (`docker/downloads/README.md`). *"What's
+downloading?"* reads both queues.
+
+- The **title and year shown come from Radarr/Sonarr's lookup of the id**, not
+  from the model, so the prompt names what the id really is.
+- The **quality profile and folder are config**, the same for every add, and
+  shown in the prompt. The model cannot pick a different folder or profile.
+- A title already in the library is not proposed again.
+- Nothing can delete, unmonitor or change a setting: `app/media.py` has two
+  writes, both adds, and a test fails if a third appears.
+
+Setup:
+
+1. In **Radarr** and **Sonarr**, *Settings → General → API Key*: copy each into
+   `RADARR_API_KEY` and `SONARR_API_KEY` in `docker/concierge/.env`. Either can
+   be left blank: no key, no tools for that app.
+2. `MEDIA_QUALITY_PROFILE` (default `HD-1080p`) must exist by that exact name in
+   both apps (*Settings → Profiles*). The selftest checks it.
+3. The folders default to the downloads stack's `/data/library/movies` and
+   `/data/library/shows`; override with `RADARR_ROOT` / `SONARR_ROOT` only if
+   you changed those root folders.
+
+The concierge reaches them by name over `proxy_proxy`, so the downloads stack
+must be up. If it is not, the tools report "could not reach it" and nothing
+else is affected.
+
+### 7. Bring it up
 
 The assistant stack owns the `assistant_concierge` network, so it comes up first:
 
@@ -165,6 +210,8 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | Token mismatch | "refused: CONCIERGE_TOKEN differs between the two .env files" |
 | Google sign-in revoked/expired | the agent reports the tool error, "rerun --google-auth" |
 | HA unreachable / token revoked | `home_overview` reports the error; nothing else is affected |
+| Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |
+| ✅ but nothing downloads | Radarr/Sonarr added it and searched; no indexer had a release yet. It stays monitored and grabs one when it appears. Check *Wanted* in the app |
 | Spend limit reached | the run fails with the API error; the digest and #chat are unaffected |
 | Busy | a second request waits; past 3 in flight, "busy — try again in a minute" |
 | ✅ after the concierge restarted | "failed: expired" under the prompt; nothing runs. Ask again |

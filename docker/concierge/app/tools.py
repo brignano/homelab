@@ -6,7 +6,7 @@ name registered here must appear in tiers.READ or tiers.PROPOSE; a test fails
 otherwise, so a new tool cannot arrive without someone choosing its tier.
 
 The propose tools (`remember`, and phase 4's `create_event`, `move_event`,
-`draft_email`, `run_scene`) check their arguments and record a proposal. None
+`draft_email`, `run_scene`, `add_movie`, `add_show`) check their arguments and record a proposal. None
 of them changes anything: the effect happens only after a ✅, through
 /v1/execute and actions.execute(). See app/actions.py for the whole flow.
 
@@ -29,6 +29,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from . import actions, audit
 from .google import Google, GoogleError
 from .home import Home, HomeError
+from .media import Media, MediaError
 from .tiers import SERVER
 
 MAX_FACT_CHARS = 300
@@ -45,6 +46,7 @@ class TaskContext:
     home: Home | None
     max_proposals: int
     scenes: tuple[str, ...] = ()
+    media: Media | None = None
     proposals: list[dict] = field(default_factory=list)
 
 
@@ -112,7 +114,7 @@ def build(ctx: TaskContext):
         started = time.monotonic()
         try:
             result = await fn(args)
-        except (GoogleError, HomeError) as exc:
+        except (GoogleError, HomeError, MediaError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
             return _err(str(exc))
@@ -294,6 +296,92 @@ def build(ctx: TaskContext):
                 return await run("run_scene", _scene, args)
 
             tools.append(run_scene)
+
+    if ctx.media is not None and (ctx.media.radarr or ctx.media.sonarr):
+        media = ctx.media
+        kinds = [k for k, app in (("movie", media.radarr), ("show", media.sonarr)) if app]
+
+        async def _media_search(args: dict) -> dict:
+            query = " ".join(str(args.get("query") or "").split())[:200]
+            if not query:
+                return _err("media_search needs a title to look for.")
+            kind = args.get("kind") or kinds[0]
+            if kind not in kinds:
+                return _err(f"kind must be one of: {', '.join(kinds)}")
+            app = media.radarr if kind == "movie" else media.sonarr
+            return _ok(await app.search(query))
+
+        @tool("media_search",
+              "Look up a movie or TV show by title in Radarr/Sonarr's metadata (TMDB/TVDB). "
+              "Returns title, year, id, whether it is already in the library, and a short "
+              "overview written by the metadata site. Read-only.",
+              {"type": "object", "properties": {
+                  "query": {"type": "string", "description": "A title, optionally with the year."},
+                  "kind": {"type": "string", "enum": kinds, "description": f"Default {kinds[0]}."},
+              }, "required": ["query"]})
+        async def media_search(args: dict) -> dict:
+            return await run("media_search", _media_search, args)
+
+        async def _media_downloads(args: dict) -> dict:
+            out = {}
+            for name, app in (("movies", media.radarr), ("shows", media.sonarr)):
+                if app is not None:
+                    out[name] = await app.queue()
+            return _ok(out)
+
+        @tool("media_downloads",
+              "What Radarr and Sonarr are downloading right now: title, episode, progress "
+              "and time left. Empty means nothing is in progress. Read-only.",
+              {"type": "object", "properties": {}})
+        async def media_downloads(args: dict) -> dict:
+            return await run("media_downloads", _media_downloads, args)
+
+        tools += [media_search, media_downloads]
+
+        async def _add(tool_name: str, app, id_key: str, folder: str, args: dict) -> dict:
+            try:
+                ext_id = actions.media_args(args, id_key)
+            except ValueError as exc:
+                return _err(f"{tool_name}: {exc}")
+            # The title shown for approval comes from Radarr/Sonarr, never from
+            # the model, so the prompt names what the id really is.
+            found = await app.lookup_one("tmdb" if id_key == "tmdb_id" else "tvdb", ext_id)
+            title = " ".join(str(found.get("title") or "").split())[:200]
+            if not title:
+                return _err(f"{tool_name}: nothing found for that id")
+            if found.get("id"):
+                return _err(f"{tool_name}: {title} is already in the library. Say so; nothing to add.")
+            shown = {"title": title, "year": str(found.get("year") or ""), id_key: ext_id,
+                     "quality": media.profile, "folder": folder}
+            return _propose(ctx, tool_name, shown) or _ok(PROPOSED)
+
+        if media.radarr is not None:
+            async def _add_movie(args: dict) -> dict:
+                return await _add("add_movie", media.radarr, "tmdb_id", media.radarr_root, args)
+
+            @tool("add_movie",
+                  "Propose downloading one movie: Radarr adds it to the library and searches "
+                  "for it now. Pass the tmdb_id media_search returned. The user approves first.",
+                  {"type": "object", "properties": {"tmdb_id": {"type": "string"}},
+                   "required": ["tmdb_id"]})
+            async def add_movie(args: dict) -> dict:
+                return await run("add_movie", _add_movie, args)
+
+            tools.append(add_movie)
+
+        if media.sonarr is not None:
+            async def _add_show(args: dict) -> dict:
+                return await _add("add_show", media.sonarr, "tvdb_id", media.sonarr_root, args)
+
+            @tool("add_show",
+                  "Propose downloading one TV show, every season: Sonarr adds it and searches "
+                  "for it now. Pass the tvdb_id media_search returned. The user approves first.",
+                  {"type": "object", "properties": {"tvdb_id": {"type": "string"}},
+                   "required": ["tvdb_id"]})
+            async def add_show(args: dict) -> dict:
+                return await run("add_show", _add_show, args)
+
+            tools.append(add_show)
 
     async def _remember(args: dict) -> dict:
         return record_proposal(ctx, args)

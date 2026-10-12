@@ -1,7 +1,7 @@
 """Entry point.
 
   python -m app                serve /v1/ask on the internal network (default)
-  python -m app --selftest     check the CLI, Google and Home Assistant; no API spend
+  python -m app --selftest     check the CLI, Google, Home Assistant, Radarr and Sonarr; no API spend
   python -m app --ask "..."    run one task from the terminal and print it (costs money)
   python -m app --google-auth  one-time Google sign-in (read, calendar writes, drafts)
 
@@ -66,6 +66,21 @@ async def _selftest_async(cfg: Config) -> int:
         else:
             print("Google           off (no refresh token) — calendar and mail tools not registered")
 
+        from .server import media_from
+        media = media_from(cfg, session)
+        for label, app, var, root in (("Radarr", media.radarr, "RADARR_API_KEY", cfg.radarr_root),
+                                      ("Sonarr", media.sonarr, "SONARR_API_KEY", cfg.sonarr_root)):
+            if app is None:
+                print(f"{label:<17}off (no {var})")
+                continue
+            try:
+                version = await app.status()
+                await app.profile_id(cfg.media_quality_profile)
+                print(f"{label:<17}ok (v{version}, profile {cfg.media_quality_profile!r}, folder {root})")
+            except Exception as exc:  # noqa: BLE001
+                print(f"{label:<17}FAILED: {exc}")
+                failed = True
+
     if cfg.home_enabled:
         try:
             text = await Home(cfg.ha_url, cfg.ha_token).live_context()
@@ -87,7 +102,9 @@ async def _ask_async(cfg: Config, question: str) -> int:
         google = Google(session, cfg.google_client_id, cfg.google_client_secret,
                         cfg.google_refresh_token) if cfg.google_enabled else None
         home = Home(cfg.ha_url, cfg.ha_token) if cfg.home_enabled else None
-        out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[])
+        from .server import media_from
+        media = media_from(cfg, session) if cfg.media_enabled else None
+        out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[], media=media)
     print(out.answer)
     for p in out.proposals:
         print(f"[proposal] {p['tool']}({p['args']})")

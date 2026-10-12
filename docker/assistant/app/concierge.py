@@ -31,7 +31,8 @@ APPROVAL_TIMEOUT_S = 15 * 60
 # out here (a post to #memory); the rest go back to the concierge's
 # /v1/execute with the id it issued. A proposal naming anything else is shown
 # as refused, never executed.
-APPROVABLE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene"})
+APPROVABLE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene",
+                        "add_movie", "add_show"})
 
 # How each executable proposal is shown: a heading, then the fields in order.
 # Every field the concierge acts on is listed, except draft_email's
@@ -45,12 +46,18 @@ _LAYOUT: dict[str, tuple[str, tuple[str, ...]]] = {
     "draft_email": ("**Save this Gmail draft?** It is not sent; you send it from Gmail.",
                     ("to", "subject", "in_reply_to", "body")),
     "run_scene": ("**Run this Home Assistant scene?**", ("entity_id",)),
+    "add_movie": ("**Download this movie?** Radarr adds it and searches now.",
+                  ("title", "year", "tmdb_id", "quality", "folder")),
+    "add_show": ("**Download this show?** Sonarr adds every season and searches now.",
+                 ("title", "year", "tvdb_id", "quality", "folder")),
 }
 _REQUIRED = {
     "create_event": ("title", "start", "end", "calendar"),
     "move_event": ("event_id", "start", "end", "calendar"),
     "draft_email": ("to", "body"),
     "run_scene": ("entity_id",),
+    "add_movie": ("title", "tmdb_id", "quality", "folder"),
+    "add_show": ("title", "tvdb_id", "quality", "folder"),
 }
 
 MAX_FACT_CHARS = 300

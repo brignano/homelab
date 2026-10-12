@@ -57,6 +57,13 @@ def _scenes() -> tuple[str, ...]:
     return scenes
 
 
+def _root(name: str, default: str) -> str:
+    root = os.environ.get(name, "").strip().rstrip("/") or default
+    if not root.startswith("/"):
+        raise SystemExit(f"config error: {name}={root!r} must be an absolute path inside the app's container")
+    return root
+
+
 @dataclass(frozen=True)
 class Config:
     # Not read here: ANTHROPIC_API_KEY. The bundled Claude Code CLI reads it from
@@ -83,6 +90,20 @@ class Config:
     # Scenes the agent may propose running. The allowlist IS the ceiling for
     # HA writes: Assist exposure does not govern the REST call (app/scenes.py).
     ha_scenes: tuple[str, ...] = ()
+
+    # Radarr / Sonarr. Each is on when its API key is set. The profile and the
+    # folders are what every approved add uses; the model does not choose them.
+    radarr_url: str = "http://radarr:7878"
+    radarr_api_key: str = ""
+    radarr_root: str = "/data/library/movies"
+    sonarr_url: str = "http://sonarr:8989"
+    sonarr_api_key: str = ""
+    sonarr_root: str = "/data/library/shows"
+    media_quality_profile: str = "HD-1080p"
+
+    @property
+    def media_enabled(self) -> bool:
+        return bool(self.radarr_api_key or self.sonarr_api_key)
 
     @property
     def google_enabled(self) -> bool:
@@ -124,4 +145,11 @@ class Config:
             ha_url=os.environ.get("HA_URL", "").strip().rstrip("/") or "http://host.docker.internal:8123",
             ha_token=os.environ.get("HA_TOKEN", "").strip(),
             ha_scenes=_scenes(),
+            radarr_url=os.environ.get("RADARR_URL", "").strip().rstrip("/") or "http://radarr:7878",
+            radarr_api_key=os.environ.get("RADARR_API_KEY", "").strip(),
+            radarr_root=_root("RADARR_ROOT", "/data/library/movies"),
+            sonarr_url=os.environ.get("SONARR_URL", "").strip().rstrip("/") or "http://sonarr:8989",
+            sonarr_api_key=os.environ.get("SONARR_API_KEY", "").strip(),
+            sonarr_root=_root("SONARR_ROOT", "/data/library/shows"),
+            media_quality_profile=os.environ.get("MEDIA_QUALITY_PROFILE", "").strip() or "HD-1080p",
         )
