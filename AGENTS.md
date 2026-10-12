@@ -140,6 +140,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | gluetun (Proton VPN) | `docker/downloads/` (built; waits on `/dev/net/tun` + key) | **no ports**; WireGuard tunnel out only; `/dev/net/tun` via `dev1`. Its network namespace is qBittorrent's only network |
 | qBittorrent | `docker/downloads/` | LAN + tailnet (via Caddy, `torrent.$HOMELAB_DOMAIN` → `gluetun:8080`); inside gluetun's namespace, so offline whenever the VPN is |
 | Sonarr / Radarr / Prowlarr | `docker/downloads/` | LAN + tailnet (via Caddy, `sonarr.` / `radarr.` / `prowlarr.`); join `proxy_proxy`; hardlink downloads into Jellyfin's library |
+| FlareSolverr | `docker/downloads/` | internal (`flaresolverr:8191` on `proxy_proxy`, no route); Prowlarr's Cloudflare-challenge solver, outside the VPN |
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC. `/dev/net/tun` is passed in as `dev1` only for gluetun, `docker/downloads/`; Tailscale stays on the host.)

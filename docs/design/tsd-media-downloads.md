@@ -122,6 +122,16 @@ missing drive stops the stack instead of filling the thin pool.
 The drive is `backup=0`, so downloaded media has no backup by design. The
 apps' configs (named volumes) are in the nightly vzdump.
 
+## FlareSolverr
+
+Some indexers sit behind Cloudflare's "checking your browser" page, which
+Prowlarr's plain HTTP client cannot pass. FlareSolverr (headless Chromium)
+solves it and hands back the page and cookies. Only indexers tagged
+`flaresolverr` in Prowlarr use it. It has no UI and no route; its API, which
+fetches any URL unauthenticated, is reachable only on `proxy_proxy`. It runs
+outside the tunnel like Prowlarr: it fetches indexer pages, not files, and
+Cloudflare challenges VPN exit IPs harder. It cannot solve real captchas.
+
 ## Exposure
 
 `torrent.`, `sonarr.`, `radarr.` and `prowlarr.` on `$HOMELAB_DOMAIN`, through
@@ -137,8 +147,9 @@ joining a downloads network, so the proxy stack (and DNS) never depends on it.
 | qBittorrent | 1 | 1g |
 | sonarr, radarr | 0.5 each | 512m each |
 | prowlarr | 0.5 | 256m |
+| flaresolverr | 0.5 | 1g |
 
-At most 3 CPUs for the stack, and they are ceilings: idle, it uses almost
+At most 3.5 CPUs for the stack, and they are ceilings: idle, it uses almost
 nothing. Jellyfin is capped at two, Ollama pins four threads (`AGENTS.md` →
 Ollama); the sum can exceed CT 100's six only when everything is busy at once,
 which the caps keep from being any one stack's fault.
@@ -148,7 +159,8 @@ which the caps keep from being any one stack's fault.
 - **VPN down:** gluetun's health server on `:9999` answers 200 only while the
   tunnel works. A blackbox probe with `service=gluetun` makes that
   `hl-probe-down`, with no new rule.
-- **Apps:** probes of each `/ping`, and qBittorrent's web UI via `gluetun:8080`.
+- **Apps:** probes of each `/ping`, FlareSolverr's `/health`, and
+  qBittorrent's web UI via `gluetun:8080`.
 - **Stopped containers:** `homelab_container_running`, required once
   `docker/downloads/.env` exists (`SETUP_GATED_STACKS`), silent before.
 - **Control server:** gluetun's (`:8000`, which can stop the VPN) is bound to

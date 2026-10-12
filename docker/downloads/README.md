@@ -9,6 +9,7 @@ Design and reasoning: `docs/design/tsd-media-downloads.md`.
 | Sonarr | `https://sonarr.$HOMELAB_DOMAIN` | shows: you pick a show, it fetches every episode, now and as they air |
 | Radarr | `https://radarr.$HOMELAB_DOMAIN` | movies, the same way |
 | Prowlarr | `https://prowlarr.$HOMELAB_DOMAIN` | the indexers (search sources), shared by both |
+| FlareSolverr | none (API at `flaresolverr:8191`) | gets Prowlarr past Cloudflare's browser check on indexers that have one |
 | qBittorrent | `https://torrent.$HOMELAB_DOMAIN` | the downloads themselves, inside the VPN |
 | gluetun | none | the Proton VPN tunnel; qBittorrent has no other network |
 
@@ -109,7 +110,12 @@ and category `movies`.
 - *Settings → Apps → + Sonarr*: Prowlarr server `http://prowlarr:9696`, Sonarr
   server `http://sonarr:8989`, Sonarr's API key (*Sonarr → Settings → General*).
   Then the same for **Radarr** at `http://radarr:7878`.
-- *Indexers → +*: your choice. Prowlarr pushes them to both apps.
+- *Settings → Indexers → + → FlareSolverr*: tag **`flaresolverr`**, host
+  **`http://flaresolverr:8191/`**, *Test*, save.
+- *Indexers → +*: your choice. Prowlarr pushes them to both apps. An indexer
+  that fails with "blocked by CloudFlare Protection" gets the `flaresolverr`
+  tag; only tagged indexers go through it, so leave the rest untagged (every
+  FlareSolverr request starts a browser and takes seconds).
 
 Then in Sonarr *Series → Add New*, or Radarr *Movies → Add New*. A finished
 download is hardlinked into the library, Jellyfin is told to scan, and it
@@ -120,7 +126,7 @@ appears there.
 | Signal | Where |
 |---|---|
 | **VPN down** | blackbox probe of gluetun's health server `http://gluetun:9999/`, `service=gluetun` (`hl-probe-down`). qBittorrent is offline while it is, by design |
-| App not answering | probes of `/ping` on sonarr, radarr, prowlarr, and qBittorrent's web UI at `gluetun:8080` (`hl-probe-down`) |
+| App not answering | probes of `/ping` on sonarr, radarr, prowlarr, `/health` on flaresolverr, and qBittorrent's web UI at `gluetun:8080` (`hl-probe-down`) |
 | Container stopped | `homelab_container_running`. **Required only once `docker/downloads/.env` exists** (`SETUP_GATED_STACKS` in `heartbeat.sh`); until then nothing pages, probes included |
 
 ## Troubleshooting
@@ -133,4 +139,7 @@ appears there.
 | Downloads stuck at 0 B/s, firewall icon in qBittorrent | No forwarded port reached qBittorrent: check *Bypass authentication for clients on localhost* (step 4), then `docker logs gluetun 2>&1 \| grep -i 'port forward'`. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |
+| Indexer: "blocked by CloudFlare Protection" | It is not tagged `flaresolverr`, or the FlareSolverr proxy in Prowlarr has no tag (then it applies to nothing). |
+| FlareSolverr: "Captcha detected but no automatic solver is configured" | That site shows a real captcha, not just the browser check. FlareSolverr cannot solve those; use another indexer. |
+| FlareSolverr: timeouts, `docker logs flaresolverr` shows Chrome crashing | Out of memory under its 1g cap (many solves at once). Fewer tagged indexers, or raise `mem_limit`. |
 | `torrent.` gives 502 | qBittorrent is down, or Caddy was restarted rather than recreated after the route was added. |

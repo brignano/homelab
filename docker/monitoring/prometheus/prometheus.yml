@@ -127,6 +127,12 @@ scrape_configs:
           - http://prowlarr:9696/ping
         labels:
           service: prowlarr
+      # FlareSolverr's /health answers {"status":"ok"} 200 without starting a
+      # browser, so the probe costs nothing.
+      - targets:
+          - http://flaresolverr:8191/health
+        labels:
+          service: flaresolverr
       # Home Assistant, in an entry of its own for the `service` label. HA runs
       # on host networking, so this goes through the host (extra_hosts on
       # blackbox-exporter), and `instance` alone would read as
