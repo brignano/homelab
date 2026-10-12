@@ -27,6 +27,33 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Concierge: download queue reports its total and why entries are flagged
+
+**Goal:** Make *"what's downloading?"* in `#ask` answerable without guessing.
+
+**Issues encountered:**
+- With 40+ entries queued, both lists came back with exactly 20 items and the
+  bot could only say "the tool may be capping them". `media_downloads` asked
+  for one page of 20 and dropped `totalRecords`.
+- An entry flagged as a warning came back with no reason: the tool passed
+  `status` but not `trackedDownloadStatus`, `errorMessage` or `statusMessages`.
+
+**Resolution:**
+- `media.queue_page()` returns `{total, items}` per app; the tool description
+  tells the agent to say how many it did not show.
+- Each item carries `trackedDownloadStatus` and up to three `reasons` in
+  Radarr/Sonarr's own words. A message that quotes a path, the entry's release
+  or file names, or any dotted name (`Show.S01E02`, `x.mkv`) is dropped, since
+  names a stranger wrote stay out of the agent's context (smoke tests pin both).
+
+**Notes / next steps:**
+- The queue itself: only one item was moving because qBittorrent's queueing
+  limit (*Options → BitTorrent → Torrent Queueing*) counts stalled torrents.
+  Raise *Maximum active downloads* and tick *Do not count slow torrents*.
+- Deploy: `docker/concierge` needs `--build` (`./scripts/deploy-plan.sh`).
+
+---
+
 ## 2026-10-12 — TV guide: grab in batches after a second out-of-memory
 
 **Goal:** Get a complete first grab.

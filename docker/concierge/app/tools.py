@@ -31,7 +31,7 @@ from .google import Google, GoogleError
 from .forecast import Forecast, ForecastError
 from .home import Home, HomeError
 from .homelab import Homelab, StatusError
-from .media import Media, MediaError
+from .media import MAX_QUEUE, Media, MediaError
 from .tiers import SERVER
 
 MAX_FACT_CHARS = 300
@@ -374,8 +374,11 @@ def build(ctx: TaskContext):
             return _ok(out)
 
         @tool("media_downloads",
-              "What Radarr and Sonarr are downloading right now: title, episode, progress "
-              "and time left. Empty means nothing is in progress. Read-only.",
+              "What Radarr and Sonarr are downloading right now: for each, `total` entries "
+              f"and up to {MAX_QUEUE} `items` (title, episode, progress, time left, "
+              "status, and `reasons` when they flagged one). When total exceeds the items "
+              "shown, say how many more there are. `status` queued means the download client "
+              "is holding it back; warning usually means stalled. Read-only.",
               {"type": "object", "properties": {}})
         async def media_downloads(args: dict) -> dict:
             return await run("media_downloads", _media_downloads, args)
