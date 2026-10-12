@@ -70,6 +70,8 @@ health is the only warning before the library is lost.
    `hl-smart-reallocating` (remapped sectors climbing over a week),
    `hl-smart-unreadable` (the enclosure hides SMART, so nothing is watching),
    `hl-smart-stale` (no SMART reading for 36h).
+   Later the same day: `hl-smart-hot` (warning above 55C at the 02:30
+   reading), after the media drive read 57C in its USB enclosure.
 3. Capacity dashboard: a *Drives* row with media drive used, free, a 30-day
    trend and a SMART table.
 4. `check-observability.sh` also scans `scripts/host/` for emitted metrics.
