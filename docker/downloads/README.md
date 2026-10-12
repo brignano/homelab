@@ -155,10 +155,16 @@ Completed*. Size caps, still MB per minute, so a long film is allowed more:
 | WEBRip-1080p | 30 | 60 | 3.6–7 GB |
 | Bluray-1080p | 30 | 60 | 3.6–7 GB |
 
-In the profile (usually *HD-1080p*), untick **Remux-1080p** and every 2160p
-quality: they have no cap, and a remux is 20–40 GB. If *Upgrades Allowed* is
-on, set *Upgrade Until Custom Format Score* to 0, or Radarr re-downloads
-every film it has to get an HEVC copy.
+**Radarr's own *HD-1080p* profile ships with Remux-1080p ticked**, and
+Remux's Max is 2000 (unlimited), so the caps above do nothing until it is
+unticked: a remux is 20–40 GB a film. In *Settings → Profiles → HD-1080p*,
+untick **Remux-1080p**, give `x265` **100**, and if *Upgrades Allowed* is on,
+set *Upgrade Until Custom Format Score* to 0, or Radarr re-downloads every film
+it has to get an HEVC copy. Never use *Any* or *HD - 720p/1080p*: both allow
+remuxes, and *Any* allows 2160p remuxes of 50–80 GB too. Check what films
+already use under *Movies → Table view → Quality Profile* column, and move
+them with *Select Movies → Quality Profile*. Pick *HD-1080p* once in the
+*Add New* dialog and Radarr keeps it for later adds.
 
 **Prowlarr** (`prowlarr.`):
 - *Settings → Apps → + Sonarr*: Prowlarr server `http://prowlarr:9696`, Sonarr
