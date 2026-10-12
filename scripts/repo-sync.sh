@@ -315,9 +315,11 @@ in_list() {
 #               proxy, which is never auto-upgraded either. Both are now updated
 #               by hand; the report's "older than 90d" section says when.
 #
-# Everything else — ai, mcp, dashboard, jellyfin — pulls. dashboard, jellyfin and
+# Everything else — ai, mcp, dashboard, jellyfin, epg — pulls. dashboard, jellyfin and
 # mcp are version-pinned (jellyfin by digest), so a pull is a no-op for them until
-# the pin moves, which is the point: this is a mechanism, not a gamble.
+# the pin moves, which is the point: this is a mechanism, not a gamble. epg floats
+# on :master on purpose: its scrapers break when listings sites change, and the
+# fixes land there (docker/epg/README.md).
 #
 # Stacks that build their own image are skipped entirely: there is no upstream
 # image to fetch, and `--pull` on their rebuild (below) refreshes the base.

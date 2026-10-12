@@ -64,6 +64,15 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # Live TV DVR recordings: the one place Jellyfin writes media. A sibling of
+      # the library rather than inside it, so the library mount stays read-only.
+      # Same drive, same backup=0, same refusal to start if it is missing.
+      # Set Dashboard → Live TV → Recording path to /recordings.
+      - type: bind
+        source: /media/jellyfin/recordings
+        target: /recordings
+        bind:
+          create_host_path: false
     networks:
       - proxy
     # No ports. Everything goes through Caddy, as Open WebUI does. Client

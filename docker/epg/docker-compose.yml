@@ -1,0 +1,54 @@
+services:
+  # TV guide for Jellyfin's Live TV: iptv-org/epg's grabber, fetching
+  # programme listings for the channels in Jellyfin's M3U playlists and serving
+  # them as XMLTV. See README.md.
+  #
+  #   Jellyfin → http://epg:3000/guide.xml   (over proxy_proxy; no port, no route)
+  #
+  # The image runs two things under pm2: a static server for public/ on :3000,
+  # and the grab on CRON_SCHEDULE. Our start.sh runs first: it rebuilds
+  # public/channels.xml from the playlists, so the guide follows the playlist
+  # without a list kept by hand, and asks for a grab at startup only when there
+  # is no guide yet.
+  #
+  # public/ is a host directory, not a volume, so heartbeat.sh can read
+  # guide.xml's age from the host and hl-epg-stale can say the grab stopped
+  # even while this container is down. That timestamp is this job's dead man's
+  # switch: the schedule lives inside the container, out of cron's sight.
+  #
+  # Version: :master, following the lab's default, so the nightly auto-pull
+  # brings it current. Here that is a feature: the scrapers break whenever a
+  # listings site changes its pages, and fixes land on master.
+  epg:
+    image: ghcr.io/iptv-org/epg:master
+    container_name: epg
+    restart: unless-stopped
+    # A grab is mostly waiting on HTTP. One core and a gigabyte keep a bad night
+    # from touching Ollama's four cores or anyone else's memory.
+    cpus: 1
+    mem_limit: 1g
+    command: ["sh", "/hl/start.sh"]
+    environment:
+      TZ: ${TZ:-UTC}
+      EPG_PLAYLISTS: ${EPG_PLAYLISTS:?set EPG_PLAYLISTS in docker/epg/.env (the same M3U URLs as Jellyfin's tuners)}
+      # 01:00 local: clear of the 02:30 vzdump, Jellyfin's 03:30 tasks and the
+      # 04:00 repo-sync.
+      CRON_SCHEDULE: ${EPG_CRON_SCHEDULE:-0 1 * * *}
+      DAYS: ${EPG_DAYS:-3}
+      # The grabber's own advice: more connections get you blocked by the
+      # listings sites.
+      MAX_CONNECTIONS: ${EPG_MAX_CONNECTIONS:-2}
+    volumes:
+      # Directory mount: start.sh and make-channels.mjs are read at container
+      # start, so a change to either needs a recreate (README → Deploy).
+      - ./bin:/hl:ro
+      - ${EPG_STATE_DIR:-/var/lib/homelab/epg}:/epg/public
+    networks:
+      - proxy
+
+# Joins proxy_proxy, where Jellyfin already is, rather than giving this stack a
+# network for others to join: same reasoning as docker/jellyfin/.
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy
