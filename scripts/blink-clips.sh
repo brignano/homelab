@@ -129,9 +129,10 @@ if [ ! -d "$STAGE" ]; then
 fi
 configured=1
 
-shopt -s nullglob
-pending=("$STAGE"/*.mp4)
-if [ "${#pending[@]}" -eq 0 ] && [ "$RETAIN_DAYS" = 0 ]; then
+# POSIX sh syntax throughout, though it runs under bash: CI checks every
+# script with `sh -n` (dash), which rejects arrays and [[ =~ ]].
+pending=$(find "$STAGE" -maxdepth 1 -type f -name '*.mp4' | wc -l | tr -d ' ')
+if [ "$pending" -eq 0 ] && [ "$RETAIN_DAYS" = 0 ]; then
   exit 0
 fi
 
@@ -139,7 +140,7 @@ fi
 # library directory is absent and nothing must be created in its place: the
 # clips wait in staging and the run fails, which hl-blink-clips-failed reports.
 if [ ! -d "$LIBRARY" ]; then
-  echo "$(date -Is) blink-clips: $LIBRARY is missing (media drive not mounted?); ${#pending[@]} clip(s) left in staging" >&2
+  echo "$(date -Is) blink-clips: $LIBRARY is missing (media drive not mounted?); $pending clip(s) left in staging" >&2
   exit 1
 fi
 mkdir -p "$DEST" && chmod 755 "$DEST" || exit 1
@@ -147,18 +148,24 @@ mkdir -p "$DEST" && chmod 755 "$DEST" || exit 1
 failed=0
 # blinkpy names each clip ${created}_${name}.mp4: local time as YYYYMMDD_HHMMSS,
 # then the camera name with everything but letters, digits and _ removed.
-for src in "${pending[@]}"; do
+for src in "$STAGE"/*.mp4; do
+  [ -f "$src" ] || continue   # the unexpanded glob when staging is empty
   # Skip anything written to in the last minute; HA may still be saving it.
   [ -n "$(find "$src" -mmin +1 2>/dev/null)" ] || continue
 
   base=$(basename "$src")
-  if [[ ! "$base" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})_([0-9]{2})([0-9]{2})([0-9]{2})_(.+)\.mp4$ ]]; then
-    echo "blink-clips: leaving $base in staging, not a name blinkpy writes" >&2
-    continue
-  fi
-  y=${BASH_REMATCH[1]} m=${BASH_REMATCH[2]} d=${BASH_REMATCH[3]}
-  hh=${BASH_REMATCH[4]} mm=${BASH_REMATCH[5]} ss=${BASH_REMATCH[6]}
-  cam=${BASH_REMATCH[7]}
+  case "$base" in
+    [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]_[0-9][0-9][0-9][0-9][0-9][0-9]_?*.mp4) ;;
+    *)
+      echo "blink-clips: leaving $base in staging, not a name blinkpy writes" >&2
+      continue
+      ;;
+  esac
+  y=$(printf '%s' "$base" | cut -c1-4)  m=$(printf '%s' "$base" | cut -c5-6)
+  d=$(printf '%s' "$base" | cut -c7-8)  hh=$(printf '%s' "$base" | cut -c10-11)
+  mm=$(printf '%s' "$base" | cut -c12-13) ss=$(printf '%s' "$base" | cut -c14-15)
+  cam=${base#???????????????_}
+  cam=${cam%.mp4}
 
   dir="$DEST/$cam/$y-$m"
   out="$dir/$y-$m-$d $hh-$mm-$ss.mp4"
