@@ -2,7 +2,10 @@
 // :3000, the grab on CRON_SCHEDULE, and a grab at startup when RUN_AT_STARTUP
 // is true (start.sh decides). The difference is the grab command: grab-all.mjs
 // runs it in batches instead of one process for every channel, which ran out
-// of memory twice (see grab-all.mjs).
+// of memory twice (see grab-all.mjs). A fourth app checks the streams at start
+// (check-streams.mjs), so a recreate publishes a fresh playlist.m3u without
+// waiting for 01:00; a grab does that check itself, so it runs only when no
+// startup grab does.
 const grab = 'node /hl/grab-all.mjs'
 // Every app runs from the image's /epg, where `public/` and `npm run grab`
 // live. Stated rather than left to pm2, which may default to this file's
@@ -32,6 +35,16 @@ if (process.env.RUN_AT_STARTUP === 'true') {
   apps.push({
     name: 'grab-at-startup',
     script: grab,
+    cwd,
+    instances: 1,
+    autorestart: false,
+    watch: false,
+    max_restarts: 1
+  })
+} else {
+  apps.push({
+    name: 'streams-at-startup',
+    script: 'node /hl/check-streams.mjs',
     cwd,
     instances: 1,
     autorestart: false,

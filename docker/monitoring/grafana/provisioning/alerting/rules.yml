@@ -442,6 +442,42 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- The Live TV channel list stopped being checked ---
+      #
+      # Jellyfin's tuner reads docker/epg's playlist.m3u, the channels whose
+      # streams answered at the last check (bin/check-streams.mjs). The check
+      # runs at the start of every nightly grab and keeps the old file rather
+      # than publish a list that looks like the box was offline, so when it
+      # keeps failing nothing breaks loudly: dead channels just pile up again.
+      # 30h, like hl-epg-stale. Absent until docker/epg/.env exists.
+      - uid: hl-epg-playlist-stale
+        title: Live TV channel list has not updated
+        condition: C
+        for: 30m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "Live TV playlist (docker/epg playlist.m3u) last written {{ printf \"%.0f\" $values.A.Value }}h ago; check `docker logs epg 2>&1 | grep check-streams`"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_epg_playlist_timestamp_seconds) / 3600
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [30] }
+
       # --- The digest stopped reading one of its sources ---
       #
       # The digest's "Today" section (docs/design/tsd-personal-assistant.md):
