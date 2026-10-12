@@ -334,6 +334,62 @@ screen.
   Echos are not `unavailable` (see "Updating").
 - **Outbound only**, to Amazon's API. It opens no port.
 
+### Asking Alexa questions: spoken reports
+
+Matter gives Alexa switches, lights, thermostats and sensors, and nothing
+else. Alexa has no way to ask Home Assistant "what's the Tesla's battery?"
+or "how's Jax?", and a routine cannot speak a value it read. So a question
+takes three parts:
+
+1. **A report script in HA** that reads the entities and speaks the answer
+   on the Echo you just talked to, through Alexa Media Player.
+2. **The `Alexa` label on that script.** Matterbridge offers it to Alexa as
+   a switch that turns itself back off.
+3. **Alexa routines**, one per phrase: **When you say** "car report" →
+   **Smart Home** → the report's switch → **On**. Use short command phrases
+   Alexa has no answer of its own for: "car report", "check the car", "Jax
+   report". Questions lose to Alexa's built-in answers: "what's the Tesla's
+   battery" read out Tesla's stock price instead of running the routine
+   (2026-10-12). Phrases cannot contain punctuation, so no apostrophes. There
+   is no catch-all: a phrase with no routine goes to Alexa's own answers.
+
+Reports so far: **Jax report** (UI-managed, reads the `jax_*` sensors in
+`configuration.yaml`) and **Tesla report**, below. Scripts live in the
+volume's `scripts.yaml`, not git. Paste this one at **Settings → Automations
+& scenes → Scripts → + Add script → ⋮ → Edit in YAML**:
+
+```yaml
+alias: Tesla report
+mode: single
+sequence:
+  - variables:
+      # The Echo that heard the routine phrase. Alexa Media Player marks it.
+      echo: >-
+        {{ states.media_player | selectattr('attributes.last_called', 'eq', true)
+           | map(attribute='entity_id') | list | first | default('') }}
+      level: "{{ states('sensor.spaceship_battery_level') }}"
+      range: "{{ states('sensor.spaceship_battery_range') }}"
+      charging: "{{ states('sensor.spaceship_charging') }}"
+      message: >-
+        {% if level in ['unknown', 'unavailable'] %}I can't reach the car right now.
+        {%- else %}The Tesla is at {{ level | float(0) | round(0) | int }} percent,
+        about {{ range | float(0) | round(0) | int }} miles of range
+        {%- if charging == 'charging' %}, and it's charging{% endif %}.{% endif %}
+  - condition: template
+    value_template: "{{ echo != '' }}"
+  - action: notify.alexa_media
+    data:
+      message: "{{ message }}"
+      target: "{{ [echo] }}"
+      data:
+        type: tts
+```
+
+The entity IDs assume the car is named **Spaceship** in the Tesla Fleet
+integration. If **Settings → Entities** shows other IDs, change the three
+`sensor.spaceship_*` lines. The values are the car's last report: Tesla
+Fleet does not wake a sleeping car to read them.
+
 ## Blink recordings
 
 Every Blink clip lands in Jellyfin as **Cameras → <camera> → <month>**, kept
@@ -444,5 +500,6 @@ until `tsd-backups-and-monitoring.md` lands.
 | `ha.` answers **502** | Caddy cannot reach HA through the host. Check that `homeassistant` is running and that `caddy` was recreated with the `extra_hosts` line: `docker exec caddy getent hosts host.docker.internal` must print an address. |
 | Alexa: "device is unresponsive", or does not know a device | Alexa goes through Matterbridge: see its [troubleshooting](../matterbridge/README.md#troubleshooting). |
 | Echos are `unavailable` | Alexa Media Player lost its Amazon session. Look for a notification asking for a CAPTCHA or a new login, then **Settings → Devices & services → Alexa Media Player → Reconfigure**. Right after an HA update, check HACS for an update first. |
+| Alexa says "I don't know that" or answers from the web instead of reading a report | No routine has that phrase, or the phrase sounds like a question Alexa answers itself (Tesla's stock price). Use a command phrase like "car report" (see "Asking Alexa questions"). Tap ▶ on the routine in the Alexa app to test the HA side alone. |
 | An announcement runs with no error and nothing plays | **Communications** is off for that Echo in the Alexa app, or it is on Do Not Disturb. |
 | An edit to `configuration.yaml` did nothing | It is a single-file mount: `up -d --force-recreate homeassistant`, not `restart`. |
