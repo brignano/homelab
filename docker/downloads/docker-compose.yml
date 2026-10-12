@@ -6,6 +6,7 @@ services:
   #   Caddy → https://sonarr.$HOMELAB_DOMAIN     shows
   #   Caddy → https://radarr.$HOMELAB_DOMAIN     movies
   #   Caddy → https://prowlarr.$HOMELAB_DOMAIN   indexers, shared by both
+  #   (no route)                                 FlareSolverr, Prowlarr's helper
   #
   # LAN + tailnet only, like everything else behind Caddy. No ports published,
   # nothing forwarded on the router: the one inbound port a torrent client
@@ -19,8 +20,9 @@ services:
   #      offline, never on the home connection. There is no kill-switch setting
   #      to forget: the route to the internet without the VPN does not exist.
   #
-  #   2. Only qBittorrent is inside the tunnel. Sonarr, Radarr and Prowlarr
-  #      talk to metadata sites and indexers over the normal connection. They
+  #   2. Only qBittorrent is inside the tunnel. Sonarr, Radarr, Prowlarr and
+  #      FlareSolverr talk to metadata sites and indexers over the normal
+  #      connection. They
   #      never move the files, and putting them in the namespace too would make
   #      every one of them unreachable whenever the VPN reconnects.
   #
@@ -29,7 +31,7 @@ services:
   #      drive, a download would otherwise land on CT 100's thin pool and in
   #      every nightly vzdump.
   #
-  #   4. cpus / mem_limit on every container: 3 CPUs for the whole stack at
+  #   4. cpus / mem_limit on every container: 3.5 CPUs for the whole stack at
   #      most, and qBittorrent alone at 1. They are ceilings, mostly idle, and
   #      they keep a big download, a library import or a hash check from
   #      taking CT 100's whole quota while Ollama is generating
@@ -169,6 +171,33 @@ services:
       PGID: ${PGID:-1000}
     volumes:
       - prowlarr:/config
+    networks:
+      - proxy
+
+  # FlareSolverr: a headless Chromium that gets past Cloudflare's "checking your
+  # browser" page for the indexers that sit behind one. Prowlarr hands it the
+  # URL, it solves the challenge and returns the page and the cookies. Only
+  # indexers tagged `flaresolverr` in Prowlarr use it (README, step 5).
+  #
+  # No Caddy route and no published port: it has no UI, only an API at
+  # flaresolverr:8191 that fetches any URL it is given, unauthenticated. So it
+  # is reachable only over proxy_proxy, like everything else there.
+  #
+  # Outside the tunnel, like Prowlarr: it fetches indexer pages, never the
+  # files, and Cloudflare challenges VPN exit IPs harder than a home address.
+  #
+  # Chromium is the memory: idle ~150 MB, each solve opens a browser for a few
+  # seconds. 1g is a ceiling for a few concurrent solves; past it the kernel
+  # OOM-kills the browser, not CT 100's other stacks.
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:v3.5.2@sha256:c80ae007ce2ccdcd217a12426e4f039ef763ff90738c808d38810c3e59323767
+    container_name: flaresolverr
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 1g
+    environment:
+      TZ: ${TZ:-UTC}
+      LOG_LEVEL: info
     networks:
       - proxy
 

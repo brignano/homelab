@@ -27,6 +27,27 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — FlareSolverr added to the downloads stack
+
+**Goal:** Let Prowlarr use indexers that sit behind Cloudflare's browser check.
+
+**Steps:**
+1. `flaresolverr` in `docker/downloads/`: `ghcr.io/flaresolverr/flaresolverr`
+   v3.5.2 pinned by tag and digest (covered by the existing Renovate rule),
+   0.5 CPU / 1g, on `proxy_proxy`, no route and no published port.
+2. Blackbox probe of `http://flaresolverr:8191/health`, `service=flaresolverr`;
+   gated with the rest of the stack on `docker/downloads/.env`.
+3. README step 5: add it in Prowlarr under *Settings → Indexers* with tag
+   `flaresolverr`, and tag only the indexers that need it.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then `docker compose -f docker/downloads/docker-compose.yml up -d`
+  (starts only `flaresolverr`; gluetun and qBittorrent are untouched) and a
+  recreate of `prometheus` for the probe (`/deploy` handles both).
+- Outside the VPN on purpose, like Prowlarr. Cannot solve real captchas.
+
+---
+
 ## 2026-10-11 — Downloads stack built (gluetun + qBittorrent + *arr)
 
 **Goal:** Fill Jellyfin's library without manual copying, with torrent traffic
