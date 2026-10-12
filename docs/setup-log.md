@@ -27,6 +27,28 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — Sonarr/Radarr size caps and seeding limits
+
+**Goal:** Stop one show from eating the 5 TB media drive.
+
+**Issues encountered:**
+- Survivor seasons 42–46 came to 307 GiB between them, ~4 GB per 43-minute
+  episode: Sonarr's default quality sizes have no practical ceiling, so it
+  grabbed untouched web releases. All ~49 seasons at that rate is 1.5–2.7 TiB
+  of the 4 TiB free. A HEVC release of season 48 was half the size.
+
+**Resolution:**
+- Documented in `docker/downloads/README.md`: per-quality **Max** of 35 MB/min
+  for 1080p web/HDTV (~1.5 GB an episode), 45 for Bluray; an `x265` custom
+  format scored 100; qBittorrent seeding limit (ratio 1.0 or 14 days, then
+  pause) with *Remove Completed* in both apps.
+
+**Notes / next steps:**
+- Caps only affect future grabs. Unwanted seasons already queued have to be
+  unmonitored and removed from *Activity → Queue* by hand.
+
+---
+
 ## 2026-10-12 — qBittorrent queueing limits
 
 **Goal:** Stop a stalled torrent from holding up the rest of the download queue.
