@@ -27,6 +27,30 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-12 — #ask gets the weather forecast and server health
+
+**Goal:** Answer "will it rain tonight?" and "how's the server doing?" in
+`#ask`. GetLiveContext has current states only, and removing `#chat` took
+the live server readings with it.
+
+**Steps:**
+1. `app/forecast.py`: HA `weather.get_forecasts` over REST for one entity,
+   `HA_WEATHER_ENTITY` (default `weather.forecast_home`). A fixed path and a
+   config-only entity, trimmed to 7 days or 24 hours of known fields. Read
+   tool `weather_forecast`.
+2. `app/homelab.py`: fixed Prometheus instant queries through
+   `host.docker.internal:9090`. The `#chat` readings, plus thin-pool percentage
+   and `homelab_container_running{required="yes"} == 0`. Read tool
+   `homelab_status`, no arguments.
+3. Both are in the selftest, the system prompt and tests. Blanking either
+   variable turns its tool off.
+
+**Notes / next steps:**
+- Deploy: `git pull`, then `up -d --build` for the concierge. No `.env`
+  change is needed: the defaults match this box.
+
+---
+
 ## 2026-10-12 — Concierge reads Home Assistant (GetLiveContext renamed)
 
 **Goal:** Give `#ask` the house: weather and anything else exposed to Assist.

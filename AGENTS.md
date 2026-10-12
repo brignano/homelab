@@ -128,7 +128,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
-| concierge (Claude Agent SDK) | `docker/concierge/` | **outbound only** — no ports, no Caddy route; reached by the assistant over `assistant_concierge` (bearer token); also on `proxy_proxy` to reach Radarr/Sonarr, where the token is what keeps other containers out |
+| concierge (Claude Agent SDK) | `docker/concierge/` | **outbound only** — no ports, no Caddy route; reached by the assistant over `assistant_concierge` (bearer token); also on `proxy_proxy` to reach Radarr/Sonarr, where the token is what keeps other containers out; reads HA and Prometheus through the host |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
 | cloudflared | `docker/tunnel/` | public via Cloudflare Zero Trust (not yet deployed) |

@@ -28,7 +28,9 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 
 from . import actions, audit
 from .google import Google, GoogleError
+from .forecast import Forecast, ForecastError
 from .home import Home, HomeError
+from .homelab import Homelab, StatusError
 from .media import Media, MediaError
 from .tiers import SERVER
 
@@ -47,6 +49,8 @@ class TaskContext:
     max_proposals: int
     scenes: tuple[str, ...] = ()
     media: Media | None = None
+    forecast: Forecast | None = None
+    homelab: Homelab | None = None
     proposals: list[dict] = field(default_factory=list)
 
 
@@ -114,7 +118,7 @@ def build(ctx: TaskContext):
         started = time.monotonic()
         try:
             result = await fn(args)
-        except (GoogleError, HomeError, MediaError) as exc:
+        except (GoogleError, HomeError, MediaError, ForecastError, StatusError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
             return _err(str(exc))
@@ -296,6 +300,46 @@ def build(ctx: TaskContext):
                 return await run("run_scene", _scene, args)
 
             tools.append(run_scene)
+
+    if ctx.forecast is not None:
+        forecast = ctx.forecast
+
+        async def _forecast(args: dict) -> dict:
+            kind = args.get("kind") or "daily"
+            if kind not in ("daily", "hourly"):
+                return _err("kind must be daily or hourly.")
+            return _ok({"entity": forecast.entity, "kind": kind,
+                        "units": "Home Assistant's configured units",
+                        "forecast": await forecast.get(kind)})
+
+        @tool("weather_forecast",
+              "The weather forecast at home from Home Assistant: daily (7 days) or hourly "
+              "(24 hours), with condition, temperature, precipitation chance, wind and "
+              "humidity. Read-only.",
+              {"type": "object", "properties": {
+                  "kind": {"type": "string", "enum": ["daily", "hourly"], "description": "Default daily."},
+              }})
+        async def weather_forecast(args: dict) -> dict:
+            return await run("weather_forecast", _forecast, args)
+
+        tools.append(weather_forecast)
+
+    if ctx.homelab is not None:
+        homelab = ctx.homelab
+
+        async def _status(args: dict) -> dict:
+            return _ok(await homelab.status())
+
+        @tool("homelab_status",
+              "Health of the user's home server right now, from Prometheus: monitored "
+              "services up and down, CPU (1h average), RAM, root disk and thin-pool usage, "
+              "container restarts in the last 24h, and containers that should be running "
+              "but are not. Read-only.",
+              {"type": "object", "properties": {}})
+        async def homelab_status(args: dict) -> dict:
+            return await run("homelab_status", _status, args)
+
+        tools.append(homelab_status)
 
     if ctx.media is not None and (ctx.media.radarr or ctx.media.sonarr):
         media = ctx.media

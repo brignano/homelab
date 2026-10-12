@@ -7,7 +7,8 @@ services:
   # takes a message in #ask, POSTs it here over the assistant_concierge network,
   # and renders the answer and any approval prompts. This container has no
   # Discord connection of its own. Outbound only: api.anthropic.com, Google,
-  # Home Assistant on the host, and Radarr/Sonarr over proxy_proxy.
+  # Home Assistant and Prometheus on the host, and Radarr/Sonarr over
+  # proxy_proxy.
   concierge:
     build: .
     image: homelab-concierge:latest
@@ -51,6 +52,14 @@ services:
       HA_TOKEN: ${HA_TOKEN:-}
       # Scenes run_scene may propose (scene.* IDs). Blank = no run_scene tool.
       HA_SCENES: ${HA_SCENES:-}
+      # The one weather entity weather_forecast reads, through HA's REST API
+      # (weather.get_forecasts, which returns data and changes nothing). Needs
+      # HA_TOKEN. Blank = off. See app/forecast.py.
+      HA_WEATHER_ENTITY: ${HA_WEATHER_ENTITY-weather.forecast_home}
+
+      # homelab_status reads fixed instant queries from Prometheus through the
+      # port it publishes on the host. Blank = off. See app/homelab.py.
+      PROMETHEUS_URL: ${PROMETHEUS_URL-http://host.docker.internal:9090}
 
       # Optional: Radarr / Sonarr API keys (each app → Settings → General).
       # Blank = no movie or show tools. Reached by name over proxy_proxy.
