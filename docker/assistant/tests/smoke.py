@@ -433,7 +433,8 @@ def _():
     from app.provision import load_desired
     desired = load_desired(str(HERE.parent / "guild.yml"))
     names = [c["name"] for cat in desired["categories"] for c in cat["channels"]]
-    assert "chat" in names and "digest" in names and "alerts" in names, names
+    assert "ask" in names and "digest" in names and "alerts" in names, names
+    assert "chat" not in names, "#chat was removed from guild.yml on 2026-10-12"
     assert desired["bot"]["nickname"] == "Otto"
 
 
@@ -450,12 +451,12 @@ def _():
         ]
     assert plan(desired, existing, current_nickname="Otto") == [], "a matching server needs no changes"
 
-    # Drop #chat and it should be recreated — and nothing should be deleted.
-    trimmed = {k: [c for c in v if c["name"] != "chat"] for k, v in existing.items()}
+    # Drop #ask and it should be recreated — and nothing should be deleted.
+    trimmed = {k: [c for c in v if c["name"] != "ask"] for k, v in existing.items()}
     actions = plan(desired, trimmed, current_nickname="Otto")
     kinds = {a.kind for a in actions}
     assert kinds == {"create_channel"}, kinds
-    assert actions[0].channel == "chat"
+    assert actions[0].channel == "ask"
 
 
 @check("provision: unknown channels are reported, never deleted")

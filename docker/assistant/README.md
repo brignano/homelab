@@ -33,7 +33,7 @@ costs nothing either. Slow is only expensive when you're watching it.
 | Surface | Kind | What it's for |
 |---------|------|---------------|
 | daily digest | scheduled | Homelab health at `DIGEST_AT`, posted to one channel |
-| **`#chat`** | **conversational** | **Just type — every message gets a reply, with memory** |
+| `#chat` | conversational | Just type to the local model. **Off since 2026-10-12** and not in `guild.yml`: `#ask` covers it. See "Conversational mode" below to bring it back |
 | `/ask` | interactive | Question to the local model; queued, answers when ready |
 | `/summarize` | interactive | Condense pasted text — the 3B's genuine strength |
 | *Apps → Summarize message* | interactive | Right-click any message to summarize it in place |
@@ -266,6 +266,11 @@ Unset, nothing changes.
 successful read, and otherwise that would be tomorrow's scheduled one.
 
 ## Conversational mode
+
+> **Off since 2026-10-12.** `#chat` was removed from `guild.yml` because `#ask`
+> covers it, so provisioning no longer creates the channel. To bring it back,
+> restore the `chat` block in `guild.yml` from git history, run
+> `--provision --apply`, and set `DISCORD_CHAT_CHANNEL_ID` in `.env`.
 
 Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —
 type, get a reply, reply back, and it follows the conversation.

@@ -84,7 +84,7 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 This creates **#ask** (open) and **#memory** (bot-only) and prints their IDs.
 Put them in `docker/assistant/.env` as `DISCORD_ASK_CHANNEL_ID` and
 `DISCORD_MEMORY_CHANNEL_ID`. #ask needs the **Message Content** intent, the
-same toggle #chat uses.
+same Developer Portal toggle (Bot → Privileged Gateway Intents).
 
 ### 4. Google (optional, you)
 
@@ -212,10 +212,10 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | HA unreachable / token revoked | `home_overview` reports the error; nothing else is affected |
 | Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |
 | ✅ but nothing downloads | Radarr/Sonarr added it and searched; no indexer had a release yet. It stays monitored and grabs one when it appears. Check *Wanted* in the app |
-| Spend limit reached | the run fails with the API error; the digest and #chat are unaffected |
+| Spend limit reached | the run fails with the API error; the digest is unaffected |
 | Busy | a second request waits; past 3 in flight, "busy — try again in a minute" |
 | ✅ after the concierge restarted | "failed: expired" under the prompt; nothing runs. Ask again |
 | Write with a pre-phase-4 Google token | "failed: HTTP 403 … rerun --google-auth" |
 
-The act lane being down never affects the watch lane: the digest, #chat and
+The act lane being down never affects the watch lane: the digest and
 the alerts carry on without it.
