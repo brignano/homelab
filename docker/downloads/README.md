@@ -79,6 +79,14 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   gluetun hand qBittorrent each new forwarded port; nothing outside the
   container counts as localhost.
 - **Downloads:** default save path `/data/downloads`.
+- **BitTorrent → Torrent Queueing:** tick **Do not count slow torrents in
+  these limits** (thresholds 2 KiB/s and 60 s are fine), and set maximum active
+  downloads **5**, uploads **3**, torrents **8**. The defaults are 3 / 3 / 5,
+  and a stalled torrent keeps its slot unless slow torrents are excluded, so a
+  few dead releases stop everything behind them. On 2026-10-12, 39 entries
+  sat *queued* behind the one that was moving.
+  *Active torrents* counts seeding as well as downloading, so keep it above
+  *downloads* or seeding will hold the downloads back.
 - **Advanced:** Network interface **tun0**. Belt and braces: the namespace
   already has no other way out.
 
@@ -138,6 +146,7 @@ appears there.
 | `up` fails: `bind source path does not exist: /media/jellyfin/...` | The media drive is not mounted into CT 100, or step 2 was skipped. Deliberate. |
 | `qbittorrent` probe fails while `gluetun` is healthy | gluetun was restarted on its own (a crash, or `docker restart gluetun`); Compose's own replacements restart qBittorrent too (`depends_on … restart: true`). qBittorrent is still attached to the old network namespace and has no network at all. Recreate both together: `docker compose -f docker/downloads/docker-compose.yml up -d --force-recreate`. Never restart gluetun alone. |
 | Downloads stuck at 0 B/s, firewall icon in qBittorrent | No forwarded port reached qBittorrent: check *Bypass authentication for clients on localhost* (step 4), then `docker logs gluetun 2>&1 \| grep -i 'port forward'`. |
+| Most of the queue says *queued* at 0 B/s while one or two download, even with peers listed | qBittorrent's queue limits, not the network: see *Torrent Queueing* in step 4. Entries that still show 0 (0) seeds and peers once they get a slot are dead; remove them from Sonarr/Radarr's *Activity → Queue* with *Blocklist release* so a different release is searched for. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |
 | Indexer: "blocked by CloudFlare Protection" | It is not tagged `flaresolverr`, or the FlareSolverr proxy in Prowlarr has no tag (then it applies to nothing). |
