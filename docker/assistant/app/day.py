@@ -31,7 +31,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from . import stamp
-from .google import Event, Google, Mail
+from .google import Event, Google, Mail, mail_link
 from .home import Home, Reading, for_how_long
 
 log = logging.getLogger(__name__)
@@ -166,6 +166,19 @@ def _event(e: Event, tz) -> str:
     return f"{_hhmm(e.start, tz)} {discord_safe(e.title, TITLE_CHARS)}"
 
 
+def _mail(m: Mail) -> str:
+    """Sender and subject, the subject linking to the conversation in Gmail.
+
+    The link text is the escaped subject and the URL is built from a hex id
+    only, so a stranger's subject can neither change where it points nor add
+    a link of its own."""
+    subject = discord_safe(m.subject, SUBJECT_CHARS)
+    link = mail_link(m)
+    if link:
+        subject = f"[{subject}]({link})"
+    return f"{discord_safe(m.sender, SENDER_CHARS)}: {subject}"
+
+
 def render_lines(day: Day, mail: bool = True) -> list[str]:
     """The section's lines. Unmarked by design: the 🔴/🟠 marks above belong to
     the lab's verdict, and that verdict is not about your calendar. A line that
@@ -211,10 +224,7 @@ def render_lines(day: Day, mail: bool = True) -> list[str]:
         lines.append("**Mail (24h)** nothing new")
     else:
         count = f"{len(day.mail)}{'+' if day.mail_more else ''} new"
-        newest = " · ".join(
-            f"{discord_safe(m.sender, SENDER_CHARS)}: {discord_safe(m.subject, SUBJECT_CHARS)}"
-            for m in day.mail[:3]
-        )
+        newest = " · ".join(_mail(m) for m in day.mail[:3])
         lines.append(f"**Mail (24h)** {count} — {newest}")
 
     if "home" not in day.sources:
