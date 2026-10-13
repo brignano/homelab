@@ -257,12 +257,26 @@ jobs:
         # files; this keeps them in step. See scripts/check-probes.sh.
         run: ./scripts/check-probes.sh
 
+      - uses: docker/setup-buildx-action@v3
+
       - name: Build the proxy image
         # The real image, not stock Caddy. The Caddyfile uses directives that
         # only exist once the sablier and cloudflare plugins are compiled in —
         # stock Caddy rejects `acme_dns cloudflare` with "module not registered",
         # so validating against it would prove nothing about what we deploy.
-        run: docker build -t homelab-caddy docker/proxy
+        #
+        # The xcaddy compile was ~70s of every CI run, and it almost never has
+        # anything new to compile, so its layers live in the Actions cache.
+        # mode=max keeps the builder stage too, which is the stage that's slow.
+        # The cache misses (and the build runs in full) whenever the
+        # caddy:2-builder digest or the Dockerfile changes.
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/proxy
+          tags: homelab-caddy
+          load: true
+          cache-from: type=gha,scope=proxy
+          cache-to: type=gha,scope=proxy,mode=max
 
       - name: caddy adapt
         # `adapt`, not `validate`, and the distinction is the whole point.
