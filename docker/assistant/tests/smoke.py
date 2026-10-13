@@ -263,6 +263,38 @@ def _():
     assert out.startswith("## ✅ ") and "🔴" not in out and "🟠" not in out, out
 
 
+@check("logs: the error count follows each line's severity, not the word error")
+def _():
+    import re
+    from app.facts import Q_LOG_ERRORS
+    from app.logs import ERROR_MATCH, ERROR_RE
+    rx = re.compile(ERROR_RE)
+    # Real lines from this box (2026-10-13), trimmed.
+    errors = [
+        "[03:12:01.123] [ERR] [42] Jellyfin.LiveTv.Listings.ListingsManager: Error adding metadata",
+        'logger=provisioning.plugins t=2026-10-13T03:00:00Z level=error msg="Failed to read plugin provisioning files"',
+        '{"level":"error","ts":1760000000.1,"logger":"http.log.error","msg":"dial tcp 172.18.0.5:8096: connect: connection refused"}',
+        "[03:12:01.123] [Tesla Charger voltage] [error] setAttribute batVoltage error: cluster not found",
+        "ERROR:app.bot:digest failed",
+        "panic: runtime error: index out of range",
+        "Traceback (most recent call last):",
+    ]
+    noise = [
+        'logger=plugins.update.checker level=info msg="flag evaluation succeeded" flag="{ResolutionDetail:{Variant:default ErrorCode: ErrorMessage:}}"',
+        'level=info msg="App runner exited without error" app=shorturl',
+        "[03:12:01.123] [WRN] [7] WebSocketConnection: WS 10.0.0.2 error receiving data: The remote party closed the WebSocket",
+        "[03:12:01.123] [InteractionServer] [warn] Subscription 1 for session @1:ab: Error while sending initial data reports",
+        '{"level":"warn","logger":"http.handlers.reverse_proxy","msg":"aborting with incomplete response"}',
+        "[INF] errors=0 retried=0",
+    ]
+    for line in errors:
+        assert rx.search(line), line
+    for line in noise:
+        assert not rx.search(line), line
+    # Backticks delimit the LogQL raw string; one inside would end it early.
+    assert "`" not in ERROR_RE and ERROR_MATCH in Q_LOG_ERRORS
+
+
 @check("digest: every fact is stated once")
 def _():
     from app.digest import render

@@ -87,7 +87,26 @@ def group(lines: list[str], limit: int = 5) -> tuple[list[Pattern], int]:
 
 # --- Collection ---------------------------------------------------------------
 
-ERROR_MATCH = '|~ "(?i)(error|fatal|panic)"'
+# What counts as an error line: the line's own severity, not the word "error"
+# appearing somewhere in it. The old match was `(?i)(error|fatal|panic)`, and on
+# 2026-10-13 that put grafana at 698 when 581 of those were info lines carrying
+# an `Error` field, and matterbridge at 60 when every one was a [warn]. Each
+# alternative here is one log format this box actually runs:
+#   level=error / "level":"error"   logfmt (Grafana, Loki) and JSON (Caddy)
+#   [ERR] [FTL] / [error]           Jellyfin (Serilog) / matterbridge
+#   ERROR FATAL CRITICAL            Python logging and most uppercase formats
+#   panic: / Traceback (...)        a Go panic / a Python crash
+# Python's `re` reads this the same way Loki's RE2 does, which is what lets the
+# smoke tests check it against real lines.
+ERROR_RE = (
+    r'(?i:\blevel"?\s*[=:]\s*"?(?:error|err|eror|fatal|crit|critical|panic)\b)'
+    r"|\[(?:ERR|FTL|ERROR|FATAL|CRIT|CRITICAL|error|fatal|crit|critical)\]"
+    r"|\b(?:ERROR|FATAL|CRITICAL|PANIC)\b"
+    r"|\bpanic:"
+    r"|Traceback \(most recent call last\)"
+)
+# Backticks are LogQL's raw string, so the regex goes in unescaped.
+ERROR_MATCH = f"|~ `{ERROR_RE}`"
 
 
 def count_query(window: str) -> str:
