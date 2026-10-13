@@ -483,10 +483,10 @@ the file is the source you paste:
    title *Home*, icon `mdi:view-dashboard` (Overview already has `mdi:home`).
 2. Open it, then **✏️ → ⋮ → Raw configuration editor**, replace everything
    with the file's contents, and **Save**.
-3. Point the Blink and inside-temperature cards at the right entities. The
+3. Point the Blink card at the right entity. The
    IDs marked `# check` in the file were inferred, not read from this HA, and
-   those cards stay hidden until their entity exists. In edit mode, open the
-   Security and Climate sections' cards and pick the entity (the Blink one is
+   that card stays hidden until its entity exists. In edit mode, open it and
+   pick the entity (the Blink one is
    named after your sync module).
 4. To open it instead of Overview: **Settings → Dashboards**, select *Home*
    and set it as the default dashboard. Then hide Overview from the sidebar:
