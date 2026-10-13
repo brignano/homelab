@@ -88,9 +88,18 @@ class HaCalendars:
             raise CalendarError(f"could not reach Home Assistant ({exc.__class__.__name__})") from exc
         return trim(payload)
 
-    async def events(self, now: dt.datetime, days: int) -> dict[str, list[dict]]:
+    async def events(self, now: dt.datetime, days: int) -> dict[str, object]:
         """Every configured calendar from the start of today through `days` ahead."""
         days = max(0, min(days, MAX_DAYS))
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = start + dt.timedelta(days=days + 1)
-        return {entity: await self._one(entity, start, end) for entity in self.entities}
+        out: dict[str, object] = {}
+        for entity in self.entities:
+            # One bad calendar (renamed, timed out) must not hide the others.
+            try:
+                out[entity] = await self._one(entity, start, end)
+            except CalendarError as exc:
+                out[entity] = {"error": str(exc)}
+        if all(isinstance(v, dict) for v in out.values()):
+            raise CalendarError("; ".join(f"{e}: {v['error']}" for e, v in out.items()))
+        return out

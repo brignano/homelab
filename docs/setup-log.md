@@ -77,8 +77,9 @@ Code cloud routine that posted a brief into a claude.ai project thread.
   the cloud routine once it has posted.
 
 **Notes / next steps:**
-- Apple calendar events already render in the digest's Today section via
-  `HA_CALENDARS`; the brief's `calendar_events` is Google only.
+- Apple calendar events render in the digest's Today section via the
+  assistant's `HA_CALENDARS`, and reach the brief and `#ask` through the
+  concierge's `home_calendar_events` once its own `HA_CALENDARS` is set.
 - Cost: one concierge run per day, capped at $0.20; typically a few cents.
 
 ---

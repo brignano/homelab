@@ -357,8 +357,9 @@ so it can't pass for one of the digest's headings. `/digest` does not run it.
 One answer about mail per post: when the brief really read mail, the Today
 section drops its own **Mail (24h)** count, which looks only at the labels in
 `GMAIL_LABELS` and could say "nothing new" right above mail the brief found.
-Today's calendar stays in Today (it includes Apple calendars through Home
-Assistant, which the brief can't see), and the brief is told not to repeat it.
+Today's calendar stays in Today and the brief is told not to repeat it; it
+looks ahead over the week on Google and, with `HA_CALENDARS` set in
+`docker/concierge/.env`, the Apple calendar through Home Assistant.
 
 **Opt-in:** `BRIEF_ENABLED=true` in `.env`, because it sends a day of mail
 to Anthropic every morning without anyone asking. A failed brief never fails

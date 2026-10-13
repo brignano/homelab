@@ -238,7 +238,10 @@ only by the tier check. The **never** tier means "not registered", so the
 concierge registers one tool of its own, `home_overview`. That tool calls one
 HA tool, `GetLiveContext`, which reports only exposed entities. No code path
 names any other HA tool, and a test checks that. The `concierge` HA user and
-token are separate from the digest's.
+token are separate from the digest's. Two later read tools go over HA's REST
+API instead, where Assist exposure does not apply, so their ceiling is config
+checked at startup: `weather_forecast` (one `weather.*` entity) and
+`home_calendar_events` (the `calendar.*` IDs in `HA_CALENDARS`, GET only).
 
 Camera *video analysis* (Frigate or similar) is out of scope. Object detection
 on a CPU-only box competes with Ollama for the same 6 cores. Home Assistant's
@@ -412,6 +415,10 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       `weather_forecast` (HA `weather.get_forecasts` for one configured
       entity, over REST) and `homelab_status` (fixed Prometheus instant
       queries via the host port). README step 7.
+- [x] **Apple calendar** (2026-10-13). Read tool `home_calendar_events`:
+      `GET /api/calendars/<entity>` for the `calendar.*` IDs in
+      `HA_CALENDARS` (HA's CalDAV integration), so `#ask` and the brief see
+      the Apple calendar without publishing it as a public iCloud link.
 - [x] **Morning brief** (2026-10-13), the read-only first cut of proactive
       triage: with the scheduled digest, `/v1/brief` reads mail and calendar
       and the bot adds what needs you as the digest's last section. **No proposals**: the run

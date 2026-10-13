@@ -628,6 +628,19 @@ def _():
         raise AssertionError("non-list accepted")
     except hacalendar.CalendarError:
         pass
+    class _Cals(hacalendar.HaCalendars):
+        async def _one(self, entity, start, end):
+            if entity == "calendar.gone":
+                raise hacalendar.CalendarError("HTTP 404")
+            return [{"title": "x", "start": start.isoformat()}]
+    now = dt.datetime(2026, 10, 13, 7, 30, tzinfo=dt.timezone.utc)
+    got = asyncio.run(_Cals(None, "h", "t", ("calendar.icloud", "calendar.gone")).events(now, 99))
+    assert got["calendar.gone"] == {"error": "HTTP 404"} and len(got["calendar.icloud"]) == 1, got
+    try:
+        asyncio.run(_Cals(None, "h", "t", ("calendar.gone",)).events(now, 7))
+        raise AssertionError("all calendars failing must be an error")
+    except hacalendar.CalendarError:
+        pass
     keep = dict(os.environ)
     try:
         os.environ["HA_CALENDARS"] = "calendar.icloud,sensor.x"
