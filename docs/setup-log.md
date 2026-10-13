@@ -27,6 +27,27 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-13 — Drive temperature cron never ran smartctl
+
+**Goal:** Stop the repeated "Drive temperature check has not run" alert.
+
+**Steps:**
+1. `hl-drive-temp-stale` only fires once `homelab_drive_temp_check_timestamp_seconds`
+   exists and then goes an hour without changing, so the metric had been written
+   at least once and then stopped.
+2. The runbook's install step runs `hl-vzdump-hook temp` by hand from a root
+   shell, which wrote it once. Cron runs the same line with `PATH=/usr/bin:/bin`;
+   `smartctl` is in `/usr/sbin`, so `temp_check`'s `command -v smartctl` failed
+   and it returned before writing the timestamp, every 15 minutes, silently.
+
+**Resolution:**
+- `hl-vzdump-hook` sets its own PATH. The runbook's check now runs it under
+  `env -i`, which reproduces cron's environment.
+
+**Notes / next steps:**
+- Any host script run from cron that calls an sbin tool (smartctl, cryptsetup,
+  pct) needs this. vzdump passes a full PATH, so the nightly phases were fine.
+
 ## 2026-10-12 — Blink arms itself when everyone leaves
 
 **Goal:** Blink records while nobody is home without arming it by hand.
