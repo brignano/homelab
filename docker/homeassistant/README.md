@@ -142,6 +142,27 @@ A rejected token or a dead container fails the whole read rather than
 rendering part of the house as quiet. `hl-google-stale` (named before HA was a
 source) alerts once the Home source has gone 25h without a good read.
 
+### Sonarr calendar
+
+Sonarr's airing schedule, as `calendar.sonarr`. Sonarr is LAN and tailnet
+only, and HA is on the LAN, so HA reads the feed directly and nothing is
+exposed.
+
+1. **Settings → Devices & services → + Add integration → Remote Calendar.**
+   Name it **Sonarr** (that is what makes the ID `calendar.sonarr`) and paste
+   the feed URL from Sonarr's **Calendar → iCal Link**.
+2. Add `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env`,
+   `docker/concierge/.env` and `docker/mcp-calendar/.env`, then recreate those
+   containers. Episodes then show in the digest's Calendar line, the morning
+   brief, and what Claude can read.
+3. Recreate HA (`up -d --force-recreate homeassistant`) to load the
+   *Sonarr - episode airing* automation in `config/configuration.yaml`. It
+   sends "Airing now" to every phone with the Companion app as an episode's
+   air time starts, between 08:00 and 23:00.
+
+The feed URL carries Sonarr's API key, which can do anything in Sonarr. It
+stays in HA's integration settings, never in git.
+
 ## Host networking
 
 HA runs with `network_mode: host`, switched from a bridge on 2026-10-10.
