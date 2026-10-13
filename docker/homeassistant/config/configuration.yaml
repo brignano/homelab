@@ -121,6 +121,11 @@ automation blink:
 
 # Jax's litter box: the last good reading, kept through Wi-Fi drop-outs.
 #
+# The box's entity IDs come from its Tuya model name, "Cat Litter Box M2"
+# (sensor.cat_litter_box_m2_*), not from the device's display name "Jaxon's
+# Litter Box". These sensors pointed at sensor.jaxons_litter_box_* until
+# 2026-10-13, an ID that does not exist on this box, and read unknown.
+#
 # The box (Tuya, cloud) drops off Wi-Fi and back several times a day, and
 # every one of its sensors reads `unavailable` while it is gone. These keep
 # the last real value instead. Trigger-based template entities restore their
@@ -141,7 +146,7 @@ automation blink:
 template:
   - trigger:
       - trigger: state
-        entity_id: sensor.jaxons_litter_box_excretion_times_day
+        entity_id: sensor.cat_litter_box_m2_excretion_times_day
         not_to: [unavailable, unknown]
       - trigger: homeassistant
         event: start
@@ -152,13 +157,13 @@ template:
         unique_id: jax_litter_visits_today
         state_class: measurement
         state: >
-          {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+          {% set v = states('sensor.cat_litter_box_m2_excretion_times_day') %}
           {{ v | int(0) if v not in ['unavailable', 'unknown'] else this.state }}
         attributes:
           # The date of the reading, so a count carried over from yesterday
           # is never read out as today's.
           day: >
-            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {% set v = states('sensor.cat_litter_box_m2_excretion_times_day') %}
             {{ now().date().isoformat() if v not in ['unavailable', 'unknown'] else this.attributes.get('day') }}
       - name: Jax last litter visit
         unique_id: jax_last_litter_visit
@@ -170,7 +175,7 @@ template:
         # The first reading after creation (no previous count) records no
         # visit, so a restart never invents one.
         state: >
-          {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+          {% set v = states('sensor.cat_litter_box_m2_excretion_times_day') %}
           {% set new = v | int(0) %}
           {% set old = this.attributes.get('count') %}
           {% set today = now().date().isoformat() %}
@@ -184,15 +189,15 @@ template:
           # Kept, not zeroed, while the box is offline: a count of 0 here
           # would make its next real reading look like a visit.
           count: >
-            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {% set v = states('sensor.cat_litter_box_m2_excretion_times_day') %}
             {{ v | int(0) if v not in ['unavailable', 'unknown'] else this.attributes.get('count') }}
           day: >
-            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {% set v = states('sensor.cat_litter_box_m2_excretion_times_day') %}
             {{ now().date().isoformat() if v not in ['unavailable', 'unknown'] else this.attributes.get('day') }}
 
   - trigger:
       - trigger: state
-        entity_id: sensor.jaxons_litter_box_excretion_duration
+        entity_id: sensor.cat_litter_box_m2_excretion_duration
         not_to: [unavailable, unknown]
       - trigger: homeassistant
         event: start
@@ -204,12 +209,12 @@ template:
         device_class: duration
         unit_of_measurement: s
         state: >
-          {% set v = states('sensor.jaxons_litter_box_excretion_duration') %}
+          {% set v = states('sensor.cat_litter_box_m2_excretion_duration') %}
           {{ v | float(0) if v not in ['unavailable', 'unknown'] else this.state }}
 
   - trigger:
       - trigger: state
-        entity_id: sensor.jaxons_litter_box_cat_weight
+        entity_id: sensor.cat_litter_box_m2_cat_weight
         not_to: [unavailable, unknown]
       - trigger: homeassistant
         event: start
@@ -222,5 +227,5 @@ template:
         # The box reports no unit; 12.5 only makes sense as pounds.
         unit_of_measurement: lb
         state: >
-          {% set v = states('sensor.jaxons_litter_box_cat_weight') %}
+          {% set v = states('sensor.cat_litter_box_m2_cat_weight') %}
           {{ v | float(0) | round(1) if v not in ['unavailable', 'unknown'] else this.state }}
