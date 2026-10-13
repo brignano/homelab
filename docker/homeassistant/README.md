@@ -146,21 +146,25 @@ source) alerts once the Home source has gone 25h without a good read.
 
 When a monitored episode airs, a **Watch <episode>** item lands in Apple
 Reminders, due at the air time, and phones with the Companion app get an
-"Airing now" notification between 08:00 and 23:00. Episodes do not appear as
-calendar events anywhere.
+"Airing now" notification between 08:00 and 23:00. In iCloud they are
+reminders, never events that block out time; the calendar shows only in HA's
+dashboard and, through `HA_CALENDARS`, the digest.
 
 1. **Settings → Devices & services → + Add integration → Remote Calendar.**
    Name it **Sonarr** (that is what makes the ID `calendar.sonarr`) and paste
    the feed URL from Sonarr's **Calendar → iCal Link**. Sonarr is LAN and
-   tailnet only and HA is on the LAN, so nothing is exposed. Hide the entity
-   from the default calendar view if you like; the automation only needs it
-   to exist.
+   tailnet only and HA is on the LAN, so nothing is exposed.
 2. Check that the CalDAV integration shows your Reminders list as
    `todo.reminders` (**Settings → Entities**, search `todo.`). If it has
    another ID, change the two `todo.reminders` lines in
    `config/configuration.yaml`. Without it, only the notification is sent.
 3. Recreate HA (`up -d --force-recreate homeassistant`) to load the
-   *Sonarr - episode airing* automation.
+   *Sonarr - episode airing* automation, and re-paste
+   `dashboards/home.yaml` for the calendar card.
+4. For the digest, the morning brief and Claude's calendar reads, add
+   `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env`,
+   `docker/concierge/.env` and `docker/mcp-calendar/.env`, then recreate
+   those containers.
 
 The feed URL carries Sonarr's API key, which can do anything in Sonarr. It
 stays in HA's integration settings, never in git.

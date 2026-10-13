@@ -143,9 +143,9 @@ automation blink:
 # Sonarr: a "Watch" item in Apple Reminders, and a phone notification, when a
 # monitored episode airs (README > "Sonarr reminders"). calendar.sonarr is the
 # Remote Calendar integration reading Sonarr's iCal feed; HA fetches it over
-# the LAN, so nothing is exposed. It is only the trigger here: it stays off the
-# dashboard's calendar card and out of HA_CALENDARS, so episodes never show as
-# calendar events.
+# the LAN, so nothing is exposed. In iCloud the episodes are reminders, not
+# events that block out time; the calendar itself shows only in HA (the
+# dashboard card, and the digest through HA_CALENDARS).
 #
 # The reminder goes to todo.reminders, the iCloud Reminders list HA sees
 # through the CalDAV integration, due at the air time. Adding it is silent, so
