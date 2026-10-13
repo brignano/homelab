@@ -140,7 +140,8 @@ ha.{$HOMELAB_DOMAIN}, http://ha.caddy {
 	reverse_proxy host.docker.internal:8123
 }
 
-# Grafana MCP server — read-only metrics/logs/alerts for Claude Code.
+# MCP servers for Claude Code: Grafana (read-only metrics/logs/alerts) at
+# /mcp and the calendar server at /calendar/mcp.
 # Tailscale is the network boundary; this bearer check is the app-layer guard
 # (mcp-grafana has no built-in endpoint auth). The Viewer-scoped Grafana service
 # account behind it is the hard read-only ceiling. Token comes from
@@ -148,16 +149,31 @@ ha.{$HOMELAB_DOMAIN}, http://ha.caddy {
 # (fail-closed) and only this site is affected.
 mcp.{$HOMELAB_DOMAIN} {
 	@noauth not header Authorization "Bearer {env.MCP_BEARER_TOKEN}"
-	respond @noauth "Unauthorized" 401
+	@calendar path /calendar/*
 
-	# flush_interval -1 disables buffering so MCP streamable-HTTP / SSE events
-	# reach the client immediately instead of being held by the proxy.
-	reverse_proxy mcp-grafana:8000 {
-		flush_interval -1
-		# mcp-grafana only accepts Host values on its --allowed-hosts list
-		# (docker/mcp/docker-compose.yml). The public name is checked above;
-		# send the internal one so that list never has to name the domain.
-		header_up Host {upstream_hostport}
+	# `route` keeps these in the order written. Caddy sorts bare directives by
+	# its own table, which puts `handle` BEFORE `respond`, so splitting the paths
+	# with handle blocks would route around the token check entirely.
+	route {
+		respond @noauth "Unauthorized" 401
+
+		# Calendar MCP server (docker/mcp-calendar): read-only iCloud calendars
+		# via Home Assistant, at /calendar/mcp. Its Host allowlist is
+		# mcp-calendar:8000, for the same reason as mcp-grafana's below.
+		reverse_proxy @calendar mcp-calendar:8000 {
+			flush_interval -1
+			header_up Host {upstream_hostport}
+		}
+
+		# flush_interval -1 disables buffering so MCP streamable-HTTP / SSE events
+		# reach the client immediately instead of being held by the proxy.
+		reverse_proxy mcp-grafana:8000 {
+			flush_interval -1
+			# mcp-grafana only accepts Host values on its --allowed-hosts list
+			# (docker/mcp/docker-compose.yml). The public name is checked above;
+			# send the internal one so that list never has to name the domain.
+			header_up Host {upstream_hostport}
+		}
 	}
 }
 

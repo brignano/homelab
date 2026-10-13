@@ -76,6 +76,31 @@ jobs:
       - name: Every module compiles
         run: python -m compileall -q app tests
 
+  mcp-calendar:
+    name: mcp-calendar (read-only boundary + imports)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker/mcp-calendar
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pinned dependencies
+        run: pip install --disable-pip-version-check -r requirements.txt
+
+      - name: Offline smoke tests
+        # No Home Assistant. Pins which tools exist, that the only HA call is a
+        # GET to /api/calendars/<a configured entity>, and that a request with
+        # the public Host never reaches the MCP endpoint.
+        run: python tests/smoke.py
+
+      - name: Every module compiles
+        run: python -m compileall -q app tests
+
   compose:
     name: compose files parse
     runs-on: ubuntu-latest

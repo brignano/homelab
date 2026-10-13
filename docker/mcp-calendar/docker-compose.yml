@@ -1,0 +1,35 @@
+services:
+  # Read-only MCP server over the calendars Home Assistant can see (iCloud via
+  # CalDAV). Claude Code reaches it at https://mcp.$HOMELAB_DOMAIN/calendar/mcp,
+  # behind the same Caddy bearer check as mcp-grafana. Two tools, both reads.
+  # See README.md.
+  mcp-calendar:
+    build: .
+    image: mcp-calendar:local
+    container_name: mcp-calendar
+    restart: unless-stopped
+    # No published port: Caddy reaches it over the monitoring network, the same
+    # way it reaches mcp-grafana.
+    environment:
+      TZ: ${TZ:-America/New_York}
+      # Home Assistant runs on host networking (docker/homeassistant).
+      HA_URL: ${HA_URL:-http://host.docker.internal:8123}
+      # Blank = every tool answers with "HA_TOKEN is not set" rather than the
+      # container refusing to start. Not :?required, so a missing value can
+      # never stop the rest of a deploy.
+      HA_TOKEN: ${HA_TOKEN:-}
+      # The ceiling: calendar.* entity IDs, comma-separated. Nothing else in
+      # Home Assistant is reachable through this server.
+      HA_CALENDARS: ${HA_CALENDARS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - monitoring
+
+# Caddy is attached to monitoring_monitoring (docker/proxy/docker-compose.yml),
+# so joining it is what lets mcp.$HOMELAB_DOMAIN proxy here by container name.
+# Bring the monitoring stack up first.
+networks:
+  monitoring:
+    external: true
+    name: monitoring_monitoring
