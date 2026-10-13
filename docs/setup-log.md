@@ -27,6 +27,28 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-13 — Digest shows only what is new since the last one
+
+**Goal:** Stop the digest repeating mail, restarts and log errors already shown.
+
+**Steps:**
+1. The bot records each posted digest's collection time in `digest-shown`, beside
+   `last-digest` in the assistant state dir. Scheduled runs and `/digest` both write it.
+2. The next digest counts mail, container restarts and log errors from that time,
+   capped at seven days, and labels the window (`Restarts (9h)`, `Mail (2d)`).
+
+**Issues encountered:**
+- A digest with a source down would have moved the window past what that source missed.
+
+**Resolution:**
+- `digest-shown` advances only when every source was read (`Draft.complete`).
+  `last-digest` is untouched and stays the schedule's dead man's switch.
+
+**Notes / next steps:**
+- First digest after deploy has no `digest-shown` and covers 24h, as before.
+
+---
+
 ## 2026-10-13 — Concierge: movie_night (TMDB + Jellyfin, read-only)
 
 **Goal:** Stop spending movie night scrolling. Ask Otto in #ask for "comedy or thriller, under 2 hours" and get three picks with where to watch each.

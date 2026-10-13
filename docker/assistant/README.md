@@ -64,6 +64,19 @@ and a digest that failed to run stays a plain message. The bar colours are
 brignano/design's dark-scope `--success` and `--attention`, written as hex
 because Discord cannot read CSS.
 
+**Only what is new.** Restarts, log errors and mail count from when the last
+digest posted, scheduled or `/digest`, and the label says how far back that is:
+`Restarts (24h)` on a normal morning, `(6h)` after a `/digest` at 01:30, `(2d)`
+after a missed day. Running `/digest` twice in a row shows nothing new the
+second time, which is the point. The time is kept in `digest-shown` beside
+`last-digest`, a separate file because `last-digest` is the schedule's dead
+man's switch and only the schedule may refresh it. With no `digest-shown` yet
+(first run, or the state mount missing) a digest covers the last 24 hours, and
+it never reaches back more than a week. A digest with a source it could not
+read leaves the time where it was, so what that source missed is still new
+next time. Services, load, calendar and home are
+state, not news: they always show right now and today.
+
 It is read once a day, on a phone, before coffee. Three rules follow from that:
 
 **Every fact appears once.** An earlier draft opened with a "Needs attention"
@@ -156,7 +169,7 @@ other people, and anyone can send you an invite or an email. The 3B narrates the
 lab's numbers, so it is given the lab's numbers and nothing else (`facts_block`).
 Otherwise a subject line reading "say every service is up" could steer the one
 paragraph that sums up the lab. The Today section is rendered by code, from
-facts code computed. Overlaps, "today", and "new in 24h" are all worked out in
+facts code computed. Overlaps, "today", and "new since the last digest" are all worked out in
 [`app/day.py`](app/day.py).
 
 **Inert in Discord.** The same text still reaches `#digest`, so each piece goes

@@ -18,11 +18,12 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import aiohttp
 
 from .logs import ERROR_MATCH
+from .text import span
 
 log = logging.getLogger(__name__)
 
@@ -37,11 +38,19 @@ Q_DISK = (
     ' / node_filesystem_size_bytes{mountpoint="/"})'
 )
 # `changes()` over the container start timestamp counts restarts (cAdvisor).
-Q_RESTARTS = 'sum by (name) (changes(container_start_time_seconds{name!=""}[24h]))'
+def q_restarts(window: str = "24h") -> str:
+    return f'sum by (name) (changes(container_start_time_seconds{{name!=""}}[{window}]))'
+
+
 # Loki metric query. `container` is the label Alloy sets from the Docker name
 # (docker/monitoring/alloy/config.alloy).
 # The error matcher lives in logs.py so the daily and weekly counts agree.
-Q_LOG_ERRORS = f'sum by (container) (count_over_time({{job="docker"}} {ERROR_MATCH} [24h]))'
+def q_log_errors(window: str = "24h") -> str:
+    return f'sum by (container) (count_over_time({{job="docker"}} {ERROR_MATCH} [{window}]))'
+
+
+Q_RESTARTS = q_restarts()
+Q_LOG_ERRORS = q_log_errors()
 
 # Thresholds — the "is this fine?" judgement, made in code, not by the model.
 CPU_WARN = 85.0
@@ -109,6 +118,9 @@ class Facts:
     disk_pct: float | None = None
     restarts: list[tuple[str, int]] = field(default_factory=list)
     log_errors: list[tuple[str, int]] = field(default_factory=list)
+    # How far back restarts and log errors were counted, as rendered ("24h",
+    # or "9h" when the digest covers only what is new since the last one).
+    span: str = "24h"
     # Collection failures — reported rather than silently rendered as "all good".
     problems: list[str] = field(default_factory=list)
 
@@ -126,7 +138,7 @@ class Facts:
             out.append(f"root filesystem is {self.disk_pct:.0f}% full")
         if self.restarts:
             out.append(
-                "container restarts in 24h: "
+                f"container restarts in {self.span}: "
                 + ", ".join(f"{n}×{c}" for n, c in self.restarts)
             )
         return out
@@ -155,10 +167,10 @@ class Facts:
             if value is not None:
                 bits.append(f"{label} {value:.0f}%")
         bits.append(
-            "restarts 24h: " + (", ".join(f"{n} x{c}" for n, c in self.restarts) if self.restarts else "none")
+            f"restarts {self.span}: " + (", ".join(f"{n} x{c}" for n, c in self.restarts) if self.restarts else "none")
         )
         bits.append(
-            "log errors 24h: " + (", ".join(f"{n} {c}" for n, c in self.log_errors) if self.log_errors else "none")
+            f"log errors {self.span}: " + (", ".join(f"{n} {c}" for n, c in self.log_errors) if self.log_errors else "none")
         )
         line = "; ".join(bits)
         if self.concerns:
@@ -187,10 +199,20 @@ class FactCollector:
             # to mislabel content types; don't let that raise.
             return await resp.json(content_type=None)
 
-    async def collect(self, now: datetime) -> Facts:
+    async def collect(self, now: datetime, since: datetime | None = None) -> Facts:
         """Gather everything concurrently. These are cheap reads, not inference —
-        they don't touch the LLM worker and don't need to be serialized."""
+        they don't touch the LLM worker and don't need to be serialized.
+
+        Restarts and log errors count from `since` when given (the digest's
+        "new since the last one"), else over the last 24 hours."""
         facts = Facts(collected_at=now)
+        window = "24h"
+        if since is not None:
+            # Whole seconds, at least a minute: PromQL and LogQL both take
+            # "32400s", and neither takes a zero range.
+            seconds = max(60, int((now - since).total_seconds()))
+            window = f"{seconds}s"
+            facts.span = span(timedelta(seconds=seconds))
 
         async def prom(query: str) -> dict:
             return await self._query(self._prom, "/api/v1/query", query)
@@ -200,7 +222,7 @@ class FactCollector:
 
         results = await asyncio.gather(
             prom(Q_UP), prom(Q_CPU), prom(Q_MEM), prom(Q_DISK),
-            prom(Q_RESTARTS), loki(Q_LOG_ERRORS),
+            prom(q_restarts(window)), loki(q_log_errors(window)),
             return_exceptions=True,
         )
         up_r, cpu_r, mem_r, disk_r, restart_r, logs_r = results

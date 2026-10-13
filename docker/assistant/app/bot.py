@@ -38,7 +38,7 @@ from .concierge import (
 )
 from .config import Config
 from .day import BRIEF_SOURCE, SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
-from .digest import Card, build as build_digest, card as digest_card, prepare as prepare_digest
+from .digest import Card, card as digest_card, prepare as prepare_digest
 from .facts import FactCollector
 from .google import Google
 from .home import Home
@@ -52,6 +52,8 @@ log = logging.getLogger(__name__)
 # How long an idle #ask thread stays in the sidebar. Archived threads are still
 # listed under the channel's Threads button, and a new message reopens one.
 ASK_THREAD_ARCHIVE_MIN = 1440
+# The furthest back a digest's "new since the last one" reaches.
+SINCE_LIMIT = dt.timedelta(days=7)
 
 # No persona line, deliberately. An earlier version opened with "You are a
 # concise assistant running locally on a small home server… you have no live
@@ -108,6 +110,7 @@ class Assistant(discord.Client):
         self.collector: FactCollector | None = None
         self.day: DayCollector | None = None
         self._brief_stamp: str | None = None
+        self._shown_stamp: str | None = None
         self.concierge: Concierge | None = None
         self._guild = discord.Object(id=cfg.guild_id)
 
@@ -175,6 +178,11 @@ class Assistant(discord.Client):
                 clear_stamp(self._brief_stamp)
             elif read_stamp(self._brief_stamp) is None:
                 write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+
+        # When a digest last posted, scheduled or `/digest`, so the next one
+        # covers only what is new since. Separate from `last-digest`: that one
+        # is a dead man's switch only the schedule may refresh (see below).
+        self._shown_stamp = os.path.join(state_dir, "digest-shown") if state_dir else None
 
         # With the schedule off there is nothing to be stale about, so drop
         # any timestamp a previous run left behind. An alert that fires forever
@@ -585,16 +593,18 @@ class Assistant(discord.Client):
         if self.cfg.brief_active and self.concierge is not None:
             brief = asyncio.create_task(self._brief())
         ok = True
+        complete = False
         try:
             now = dt.datetime.now(tz=self.cfg.tz)
             draft = await self.queue.submit(
                 "digest",
                 lambda: prepare_digest(
                     self.collector, self.ollama, now, self.cfg.digest_predict,
-                    day_collector=self.day,
+                    day_collector=self.day, since=self._since(now),
                 ),
                 priority=PRIORITY_SCHEDULED,
             )
+            complete = draft.complete
             # Outside the queue: waiting on Claude must not hold the local model.
             message = draft.render(self.cfg.grafana_url, await brief if brief is not None else None)
         except Exception as exc:  # noqa: BLE001 — a bad day must not kill the loop
@@ -624,6 +634,8 @@ class Assistant(discord.Client):
         # so `hl-digest-missing` fires if the next one fails too.
         if ok:
             write_stamp(self.cfg.digest_stamp_path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+        if complete:
+            self._shown(now)
 
     async def _brief(self) -> Brief:
         """The concierge's read-only morning brief, as the digest's last section."""
@@ -647,16 +659,40 @@ class Assistant(discord.Client):
 
     # --- work ---
 
+    def _since(self, now: dt.datetime) -> dt.datetime | None:
+        """Where the next digest's "new" starts: when the last one posted.
+
+        None (the last 24 hours) when no digest has posted yet. A week at most,
+        so a digest after a long outage stays one readable message."""
+        last = read_stamp(self._shown_stamp) if self._shown_stamp else None
+        if last is None:
+            return None
+        since = dt.datetime.fromtimestamp(last, tz=now.tzinfo)
+        if since >= now:
+            return None
+        return max(since, now - SINCE_LIMIT)
+
+    def _shown(self, now: dt.datetime) -> None:
+        """Record that a digest collected at `now`, with every source read,
+        posted. The next digest starts from its collection time, not from when
+        it finished posting, so nothing that arrived while it ran falls between
+        the two."""
+        if self._shown_stamp:
+            write_stamp(self._shown_stamp, now.timestamp())
+
     async def run_digest(self, priority: int = PRIORITY_INTERACTIVE) -> str:
         now = dt.datetime.now(tz=self.cfg.tz)
-        return await self.queue.submit(
+        draft = await self.queue.submit(
             "digest",
-            lambda: build_digest(
+            lambda: prepare_digest(
                 self.collector, self.ollama, now, self.cfg.digest_predict,
-                grafana_url=self.cfg.grafana_url, day_collector=self.day,
+                day_collector=self.day, since=self._since(now),
             ),
             priority=priority,
         )
+        if draft.complete:
+            self._shown(now)
+        return draft.render(self.cfg.grafana_url)
 
 
 # --- approval prompts ---------------------------------------------------------

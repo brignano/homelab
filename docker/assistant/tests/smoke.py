@@ -1594,6 +1594,86 @@ def _():
     assert reads and not missing, f"read by config.py but not in docker-compose.yml: {missing}"
 
 
+@check("digest: only what is new since the last digest, labelled with how far back")
+def _():
+    from app.day import DayCollector, render_lines
+    from app.digest import render
+    from app.facts import FactCollector, q_log_errors, q_restarts
+    from app.text import span
+    assert [span(dt.timedelta(seconds=s)) for s in (0, 2400, 9 * 3600, 30 * 3600, 3 * 86400)] \
+        == ["1m", "40m", "9h", "30h", "3d"]
+    assert "[24h]" in q_restarts() and "[24h]" in q_log_errors()
+
+    # Mail: a 6h-old message is new since a digest 9h ago, a 10h-old one is not.
+    msgs = {"a": _mail("A", "fresh", hours_ago=6), "b": _mail("B", "seen", hours_ago=10)}
+    dc = DayCollector(_FakeGoogle(ids=["a", "b"], messages=msgs), calendar_ids=(),
+                      mail_labels=("INBOX",), sources=("mail",), state_dir=None)
+    day = asyncio.run(dc.collect(NOW, since=NOW - dt.timedelta(hours=9)))
+    assert [m.subject for m in day.mail] == ["fresh"] and day.mail_span == "9h"
+    assert "**Mail (9h)** 1 new" in "\n".join(render_lines(day))
+    # No digest yet: the last 24 hours, as before.
+    day = asyncio.run(dc.collect(NOW))
+    assert len(day.mail) == 2 and "**Mail (24h)** 2 new" in "\n".join(render_lines(day))
+
+    # Restarts and log errors are counted over the same window.
+    asked = []
+
+    class Session:
+        def get(self, url, params, timeout):
+            asked.append(params["query"])
+
+            class Resp:
+                async def __aenter__(self):
+                    return self
+
+                async def __aexit__(self, *a):
+                    return False
+
+                def raise_for_status(self):
+                    pass
+
+                async def json(self, content_type=None):
+                    return {"status": "success", "data": {"resultType": "vector", "result": []}}
+            return Resp()
+
+    fc = FactCollector(Session(), "http://prom", "http://loki")
+    facts = asyncio.run(fc.collect(NOW, since=NOW - dt.timedelta(hours=9)))
+    assert q_restarts("32400s") in asked and q_log_errors("32400s") in asked, asked
+    assert facts.span == "9h"
+    out = render(facts, None)
+    assert "**Restarts (9h)**" in out and "**Log errors (9h)**" in out, out
+    asked.clear()
+    assert asyncio.run(fc.collect(NOW)).span == "24h" and q_restarts() in asked
+
+
+@check("digest: the next one starts where the last one posted, a week back at most")
+def _():
+    import tempfile
+    from app.bot import SINCE_LIMIT, Assistant
+    from app import stamp
+    with tempfile.TemporaryDirectory() as d:
+        stub = type("Stub", (), {})()
+        stub._shown_stamp = os.path.join(d, "digest-shown")
+        since = lambda: Assistant._since(stub, NOW)  # noqa: E731
+        assert since() is None, "no digest yet: the last 24 hours"
+        Assistant._shown(stub, NOW - dt.timedelta(hours=9))
+        assert since() == NOW - dt.timedelta(hours=9)
+        stamp.write(stub._shown_stamp, (NOW - dt.timedelta(days=30)).timestamp())
+        assert since() == NOW - SINCE_LIMIT, "after a long outage: one week, not a month"
+        stamp.write(stub._shown_stamp, (NOW + dt.timedelta(hours=1)).timestamp())
+        assert since() is None, "a clock that went backwards is not trusted"
+        stub._shown_stamp = None
+        assert since() is None
+
+    # A digest with a source down must not move the window: what that source
+    # missed belongs to the next digest.
+    from app.day import Day
+    from app.digest import Draft
+    assert Draft(_facts(), Day(now=NOW, sources=("mail",))).complete
+    assert not Draft(_facts(problems=["could not read log errors"]), None).complete
+    assert not Draft(_facts(), Day(now=NOW, sources=("mail",), problems=["mail: 401"])).complete
+
+
 # --- report -------------------------------------------------------------------
 
 print()

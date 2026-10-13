@@ -33,6 +33,7 @@ from dataclasses import dataclass, field
 from . import stamp
 from .google import Event, Google, Mail, mail_link
 from .home import Home, Reading, for_how_long
+from .text import span
 
 log = logging.getLogger(__name__)
 
@@ -119,6 +120,8 @@ class Day:
     mail: list[Mail] | None = None
     # More new mail arrived than was fetched, so the count is a floor.
     mail_more: bool = False
+    # How far back "new" mail was looked for, as rendered.
+    mail_span: str = "24h"
     home: list[Reading] | None = None
     problems: list[str] = field(default_factory=list)
 
@@ -221,11 +224,11 @@ def render_lines(day: Day, mail: bool = True) -> list[str]:
     elif day.mail is None:
         lines.append("**Mail** _not read_")
     elif not day.mail:
-        lines.append("**Mail (24h)** nothing new")
+        lines.append(f"**Mail ({day.mail_span})** nothing new")
     else:
         count = f"{len(day.mail)}{'+' if day.mail_more else ''} new"
         newest = " · ".join(_mail(m) for m in day.mail[:3])
-        lines.append(f"**Mail (24h)** {count} — {newest}")
+        lines.append(f"**Mail ({day.mail_span})** {count} — {newest}")
 
     if "home" not in day.sources:
         pass
@@ -310,10 +313,9 @@ class DayCollector:
         start, end = window(now)
         return dedupe(*await self._home.calendars(self._ha_calendars, start, end))
 
-    async def _mail(self, now: dt.datetime) -> tuple[list[Mail], bool]:
+    async def _mail(self, now: dt.datetime, since: dt.datetime) -> tuple[list[Mail], bool]:
         ids, estimate = await self._google.list_unread(self._mail_labels)
         fetched = await asyncio.gather(*(self._google.message(i) for i in ids))
-        since = now - dt.timedelta(hours=24)
         new = sorted((m for m in fetched if m and m.received >= since),
                      key=lambda m: m.received, reverse=True)
         # Every fetched message is new and there are more beyond the page: the
@@ -321,15 +323,23 @@ class DayCollector:
         more = len(new) == len(ids) and (estimate or 0) > len(ids)
         return new, more
 
-    async def collect(self, now: dt.datetime) -> Day:
+    async def collect(self, now: dt.datetime, since: dt.datetime | None = None) -> Day:
         """Never raises. A source that fails is reported in `problems` and left
-        as None, so it renders as "not read" rather than as an empty day."""
+        as None, so it renders as "not read" rather than as an empty day.
+
+        Mail counts as new from `since` when given (the last digest), else
+        from 24 hours ago. Calendar and home are state, not news: they always
+        show today and right now."""
         day = Day(now=now, sources=self._sources)
+        if since is None:
+            since = now - dt.timedelta(hours=24)
+        else:
+            day.mail_span = span(now - since)
         jobs = {}
         if "calendar" in self._sources:
             jobs["calendar"] = self._calendar(now)
         if "mail" in self._sources:
-            jobs["mail"] = self._mail(now)
+            jobs["mail"] = self._mail(now, since)
         if "home" in self._sources:
             jobs["home"] = self._home.readings(self._home_entities)
         if "ha-calendar" in self._sources:
