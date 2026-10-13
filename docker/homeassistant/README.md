@@ -483,12 +483,7 @@ the file is the source you paste:
    title *Home*, icon `mdi:view-dashboard` (Overview already has `mdi:home`).
 2. Open it, then **✏️ → ⋮ → Raw configuration editor**, replace everything
    with the file's contents, and **Save**.
-3. Point the Blink card at the right entity. The
-   IDs marked `# check` in the file were inferred, not read from this HA, and
-   that card stays hidden until its entity exists. In edit mode, open it and
-   pick the entity (the Blink one is
-   named after your sync module).
-4. To open it instead of Overview: **Settings → Dashboards**, select *Home*
+3. To open it instead of Overview: **Settings → Dashboards**, select *Home*
    and set it as the default dashboard. Then hide Overview from the sidebar:
    long-press **Home Assistant** at the top of the sidebar and remove it.
    It is still at `/home/overview` if you want it back.
