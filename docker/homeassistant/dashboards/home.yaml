@@ -11,11 +11,7 @@
 # HA strips these comments when you save in the raw editor. That is fine: git
 # keeps them, and a later edit made in the UI can be copied back here.
 #
-# Entity IDs marked `# check` are inferred, not read from the running HA. The
-# Blink and inside-temperature cards are hidden while their entity does not
-# exist (a missing entity reads as unavailable), so a wrong guess leaves a gap
-# rather than a yellow "Entity not found" card. To fix one, set its entity
-# (and the matching `visibility` entity) to the real ID.
+# Every entity ID here is confirmed against the running HA (2026-10-13).
 
 title: Home
 views:
@@ -28,21 +24,18 @@ views:
     # The glanceable strip across the top: who is home, the weather, indoors.
     badges:
       - type: entity
-        entity: person.anthony_brignano  # check
+        entity: person.anthony_brignano
         show_name: false
         show_state: true
         show_icon: true
       - type: entity
         entity: weather.forecast_home
         show_name: false
+      # The thermostat's own temperature sensor ("Apartment Temperature").
       - type: entity
-        entity: sensor.apartment_temperature  # check
+        entity: sensor.living_room_thermostat_current_temperature
         name: Inside
         show_name: true
-        visibility:
-          - condition: state
-            entity: sensor.apartment_temperature
-            state_not: unavailable
       - type: entity
         entity: sensor.spaceship_battery_level
         name: Tesla
@@ -62,7 +55,7 @@ views:
             heading: Security
             icon: mdi:shield-home
           - type: tile
-            entity: alarm_control_panel.blink_home  # check: Blink names it after the sync module
+            entity: alarm_control_panel.living_room_blink_camera
             name: Blink cameras
             grid_options:
               columns: full
@@ -71,10 +64,6 @@ views:
                 modes:
                   - armed_away
                   - disarmed
-            visibility:
-              - condition: state
-                entity: alarm_control_panel.blink_home
-                state_not: unavailable
           - type: tile
             entity: automation.blink_arm_when_everyone_leaves
             name: Auto-arm when away
@@ -96,7 +85,7 @@ views:
             entity: sensor.spaceship_charging
             name: Charging
           - type: tile
-            entity: lock.spaceship_lock  # check
+            entity: lock.spaceship_lock
             name: Doors
           # A plain tile, no mode buttons: the car reports a single mode
           # besides off, so the buttons were one full-width power bar. Tapping
@@ -111,7 +100,7 @@ views:
               target:
                 entity_id: climate.spaceship_climate
           - type: tile
-            entity: switch.spaceship_sentry_mode  # check
+            entity: switch.spaceship_sentry_mode
             name: Sentry
           # The litter box's last good readings (template sensors in
           # config/configuration.yaml). They read unknown until the box
@@ -140,26 +129,15 @@ views:
             icon: mdi:home-thermometer
           # The Honeywell T6 Pro, paired over HomeKit. Set point and mode on
           # the card itself. No hvac_modes list, so it offers whichever modes
-          # the thermostat reports. Hidden until the entity exists.
+          # the thermostat reports. It also shows the room's temperature.
           - type: tile
-            entity: climate.t6_pro_smart_thermostat  # check
+            entity: climate.living_room_thermostat_lyric_t6_pro_thermostat
             name: Thermostat
             grid_options:
               columns: full
             features:
               - type: target-temperature
               - type: climate-hvac-modes
-            visibility:
-              - condition: state
-                entity: climate.t6_pro_smart_thermostat
-                state_not: unavailable
-          - type: tile
-            entity: sensor.apartment_temperature  # check
-            name: Inside
-            visibility:
-              - condition: state
-                entity: sensor.apartment_temperature
-                state_not: unavailable
           - type: weather-forecast
             entity: weather.forecast_home
             show_current: true
@@ -172,8 +150,8 @@ views:
             icon: mdi:map-marker-radius
           - type: map
             entities:
-              - person.anthony_brignano  # check
-              - device_tracker.spaceship_location  # check
+              - person.anthony_brignano
+              - device_tracker.spaceship_location
             default_zoom: 13
             hours_to_show: 0
             grid_options:
