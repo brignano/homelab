@@ -32,9 +32,10 @@ from .forecast import Forecast, ForecastError
 from .home import Home, HomeError
 from .homelab import Homelab, StatusError
 from .media import MAX_QUEUE, Media, MediaError
-from .tiers import SERVER
+from .tiers import READ, SERVER
 
 MAX_FACT_CHARS = 300
+GOOGLE_READS = frozenset({"calendar_events", "mail_search", "mail_read"})
 MAX_SEARCH = 20
 MAX_DAYS = 62
 
@@ -51,7 +52,20 @@ class TaskContext:
     media: Media | None = None
     forecast: Forecast | None = None
     homelab: Homelab | None = None
+    # The scheduled morning brief: only read-tier tools are registered.
+    read_only: bool = False
     proposals: list[dict] = field(default_factory=list)
+    # Google reads this run made, and how many failed: the brief's freshness
+    # stamp needs "mail was actually read", not just "the run finished".
+    google_calls: dict[str, int] = field(default_factory=dict)
+    google_errors: int = 0
+
+
+def google_reads_ok(ctx: TaskContext) -> bool:
+    """Did this run really read mail? At least one mail_search, and no Google
+    call that raised. An expired sign-in comes back to the agent as an ordinary
+    tool error and the run still "succeeds"; this is what tells them apart."""
+    return ctx.google_calls.get("mail_search", 0) > 0 and ctx.google_errors == 0
 
 
 def _ok(payload: Any) -> dict:
@@ -116,11 +130,16 @@ def build(ctx: TaskContext):
 
     async def run(name: str, fn, args: dict) -> dict:
         started = time.monotonic()
+        google_read = name in GOOGLE_READS
+        if google_read:
+            ctx.google_calls[name] = ctx.google_calls.get(name, 0) + 1
         try:
             result = await fn(args)
         except (GoogleError, HomeError, MediaError, ForecastError, StatusError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
+            if google_read:
+                ctx.google_errors += 1
             return _err(str(exc))
         ok = not result.get("is_error", False)
         chars = sum(len(c.get("text", "")) for c in result.get("content", []))
@@ -443,6 +462,12 @@ def build(ctx: TaskContext):
         return await run("remember", _remember, args)
 
     tools.append(remember)
+
+    if ctx.read_only:
+        # The brief runs on a timer with nobody asking: no proposal tools at
+        # all, so a steered run has nothing to reach for (tiers.decide refuses
+        # them as well).
+        tools = [t for t in tools if t.name in READ]
 
     names = [t.name for t in tools]
     return create_sdk_mcp_server(name=SERVER, version="1.0.0", tools=tools), names

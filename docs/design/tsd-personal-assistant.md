@@ -278,6 +278,12 @@ can be got wrong. It also forbids the `q` search parameter, so mail is chosen by
 label IDs and the 24h window is applied in code. A body reaches Anthropic's API
 only when you `/ask` about mail.
 
+**Amended 2026-10-13: or when you turn on the morning brief.** With
+`BRIEF_ENABLED=true` (off by default) the bot calls the concierge's
+`/v1/brief` after each scheduled digest, and that run reads the last day of
+mail (three on Mondays), bodies included, with nobody asking. It is opt-in
+for exactly that reason.
+
 **Built (phase 1):** a Desktop-app OAuth client, with a one-time
 `--google-auth` sign-in (PKCE, loopback redirect, code pasted back from the
 address bar so it runs headless). The consent screen must be set to
@@ -325,6 +331,13 @@ nothing. Stamps are cleared whenever no digest would refresh them.
 
 The act lane is not scheduled and needs no switch. If it is down, `/ask`
 says so.
+
+**Amended 2026-10-13: the morning brief is scheduled, by the bot.** The
+concierge still keeps no schedule; the bot calls `/v1/brief` after the
+scheduled digest. That run stamps `source-brief` only when it finishes and
+really read mail (`reads_ok`: a mail search ran and no Google read failed), and
+`hl-google-stale` ages it like the digest's sources (armed at startup,
+cleared when the brief is off).
 
 ## Phases
 
@@ -397,10 +410,17 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       `weather_forecast` (HA `weather.get_forecasts` for one configured
       entity, over REST) and `homelab_status` (fixed Prometheus instant
       queries via the host port). README step 7.
-- [ ] **Proactive triage** (proposed 2026-10-11): a morning and evening
-      #ask run that triages the inbox, drafts replies and posts a short
-      prioritized list, every change still a proposal. Needs its own cost
-      ceiling, since it is the first scheduled Claude spend.
+- [x] **Morning brief** (2026-10-13), the read-only first cut of proactive
+      triage: after the scheduled digest, `/v1/brief` reads mail and calendar
+      and the bot posts what needs you in #digest. **No proposals**: the run
+      registers only read tools and both gates refuse the propose tier, so a
+      timer reading stranger-written mail holds no write tools (the boundary
+      the "one agent that does everything" rejection draws is per run; the
+      process still holds `/v1/execute` for #ask). Drafts stay on demand in
+      #ask. Own ceilings: `CONCIERGE_BRIEF_MAX_TURNS` (8) and
+      `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20). Opt-in: `BRIEF_ENABLED=true`.
+- [ ] **Proactive triage** (proposed 2026-10-11): an evening run, and
+      drafted replies as proposals, if the read-only brief earns it.
 
 **Setup left for phase 4 (you)**
 - [ ] Rerun the concierge's `--google-auth` for the write scopes and paste
@@ -470,7 +490,7 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   before committing to phase 3.
 - **Money:** the watch lane is $0 (local model, Google APIs within free quota).
   The act lane is Claude API usage, on demand only, and nothing in it is
-  scheduled. **Phases 1–2 never call the Claude API** (Google, Home
+  scheduled, except the opt-in morning brief (one run a day, capped at $0.20). **Phases 1–2 never call the Claude API** (Google, Home
   Assistant and the local 3B only). Phase 3 is the first that does, and it
   follows the same budget isolation as the brignano.io site chat:
   - its own Console **workspace**, `homelab`, with its own monthly spend limit

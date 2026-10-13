@@ -498,6 +498,11 @@ groups:
       # 25h for the same reason as hl-digest-missing: sources are read with the
       # daily digest. If the digest itself stops, both fire, and that one is the
       # cause. Absent series (source off, or the schedule off) is silence.
+      #
+      # source="brief" is the morning brief: the bot stamps it only after a
+      # /v1/brief run that finished AND searched mail with no Google read
+      # failing (`reads_ok`), so an expired concierge sign-in or a broken
+      # concierge ages into this the same way.
       - uid: hl-google-stale
         title: Digest cannot read one of its sources
         condition: C
@@ -507,7 +512,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else if eq $labels.source \"ha-calendar\" }}Home Assistant calendars{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else if eq $labels.source \"ha-calendar\" }}check HA_CALENDARS, the CalDAV integration and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}"
+          summary: "{{ if eq $labels.source \"brief\" }}Morning brief has not finished for {{ printf \"%.0f\" $values.A.Value }}h — check docker logs concierge and assistant, and the concierge's --google-auth{{ else }}Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else if eq $labels.source \"ha-calendar\" }}Home Assistant calendars{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else if eq $labels.source \"ha-calendar\" }}check HA_CALENDARS, the CalDAV integration and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}{{ end }}"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }

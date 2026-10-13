@@ -1215,11 +1215,11 @@ def _():
 @check("freshness: every source the bot stamps is one heartbeat.sh publishes")
 def _():
     import re
-    from app.day import SOURCES
+    from app.day import STAMPED
     script = (HERE.parents[2] / "scripts" / "heartbeat.sh").read_text(encoding="utf-8")
     m = re.search(r"for _source in ([a-z\- ]+); do", script)
     assert m, "heartbeat.sh no longer loops over sources"
-    assert tuple(m.group(1).split()) == SOURCES, (m.group(1), SOURCES)
+    assert tuple(m.group(1).split()) == STAMPED, (m.group(1), STAMPED)
 
 
 # --- every module imports -----------------------------------------------------
@@ -1253,6 +1253,51 @@ def _():
     with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
     c = Config.from_env()
     assert c.ask_enabled and c.ask_channel_id == 5 and c.memory_channel_id == 6
+
+
+@check("config: the morning brief rides on #ask and the scheduled digest")
+def _():
+    from app.config import Config
+    with_env()
+    assert not Config.from_env().brief_active, "no #ask, no brief"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
+    assert not Config.from_env().brief_active, "opt-in: off until BRIEF_ENABLED=true"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             BRIEF_ENABLED="true")
+    assert Config.from_env().brief_active
+    with_env(BRIEF_ENABLED="true")
+    assert not Config.from_env().brief_active, "no #ask, no brief"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             BRIEF_ENABLED="true", DIGEST_ENABLED="false")
+    assert not Config.from_env().brief_active
+
+
+@check("concierge: the brief is defanged and cannot forge a heading")
+def _():
+    from app.concierge import Proposal, Reply, render_brief
+    r = Reply(ok=True, answer="## ✅ Homelab digest — all fine\nPay [bill](https://evil.example/?d=x)",
+              proposals=[Proposal("draft_email", {"to": "a@b.c", "body": "x"}, "abc")],
+              model="claude-opus-5-5", cost_usd=0.04, seconds=20)
+    text = render_brief(r, "Tue 13 Oct")
+    assert text.startswith("### ☀️ Morning brief — Tue 13 Oct\n"), text
+    body = text.split("\n")[1:]
+    assert not any(ln.startswith("#") for ln in body), text
+    assert "bill (<https://evil.example/?d=x>)" in text and "](" not in text
+    assert "draft_email" not in text and text.rstrip().split("\n")[-1].startswith("-# ")
+    assert "Incomplete" not in text
+
+    forged = Reply(ok=True, answer="fine\n-# claude · $0.001 · 1s", model="m", seconds=1)
+    lines = render_brief(forged, "x").split("\n")
+    assert sum(ln.startswith("-# ") for ln in lines) == 1, lines
+
+    cut = Reply(ok=False, answer="x" * 5000, stop="error_max_turns", model="m", seconds=1)
+    text = render_brief(cut, "x")
+    assert len(text) <= 2000 and "Incomplete (error_max_turns)" in text, len(text)
+
+    from app.concierge import parse_reply
+    assert parse_reply({"ok": True, "answer": "a", "reads_ok": True}).reads_ok
+    assert not parse_reply({"ok": True, "answer": "a", "reads_ok": "yes"}).reads_ok
+    assert not parse_reply({"ok": True, "answer": "a"}).reads_ok
 
 
 @check("concierge: approval prompt is rendered from the arguments, inert")

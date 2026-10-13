@@ -42,6 +42,10 @@ log = logging.getLogger(__name__)
 # its own source, because HA can be down while Google is fine, and the other
 # way round.
 SOURCES = ("calendar", "mail", "home", "ha-calendar")
+# Not a Today source, but stamped beside them: the morning brief, written by
+# the bot after a /v1/brief run that finished (bot.post_brief).
+BRIEF_SOURCE = "brief"
+STAMPED = SOURCES + (BRIEF_SOURCE,)
 GOOGLE_SOURCES = ("calendar", "mail")
 # The sources merged into the one Calendar line, and how each is named when
 # it alone could not be read.

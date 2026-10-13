@@ -27,6 +27,49 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-13 — Morning brief under the digest (concierge, read-only)
+
+**Goal:** One place each morning for "what needs me today", replacing a Claude
+Code cloud routine that posted a brief into a claude.ai project thread.
+
+**Steps:**
+1. Concierge: new `POST /v1/brief`. The request is fixed in `agent.brief_prompt`
+   (mail from the last 24h, 72h on Mondays; calendar today through +7 days)
+   with its own `BRIEF_SYSTEM`; the body may carry approved memories and
+   nothing else (`validate_brief`).
+2. The brief runs `read_only`: `tools.build()` registers only the read tier and
+   `tiers.decide(..., read_only=True)` refuses the propose tier in both gates.
+   Its reply never feeds `pending`, so nothing from it can reach `/v1/execute`.
+3. Bot: after each *scheduled* digest (and after its stamp), posts the brief as
+   its own message in `#digest`: links defanged, mentions and previews off, and
+   any line the model starts with `#` escaped so it can't pass for a heading.
+   Opt-in with `BRIEF_ENABLED=true` (needs `#ask`). It stays one message, a
+   run that stopped early says so, and a run that finished and really read
+   mail (`reads_ok`) stamps `source-brief`,
+   which `heartbeat.sh` publishes and `hl-google-stale` ages.
+4. Own ceilings for the brief: `CONCIERGE_BRIEF_MAX_TURNS` (8) and
+   `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20). TSD amended (Decision 4, the
+   scheduling note, Cost, and the Phases list).
+
+**Issues encountered:**
+- The TSD rejects both a cloud routine as the always-on piece (it can't reach
+  Home Assistant) and a timer that reads mail while holding write tools. The
+  brief therefore lives here and holds no proposal tools at all; drafts stay
+  on demand in `#ask` behind ✅.
+
+**Resolution:**
+- Set `BRIEF_ENABLED=true` in `docker/assistant/.env`, deploy both stacks
+  (`docker/concierge` first, then `docker/assistant`), and restart Grafana for
+  the alert summary. The next 07:30 digest is followed by the brief. Retire
+  the cloud routine once it has posted.
+
+**Notes / next steps:**
+- Apple calendar events already render in the digest's Today section via
+  `HA_CALENDARS`; the brief's `calendar_events` is Google only.
+- Cost: one concierge run per day, capped at $0.20; typically a few cents.
+
+---
+
 ## 2026-10-13 — Drive temperature cron never ran smartctl
 
 **Goal:** Stop the repeated "Drive temperature check has not run" alert.

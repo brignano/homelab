@@ -32,10 +32,10 @@ from .chat import (
 )
 from .concierge import (
     APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, approvable, defang, fact_of,
-    footer as concierge_footer, render_proposal, usable_memories,
+    footer as concierge_footer, render_brief, render_proposal, usable_memories,
 )
 from .config import Config
-from .day import SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
+from .day import BRIEF_SOURCE, SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
 from .digest import build as build_digest
 from .facts import FactCollector
 from .google import Google
@@ -101,6 +101,7 @@ class Assistant(discord.Client):
         self.ollama: Ollama | None = None
         self.collector: FactCollector | None = None
         self.day: DayCollector | None = None
+        self._brief_stamp: str | None = None
         self.concierge: Concierge | None = None
         self._guild = discord.Object(id=cfg.guild_id)
 
@@ -158,6 +159,17 @@ class Assistant(discord.Client):
             for source in DAY_SOURCES:
                 clear_stamp(day_stamp_path(state_dir, source))
 
+        # The morning brief's own dead man's switch: `source-brief`, written
+        # only after a brief that finished, published by heartbeat.sh with the
+        # day's sources, and aged by hl-google-stale. Armed here so a brief
+        # that never once worked still alerts; cleared when it is off.
+        self._brief_stamp = day_stamp_path(state_dir, BRIEF_SOURCE) if state_dir else None
+        if self._brief_stamp:
+            if not self.cfg.brief_active:
+                clear_stamp(self._brief_stamp)
+            elif read_stamp(self._brief_stamp) is None:
+                write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+
         # With the schedule off there is nothing to be stale about, so drop
         # any timestamp a previous run left behind. An alert that fires forever
         # because a feature is deliberately disabled is noise that teaches you
@@ -201,6 +213,8 @@ class Assistant(discord.Client):
         if self.cfg.ask_enabled:
             log.info("concierge (#ask) active in channel %s via %s",
                      self.cfg.ask_channel_id, self.cfg.concierge_url)
+        if self.cfg.brief_active:
+            log.info("morning brief active: posts under the %02d:%02d digest", *self.cfg.digest_at)
 
     # --- conversational channels (#chat: local model; #ask: concierge) ---
 
@@ -500,6 +514,36 @@ class Assistant(discord.Client):
         # so `hl-digest-missing` fires if the next one fails too.
         if ok:
             write_stamp(self.cfg.digest_stamp_path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+
+        # After the stamp, so a slow or failed brief can never hold back or
+        # fail the digest it rides on.
+        if self.cfg.brief_active and self.concierge is not None:
+            await self.post_brief(channel)
+
+    async def post_brief(self, channel) -> None:
+        """The concierge's read-only morning brief, as its own message under the digest."""
+        try:
+            reply = await self.concierge.brief(await self._memories())
+        except ConciergeError as exc:
+            log.warning("morning brief unavailable: %s", exc)
+            text = f"⚠️ Morning brief unavailable: {exc}"
+        except Exception:  # noqa: BLE001 — a bad brief must not kill the loop
+            log.exception("morning brief failed")
+            text = "⚠️ Morning brief failed — see `docker logs assistant`."
+        else:
+            when = dt.datetime.now(tz=self.cfg.tz).strftime("%a %d %b")
+            text = render_brief(reply, when)
+            # Finished AND really read mail: an expired concierge sign-in
+            # still "finishes", and must age into hl-google-stale instead.
+            if reply.ok and reply.reads_ok and self._brief_stamp:
+                write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+        try:
+            # render_brief keeps it to one message, so nothing unlabelled can
+            # land under the digest.
+            await channel.send(text, allowed_mentions=discord.AllowedMentions.none(),
+                               suppress_embeds=True)
+        except discord.HTTPException as exc:
+            log.warning("could not post morning brief: %s", exc)
 
     @scheduled_digest.before_loop
     async def _before_digest(self) -> None:

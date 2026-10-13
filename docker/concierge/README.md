@@ -45,10 +45,20 @@ flowchart LR
   *and* in `can_use_tool`. No Claude Code built-ins (`tools=[]`), nothing
   pre-approved, `permission_mode="default"`, no settings files read.
   `tests/smoke.py` pins all of it.
+- **The morning brief is read-only.** `POST /v1/brief` runs a fixed request
+  (`agent.brief_prompt`: mail from the last 24h, 72h on Mondays; calendar
+  through the next 7 days) with only the read tools registered and the
+  propose tier refused by both gates. The body may carry approved memories
+  and nothing else, and its reply never becomes a pending proposal. The bot
+  calls it after each scheduled digest when its `BRIEF_ENABLED=true`, under
+  its own lower caps (`CONCIERGE_BRIEF_MAX_TURNS` 8,
+  `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20); see
+  [`docker/assistant/README.md`](../assistant/README.md) → "The morning brief".
 
 ## What it costs
 
-On-demand only: nothing here is scheduled. Each question is one agent run on
+Nothing here keeps its own schedule. Each question, and the bot's one morning
+brief a day, is one agent run on
 `claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50. Typical
 lookups are a few cents; the footer under each answer shows the real figure.
 The monthly ceiling is the **`homelab` workspace's spend limit** in the Claude

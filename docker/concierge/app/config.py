@@ -86,6 +86,11 @@ class Config:
     tz: ZoneInfo
     port: int = 8080
     workdir: str = "/srv/work"
+    # The scheduled morning brief's own ceilings (/v1/brief): the first Claude
+    # spend nobody asked for, so lower than a question's, and it shares the
+    # workspace's monthly limit with #ask.
+    brief_max_turns: int = 8
+    brief_max_budget_usd: float = 0.20
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -150,6 +155,8 @@ class Config:
             model=os.environ.get("CONCIERGE_MODEL", "").strip() or "claude-opus-5-5",
             max_turns=_int("CONCIERGE_MAX_TURNS", 12),
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
+            brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
+            brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.20),
             timeout_s=_int("CONCIERGE_TIMEOUT_S", 300),
             max_queue=_int("CONCIERGE_MAX_QUEUE", 3),
             max_proposals=_int("CONCIERGE_MAX_PROPOSALS", 3),

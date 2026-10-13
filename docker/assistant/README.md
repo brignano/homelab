@@ -341,6 +341,26 @@ renders any proposed memory under ✅/❌ from the proposal's arguments
 Setup, costs and the audit trail are in
 [`docker/concierge/README.md`](../concierge/README.md).
 
+### The morning brief
+
+With `#ask` set up, each **scheduled** digest is followed by a second message
+in `#digest`: Claude's read of what needs you today. The bot calls the
+concierge's `/v1/brief`, which reads mail (24h, 72h on Mondays) and the
+calendar with read-only tools: it cannot propose anything, so it holds no
+draft, event or scene tool while it reads mail nobody asked it to. Ask in
+`#ask` for a draft. The answer is rendered like `#ask`'s, with links shown in
+full, no previews, no pings, and any line starting with `#` escaped so it
+can't pass for one of the digest's headings. `/digest` does not run it.
+
+**Opt-in:** `BRIEF_ENABLED=true` in `.env`, because it sends a day of mail
+to Anthropic every morning without anyone asking. It runs after the digest's
+stamp is written, so a slow or failed brief never delays or fails the digest;
+it posts a one-line ⚠️ instead, and a run that stopped early says so above its
+text. It stays one message, cut if long. It stamps `source-brief` only when it
+finishes having actually read mail (an expired concierge sign-in does not
+count), so `hl-google-stale` fires if it stops working for 25h. The digest's Today section still lists Apple calendar events
+(through Home Assistant); the brief's calendar is Google only.
+
 ### Live homelab readings in the conversation
 
 Ask *"how's the server doing?"* in `#chat` and you get real numbers, because

@@ -86,6 +86,8 @@ class Reply:
     seconds: float = 0.0
     model: str = ""
     stop: str = ""
+    # The brief's "mail was really read" (concierge tools.google_reads_ok).
+    reads_ok: bool = False
 
 
 def parse_reply(body: dict) -> Reply:
@@ -104,6 +106,7 @@ def parse_reply(body: dict) -> Reply:
         seconds=float(body.get("seconds") or 0),
         model=str(body.get("model") or ""),
         stop=str(body.get("stop") or ""),
+        reads_ok=body.get("reads_ok") is True,
     )
 
 
@@ -138,6 +141,36 @@ def defang(answer: str) -> str:
     """
     answer = _MASKED.sub(lambda m: f"{m.group(1)} (<{m.group(2)}>)", answer)
     return _BARE.sub(r"<\1>", answer)
+
+
+def render_brief(reply: Reply, when: str) -> str:
+    """The brief as posted under the digest, as ONE message.
+
+    The answer can quote mail a stranger wrote, so it gets the same treatment
+    as #ask: links defanged here, mentions and previews suppressed where it is
+    sent. It posts in #digest right under the lab's verdict, so a line the
+    model wrote must not pass for one of the bot's headings or footers (`#`,
+    `-#`), and an overlong answer is cut rather than spilling into unlabelled
+    messages. A run that did not finish says so above its text. Proposals are
+    ignored: the brief has none to make, and nothing here would render one.
+    """
+    lines = []
+    for ln in defang(reply.answer).split("\n"):
+        if ln.lstrip().startswith(("#", "-#")):
+            ln = "\\" + ln.lstrip()
+        lines.append(ln)
+    head = f"### ☀️ Morning brief — {when}"
+    if not reply.ok:
+        head += f"\n⚠️ _Incomplete ({reply.stop or 'no result'}): may be partial._"
+    tail = footer(reply)
+    room = BRIEF_LIMIT - len(head) - len(tail) - 2
+    body = "\n".join(lines)
+    if len(body) > room:
+        body = body[:room - 1].rstrip() + "…"
+    return head + "\n" + body + "\n" + tail
+
+
+BRIEF_LIMIT = 1990
 
 
 def fact_of(proposal: Proposal) -> str | None:
@@ -227,6 +260,7 @@ class Concierge:
                  timeout_s: int = 360) -> None:
         self._session = session
         self._url = base_url.rstrip("/") + "/v1/ask"
+        self._brief_url = base_url.rstrip("/") + "/v1/brief"
         self._execute_url = base_url.rstrip("/") + "/v1/execute"
         self._token = token
         # Longer than the concierge's own CONCIERGE_TIMEOUT_S, so its timeout,
@@ -234,10 +268,18 @@ class Concierge:
         self._timeout = aiohttp.ClientTimeout(total=timeout_s)
 
     async def ask(self, prompt: str, history: list[dict], memories: list[str]) -> Reply:
+        return await self._run(self._url, {"prompt": prompt, "history": history, "memories": memories})
+
+    async def brief(self, memories: list[str]) -> Reply:
+        """The scheduled morning brief. The request is fixed in the concierge;
+        only the approved memories are sent. It comes back with no proposals."""
+        return await self._run(self._brief_url, {"memories": memories})
+
+    async def _run(self, url: str, payload: dict) -> Reply:
         try:
             async with self._session.post(
-                self._url,
-                json={"prompt": prompt, "history": history, "memories": memories},
+                url,
+                json=payload,
                 headers={"Authorization": f"Bearer {self._token}"},
                 timeout=self._timeout,
             ) as resp:
