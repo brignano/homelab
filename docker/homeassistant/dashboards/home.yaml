@@ -145,6 +145,8 @@ views:
           # this week's events (today first). Reminders is left out: it is a
           # to-do list, not a calendar. calendar.appointments is confirmed;
           # events and work are inferred from the calendar names.
+          # calendar.sonarr is Sonarr's airing schedule, through the Remote
+          # Calendar integration (README → "Sonarr calendar").
           - type: heading
             heading: Calendar
             icon: mdi:calendar
@@ -154,6 +156,7 @@ views:
               - calendar.appointments
               - calendar.events
               - calendar.work
+              - calendar.sonarr
             grid_options:
               columns: full
           - type: weather-forecast

@@ -85,6 +85,24 @@ def _root(name: str, default: str) -> str:
     return root
 
 
+def _region() -> str:
+    region = os.environ.get("WATCH_REGION", "").strip().upper() or "US"
+    if len(region) != 2 or not region.isalpha():
+        raise SystemExit(f"config error: WATCH_REGION={region!r} must be a two-letter country code, e.g. US")
+    return region
+
+
+def _list_id() -> str:
+    raw = os.environ.get("TMDB_LIST_ID", "").strip()
+    # Pasting the list's address works too: themoviedb.org/list/8123456-movie-night
+    if "/list/" in raw:
+        raw = raw.split("/list/", 1)[1]
+    raw = raw.split("-", 1)[0].split("?", 1)[0].strip("/")
+    if raw and not raw.isdigit():
+        raise SystemExit(f"config error: TMDB_LIST_ID={raw!r} must be the number in the list's address")
+    return raw
+
+
 @dataclass(frozen=True)
 class Config:
     # Not read here: ANTHROPIC_API_KEY. The bundled Claude Code CLI reads it from
@@ -134,6 +152,21 @@ class Config:
     sonarr_api_key: str = ""
     sonarr_root: str = "/data/library/shows"
     media_quality_profile: str = "HD-1080p"
+
+    # Movie night (app/watch.py): read-only. TMDB for the backlog and where each
+    # title streams; Jellyfin for what is already here and what has been watched.
+    tmdb_token: str = ""
+    tmdb_list_id: str = ""
+    watch_region: str = "US"
+    streaming_services: tuple[str, ...] = ()
+    jellyfin_url: str = "http://jellyfin:8096"
+    jellyfin_api_key: str = ""
+    jellyfin_user: str = ""
+    jellyfin_public_url: str = ""
+
+    @property
+    def watch_enabled(self) -> bool:
+        return bool(self.tmdb_token or self.jellyfin_api_key)
 
     @property
     def media_enabled(self) -> bool:
@@ -199,4 +232,12 @@ class Config:
             sonarr_api_key=os.environ.get("SONARR_API_KEY", "").strip(),
             sonarr_root=_root("SONARR_ROOT", "/data/library/shows"),
             media_quality_profile=os.environ.get("MEDIA_QUALITY_PROFILE", "").strip() or "HD-1080p",
+            tmdb_token=os.environ.get("TMDB_TOKEN", "").strip(),
+            tmdb_list_id=_list_id(),
+            watch_region=_region(),
+            streaming_services=_list("STREAMING_SERVICES", ""),
+            jellyfin_url=os.environ.get("JELLYFIN_URL", "").strip().rstrip("/") or "http://jellyfin:8096",
+            jellyfin_api_key=os.environ.get("JELLYFIN_API_KEY", "").strip(),
+            jellyfin_user=os.environ.get("JELLYFIN_USER", "").strip(),
+            jellyfin_public_url=os.environ.get("JELLYFIN_PUBLIC_URL", "").strip().rstrip("/"),
         )

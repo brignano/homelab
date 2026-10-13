@@ -49,6 +49,19 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-13 — Concierge: movie_night (TMDB + Jellyfin, read-only)
+
+**Goal:** Stop spending movie night scrolling. Ask Otto in #ask for "comedy or thriller, under 2 hours" and get three picks with where to watch each.
+
+**Steps:**
+1. New read tool `movie_night` (`docker/concierge/app/watch.py`): ranks unwatched Jellyfin titles, a TMDB watchlist (`TMDB_LIST_ID`) and well-rated TMDB titles on your services (`STREAMING_SERVICES`), checks runtime, and returns where each streams or rents (JustWatch via TMDB).
+2. GET only, to Jellyfin over `proxy_proxy` and to `api.themoviedb.org`. Never adds or downloads.
+
+**Notes / next steps:**
+- Going live needs `TMDB_TOKEN` and/or `JELLYFIN_API_KEY` (plus `JELLYFIN_USER`) in `docker/concierge/.env`, then `docker compose -f docker/concierge/docker-compose.yml up -d --build` and `--selftest`. README step 8.
+
+---
+
 ## 2026-10-13 — Calendar MCP server for Claude Code (read-only)
 
 **Goal:** Let Claude Code read the iCloud calendars Home Assistant already sees,
