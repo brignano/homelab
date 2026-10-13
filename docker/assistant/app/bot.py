@@ -38,7 +38,7 @@ from .concierge import (
 )
 from .config import Config
 from .day import BRIEF_SOURCE, SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
-from .digest import build as build_digest, prepare as prepare_digest
+from .digest import Card, build as build_digest, card as digest_card, prepare as prepare_digest
 from .facts import FactCollector
 from .google import Google
 from .home import Home
@@ -606,11 +606,16 @@ class Assistant(discord.Client):
             # _brief never raises.
             if brief is not None:
                 message += "\n\n" + "\n".join((await brief).lines)
-        # The brief quotes mail strangers wrote: no pings, no previews. The
-        # digest's masked Grafana links still render as links.
-        for part in chunk(message):
-            await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
-                               suppress_embeds=True)
+        # The brief quotes mail strangers wrote: no pings, no previews. A
+        # link inside an embed never unfurls, so the card needs no suppression
+        # (and suppress_embeds would hide the card itself).
+        card = digest_card(message, self.cfg.grafana_url)
+        if card is not None:
+            await channel.send(embed=to_embed(card), allowed_mentions=discord.AllowedMentions.none())
+        else:
+            for part in chunk(message):
+                await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
+                                   suppress_embeds=True)
 
         # Only the SCHEDULED run records this, and only when it worked.
         # `/digest` at three in the afternoon would refresh the timestamp and
@@ -772,6 +777,15 @@ class ApprovalView(discord.ui.View):
             await self._finish("Expired — nothing done", None)
 
 
+def to_embed(card: Card) -> discord.Embed:
+    """A digest card as a Discord embed: title, status bar, body, footer."""
+    embed = discord.Embed(title=card.title, description=card.description,
+                          colour=card.colour, url=card.url)
+    if card.footer:
+        embed.set_footer(text=card.footer)
+    return embed
+
+
 # --- command registration -----------------------------------------------------
 
 def register_commands(client: Assistant) -> None:
@@ -891,7 +905,15 @@ def register_commands(client: Assistant) -> None:
             log.exception("on-demand digest failed")
             await reply(interaction, f"Digest failed: `{exc}`")
             return
-        await reply(interaction, message)
+        card = digest_card(message, client.cfg.grafana_url)
+        if card is None:
+            await reply(interaction, message)
+            return
+        try:
+            await interaction.followup.send(embed=to_embed(card))
+        except discord.HTTPException as exc:
+            log.warning("digest followup failed (%s); falling back to text", exc)
+            await reply(interaction, message)
 
     @tree.command(description="Show model, queue depth, and the next scheduled digest")
     async def status(interaction: discord.Interaction) -> None:

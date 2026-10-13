@@ -318,6 +318,26 @@ def _():
     assert dict(links(_facts(), "https://stats.example.com/"))["Triage"] == f"{base}/d/homelab-triage"
 
 
+@check("digest: posted as a card whose bar, title and footer match the text")
+def _():
+    from app.digest import CARD_ATTENTION, CARD_OK, card, render
+    base = "https://stats.example.com"
+    calm = render(_facts(targets_up=2, targets_total=2), "All normal.", model="m", seconds=3.0,
+                  grafana_url=base)
+    c = card(calm, base)
+    assert c.title.startswith("✅ Homelab digest") and c.colour == CARD_OK, c
+    assert c.url == f"{base}/d/homelab-triage"
+    # The metadata line is the footer; the links line stays clickable in the body.
+    assert c.footer and c.footer.startswith("m · 3s") and "-#" not in c.footer, c.footer
+    assert "[Triage ↗](" in c.description and "-# " not in c.description, c.description
+    assert "## " not in c.description and "**Services**" in c.description
+    worse = card(render(_facts(targets_up=1, targets_total=2, targets_down=["loki"]), None))
+    assert worse.colour == CARD_ATTENTION and worse.url is None
+    # A failed run is not a digest: it stays a plain message.
+    assert card("⚠️ Homelab digest failed to run: `boom`") is None
+    assert len(card("## ✅ x\n" + "y" * 5000).description) <= 4096
+
+
 @check("digest: no Grafana URL configured means no links, not broken ones")
 def _():
     from app.digest import render
