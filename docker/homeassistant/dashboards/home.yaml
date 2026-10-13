@@ -131,7 +131,11 @@ views:
           - type: map
             entities:
               - person.anthony_brignano
-              - device_tracker.spaceship_location
+              # The car's marker shows its icon instead of the initial "T".
+              # The icon itself (mdi:car-electric) is set on the entity in
+              # Settings → Entities, which needs no restart.
+              - entity: device_tracker.spaceship_location
+                label_mode: icon
             default_zoom: 13
             hours_to_show: 0
             grid_options:
