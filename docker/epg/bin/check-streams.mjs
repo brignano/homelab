@@ -20,7 +20,13 @@
 // browser user agent Jellyfin sends):
 //   1. the URL answers 2xx with an HLS playlist, or with video;
 //   2. for a master playlist, its first variant answers with a media playlist;
-//   3. the media playlist's first segment answers 2xx.
+//   3. the media playlist's first segment answers 2xx;
+//   4. ffprobe, the tool Jellyfin's player is built on, finds a video stream.
+//      Steps 1-3 passed 24 channels on 2026-10-13 that FFmpeg could not open
+//      ("Output file does not contain any stream"), mostly amagi.tv feeds
+//      for other countries. Jellyfin's web player hung on each until the page
+//      was reloaded. start.sh installs ffprobe; without it this step is
+//      skipped and logged.
 //
 // Runs at container start (pm2.config.cjs) and at the start of every grab
 // (grab-all.mjs), so it follows the nightly schedule. The file is replaced
@@ -36,6 +42,7 @@
 //   EPG_LANGS            guide languages to keep, e.g. "en,es" (default all);
 //                        a channel's language is its guide source's lang
 //                        attribute in public/channels.xml
+import { execFile } from 'node:child_process'
 import fs from 'node:fs'
 
 const outFile = process.argv[2] || 'public/playlist.m3u'
@@ -45,6 +52,7 @@ const requireGuide = process.env.EPG_REQUIRE_GUIDE === 'true'
 const langs = (process.env.EPG_LANGS || '').split(/[\s,]+/).filter(Boolean)
 const CONCURRENCY = 8
 const TIMEOUT_MS = 10_000
+const PROBE_TIMEOUT_MS = 25_000
 // Below this share of channels passing, assume the box, not the streams, is
 // the problem and keep the previous list.
 const MIN_PASS_SHARE = 0.2
@@ -148,6 +156,25 @@ async function check(entry) {
   await get(new URL(seg, media.url).href, headers)
 }
 
+function ffprobeAvailable() {
+  return new Promise((resolve) => execFile('ffprobe', ['-version'], (err) => resolve(!err)))
+}
+
+// The last step: does FFmpeg itself find a video stream? Same headers as above.
+function probe(entry) {
+  const h = headersFor(entry)
+  const args = ['-v', 'error', '-rw_timeout', '15000000', '-user_agent', h['user-agent']]
+  if (h.referer) args.push('-headers', `Referer: ${h.referer}\r\n`)
+  args.push('-show_entries', 'stream=codec_type', '-of', 'csv=p=0', entry.url)
+  return new Promise((resolve, reject) => {
+    execFile('ffprobe', args, { timeout: PROBE_TIMEOUT_MS }, (err, stdout) => {
+      if (/\bvideo\b/.test(stdout || '')) resolve()
+      else reject(new Error(err?.killed ? 'probe timeout' : 'no video stream'))
+    })
+  })
+}
+const useProbe = await ffprobeAvailable()
+
 // Fetch every playlist; all must answer, as in make-channels.mjs.
 const entries = []
 const seen = new Set()
@@ -249,6 +276,7 @@ async function worker() {
     const i = next++
     try {
       await check(candidates[i])
+      if (useProbe) await probe(candidates[i])
       passed[i] = true
     } catch (err) {
       const reason = err.name === 'TimeoutError' || err.name === 'AbortError' ? 'timeout' : err.message
@@ -256,6 +284,7 @@ async function worker() {
     }
   }
 }
+if (!useProbe) log('ffprobe is not installed; skipping the FFmpeg check')
 await Promise.all(Array.from({ length: CONCURRENCY }, worker))
 
 const keep = candidates.filter((_, i) => passed[i])

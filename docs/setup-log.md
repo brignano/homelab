@@ -95,6 +95,10 @@ Chronological record of significant configuration steps, decisions, and issues.
   and guide URLs had also been swapped in Jellyfin's dashboard; fixed by hand.
   `EPG_REQUIRE_GUIDE` now means listings in `guide.xml`, not just a guide
   source, and `EPG_LANGS` keeps only the listed guide languages.
+- 2026-10-13: of the 176 channels left, 24 still would not open in Jellyfin
+  (mostly amagi.tv feeds meant for other countries); the web player hung on
+  them until the page was reloaded. Found by running Jellyfin's own ffprobe
+  over the playlist. `check-streams.mjs` now ends with the same ffprobe test.
 
 ---
 
