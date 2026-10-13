@@ -140,6 +140,56 @@ automation blink:
               entity_id: "{{ motion }}"
             continue_on_error: true
 
+# Sonarr: a "Watch" item in Apple Reminders, and a phone notification, when a
+# monitored episode airs (README > "Sonarr reminders"). calendar.sonarr is the
+# Remote Calendar integration reading Sonarr's iCal feed; HA fetches it over
+# the LAN, so nothing is exposed. In iCloud the episodes are reminders, not
+# events that block out time; the calendar itself shows only in HA (the
+# dashboard card, and the digest through HA_CALENDARS).
+#
+# The reminder goes to todo.reminders, the iCloud Reminders list HA sees
+# through the CalDAV integration, due at the air time. Adding it is silent, so
+# it happens at any hour; a midnight release is waiting in the list by morning.
+#
+# The notification goes to every mobile_app device tracker (the HA Companion
+# app), each at notify.mobile_app_<its object id>, waking hours only.
+automation sonarr:
+  - id: sonarr_episode_airing
+    alias: Sonarr - episode airing
+    mode: queued
+    triggers:
+      - trigger: calendar
+        event: start
+        entity_id: calendar.sonarr
+    variables:
+      episode: "{{ trigger.calendar_event.summary }}"
+      phones: >-
+        {{ integration_entities('mobile_app') | select('match', 'device_tracker[.]')
+           | map('replace', 'device_tracker.', '') | list }}
+    actions:
+      - if: "{{ states('todo.reminders') not in ['unknown', 'unavailable'] }}"
+        then:
+          - action: todo.add_item
+            target:
+              entity_id: todo.reminders
+            data:
+              item: "Watch {{ episode }}"
+              due_datetime: "{{ trigger.calendar_event.start }}"
+            continue_on_error: true
+      - if:
+          - condition: time
+            after: "08:00:00"
+            before: "23:00:00"
+        then:
+          - repeat:
+              for_each: "{{ phones }}"
+              sequence:
+                - action: "notify.mobile_app_{{ repeat.item }}"
+                  data:
+                    title: Airing now
+                    message: "{{ episode }}"
+                  continue_on_error: true
+
 # Jax's litter box: the last good reading, kept through Wi-Fi drop-outs.
 #
 # The box's entity IDs come from its Tuya model name, "Cat Litter Box M2"
