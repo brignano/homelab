@@ -7,8 +7,8 @@ services:
   # takes a message in #ask, POSTs it here over the assistant_concierge network,
   # and renders the answer and any approval prompts. This container has no
   # Discord connection of its own. Outbound only: api.anthropic.com, Google,
-  # Home Assistant and Prometheus on the host, and Radarr/Sonarr over
-  # proxy_proxy.
+  # Home Assistant and Prometheus on the host, Radarr/Sonarr and Jellyfin over
+  # proxy_proxy, and TMDB.
   concierge:
     build: .
     image: homelab-concierge:latest
@@ -78,6 +78,25 @@ services:
       # /data/library/movies and /data/library/shows (config.py).
       RADARR_ROOT: ${RADARR_ROOT:-}
       SONARR_ROOT: ${SONARR_ROOT:-}
+
+      # Optional: movie night (movie_night tool, read-only). See README.md →
+      # "Movie night". TMDB: themoviedb.org → Settings → API → "API Read Access
+      # Token" (the long one). Jellyfin: Dashboard → API Keys, reached by name
+      # over proxy_proxy. Either alone works; neither = no movie_night tool.
+      TMDB_TOKEN: ${TMDB_TOKEN:-}
+      # The watchlist: a TMDB list's number (or its whole address). Blank = none.
+      TMDB_LIST_ID: ${TMDB_LIST_ID:-}
+      WATCH_REGION: ${WATCH_REGION:-US}
+      # The services you pay for, as TMDB/JustWatch name them, comma-separated,
+      # e.g. "Netflix,Hulu,Max,Disney Plus,Amazon Prime Video". `--selftest`
+      # names any it can't match.
+      STREAMING_SERVICES: ${STREAMING_SERVICES:-}
+      JELLYFIN_URL: ${JELLYFIN_URL:-http://jellyfin:8096}
+      JELLYFIN_API_KEY: ${JELLYFIN_API_KEY:-}
+      # Whose watch history counts as "already seen". Blank = the only user.
+      JELLYFIN_USER: ${JELLYFIN_USER:-}
+      # The address you open Jellyfin at, for a tap-to-play link under each pick.
+      JELLYFIN_PUBLIC_URL: ${JELLYFIN_PUBLIC_URL:-}
 
       TZ: ${TZ:-UTC}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}

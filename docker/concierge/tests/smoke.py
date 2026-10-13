@@ -43,6 +43,7 @@ def check(name: str):
 
 
 from app import actions, agent, forecast, google, hacalendar, home, homelab, media, scenes, tiers, tools  # noqa: E402
+from app import watch  # noqa: E402
 from app import config  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.server import validate, validate_brief  # noqa: E402
@@ -74,7 +75,8 @@ def _ctx(google_on: bool = True, home_on: bool = True,
                              forecast=forecast.Forecast(None, "http://ha:8123", "t", "weather.home") if extras else None,
                              homelab=homelab.Homelab(None, "http://prom:9090") if extras else None,
                              ha_calendars=hacalendar.HaCalendars(None, "http://ha:8123", "t", ("calendar.icloud",))
-                             if extras else None)
+                             if extras else None,
+                             watch=watch.Watch(watch.Tmdb(None, "t", "US"), None, "", ()) if extras else None)
 
 
 # --- tiers ----------------------------------------------------------------------
@@ -148,7 +150,8 @@ def _():
     _, names = tools.build(_ctx(google_on=False, home_on=False, media_on=_media(False, False)))
     assert names == ["remember"], names
     _, names = tools.build(_ctx(google_on=False, home_on=False, extras=True))
-    assert set(names) == {"remember", "weather_forecast", "home_calendar_events", "homelab_status"}, names
+    assert set(names) == {"remember", "weather_forecast", "home_calendar_events", "homelab_status",
+                          "movie_night"}, names
 
 
 @check("remember records a bounded one-line proposal and nothing else")
@@ -728,6 +731,254 @@ def _():
         try:
             Config.from_env()
             raise AssertionError("lock accepted as a weather entity")
+        except SystemExit:
+            pass
+    finally:
+        os.environ.clear()
+        os.environ.update(keep)
+
+
+# --- movie night ------------------------------------------------------------------
+
+def _jf_item(name, kind="Movie", genres=("Comedy",), played=False, tmdb="", minutes=100, rating=7.5):
+    return {"Id": "jf" + norm(name), "Type": kind, "Name": name, "ProductionYear": 2019,
+            "Genres": list(genres), "CommunityRating": rating, "RunTimeTicks": minutes * 600_000_000,
+            "ProviderIds": {"Tmdb": tmdb} if tmdb else {}, "UserData": {"Played": played},
+            "Overview": "x" * 500}
+
+
+def norm(t):
+    return watch.norm_title(t)
+
+
+@check("movie night: genres from Jellyfin, TMDB ids and free text map to ours")
+def _():
+    assert watch.canon_genres(["Sci-Fi & Fantasy", "Action & Adventure"]) == \
+        {"science fiction", "fantasy", "action", "adventure"}
+    assert watch.canon_genres(["Comedy", "Suspense", "Made up"]) == {"comedy", "thriller"}
+    assert watch.genre_args(["comedy", "sci-fi"]) == {"comedy", "science fiction"}
+    assert watch.genre_args(None) == set()
+    try:
+        watch.genre_args(["comedy", "vibes"])
+        raise AssertionError("unknown genre accepted")
+    except ValueError as exc:
+        assert "vibes" in str(exc)
+    rows = watch.tmdb_rows([{"id": 1, "name": "Show", "genre_ids": [10765, 9648], "first_air_date": "2020-01-01"}],
+                           "show", "discover")
+    assert rows[0]["kind"] == "show" and rows[0]["genres"] == {"science fiction", "fantasy", "mystery"}
+    assert rows[0]["year"] == "2020"
+    # A show asked for as a thriller matches TMDB's nearest show genre.
+    assert watch.matched(rows[0], {"thriller"}) == 1
+    assert watch.matched(dict(rows[0], kind="movie"), {"thriller"}) == 0
+    # A list mixes kinds and people; people are skipped.
+    mixed = watch.tmdb_rows([{"id": 2, "media_type": "movie", "title": "M"},
+                             {"id": 3, "media_type": "person", "name": "P"}], None, "watchlist")
+    assert [r["title"] for r in mixed] == ["M"]
+
+
+@check("movie night: Jellyfin rows know runtime, played, and the TMDB id")
+def _():
+    rows = watch.jellyfin_rows([_jf_item("Game Night", tmdb="445571", minutes=100, played=True),
+                                _jf_item("Severance", kind="Series", genres=("Drama", "Sci-Fi"), minutes=50),
+                                {"Type": "Episode", "Id": "e"}, "junk"])
+    assert [r["title"] for r in rows] == ["Game Night", "Severance"]
+    assert rows[0]["runtime"] == 100 and rows[0]["played"] and rows[0]["tmdb_id"] == "445571"
+    assert rows[1]["kind"] == "show" and rows[1]["genres"] == {"drama", "science fiction"}
+    assert len(rows[0]["overview"]) <= watch.MAX_OVERVIEW + 1
+
+
+@check("movie night: one candidate per title, the library's copy wins")
+def _():
+    lib = watch.jellyfin_rows([_jf_item("Knives Out", genres=("Mystery",), tmdb="546554")])
+    wl = watch.tmdb_rows([{"id": 546554, "media_type": "movie", "title": "Knives Out", "vote_average": 7.8}],
+                         None, "watchlist")
+    disc = watch.tmdb_rows([{"id": 546554, "title": "Knives Out"}, {"id": 9, "title": "Other"}],
+                           "movie", "discover", on_yours=True)
+    merged = watch.merge([lib, wl, disc])
+    assert len(merged) == 2, merged
+    ko = merged[0]
+    assert ko["jellyfin_id"] and ko["sources"] == {"jellyfin", "watchlist", "discover"} and ko["on_yours"]
+
+
+@check("movie night: eligibility honours kind, genre, runtime, watched and exclusions")
+def _():
+    c = watch.jellyfin_rows([_jf_item("Long Comedy", minutes=150)])[0]
+    assert watch.eligible(c, "movie", {"comedy"}, None, set(), set())
+    assert not watch.eligible(c, "show", set(), None, set(), set())
+    assert not watch.eligible(c, "movie", {"horror"}, None, set(), set())
+    assert not watch.eligible(c, "movie", set(), 120, set(), set())
+    assert not watch.eligible(c, "any", set(), None, {norm("Long Comedy")}, set())
+    t = watch.tmdb_rows([{"id": 5, "title": "Seen It", "genre_ids": [35]}], "movie", "discover")[0]
+    assert watch.eligible(t, "movie", {"comedy"}, 90, set(), set()), "unknown runtime is checked later"
+    assert not watch.eligible(t, "movie", {"comedy"}, None, set(), {"5"}), "watched in Jellyfin"
+
+
+@check("movie night: ranking prefers rating, the library and the watchlist; the shuffle is small")
+def _():
+    import random as _r
+    hi = dict(watch.tmdb_rows([{"id": 1, "title": "Great", "vote_average": 8.6}], "movie", "discover")[0])
+    lo = dict(watch.tmdb_rows([{"id": 2, "title": "Meh", "vote_average": 6.0}], "movie", "discover")[0])
+    for seed in range(50):
+        assert watch.rank([lo, hi], set(), _r.Random(seed))[0]["title"] == "Great"
+    lib = watch.jellyfin_rows([_jf_item("Here", rating=7.4)])[0]
+    away = dict(watch.tmdb_rows([{"id": 3, "title": "Away", "vote_average": 7.4}], "movie", "discover")[0])
+    assert watch.score(lib, set()) > watch.score(away, set())
+    away["sources"] = {"watchlist"}
+    assert watch.score(away, set()) > watch.score(dict(away, sources={"discover"}), set())
+    two = dict(away, genres={"comedy", "romance"})
+    assert watch.score(two, {"comedy", "romance"}) > watch.score(dict(two, genres={"comedy"}), {"comedy", "romance"})
+
+
+@check("movie night: where-to-watch splits the user's services from the rest")
+def _():
+    prov = {"results": {"US": {
+        "link": "https://www.themoviedb.org/movie/1/watch?locale=US",
+        "flatrate": [{"provider_id": 8, "provider_name": "Netflix"}, {"provider_id": 15, "provider_name": "Hulu"}],
+        "ads": [{"provider_id": 73, "provider_name": "Tubi TV"}],
+        "rent": [{"provider_id": 2, "provider_name": "Apple TV"}],
+        "buy": [{"provider_id": 2, "provider_name": "Apple TV"}, {"provider_id": 3, "provider_name": "Google Play Movies"}],
+    }, "GB": {"flatrate": [{"provider_id": 9, "provider_name": "Prime"}]}}}
+    w = watch.where(prov, "US", {8})
+    assert w["streaming_on_yours"] == ["Netflix"] and w["streaming_elsewhere"] == ["Hulu"], w
+    assert w["free_with_ads"] == ["Tubi TV"] and w["rent_or_buy"] == ["Apple TV", "Google Play Movies"], w
+    assert w["link"].startswith("https://www.themoviedb.org/")
+    assert watch.where(prov, "US", set())["streaming"] == ["Netflix", "Hulu"]
+    assert watch.where(prov, "CA", {8}) == {}
+    bad = {"results": {"US": {"link": "https://evil.example/x", "flatrate": []}}}
+    assert "link" not in watch.where(bad, "US", set()), "only TMDB's own link is passed on"
+
+
+@check("movie night: service names resolve leniently, misses are reported")
+def _():
+    avail = {"results": [{"provider_id": 8, "provider_name": "Netflix"},
+                         {"provider_id": 1796, "provider_name": "Netflix Standard with Ads"},
+                         {"provider_id": 337, "provider_name": "Disney Plus"},
+                         {"provider_id": 1899, "provider_name": "Max"},
+                         {"provider_id": 1825, "provider_name": "HBO Max Amazon Channel"}]}
+    found, missing = watch.resolve_services(["Netflix", "Disney+", "max", "Peacock"], avail)
+    assert found == {"Netflix": [8], "Disney+": [337], "max": [1899]}, found
+    assert missing == ["Peacock"]
+    found, _ = watch.resolve_services(["netflix standard"], avail)
+    assert found == {"netflix standard": [1796]}
+
+
+class _FakeHttp:
+    """Stands in for _get_json: canned TMDB and Jellyfin replies, every URL recorded."""
+
+    def __init__(self):
+        self.urls = []
+
+    async def __call__(self, session, who, url, headers, params=None):
+        self.urls.append((url, dict(params or {})))
+        path = url.split("/3", 1)[-1] if who == "tmdb" else url.split(":8096", 1)[-1]
+        if path == "/Users":
+            return [{"Name": "anthony", "Id": "u1"}, {"Name": "guest", "Id": "u2"}]
+        if path == "/Items":
+            return {"Items": [_jf_item("Game Night", tmdb="445571", minutes=100),
+                              _jf_item("Superbad", tmdb="8363", minutes=113, played=True),
+                              _jf_item("Hereditary", genres=("Horror",), minutes=127)]}
+        if path.startswith("/watch/providers/"):
+            return {"results": [{"provider_id": 8, "provider_name": "Netflix"}]}
+        if path.startswith("/list/"):
+            return {"total_pages": 1, "items": [
+                {"id": 8363, "media_type": "movie", "title": "Superbad", "genre_ids": [35], "vote_average": 7.2},
+                {"id": 100, "media_type": "movie", "title": "Long Funny", "genre_ids": [35], "vote_average": 8.0}]}
+        if path.startswith("/discover/movie"):
+            if params.get("page") == 2:
+                return {"results": []}
+            return {"results": [{"id": 200, "title": "Streaming Laughs", "genre_ids": [35],
+                                 "vote_average": 7.6, "release_date": "2021-05-01"}]}
+        if path == "/movie/100":
+            return {"runtime": 160, "watch/providers": {"results": {}}}
+        if path == "/movie/200":
+            return {"runtime": 95, "watch/providers": {"results": {"US": {
+                "flatrate": [{"provider_id": 8, "provider_name": "Netflix"}]}}}}
+        raise AssertionError(f"unexpected request {who} {path}")
+
+
+@check("movie night: a whole pick, end to end, with fake TMDB and Jellyfin")
+def _():
+    import random as _r
+    fake = _FakeHttp()
+    real = watch._get_json
+    watch._get_json = fake
+    try:
+        w = watch.Watch(watch.Tmdb(None, "t", "US"),
+                        watch.Jellyfin(None, "http://jellyfin:8096", "k", "Anthony", "https://jf.example"),
+                        "8123456", ("Netflix",))
+        out = asyncio.run(w.pick(kind="movie", genres={"comedy"}, max_minutes=120, count=3,
+                                 exclude=set(), rng=_r.Random(1)))
+    finally:
+        watch._get_json = real
+    titles = [p["title"] for p in out["picks"]]
+    # Superbad: watched. Hereditary: not a comedy. Long Funny: 160 min > 120.
+    assert sorted(titles) == ["Game Night", "Streaming Laughs"], out
+    game = next(p for p in out["picks"] if p["title"] == "Game Night")
+    assert game["where"] == {"jellyfin": True, "link": "https://jf.example/web/#/details?id=jfgamenight"}
+    laughs = next(p for p in out["picks"] if p["title"] == "Streaming Laughs")
+    assert laughs["where"]["streaming_on_yours"] == ["Netflix"] and laughs["runtime_minutes"] == 95
+    assert out["provider_data"] == "JustWatch, via TMDB" and "notes" not in out, out
+    items = [p for u, p in fake.urls if u.endswith("/Items")]
+    assert items and items[0]["userId"] == "u1", "JELLYFIN_USER's watch history"
+    disc = [p for u, p in fake.urls if "/discover/movie" in u][0]
+    assert disc["with_genres"] == "35" and disc["with_watch_providers"] == "8" and disc["with_runtime.lte"] == 120
+
+
+@check("movie night: one source failing still answers from the other")
+def _():
+    async def broken(session, who, url, headers, params=None):
+        raise watch.WatchError(f"{who}: could not reach it (ClientError)")
+    real = watch._get_json
+    fake = _FakeHttp()
+    async def tmdb_down(session, who, url, headers, params=None):
+        return await (broken if who == "tmdb" else fake)(session, who, url, headers, params)
+    watch._get_json = tmdb_down
+    try:
+        w = watch.Watch(watch.Tmdb(None, "t", "US"), watch.Jellyfin(None, "http://jellyfin:8096", "k", "anthony"),
+                        "", ("Netflix",))
+        out = asyncio.run(w.pick(kind="any", genres=set(), max_minutes=None, count=3, exclude=set()))
+    finally:
+        watch._get_json = real
+    assert {p["title"] for p in out["picks"]} == {"Game Night", "Hereditary"}, out
+    assert any("TMDB" in n for n in out["notes"]), out
+
+
+@check("movie night: the tool checks its arguments; the module only ever GETs")
+def _():
+    ctx = _ctx(google_on=False, home_on=False, extras=True)
+    server, names = tools.build(ctx)
+    assert "movie_night" in names and tiers.tier_of(tiers.PREFIX + "movie_night") == "read"
+    src = inspect.getsource(watch)
+    for verb in ("session.post", "session.put", "session.patch", "session.delete", "session.request",
+                 '"POST"', '"PUT"', '"DELETE"'):
+        assert verb not in src, f"watch.py must stay read-only: found {verb}"
+    assert src.count("session.get(") == 1, "every request goes through _get_json"
+
+
+@check("movie night: config — list address, region, services")
+def _():
+    keep = dict(os.environ)
+    try:
+        os.environ["CONCIERGE_TOKEN"] = "a" * 64
+        os.environ["TMDB_LIST_ID"] = "https://www.themoviedb.org/list/8123456-movie-night?x=1"
+        os.environ["STREAMING_SERVICES"] = "Netflix, Hulu ,"
+        os.environ["WATCH_REGION"] = "us"
+        cfg = Config.from_env()
+        assert cfg.tmdb_list_id == "8123456" and cfg.watch_region == "US"
+        assert cfg.streaming_services == ("Netflix", "Hulu") and not cfg.watch_enabled
+        os.environ["JELLYFIN_API_KEY"] = "k"
+        assert Config.from_env().watch_enabled
+        os.environ["WATCH_REGION"] = "USA"
+        try:
+            Config.from_env()
+            raise AssertionError("bad region accepted")
+        except SystemExit:
+            pass
+        os.environ["WATCH_REGION"] = "US"
+        os.environ["TMDB_LIST_ID"] = "movie-night"
+        try:
+            Config.from_env()
+            raise AssertionError("bad list id accepted")
         except SystemExit:
             pass
     finally:

@@ -18,6 +18,8 @@ flowchart LR
   c -->|"lookup, queue, add<br/>proxy_proxy network"| arr[Radarr / Sonarr]
   c -->|"weather.get_forecasts, one entity"| ha
   c -->|"fixed instant queries, host :9090"| prom[Prometheus]
+  c -->|"library, watched (GET only)"| jf[Jellyfin]
+  c -->|"watchlist, discover, where to stream"| tmdb[TMDB]
   c -->|answer + proposals| bot
   bot -->|"✅ remember"| mem
   bot -->|"✅ anything else: POST /v1/execute"| c
@@ -29,7 +31,7 @@ flowchart LR
   containers there can reach its port; the bearer token keeps them out.
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
   `home_overview`, `weather_forecast`, `home_calendar_events`,
-  `homelab_status`, `media_search`, `media_downloads`.
+  `homelab_status`, `media_search`, `media_downloads`, `movie_night`.
 - **Every write is a proposal.** `remember`, `create_event`, `move_event`,
   `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
@@ -212,7 +214,59 @@ else is affected.
 
 `--selftest` checks both (`Forecast ok`, `Prometheus ok`).
 
-### 8. Bring it up
+### 8. Movie night (optional, you)
+
+Ask in #ask, *"movie night, she likes comedies and thrillers, nothing over 2
+hours"*, and you get three picks, one line each, with where to watch them:
+
+```
+Game Night (2018) · 7.0 · 1h40 · in Jellyfin, ready to play
+Palm Springs (2020) · 7.3 · 1h30 · on Hulu (yours)
+The Nice Guys (2016) · 7.4 · 1h56 · rent on Apple TV or Prime Video
+```
+
+(Illustrative; the real picks come from your library and TMDB.)
+
+*"Something else"* gives three more, without the ones you've already seen
+offered. `movie_night` is a read tool: it picks, it never adds, downloads or
+changes anything. Its backlog is three things merged into one ranked pool:
+
+1. **Your Jellyfin library**, minus what `JELLYFIN_USER` has already watched.
+   Library titles rank higher: nothing to sign in to.
+2. **Your watchlist**: a list on themoviedb.org. Whenever someone mentions
+   something good, add it from TMDB's site on your phone. Watchlist titles
+   rank higher too.
+3. **Well-rated titles in those genres** (TMDB rating 6.8+, enough votes to
+   mean it), streaming on your services when `STREAMING_SERVICES` is set, so
+   there are always picks even with an empty watchlist.
+
+Anything already watched in Jellyfin is left out wherever it came from.
+Runtime is checked against TMDB for each pick, so "under 2 hours" holds. For a
+show, the limit is per episode. Streaming data is JustWatch's, through TMDB,
+for `WATCH_REGION`.
+
+Setup, all in `docker/concierge/.env`; either half works without the other:
+
+1. **TMDB** (free): make an account on [themoviedb.org](https://www.themoviedb.org),
+   then *Settings → API → Create → Developer*. Copy the **API Read Access
+   Token** (the long one) into `TMDB_TOKEN`.
+2. **Watchlist**: on TMDB, *your profile → Lists → Create list* (e.g. "Movie
+   night"), set it **public** (the token can read only public lists), and
+   paste its address into `TMDB_LIST_ID`.
+3. **Your services**: `STREAMING_SERVICES=Netflix,Hulu,Max,Disney Plus,Amazon Prime Video`,
+   or whichever you pay for. `--selftest` names any TMDB doesn't know.
+4. **Jellyfin**: *Dashboard → API Keys → +*, into `JELLYFIN_API_KEY`. (Jellyfin
+   keys are admin-scoped; this code only ever GETs, and a test pins that.) Set
+   `JELLYFIN_USER` to your Jellyfin username (whose "watched" counts), and
+   `JELLYFIN_PUBLIC_URL` to the address you open Jellyfin at for a
+   tap-to-play link under each library pick. It reaches Jellyfin at
+   `http://jellyfin:8096` over `proxy_proxy`.
+
+`--selftest` prints `TMDB ok (… services matched, watchlist N titles)` and
+`Jellyfin ok (N movies, N shows, N not watched yet)`. Replies are cached for 10
+minutes, so asking again is quick and costs TMDB nothing.
+
+### 9. Bring it up
 
 The assistant stack owns the `assistant_concierge` network, so it comes up first:
 
@@ -254,6 +308,8 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | Forecast fails | "HTTP 4xx … is weather.x the right entity?": `HA_WEATHER_ENTITY` names an entity that does not exist. Check *Settings → Entities* |
 | Home calendar fails | "HTTP 4xx … is calendar.x the right entity?": an ID in `HA_CALENDARS` that HA does not know |
 | Prometheus unreachable | `homelab_status` reports "could not reach Prometheus"; nothing else is affected. One unreadable query shows in `could_not_read` |
+| TMDB or Jellyfin down, key wrong | `movie_night` still answers from the other one and says which it couldn't read |
+| A service in `STREAMING_SERVICES` not matched | `--selftest` names it; use the name JustWatch shows |
 | Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |
 | ✅ but nothing downloads | Radarr/Sonarr added it and searched; no indexer had a release yet. It stays monitored and grabs one when it appears. Check *Wanted* in the app |
 | Spend limit reached | the run fails with the API error; the digest is unaffected |

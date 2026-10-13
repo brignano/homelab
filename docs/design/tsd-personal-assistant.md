@@ -415,6 +415,12 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       `weather_forecast` (HA `weather.get_forecasts` for one configured
       entity, over REST) and `homelab_status` (fixed Prometheus instant
       queries via the host port). README step 7.
+- [x] **Movie night** (2026-10-13). Read tool `movie_night`: picks by
+      genre and runtime from unwatched Jellyfin titles, a TMDB watchlist and
+      well-rated titles on the user's services, each with where it streams or
+      can be rented (JustWatch via TMDB). GET only; never adds or downloads.
+      README step 8. Going live needs `TMDB_TOKEN` and/or `JELLYFIN_API_KEY`
+      **(you)**.
 - [x] **A thread per request, and #activity** (2026-10-13). Every new #ask
       message gets its own thread, named after it, so #ask stays the one
       place to ask for anything without turning into one long scroll. Each
@@ -494,7 +500,12 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   member, and it still checks a bearer token. Since 2026-10-12 the concierge
   is also on `proxy_proxy`, to reach Radarr and Sonarr for `add_movie` /
   `add_show`; the token is then the only thing between its port and the
-  other containers there.
+  other containers there. Since 2026-10-13 it also reads Jellyfin there
+  (`movie_night`, GET only), and calls one more outside host,
+  `api.themoviedb.org` (`TMDB_TOKEN`, a read access token). Jellyfin API keys
+  are admin-scoped; the code only GETs (a test pins it) and the agent cannot
+  send its own requests (`tools=[]`), so the scope is accepted, as it is for
+  the Radarr/Sonarr keys.
 - **Audit:** the concierge logs every tool call, its tier and the approval
   outcome to stdout, which reaches Loki through Alloy. "What did it do last
   Tuesday" is a LogQL query.

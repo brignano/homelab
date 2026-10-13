@@ -34,6 +34,7 @@ from .home import Home, HomeError
 from .homelab import Homelab, StatusError
 from .media import MAX_QUEUE, Media, MediaError
 from .tiers import READ, SERVER
+from .watch import GENRES, KINDS, MAX_PICKS, Watch, WatchError, genre_args, norm_title
 
 MAX_FACT_CHARS = 300
 GOOGLE_READS = frozenset({"calendar_events", "mail_search", "mail_read"})
@@ -54,6 +55,7 @@ class TaskContext:
     forecast: Forecast | None = None
     ha_calendars: HaCalendars | None = None
     homelab: Homelab | None = None
+    watch: Watch | None = None
     # The scheduled morning brief: only read-tier tools are registered.
     read_only: bool = False
     proposals: list[dict] = field(default_factory=list)
@@ -137,7 +139,8 @@ def build(ctx: TaskContext):
             ctx.google_calls[name] = ctx.google_calls.get(name, 0) + 1
         try:
             result = await fn(args)
-        except (GoogleError, HomeError, MediaError, ForecastError, CalendarError, StatusError) as exc:
+        except (GoogleError, HomeError, MediaError, ForecastError, CalendarError, StatusError,
+                WatchError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
             if google_read:
@@ -469,6 +472,48 @@ def build(ctx: TaskContext):
                 return await run("add_show", _add_show, args)
 
             tools.append(add_show)
+
+    if ctx.watch is not None:
+        watch = ctx.watch
+
+        async def _movie_night(args: dict) -> dict:
+            try:
+                genres = genre_args(args.get("genres"))
+            except ValueError as exc:
+                return _err(f"movie_night: {exc}")
+            kind = args.get("kind") or "movie"
+            if kind not in KINDS:
+                return _err(f"movie_night: kind must be one of {', '.join(KINDS)}")
+            raw_max = args.get("max_minutes")
+            max_minutes = _int_arg(args, "max_minutes", 0, 30, 400) if raw_max not in (None, "", 0) else None
+            excluded = args.get("exclude_titles") if isinstance(args.get("exclude_titles"), list) else []
+            exclude = {norm_title(t) for t in excluded[:50] if isinstance(t, str)} - {""}
+            return _ok(await watch.pick(kind=kind, genres=genres, max_minutes=max_minutes,
+                                        count=_int_arg(args, "count", 3, 1, MAX_PICKS), exclude=exclude))
+
+        @tool("movie_night",
+              "Pick something to watch tonight from the user's backlog: unwatched titles "
+              "in their Jellyfin library, their watchlist, and well-rated titles on their "
+              "streaming services. Returns a few ranked picks (shuffled a little, so asking "
+              "again gives others) with rating, length, genres, a short overview, and "
+              "`where`: in Jellyfin (press play) or which services stream it, and where to "
+              "rent or buy it. Read-only.",
+              {"type": "object", "properties": {
+                  "genres": {"type": "array", "items": {"type": "string", "enum": list(GENRES)},
+                             "description": "Any of these; a pick needs at least one. Map moods: "
+                             "scary = horror, funny = comedy, romcom = romance + comedy, "
+                             "sci-fi = science fiction. Empty = anything."},
+                  "kind": {"type": "string", "enum": list(KINDS), "description": "Default movie."},
+                  "max_minutes": {"type": "integer", "description": "Longest runtime, per "
+                                  "episode for a show. Omit for no limit."},
+                  "count": {"type": "integer", "minimum": 1, "maximum": MAX_PICKS, "description": "Default 3."},
+                  "exclude_titles": {"type": "array", "items": {"type": "string"},
+                                     "description": "Titles already suggested or turned down."},
+              }})
+        async def movie_night(args: dict) -> dict:
+            return await run("movie_night", _movie_night, args)
+
+        tools.append(movie_night)
 
     async def _remember(args: dict) -> dict:
         return record_proposal(ctx, args)

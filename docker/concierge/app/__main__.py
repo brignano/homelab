@@ -1,7 +1,7 @@
 """Entry point.
 
   python -m app                serve /v1/ask on the internal network (default)
-  python -m app --selftest     check the CLI, Google, Home Assistant, Radarr and Sonarr; no API spend
+  python -m app --selftest     check the CLI, Google, Home Assistant, Radarr, Sonarr, TMDB and Jellyfin; no API spend
   python -m app --ask "..."    run one task from the terminal and print it (costs money)
   python -m app --google-auth  one-time Google sign-in (read, calendar writes, drafts)
 
@@ -81,6 +81,42 @@ async def _selftest_async(cfg: Config) -> int:
                 print(f"{label:<17}FAILED: {exc}")
                 failed = True
 
+        from .server import watch_from
+        watch = watch_from(cfg, session)
+        if watch.tmdb is None:
+            print("TMDB             off (no TMDB_TOKEN) — movie night picks from Jellyfin only"
+                  if watch.jellyfin else "TMDB             off (no TMDB_TOKEN)")
+        else:
+            try:
+                ids = await watch.service_ids()
+                line = f"TMDB             ok (region {cfg.watch_region}"
+                if cfg.streaming_services:
+                    line += f", {len(cfg.streaming_services) - len(watch.missing_services)} of " \
+                            f"{len(cfg.streaming_services)} services matched ({len(ids)} provider ids)"
+                if cfg.tmdb_list_id:
+                    line += f", watchlist {len(await watch.tmdb.list_items(cfg.tmdb_list_id))} titles"
+                print(line + ")")
+                if watch.missing_services:
+                    print(f"                 no TMDB service named: {', '.join(watch.missing_services)}")
+                    failed = True
+            except Exception as exc:  # noqa: BLE001
+                print(f"TMDB             FAILED: {exc}")
+                failed = True
+        if watch.jellyfin is None:
+            print("Jellyfin         off (no JELLYFIN_API_KEY)")
+        else:
+            try:
+                rows = await watch.jellyfin.library()
+                movies = sum(r["kind"] == "movie" for r in rows)
+                unplayed = sum(not r["played"] for r in rows)
+                print(f"Jellyfin         ok ({movies} movies, {len(rows) - movies} shows, "
+                      f"{unplayed} not watched yet by {cfg.jellyfin_user or 'its only user'})")
+            except Exception as exc:  # noqa: BLE001
+                print(f"Jellyfin         FAILED: {exc}")
+                failed = True
+        if not cfg.watch_enabled:
+            print("                 movie_night not registered")
+
     if cfg.home_enabled:
         try:
             text = await Home(cfg.ha_url, cfg.ha_token).live_context()
@@ -133,8 +169,10 @@ async def _ask_async(cfg: Config, question: str) -> int:
         forecast = Forecast(session, cfg.ha_url, cfg.ha_token, cfg.ha_weather_entity) \
             if cfg.forecast_enabled else None
         homelab = Homelab(session, cfg.prometheus_url) if cfg.prometheus_url else None
+        from .server import watch_from
+        watch = watch_from(cfg, session) if cfg.watch_enabled else None
         out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[],
-                              media=media, forecast=forecast, homelab=homelab)
+                              media=media, forecast=forecast, homelab=homelab, watch=watch)
     print(out.answer)
     for p in out.proposals:
         print(f"[proposal] {p['tool']}({p['args']})")
