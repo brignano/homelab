@@ -47,7 +47,7 @@ views:
     # space under the shorter columns; three columns of similar height fit on
     # one screen.
     sections:
-      # Left column: the house, the car and Jax.
+      # Left column: the house, the car, Jax and the map.
       - type: grid
         cards:
           - type: heading
@@ -123,8 +123,22 @@ views:
           - type: tile
             entity: sensor.jax_last_litter_visit_duration
             name: Visit length
+          # The map sits under Jax, not on the right: the calendar made the
+          # right column a screen taller than the left.
+          - type: heading
+            heading: Map
+            icon: mdi:map-marker-radius
+          - type: map
+            entities:
+              - person.anthony_brignano
+              - device_tracker.spaceship_location
+            default_zoom: 13
+            hours_to_show: 0
+            grid_options:
+              columns: full
+              rows: 4
 
-      # Right column: weather and where everyone is.
+      # Right column: the thermostat, the calendar and the weather.
       - type: grid
         cards:
           - type: heading
@@ -163,15 +177,3 @@ views:
             forecast_type: daily
             grid_options:
               columns: full
-          - type: heading
-            heading: Map
-            icon: mdi:map-marker-radius
-          - type: map
-            entities:
-              - person.anthony_brignano
-              - device_tracker.spaceship_location
-            default_zoom: 13
-            hours_to_show: 0
-            grid_options:
-              columns: full
-              rows: 4
