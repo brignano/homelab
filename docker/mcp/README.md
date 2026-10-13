@@ -7,6 +7,9 @@ Grafana datasources that are already wired up.
 
 Design + decisions: [`docs/design/tsd-homelab-mcp-server.md`](../../docs/design/tsd-homelab-mcp-server.md).
 
+The same site also serves a second, separate server at `/calendar/mcp`: read-only
+iCloud calendars through Home Assistant. It lives in [`../mcp-calendar/`](../mcp-calendar/README.md).
+
 ```
 dev machine (Claude Code)
    │  https://mcp.$HOMELAB_DOMAIN/mcp   Authorization: Bearer <MCP_BEARER_TOKEN>

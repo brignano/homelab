@@ -27,6 +27,37 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-13 — Calendar MCP server for Claude Code (read-only)
+
+**Goal:** Let Claude Code read the iCloud calendars Home Assistant already sees,
+without an iCloud public link.
+
+**Steps:**
+1. New stack `docker/mcp-calendar/`: a FastMCP server (mcp 1.30.0, the concierge's
+   pin) with two read tools, `list_calendars` and `calendar_events`. The HA call
+   is `GET /api/calendars/<entity>` only, for IDs in `HA_CALENDARS`, cut to title,
+   start, end and location, the same ceiling as `docker/concierge/app/hacalendar.py`.
+2. Caddy serves it at `mcp.$HOMELAB_DOMAIN/calendar/mcp` behind the existing
+   bearer token; everything else on that site still goes to mcp-grafana.
+3. CI job `mcp-calendar` runs `tests/smoke.py` offline.
+
+**Issues encountered:**
+- Splitting the site with `handle` blocks would have bypassed the token check:
+  Caddy sorts `handle` ahead of `respond`. Checked with a local Caddy against two
+  stub upstreams before switching to an ordered `route`.
+
+**Resolution:**
+- `route { respond @noauth 401; reverse_proxy @calendar ...; reverse_proxy mcp-grafana }`.
+  Locally: no token and wrong token are 401 on `/mcp` and `/calendar/*`; the
+  right token routes each path to its upstream.
+
+**Notes / next steps:**
+- Needs `docker/mcp-calendar/.env` (an HA token for a non-admin user) and a
+  Caddy recreate. Claude Code on each machine adds it with `claude mcp add`.
+- Reachable from the tailnet only, so cloud Claude sessions cannot use it.
+
+---
+
 ## 2026-10-13 — Morning brief in the digest (concierge, read-only)
 
 **Goal:** One place each morning for "what needs me today", replacing a Claude

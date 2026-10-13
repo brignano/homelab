@@ -1,0 +1,6 @@
+# Pinned for reproducible rebuilds on the LXC. Bump deliberately, not by drift.
+# Same mcp and aiohttp pins as docker/concierge, so the lab runs one version of each.
+mcp==1.30.0
+aiohttp==3.14.3
+# zoneinfo needs a tz database; python:*-slim doesn't ship one.
+tzdata==2024.2

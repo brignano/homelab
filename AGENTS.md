@@ -128,6 +128,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Ollama | `docker/ai/` | LAN + tailnet |
 | Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
+| mcp-calendar | `docker/mcp-calendar/` | internal: no ports; reached from outside CT 100 only through Caddy at `mcp.$HOMELAB_DOMAIN/calendar/mcp` (same bearer token as Grafana MCP, LAN + tailnet). Read-only iCloud calendars via HA `GET /api/calendars/<entity>`, limited to `HA_CALENDARS`. Containers on `monitoring_monitoring` can reach it without the token |
 | concierge (Claude Agent SDK) | `docker/concierge/` | **outbound only** — no ports, no Caddy route; reached by the assistant over `assistant_concierge` (bearer token); also on `proxy_proxy` to reach Radarr/Sonarr, where the token is what keeps other containers out; reads HA and Prometheus through the host |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
