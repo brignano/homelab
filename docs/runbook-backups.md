@@ -216,7 +216,9 @@ drive asleep. It runs from a cron file on the host (not root's crontab, so
 
 ```bash
 echo '*/15 * * * * root /usr/local/bin/hl-vzdump-hook temp' > /etc/cron.d/hl-drive-temp
-/usr/local/bin/hl-vzdump-hook temp && curl -s localhost:9100/metrics | grep '^homelab_drive_temp'
+# env -i runs it the way cron does (PATH=/usr/bin:/bin); a test from a root
+# shell finds /usr/sbin/smartctl and passes even when cron would not.
+env -i /usr/local/bin/hl-vzdump-hook temp && curl -s localhost:9100/metrics | grep '^homelab_drive_temp'
 ```
 
 `hl-smart-hot` reads this and fires on the hour's average above 55C;

@@ -53,6 +53,13 @@
 #
 set -u
 
+# cron runs this with PATH=/usr/bin:/bin, and smartctl lives in /usr/sbin. The
+# `temp` phase then found no smartctl and returned before writing anything, so
+# every hand-run test passed while the cron job never once updated its metric
+# and hl-drive-temp-stale paged an hour after each test (found 2026-10-13).
+# vzdump passes its own full PATH, so the nightly phases never saw this.
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 ENV_FILE="${HL_HOOK_ENV:-/etc/homelab/healthchecks.env}"
 STATE="${HL_HOOK_STATE:-/run/hl-vzdump-hook.state}"
 # Mount points whose drives get a SMART check. One that is not mounted is
