@@ -308,3 +308,39 @@ fi
 # Not `|| true`: delivering this ping is the entire job. A failure exits
 # non-zero for cron, and hc_ping has already said why on stderr.
 hc_ping "$URL" heartbeat
+
+# --- container disk, after the ping -------------------------------------------
+#
+# Per-container writable-layer size, for "Disk used by the biggest containers"
+# on the capacity dashboard. cAdvisor used to answer this, but CT 100's Docker
+# uses the containerd image store (driver-type io.containerd.snapshotter.v1),
+# and cAdvisor only exports container_fs_usage_bytes for the root cgroup there:
+# the panel was blank, which reads exactly like a healthy lab. Docker itself
+# still knows each container's size, whatever the storage backend.
+#
+# After the ping, in its own .prom file, and at most hourly: sizing walks every
+# container's layer, which takes seconds, and nothing about it may delay or
+# fail the dead man's switch.
+publish_container_disk() {
+  _cd_file="$HL_TEXTFILE_DIR/container_disk.prom"
+  [ -z "$(find "$_cd_file" -mmin -55 2>/dev/null)" ] || return 0
+  _cd_ids=$(docker ps -aq 2>/dev/null || true)
+  [ -n "$_cd_ids" ] || return 0
+  # A container removed mid-run makes inspect exit non-zero but still print the
+  # rest, so keep whatever came back.
+  # shellcheck disable=SC2086
+  _cd_sizes=$(timeout 180 docker container inspect --size \
+    -f '{{.Name}} {{.SizeRw}}' $_cd_ids 2>/dev/null || true)
+  [ -n "$_cd_sizes" ] || return 0
+
+  metrics_open container_disk
+  metric_help homelab_container_rw_bytes gauge \
+    "Bytes in each container's writable layer (docker container inspect --size)"
+  printf '%s\n' "$_cd_sizes" | while read -r _cd_name _cd_bytes; do
+    case "$_cd_bytes" in ''|*[!0-9]*) continue ;; esac
+    metric homelab_container_rw_bytes "$_cd_bytes" \
+      "$(metric_kv container "${_cd_name#/}")"
+  done
+  metrics_close
+}
+publish_container_disk || true
