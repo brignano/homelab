@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 # Discord's hard limit is 2000 characters; leave room for the code fences and
 # footers we wrap replies in.
 DISCORD_LIMIT = 1900
@@ -65,3 +67,17 @@ def thread_name(text: str, limit: int = 80) -> str:
     if cut < limit // 2:
         cut = limit - 1
     return line[:cut].rstrip() + "…"
+
+
+def span(delta: dt.timedelta) -> str:
+    """A window's length as the digest labels it: "40m", "9h", "3d".
+
+    Rounded to the nearest unit, never below one minute, so a label can't
+    read "0m" for a window that did cover something."""
+    minutes = max(1, round(delta.total_seconds() / 60))
+    if minutes < 60:
+        return f"{minutes}m"
+    hours = round(minutes / 60)
+    if hours < 48:
+        return f"{hours}h"
+    return f"{round(hours / 24)}d"

@@ -56,19 +56,19 @@ def facts_block(facts: Facts) -> str:
 
     if facts.restarts:
         lines.append(
-            "- Container restarts in last 24h: "
+            f"- Container restarts in last {facts.span}: "
             + ", ".join(f"{name} restarted {count} time(s)" for name, count in facts.restarts)
         )
     else:
-        lines.append("- Container restarts in last 24h: none")
+        lines.append(f"- Container restarts in last {facts.span}: none")
 
     if facts.log_errors:
         lines.append(
-            "- Log lines matching error/fatal/panic in last 24h: "
+            f"- Log lines matching error/fatal/panic in last {facts.span}: "
             + ", ".join(f"{name}: {count}" for name, count in facts.log_errors)
         )
     else:
-        lines.append("- Log lines matching error/fatal/panic in last 24h: none")
+        lines.append(f"- Log lines matching error/fatal/panic in last {facts.span}: none")
 
     # State the verdict explicitly so the model never has to reach one itself.
     if facts.concerns:
@@ -221,7 +221,7 @@ def render(
     ))
     out.append(_line(
         WARN if facts.restarts else "",
-        "Restarts (24h)",
+        f"Restarts ({facts.span})",
         " · ".join(f"{n} ×{c}" for n, c in facts.restarts) if facts.restarts else "none",
     ))
     # Deliberately never marked. facts.py does not count log noise as a
@@ -229,7 +229,7 @@ def render(
     # and a mark here would claim a verdict the code never reached.
     out.append(_line(
         "",
-        "Log errors (24h)",
+        f"Log errors ({facts.span})",
         " · ".join(f"{n} {c}" for n, c in facts.log_errors) if facts.log_errors else "none",
     ))
 
@@ -290,6 +290,13 @@ class Draft:
     seconds: float | None = None
     note: str | None = None
 
+    @property
+    def complete(self) -> bool:
+        """Every source was read. Only then may the next digest start from
+        this one: a source that was down missed its window, and the next
+        digest has to cover it again."""
+        return not self.facts.problems and not (self.day and self.day.problems)
+
     def render(self, grafana_url: str | None = None, brief: Brief | None = None) -> str:
         return render(
             self.facts, self.narration, model=self.model, seconds=self.seconds, note=self.note,
@@ -303,14 +310,20 @@ async def prepare(
     now: datetime,
     num_predict: int = 180,
     day_collector=None,
+    since: datetime | None = None,
 ) -> Draft:
-    """Collect and narrate. Never raises for a narration failure."""
+    """Collect and narrate. Never raises for a narration failure.
+
+    `since` is when the last digest posted: what counts as new (mail,
+    restarts, log errors) starts there instead of 24 hours ago."""
     # Concurrently: these are network reads, not inference. DayCollector never
     # raises, so it cannot take the lab's half of the digest down with it.
+    window = {} if since is None else {"since": since}
     if day_collector is not None:
-        facts, day = await asyncio.gather(collector.collect(now), day_collector.collect(now))
+        facts, day = await asyncio.gather(collector.collect(now, **window),
+                                          day_collector.collect(now, **window))
     else:
-        facts, day = await collector.collect(now), None
+        facts, day = await collector.collect(now, **window), None
 
     draft = Draft(facts, day)
     try:
@@ -336,9 +349,10 @@ async def build(
     num_predict: int = 180,
     grafana_url: str | None = None,
     day_collector=None,
+    since: datetime | None = None,
 ) -> str:
     """Collect, narrate, render. Never raises for a narration failure."""
-    draft = await prepare(collector, ollama, now, num_predict, day_collector=day_collector)
+    draft = await prepare(collector, ollama, now, num_predict, day_collector=day_collector, since=since)
     return draft.render(grafana_url)
 
 
