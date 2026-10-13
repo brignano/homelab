@@ -9,10 +9,12 @@ on every route but /healthz.
 One task at a time. Nobody but one person asks, and a second request arriving
 mid-task waits rather than running two agents against the same spend limit.
 
-Two routes: /v1/ask runs the agent and returns its answer and proposals;
-/v1/execute carries out ONE proposal after the bot saw a ✅ for it. The second
-never runs the model, and only acts on an id this process handed out, with
-exactly the tool and arguments it stored (app/actions.py).
+Three routes: /v1/ask runs the agent and returns its answer and proposals;
+/v1/brief runs the scheduled morning brief, a fixed request with read-only
+tools that can return no proposals; /v1/execute carries out ONE proposal after
+the bot saw a ✅ for it. The last never runs the model, and only acts on an id
+this process handed out, with exactly the tool and arguments it stored
+(app/actions.py).
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ from .config import Config
 from .google import Google
 from .home import Home
 from .forecast import Forecast
+from .hacalendar import HaCalendars
 from .homelab import Homelab
 from .media import Media, Radarr, Sonarr
 from .scenes import Scenes
@@ -69,6 +72,20 @@ def validate(body: object) -> tuple[str, list[dict], list[str]] | str:
     return prompt.strip(), turns, memories
 
 
+def validate_brief(body: object) -> list[str] | str:
+    """The brief takes approved memories and nothing else: its request is fixed
+    in agent.brief_prompt, so no caller text can become the task. Pure; tested."""
+    if not isinstance(body, dict):
+        return "body must be a JSON object"
+    if set(body) - {"memories"}:
+        return "the brief takes only `memories`"
+    memories = body.get("memories", [])
+    if not isinstance(memories, list) or len(memories) > MAX_MEMORIES \
+            or not all(isinstance(m, str) for m in memories):
+        return f"memories must be a list of at most {MAX_MEMORIES} strings"
+    return memories
+
+
 def media_from(cfg: Config, session: aiohttp.ClientSession | None) -> Media:
     """Radarr and/or Sonarr, whichever has a key."""
     return Media(
@@ -89,6 +106,7 @@ class Concierge:
         self.scenes: Scenes | None = None
         self.media: Media | None = None
         self.forecast: Forecast | None = None
+        self.ha_calendars: HaCalendars | None = None
         self.homelab: Homelab | None = None
         self.pending = actions.Pending()
 
@@ -105,14 +123,18 @@ class Concierge:
             self.media = media_from(self.cfg, self._session)
         if self.cfg.forecast_enabled:
             self.forecast = Forecast(self._session, self.cfg.ha_url, self.cfg.ha_token, self.cfg.ha_weather_entity)
+        if self.cfg.ha_calendars_enabled:
+            self.ha_calendars = HaCalendars(self._session, self.cfg.ha_url, self.cfg.ha_token,
+                                            self.cfg.ha_calendars)
         if self.cfg.prometheus_url:
             self.homelab = Homelab(self._session, self.cfg.prometheus_url)
         log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s "
-                 "forecast=%s homelab=%s",
+                 "forecast=%s ha_calendars=%d homelab=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
                  len(self.cfg.ha_scenes) if self.scenes else 0,
                  bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr),
-                 self.forecast is not None, self.homelab is not None)
+                 self.forecast is not None, len(self.cfg.ha_calendars) if self.ha_calendars else 0,
+                 self.homelab is not None)
 
     async def stop(self, app: web.Application) -> None:
         if self._session is not None:
@@ -139,14 +161,43 @@ class Concierge:
             return _bad(parsed)
         prompt, history, memories = parsed
 
+        outcome = await self._run(prompt=prompt, history=history, memories=memories)
+        if isinstance(outcome, web.Response):
+            return outcome
+
+        for p in outcome.proposals:
+            if p["tool"] in actions.EXECUTABLE:
+                self.pending.add(p)
+        return self._reply(outcome)
+
+    async def brief(self, request: web.Request) -> web.Response:
+        if not self._authorised(request):
+            log.warning("refused /v1/brief from %s: bad or missing token", request.remote)
+            return _bad("unauthorised", 401)
+        try:
+            body = await request.json()
+        except ValueError:
+            return _bad("body is not JSON")
+        memories = validate_brief(body)
+        if isinstance(memories, str):
+            return _bad(memories)
+        outcome = await self._run(prompt="", history=[], memories=memories, brief=True)
+        if isinstance(outcome, web.Response):
+            return outcome
+        # Nothing from a brief is ever made executable: it has no proposal
+        # tools, and this does not consult outcome.proposals at all.
+        return self._reply(outcome)
+
+    async def _run(self, **kwargs) -> agent.Outcome | web.Response:
+        """One agent task under the lock and the timeout, or the error response."""
         if self._in_flight >= self.cfg.max_queue:
             return _bad("busy", 429)
         async def locked_run() -> agent.Outcome:
             async with self._lock:
                 return await agent.run(self.cfg, self.google, self.home,
-                                       prompt=prompt, history=history, memories=memories,
                                        media=self.media, forecast=self.forecast,
-                                       homelab=self.homelab)
+                                       ha_calendars=self.ha_calendars,
+                                       homelab=self.homelab, **kwargs)
 
         self._in_flight += 1
         try:
@@ -163,11 +214,10 @@ class Concierge:
             return _bad(f"{exc.__class__.__name__}: {exc}", 502)
         finally:
             self._in_flight -= 1
+        return outcome
 
-        for p in outcome.proposals:
-            if p["tool"] in actions.EXECUTABLE:
-                self.pending.add(p)
-
+    @staticmethod
+    def _reply(outcome: agent.Outcome) -> web.Response:
         return web.json_response({
             "ok": outcome.ok,
             "task": outcome.task_id,
@@ -179,6 +229,7 @@ class Concierge:
             "seconds": round(outcome.seconds, 1),
             "model": outcome.model,
             "stop": outcome.stop,
+            "reads_ok": outcome.reads_ok,
         })
 
 
@@ -218,6 +269,7 @@ def make_app(cfg: Config) -> web.Application:
     app.on_cleanup.append(concierge.stop)
     app.router.add_get("/healthz", concierge.healthz)
     app.router.add_post("/v1/ask", concierge.ask)
+    app.router.add_post("/v1/brief", concierge.brief)
     app.router.add_post("/v1/execute", concierge.execute)
     return app
 

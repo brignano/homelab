@@ -189,7 +189,9 @@ publish_metrics() {
 
   # When the digest last READ each of its sources (the "Today" section: Google
   # calendar and mail; Home Assistant states as "home" and its calendars as
-  # "ha-calendar"), for hl-google-stale, whose uid predates Home Assistant.
+  # "ha-calendar"), and when the morning brief last finished ("brief", written
+  # by the bot after the concierge's /v1/brief), for hl-google-stale, whose uid
+  # predates Home Assistant.
   # Same rules as the digest stamp, for the same reasons. The
   # bot writes one file per enabled source, armed at startup so a sign-in that
   # never worked still ages into an alert. An absent file means the source is
@@ -197,7 +199,7 @@ publish_metrics() {
   # See docker/assistant/app/day.py and docs/design/tsd-personal-assistant.md.
   _state_dir=$(dirname "$DIGEST_STAMP")
   _source_help=0
-  for _source in calendar mail home ha-calendar; do
+  for _source in calendar mail home ha-calendar brief; do
     _f="$_state_dir/source-$_source"
     [ -r "$_f" ] || continue
     _ts=$(head -c 32 "$_f" 2>/dev/null | tr -dc '0-9' || true)

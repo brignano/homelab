@@ -31,6 +31,10 @@ services:
       # stop one runaway question from spending a meaningful part of it.
       CONCIERGE_MAX_TURNS: ${CONCIERGE_MAX_TURNS:-12}
       CONCIERGE_MAX_BUDGET_USD: ${CONCIERGE_MAX_BUDGET_USD:-0.50}
+      # The morning brief (/v1/brief), which the bot runs daily when its
+      # BRIEF_ENABLED=true: lower caps, since nobody asked for this spend.
+      CONCIERGE_BRIEF_MAX_TURNS: ${CONCIERGE_BRIEF_MAX_TURNS:-8}
+      CONCIERGE_BRIEF_MAX_BUDGET_USD: ${CONCIERGE_BRIEF_MAX_BUDGET_USD:-0.20}
       CONCIERGE_TIMEOUT_S: ${CONCIERGE_TIMEOUT_S:-300}
       CONCIERGE_MAX_QUEUE: ${CONCIERGE_MAX_QUEUE:-3}
       CONCIERGE_MAX_PROPOSALS: ${CONCIERGE_MAX_PROPOSALS:-3}
@@ -56,6 +60,7 @@ services:
       # (weather.get_forecasts, which returns data and changes nothing). Needs
       # HA_TOKEN. Blank = off. See app/forecast.py.
       HA_WEATHER_ENTITY: ${HA_WEATHER_ENTITY-weather.forecast_home}
+      HA_CALENDARS: ${HA_CALENDARS:-}
 
       # homelab_status reads fixed instant queries from Prometheus through the
       # port it publishes on the host. Blank = off. See app/homelab.py.

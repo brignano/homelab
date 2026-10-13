@@ -57,6 +57,14 @@ def _scenes() -> tuple[str, ...]:
     return scenes
 
 
+def _calendars() -> tuple[str, ...]:
+    cals = _list("HA_CALENDARS", "")
+    bad = [c for c in cals if not c.startswith("calendar.") or not c[9:].replace("_", "").isalnum()]
+    if bad:
+        raise SystemExit(f"config error: HA_CALENDARS must be calendar.<id> entity IDs, not {', '.join(bad)}")
+    return cals
+
+
 def _weather() -> str:
     entity = os.environ.get("HA_WEATHER_ENTITY", "weather.forecast_home").strip()
     if entity and (not entity.startswith("weather.") or not entity[8:].replace("_", "").isalnum()):
@@ -86,6 +94,11 @@ class Config:
     tz: ZoneInfo
     port: int = 8080
     workdir: str = "/srv/work"
+    # The scheduled morning brief's own ceilings (/v1/brief): the first Claude
+    # spend nobody asked for, so lower than a question's, and it shares the
+    # workspace's monthly limit with #ask.
+    brief_max_turns: int = 8
+    brief_max_budget_usd: float = 0.20
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -99,6 +112,9 @@ class Config:
     ha_scenes: tuple[str, ...] = ()
     # The one weather entity weather_forecast reads (app/forecast.py). Blank = off.
     ha_weather_entity: str = "weather.forecast_home"
+    # Calendars home_calendar_events reads (app/hacalendar.py), e.g. the Apple
+    # calendar through HA's CalDAV integration. Blank = off.
+    ha_calendars: tuple[str, ...] = ()
     # Prometheus, through the port it publishes on the host. Blank = no
     # homelab_status tool (app/homelab.py).
     prometheus_url: str = "http://host.docker.internal:9090"
@@ -126,6 +142,10 @@ class Config:
         return bool(self.ha_token)
 
     @property
+    def ha_calendars_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_calendars)
+
+    @property
     def forecast_enabled(self) -> bool:
         return bool(self.ha_token and self.ha_weather_entity)
 
@@ -150,6 +170,8 @@ class Config:
             model=os.environ.get("CONCIERGE_MODEL", "").strip() or "claude-opus-5-5",
             max_turns=_int("CONCIERGE_MAX_TURNS", 12),
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
+            brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
+            brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.20),
             timeout_s=_int("CONCIERGE_TIMEOUT_S", 300),
             max_queue=_int("CONCIERGE_MAX_QUEUE", 3),
             max_proposals=_int("CONCIERGE_MAX_PROPOSALS", 3),
@@ -162,6 +184,7 @@ class Config:
             ha_token=os.environ.get("HA_TOKEN", "").strip(),
             ha_scenes=_scenes(),
             ha_weather_entity=_weather(),
+            ha_calendars=_calendars(),
             prometheus_url=os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090").strip().rstrip("/"),
             radarr_url=os.environ.get("RADARR_URL", "").strip().rstrip("/") or "http://radarr:7878",
             radarr_api_key=os.environ.get("RADARR_API_KEY", "").strip(),

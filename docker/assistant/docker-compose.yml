@@ -79,6 +79,11 @@ services:
       DISCORD_MEMORY_CHANNEL_ID: ${DISCORD_MEMORY_CHANNEL_ID:-}
       CONCIERGE_URL: ${CONCIERGE_URL:-http://concierge:8080}
       CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:-}
+      # The morning brief: after each scheduled digest, the concierge reads
+      # mail and calendar with read-only tools and the bot posts what needs
+      # you under it. Opt-in: "true" sends a day of mail to Anthropic each
+      # morning, unasked. Needs #ask. See README.md → "The morning brief".
+      BRIEF_ENABLED: ${BRIEF_ENABLED:-false}
 
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}
