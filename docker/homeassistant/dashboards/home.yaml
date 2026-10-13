@@ -24,7 +24,7 @@ views:
     # Not mdi:home: the built-in Overview already uses it in the sidebar.
     icon: mdi:view-dashboard
     type: sections
-    max_columns: 3
+    max_columns: 2
     # The glanceable strip across the top: who is home, the weather, indoors.
     badges:
       - type: entity
@@ -53,8 +53,9 @@ views:
     # space under the shorter columns; three columns of similar height fit on
     # one screen.
     sections:
-      # Column 1: the house. Security first: the presence automations arm and
-      # disarm Blink on their own, and these buttons are the override.
+      # Left column: the house, the car and Jax. Security first: the presence
+      # automations arm and disarm Blink on their own, and these buttons are
+      # the override.
       - type: grid
         cards:
           - type: heading
@@ -79,6 +80,39 @@ views:
             name: Auto-arm when away
             grid_options:
               columns: full
+          # Tesla Fleet, car named "Spaceship" (README → "Asking Alexa
+          # questions"). Values are the car's last report; Tesla Fleet does
+          # not wake it to read them.
+          - type: heading
+            heading: Tesla
+            icon: mdi:car-electric
+          - type: tile
+            entity: sensor.spaceship_battery_level
+            name: Battery
+          - type: tile
+            entity: sensor.spaceship_battery_range
+            name: Range
+          - type: tile
+            entity: sensor.spaceship_charging
+            name: Charging
+          - type: tile
+            entity: lock.spaceship_lock  # check
+            name: Doors
+          # A plain tile, no mode buttons: the car reports a single mode
+          # besides off, so the buttons were one full-width power bar. Tapping
+          # the icon turns climate on or off; tapping the tile opens the
+          # temperature control.
+          - type: tile
+            entity: climate.spaceship_climate
+            name: Climate
+            icon_tap_action:
+              action: perform-action
+              perform_action: climate.toggle
+              target:
+                entity_id: climate.spaceship_climate
+          - type: tile
+            entity: switch.spaceship_sentry_mode  # check
+            name: Sentry
           # The litter box's last good readings (template sensors in
           # config/configuration.yaml). They read unknown until the box
           # reports once after they were created.
@@ -98,7 +132,7 @@ views:
             entity: sensor.jax_last_litter_visit_duration
             name: Visit length
 
-      # Column 2: weather and where everyone is.
+      # Right column: weather and where everyone is.
       - type: grid
         cards:
           - type: heading
@@ -136,39 +170,3 @@ views:
             grid_options:
               columns: full
               rows: 4
-
-      # Column 3: the car. Tesla Fleet, car named "Spaceship" (README →
-      # "Asking Alexa questions"). Values are the car's last report; Tesla
-      # Fleet does not wake it to read them.
-      - type: grid
-        cards:
-          - type: heading
-            heading: Tesla
-            icon: mdi:car-electric
-          - type: tile
-            entity: sensor.spaceship_battery_level
-            name: Battery
-          - type: tile
-            entity: sensor.spaceship_battery_range
-            name: Range
-          - type: tile
-            entity: sensor.spaceship_charging
-            name: Charging
-          - type: tile
-            entity: lock.spaceship_lock  # check
-            name: Doors
-          # A plain tile, no mode buttons: the car reports a single mode
-          # besides off, so the buttons were one full-width power bar. Tapping
-          # the icon turns climate on or off; tapping the tile opens the
-          # temperature control.
-          - type: tile
-            entity: climate.spaceship_climate
-            name: Climate
-            icon_tap_action:
-              action: perform-action
-              perform_action: climate.toggle
-              target:
-                entity_id: climate.spaceship_climate
-          - type: tile
-            entity: switch.spaceship_sentry_mode  # check
-            name: Sentry
