@@ -415,6 +415,14 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       `weather_forecast` (HA `weather.get_forecasts` for one configured
       entity, over REST) and `homelab_status` (fixed Prometheus instant
       queries via the host port). README step 7.
+- [x] **A thread per request, and #activity** (2026-10-13). Every new #ask
+      message gets its own thread, named after it, so #ask stays the one
+      place to ask for anything without turning into one long scroll. Each
+      approved action also gets a line in bot-only #activity, linking back to
+      its thread: the write side's audit trail, as #digest is the lab's.
+      Rejected: a channel per kind of request (you'd pick a channel before
+      asking) and an #approvals channel (the ✅ would sit apart from the
+      conversation that explains it).
 - [x] **Apple calendar** (2026-10-13). Read tool `home_calendar_events`:
       `GET /api/calendars/<entity>` for the `calendar.*` IDs in
       `HA_CALENDARS` (HA's CalDAV integration), so `#ask` and the brief see

@@ -1446,6 +1446,65 @@ def _():
     chans = {c["name"]: c for cat in desired["categories"] for c in cat["channels"]}
     assert chans["ask"].get("bot_only") is False
     assert chans["memory"].get("bot_only") is True
+    assert chans["activity"].get("bot_only") is True
+
+
+@check("ask: a new request's thread is named from its first line, within Discord's cap")
+def _():
+    from app.text import THREAD_NAME_LIMIT, thread_name
+    assert thread_name("  \n what's on   my calendar\ntomorrow?") == "what's on my calendar"
+    assert thread_name("") == "Request" and thread_name("  \n ") == "Request"
+    long = "move my dentist appointment " * 10
+    name = thread_name(long)
+    assert len(name) <= 80 and name.endswith("…") and not name[:-1].endswith(" "), name
+    assert len(thread_name("x" * 500, limit=500)) <= THREAD_NAME_LIMIT
+
+
+@check("config: #activity is optional and off by default")
+def _():
+    from app.config import Config
+    with_env()
+    assert Config.from_env().activity_channel_id is None
+    with_env(DISCORD_ACTIVITY_CHANNEL_ID="7")
+    assert Config.from_env().activity_channel_id == 7
+
+
+@check("ask: a follow-up in a request's thread still sees the message that opened it")
+def _():
+    from types import SimpleNamespace as NS
+    import discord
+    from app.bot import Assistant
+
+    def msg(author, text):
+        return NS(author=NS(id=author, bot=False), content=text, components=[])
+
+    class Thread:
+        id = 99
+        starter_message = None
+        def __init__(self, parent, inside):
+            self.parent, self._inside = parent, inside
+        async def history(self, limit):
+            for m in reversed(self._inside[-limit:]):
+                yield m
+
+    class Parent:
+        def __init__(self, messages):
+            self.messages = messages
+        async def fetch_message(self, mid):
+            if mid not in self.messages:
+                raise discord.NotFound(NS(status=404, reason="nf"), "gone")
+            return self.messages[mid]
+
+    stub = NS(cfg=NS(chat_history_turns=12), user=NS(id=1))
+    stub._to_turn = lambda m: Assistant._to_turn(stub, m)
+    stub._starter = lambda t: Assistant._starter(stub, t)
+    inside = [msg(1, "It's at 3pm."), msg(3, "move it to 4")]
+    opened = Thread(Parent({99: msg(3, "when is the dentist?")}), inside)
+    turns = asyncio.run(Assistant._thread_turns(stub, opened))
+    assert [t.content for t in turns] == ["when is the dentist?", "It's at 3pm.", "move it to 4"], turns
+    # A thread started from scratch has no starter: just its own messages.
+    bare = Thread(Parent({}), inside)
+    assert len(asyncio.run(Assistant._thread_turns(stub, bare))) == 2
 
 
 # --- report -------------------------------------------------------------------

@@ -257,6 +257,9 @@ class Config:
     # and renders; the agent runs in docker/concierge/.
     ask_channel_id: int | None = None
     memory_channel_id: int | None = None
+    # One line per approved action that changed something (an event, a draft,
+    # a scene), linking back to the thread it came from. Blank = off.
+    activity_channel_id: int | None = None
     concierge_url: str = "http://concierge:8080"
     concierge_token: str = ""
     # The morning brief: with each SCHEDULED digest, the concierge reads mail
@@ -335,6 +338,7 @@ class Config:
             ha_calendars=ha_calendars,
             ask_channel_id=ask_id,
             memory_channel_id=memory_id,
+            activity_channel_id=_optional_id("DISCORD_ACTIVITY_CHANNEL_ID"),
             concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
             concierge_token=concierge_token,
             brief_enabled=os.environ.get("BRIEF_ENABLED", "false").lower() == "true",
