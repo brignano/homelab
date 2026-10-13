@@ -340,3 +340,53 @@ async def build(
     """Collect, narrate, render. Never raises for a narration failure."""
     draft = await prepare(collector, ollama, now, num_predict, day_collector=day_collector)
     return draft.render(grafana_url)
+
+
+# --- the digest as a Discord embed ------------------------------------------
+#
+# The same text as render(), laid out as a card: the heading becomes the
+# embed's title, the status its side bar, and the metadata line its footer.
+# Built from the rendered text rather than from Facts so the two can never
+# disagree, and so the failure path (no heading) simply stays a plain message.
+#
+# Hex, not tokens: Discord cannot read CSS. These are brignano/design's
+# dark-scope --success and --attention steps, the ones meant for a fill on a
+# dark ground, which is what an embed bar is in Discord's usual theme.
+CARD_OK = 0x6FBF95       # --success (dark scope)
+CARD_ATTENTION = 0xE0A44F  # --attention (dark scope)
+CARD_DESCRIPTION_LIMIT = 4096
+SUBTEXT = "-# "
+
+
+@dataclass(frozen=True)
+class Card:
+    title: str
+    description: str
+    colour: int
+    footer: str | None = None
+    url: str | None = None
+
+
+def card(text: str, grafana_url: str | None = None) -> Card | None:
+    """The rendered digest as a card, or None if `text` is not a digest.
+
+    The last line, when it is plain subtext, is the metadata footer. Subtext
+    holding links stays in the description: an embed footer cannot link.
+    """
+    lines = text.strip().split("\n")
+    if not lines or not lines[0].startswith("## "):
+        return None
+    title = lines[0][3:].strip()
+    body = lines[1:]
+    footer = None
+    if body and body[-1].startswith(SUBTEXT) and "](" not in body[-1]:
+        footer = body.pop()[len(SUBTEXT):].strip()
+    # The links line was subtext only to keep it small under the body; in a
+    # card it is the last line of the description, which reads the same.
+    body = [ln[len(SUBTEXT):] if ln.startswith(SUBTEXT) else ln for ln in body]
+    description = "\n".join(body).strip()
+    if len(description) > CARD_DESCRIPTION_LIMIT:
+        description = description[:CARD_DESCRIPTION_LIMIT - 1].rstrip() + "…"
+    colour = CARD_ATTENTION if title.startswith("⚠️") else CARD_OK
+    url = f"{grafana_url.rstrip('/')}/d/{DASH_TRIAGE}" if grafana_url else None
+    return Card(title=title, description=description, colour=colour, footer=footer, url=url)

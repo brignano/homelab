@@ -56,6 +56,14 @@ A couple of targets are down and the box is running hot.
 -# llama3.2:3b · 34s · facts from Prometheus + Loki
 ```
 
+That is the text; in `#digest` it arrives as a card (an embed). The heading is
+the card's title and links to Triage, the side bar is green on a ✅ day and
+amber on a ⚠️ one, and the model and sources line is the card's footer. The
+card is built from the same text (`digest.card`), so the two cannot disagree,
+and a digest that failed to run stays a plain message. The bar colours are
+brignano/design's dark-scope `--success` and `--attention`, written as hex
+because Discord cannot read CSS.
+
 It is read once a day, on a phone, before coffee. Three rules follow from that:
 
 **Every fact appears once.** An earlier draft opened with a "Needs attention"
