@@ -136,6 +136,26 @@
   --danger-line: color-mix(in srgb, var(--danger) 32%, transparent);
   --info-line: var(--i-line);
 
+  /* ── Diff ─────────────────────────────────────────────────────────────
+     What a change did to a thing: a deploy, a plan, a pull request. Aliases
+     of the state hues, so a diff adds no hue of its own (DESIGN.md §9):
+
+       --diff-added    created by this change      success — settled
+       --diff-changed  modified by this change     interactive — informational
+       --diff-removed  removed by this change      danger — can lose data
+
+     Always with a symbol and a word (+ added, ~ changed, − removed). Aliased
+     in this block only: these resolve against whichever theme block wins. */
+  --diff-added: var(--success);
+  --diff-added-ink: var(--success-ink);
+  --diff-added-surface: var(--success-surface);
+  --diff-changed: var(--i);
+  --diff-changed-ink: var(--i-ink);
+  --diff-changed-surface: var(--i-surface);
+  --diff-removed: var(--danger);
+  --diff-removed-ink: var(--danger-ink);
+  --diff-removed-surface: var(--danger-surface);
+
   /* ── Mark — identity ──────────────────────────────────────────────────
      Inks a GRAPHIC: the trail line, the A|B monogram, a hero rule. That is
      the entire permitted use.
@@ -331,6 +351,23 @@
   --scrim: rgba(0, 0, 0, 0.68);
 }
 
+:root {
+  /* Tool-tier scale — compact, because scanning beats reading.
+     Declared BEFORE the marketing tier on purpose: `:root` and
+     `.tier-marketing` have the same specificity, so on <html> whichever
+     comes later wins. With this block last, the class did nothing. */
+  --text-xs: 0.6875rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.0625rem;
+  --text-xl: 1.25rem;
+  --text-2xl: 1.5rem;
+  --text-3xl: 1.875rem;
+  --text-4xl: 2.25rem;
+  --section-gap: var(--s6);
+  --measure: 780px;
+}
+
 /* ── Marketing tier ─────────────────────────────────────────────────────
    `class="tier-marketing"` on <html> (brignano.io). Unlocks the display
    face and opens the type scale. COLOUR IS IDENTICAL ACROSS TIERS — that
@@ -347,20 +384,6 @@
   --text-4xl: clamp(2.75rem, 6vw, 4rem);
   --section-gap: var(--s9);
   --measure: 68ch;
-}
-
-:root {
-  /* Tool-tier scale — compact, because scanning beats reading. */
-  --text-xs: 0.6875rem;
-  --text-sm: 0.8125rem;
-  --text-base: 0.9375rem;
-  --text-lg: 1.0625rem;
-  --text-xl: 1.25rem;
-  --text-2xl: 1.5rem;
-  --text-3xl: 1.875rem;
-  --text-4xl: 2.25rem;
-  --section-gap: var(--s6);
-  --measure: 780px;
 }
 
 ::selection {
