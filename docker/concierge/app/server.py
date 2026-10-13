@@ -35,6 +35,7 @@ from .hacalendar import HaCalendars
 from .homelab import Homelab
 from .media import Media, Radarr, Sonarr
 from .scenes import Scenes
+from .watch import Jellyfin, Tmdb, Watch
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +96,16 @@ def media_from(cfg: Config, session: aiohttp.ClientSession | None) -> Media:
     )
 
 
+def watch_from(cfg: Config, session: aiohttp.ClientSession | None) -> Watch:
+    """TMDB and/or Jellyfin, whichever has a key."""
+    return Watch(
+        Tmdb(session, cfg.tmdb_token, cfg.watch_region) if cfg.tmdb_token else None,
+        Jellyfin(session, cfg.jellyfin_url, cfg.jellyfin_api_key, cfg.jellyfin_user,
+                 cfg.jellyfin_public_url) if cfg.jellyfin_api_key else None,
+        cfg.tmdb_list_id, cfg.streaming_services,
+    )
+
+
 class Concierge:
     def __init__(self, cfg: Config) -> None:
         self.cfg = cfg
@@ -108,6 +119,7 @@ class Concierge:
         self.forecast: Forecast | None = None
         self.ha_calendars: HaCalendars | None = None
         self.homelab: Homelab | None = None
+        self.watch: Watch | None = None
         self.pending = actions.Pending()
 
     async def start(self, app: web.Application) -> None:
@@ -128,13 +140,17 @@ class Concierge:
                                             self.cfg.ha_calendars)
         if self.cfg.prometheus_url:
             self.homelab = Homelab(self._session, self.cfg.prometheus_url)
+        if self.cfg.watch_enabled:
+            # Built once, so TMDB and Jellyfin replies stay cached between questions.
+            self.watch = watch_from(self.cfg, self._session)
         log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s "
-                 "forecast=%s ha_calendars=%d homelab=%s",
+                 "forecast=%s ha_calendars=%d homelab=%s tmdb=%s jellyfin=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
                  len(self.cfg.ha_scenes) if self.scenes else 0,
                  bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr),
                  self.forecast is not None, len(self.cfg.ha_calendars) if self.ha_calendars else 0,
-                 self.homelab is not None)
+                 self.homelab is not None, bool(self.watch and self.watch.tmdb),
+                 bool(self.watch and self.watch.jellyfin))
 
     async def stop(self, app: web.Application) -> None:
         if self._session is not None:
@@ -197,7 +213,7 @@ class Concierge:
                 return await agent.run(self.cfg, self.google, self.home,
                                        media=self.media, forecast=self.forecast,
                                        ha_calendars=self.ha_calendars,
-                                       homelab=self.homelab, **kwargs)
+                                       homelab=self.homelab, watch=self.watch, **kwargs)
 
         self._in_flight += 1
         try:
