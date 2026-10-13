@@ -142,23 +142,25 @@ A rejected token or a dead container fails the whole read rather than
 rendering part of the house as quiet. `hl-google-stale` (named before HA was a
 source) alerts once the Home source has gone 25h without a good read.
 
-### Sonarr calendar
+### Sonarr reminders
 
-Sonarr's airing schedule, as `calendar.sonarr`. Sonarr is LAN and tailnet
-only, and HA is on the LAN, so HA reads the feed directly and nothing is
-exposed.
+When a monitored episode airs, a **Watch <episode>** item lands in Apple
+Reminders, due at the air time, and phones with the Companion app get an
+"Airing now" notification between 08:00 and 23:00. Episodes do not appear as
+calendar events anywhere.
 
 1. **Settings → Devices & services → + Add integration → Remote Calendar.**
    Name it **Sonarr** (that is what makes the ID `calendar.sonarr`) and paste
-   the feed URL from Sonarr's **Calendar → iCal Link**.
-2. Add `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env`,
-   `docker/concierge/.env` and `docker/mcp-calendar/.env`, then recreate those
-   containers. Episodes then show in the digest's Calendar line, the morning
-   brief, and what Claude can read.
+   the feed URL from Sonarr's **Calendar → iCal Link**. Sonarr is LAN and
+   tailnet only and HA is on the LAN, so nothing is exposed. Hide the entity
+   from the default calendar view if you like; the automation only needs it
+   to exist.
+2. Check that the CalDAV integration shows your Reminders list as
+   `todo.reminders` (**Settings → Entities**, search `todo.`). If it has
+   another ID, change the two `todo.reminders` lines in
+   `config/configuration.yaml`. Without it, only the notification is sent.
 3. Recreate HA (`up -d --force-recreate homeassistant`) to load the
-   *Sonarr - episode airing* automation in `config/configuration.yaml`. It
-   sends "Airing now" to every phone with the Companion app as an episode's
-   air time starts, between 08:00 and 23:00.
+   *Sonarr - episode airing* automation.
 
 The feed URL carries Sonarr's API key, which can do anything in Sonarr. It
 stays in HA's integration settings, never in git.
