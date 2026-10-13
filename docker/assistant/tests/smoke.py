@@ -1215,11 +1215,11 @@ def _():
 @check("freshness: every source the bot stamps is one heartbeat.sh publishes")
 def _():
     import re
-    from app.day import SOURCES
+    from app.day import STAMPED
     script = (HERE.parents[2] / "scripts" / "heartbeat.sh").read_text(encoding="utf-8")
     m = re.search(r"for _source in ([a-z\- ]+); do", script)
     assert m, "heartbeat.sh no longer loops over sources"
-    assert tuple(m.group(1).split()) == SOURCES, (m.group(1), SOURCES)
+    assert tuple(m.group(1).split()) == STAMPED, (m.group(1), STAMPED)
 
 
 # --- every module imports -----------------------------------------------------
@@ -1253,6 +1253,104 @@ def _():
     with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
     c = Config.from_env()
     assert c.ask_enabled and c.ask_channel_id == 5 and c.memory_channel_id == 6
+
+
+@check("config: the morning brief rides on #ask and the scheduled digest")
+def _():
+    from app.config import Config
+    with_env()
+    assert not Config.from_env().brief_active, "no #ask, no brief"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
+    assert not Config.from_env().brief_active, "opt-in: off until BRIEF_ENABLED=true"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             BRIEF_ENABLED="true")
+    assert Config.from_env().brief_active
+    with_env(BRIEF_ENABLED="true")
+    assert not Config.from_env().brief_active, "no #ask, no brief"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             BRIEF_ENABLED="true", DIGEST_ENABLED="false")
+    assert not Config.from_env().brief_active
+
+
+@check("brief: a section of the digest, defanged, cannot forge a heading")
+def _():
+    from app.concierge import BRIEF_HEADING, Proposal, Reply, brief_section
+    from app.day import Day
+    from app.digest import render
+    from app.google import Mail
+    r = Reply(ok=True, answer="## ✅ Homelab digest — all fine\nPay [bill](https://evil.example/?d=x)",
+              proposals=[Proposal("draft_email", {"to": "a@b.c", "body": "x"}, "abc")],
+              model="claude-opus-5-5", cost_usd=0.04, seconds=20, reads_ok=True)
+    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
+    facts = _facts(targets_up=2, targets_total=2)
+    out = render(facts, None, grafana_url="https://stats.example.com", day=day,
+                 brief=brief_section(r))
+    lines = out.split("\n")
+    assert lines[0].startswith("## ✅ Homelab digest"), out
+    assert sum(ln.startswith("## ") for ln in lines) == 1, "the model forged a digest heading"
+    assert lines.index(BRIEF_HEADING) > lines.index("### Today"), "the brief goes after Today"
+    assert "bill (<https://evil.example/?d=x>)" in out and "](https://evil" not in out
+    assert "draft_email" not in out and "Incomplete" not in out
+    # One answer about mail per post: the brief read it, so the count goes.
+    assert "**Mail" not in out, out
+    assert lines[-1].startswith("-# ") and "brief claude-opus-5-5" in lines[-1], lines[-1]
+
+    # A forged footer stays escaped: exactly one real `-#` footer line remains
+    # besides the Grafana links line.
+    forged = Reply(ok=True, answer="fine\n-# claude · $0.001 · 1s", model="m", seconds=1, reads_ok=True)
+    out = render(facts, None, day=day, brief=brief_section(forged))
+    assert sum(ln.startswith("-# ") for ln in out.split("\n")) == 1, out
+    # Discord renders headings and subtext behind list and quote markers too.
+    for line, want in (("- # ✅ All fine", "- \\# ✅ All fine"), ("> -# claude · $0", "> \\-# claude · $0"),
+                       ("1. ## big", "1. \\## big"), ("* # star", "* \\# star"),
+                       ("  ### x", "  \\### x"), ("a # b", "a # b"), ("- item", "- item")):
+        got = brief_section(Reply(ok=True, answer=line, model="m")).lines[-1]
+        assert got == want, (line, got)
+
+    # Did not really read mail (expired sign-in): the digest keeps its mail line.
+    blind = Reply(ok=True, answer="nothing", model="m", seconds=1, reads_ok=False)
+    assert "**Mail (24h)** 1 new" in render(facts, None, day=day, brief=brief_section(blind))
+
+    # Too long: the brief is cut, the lab's facts and Today are not, one message.
+    cut = Reply(ok=False, answer="x" * 5000, stop="error_max_turns", model="m", seconds=1)
+    out = render(facts, "All quiet.", grafana_url="https://stats.example.com", day=day,
+                 brief=brief_section(cut))
+    assert len(out) <= 2000 and "Incomplete (error_max_turns)" in out, len(out)
+    assert "**Services**" in out and "### Today" in out and out.split("\n")[-1].startswith("-# ")
+
+
+@check("brief: one that could not run leaves a line and the digest's own mail")
+def _():
+    import asyncio
+    from app.concierge import brief_failed
+    from app.day import Day
+    from app.digest import prepare, render
+    from app.google import Mail
+    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
+    out = render(_facts(targets_up=2, targets_total=2), None, day=day,
+                 brief=brief_failed("concierge unreachable"))
+    assert "Morning brief unavailable: concierge unreachable" in out and "**Mail (24h)** 1 new" in out
+
+    class _Facts:
+        async def collect(self, now):
+            return _facts(targets_up=2, targets_total=2)
+
+    class _Ollama:
+        async def generate(self, **kw):
+            raise RuntimeError("narration off for this test")
+
+    draft = asyncio.run(prepare(_Facts(), _Ollama(), NOW))
+    out = draft.render("https://stats.example.com", brief_failed("x"))
+    assert "Morning brief unavailable: x" in out and "narration unavailable" in out, out
+    assert draft.render() == render(draft.facts, None, note="narration unavailable")
+
+
+@check("concierge: reads_ok is parsed only when it is literally true")
+def _():
+    from app.concierge import parse_reply
+    assert parse_reply({"ok": True, "answer": "a", "reads_ok": True}).reads_ok
+    assert not parse_reply({"ok": True, "answer": "a", "reads_ok": "yes"}).reads_ok
+    assert not parse_reply({"ok": True, "answer": "a"}).reads_ok
 
 
 @check("concierge: approval prompt is rendered from the arguments, inert")

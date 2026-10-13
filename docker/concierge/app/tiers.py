@@ -22,6 +22,11 @@ Tiers
            delete, unlock, disarm, open the garage, buy anything, remove a
            movie or show.
 
+The scheduled morning brief (/v1/brief) runs with `read_only=True`: the
+propose tier is refused too, and tools.build() never registers it. That run
+reads mail on a timer with nobody asking, so it holds no write tools at all —
+not even proposals (the TSD's rejected "one agent that does everything").
+
 The same `decide()` runs twice per call — in the PreToolUse hook, which the SDK
 runs before anything else, and in `can_use_tool`. The hook is the one that
 cannot be skipped: an allow rule or permission mode can approve a call before
@@ -43,6 +48,7 @@ READ = frozenset({
     "media_search",
     "media_downloads",
     "weather_forecast",
+    "home_calendar_events",
     "homelab_status",
 })
 PROPOSE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene",
@@ -79,10 +85,15 @@ def tier_of(tool_name: str) -> str:
     return "never"
 
 
-def decide(tool_name: str) -> Decision:
+def decide(tool_name: str, read_only: bool = False) -> Decision:
+    """`read_only` is the scheduled morning brief (/v1/brief): no person asked
+    for anything, so there is nothing to propose and only read tier runs."""
     tier = tier_of(tool_name)
-    if tier in ("read", "propose"):
+    if tier == "read" or (tier == "propose" and not read_only):
         return Decision(tool_name, tier, True, f"{tier} tier")
+    if tier == "propose":
+        return Decision(tool_name, tier, False,
+                        "the morning brief is read-only; it cannot propose changes")
     if tier == "write":
         return Decision(tool_name, tier, False,
                         "tools that act during the run are not allowed; writes are proposals")

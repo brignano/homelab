@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 
+from .concierge import Brief
 from .day import Day, render_lines as day_lines
 from .facts import CPU_WARN, DISK_WARN, MEM_WARN, Facts
 
@@ -102,6 +104,9 @@ def facts_block(facts: Facts) -> str:
 # that decide `concerns`, so a red line and a "needs attention" verdict can
 # never disagree. smoke.py asserts that.
 BAD = "🔴"
+# One Discord message, with room to spare. Over this, chunk() would split the
+# digest and leave its tail unlabelled.
+DIGEST_LIMIT = 1990
 WARN = "🟠"
 
 # Dashboard UIDs as provisioned in docker/monitoring/grafana/dashboards/homelab/.
@@ -179,8 +184,13 @@ def render(
     note: str | None = None,
     grafana_url: str | None = None,
     day: Day | None = None,
+    brief: Brief | None = None,
 ) -> str:
-    """Build the Discord message. Numbers always present; prose only if we got it."""
+    """Build the Discord message. Numbers always present; prose only if we got it.
+
+    The morning brief, when there is one, is a section of this message rather
+    than a second post: it goes last, after Today, and it is the part that gets
+    cut if the whole would not fit in one Discord message."""
     # `##` is a real Discord heading, not bold text pretending to be one: it
     # renders large, and it gives the channel a visible day boundary when a
     # month of digests is scrolled back through.
@@ -229,9 +239,10 @@ def render(
 
     if day is not None:
         out.append("")
-        out += day_lines(day)
+        out += day_lines(day, mail=not (brief and brief.owns_mail))
 
-    out.append("")
+    head = out
+    out = []
     if grafana_url:
         # Masked links, which Discord renders for bot and webhook messages.
         # A bare Grafana URL is ~50 characters of noise per link and would
@@ -250,9 +261,72 @@ def render(
         if {"home", "ha-calendar"} & set(day.sources):
             origins.append("Home Assistant")
     footer_bits.append("facts from " + " + ".join(origins))
+    if brief and brief.note:
+        footer_bits.append("brief " + brief.note)
     out.append("-# " + " · ".join(footer_bits))
 
-    return "\n".join(out)
+    if brief is None:
+        return "\n".join(head + [""] + out)
+    # Only the brief is cut: the lab's facts and Today are the product.
+    fixed = len("\n".join(head + ["", "", ""] + out))
+    body = "\n".join(brief.lines)
+    room = DIGEST_LIMIT - fixed
+    if len(body) > room:
+        body = body[:max(room - 1, 0)].rstrip() + "…"
+    return "\n".join(head + ["", body, ""] + out)
+
+
+@dataclass
+class Draft:
+    """A digest collected and narrated, not yet rendered.
+
+    Split from `build` so the scheduled digest can wait for the morning brief
+    *after* leaving the job queue: the queue serialises the local model, and
+    holding it while Claude reads mail would stall #chat for minutes."""
+    facts: Facts
+    day: Day | None
+    narration: str | None = None
+    model: str | None = None
+    seconds: float | None = None
+    note: str | None = None
+
+    def render(self, grafana_url: str | None = None, brief: Brief | None = None) -> str:
+        return render(
+            self.facts, self.narration, model=self.model, seconds=self.seconds, note=self.note,
+            grafana_url=grafana_url, day=self.day, brief=brief,
+        )
+
+
+async def prepare(
+    collector,
+    ollama,
+    now: datetime,
+    num_predict: int = 180,
+    day_collector=None,
+) -> Draft:
+    """Collect and narrate. Never raises for a narration failure."""
+    # Concurrently: these are network reads, not inference. DayCollector never
+    # raises, so it cannot take the lab's half of the digest down with it.
+    if day_collector is not None:
+        facts, day = await asyncio.gather(collector.collect(now), day_collector.collect(now))
+    else:
+        facts, day = await collector.collect(now), None
+
+    draft = Draft(facts, day)
+    try:
+        completion = await ollama.generate(
+            prompt=f"Facts:\n{facts_block(facts)}\n\nWrite the status note.",
+            system=SYSTEM,
+            # Low temperature: this is restatement, not creative writing.
+            temperature=0.2,
+            num_predict=num_predict,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade to facts-only, never drop the digest
+        log.warning("digest narration failed, posting facts only: %s", exc)
+        draft.note = "narration unavailable"
+    else:
+        draft.narration, draft.model, draft.seconds = completion.text, completion.model, completion.seconds
+    return draft
 
 
 async def build(
@@ -264,31 +338,5 @@ async def build(
     day_collector=None,
 ) -> str:
     """Collect, narrate, render. Never raises for a narration failure."""
-    # Concurrently: these are network reads, not inference. DayCollector never
-    # raises, so it cannot take the lab's half of the digest down with it.
-    if day_collector is not None:
-        facts, day = await asyncio.gather(collector.collect(now), day_collector.collect(now))
-    else:
-        facts, day = await collector.collect(now), None
-
-    narration: str | None = None
-    model = seconds = None
-    note = None
-    try:
-        completion = await ollama.generate(
-            prompt=f"Facts:\n{facts_block(facts)}\n\nWrite the status note.",
-            system=SYSTEM,
-            # Low temperature: this is restatement, not creative writing.
-            temperature=0.2,
-            num_predict=num_predict,
-        )
-    except Exception as exc:  # noqa: BLE001 — degrade to facts-only, never drop the digest
-        log.warning("digest narration failed, posting facts only: %s", exc)
-        note = "narration unavailable"
-    else:
-        narration, model, seconds = completion.text, completion.model, completion.seconds
-
-    return render(
-        facts, narration, model=model, seconds=seconds, note=note,
-        grafana_url=grafana_url, day=day,
-    )
+    draft = await prepare(collector, ollama, now, num_predict, day_collector=day_collector)
+    return draft.render(grafana_url)

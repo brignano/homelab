@@ -42,6 +42,10 @@ log = logging.getLogger(__name__)
 # its own source, because HA can be down while Google is fine, and the other
 # way round.
 SOURCES = ("calendar", "mail", "home", "ha-calendar")
+# Not a Today source, but stamped beside them: the morning brief, written by
+# the bot after a /v1/brief run that finished (bot.Assistant._brief).
+BRIEF_SOURCE = "brief"
+STAMPED = SOURCES + (BRIEF_SOURCE,)
 GOOGLE_SOURCES = ("calendar", "mail")
 # The sources merged into the one Calendar line, and how each is named when
 # it alone could not be read.
@@ -162,10 +166,13 @@ def _event(e: Event, tz) -> str:
     return f"{_hhmm(e.start, tz)} {discord_safe(e.title, TITLE_CHARS)}"
 
 
-def render_lines(day: Day) -> list[str]:
+def render_lines(day: Day, mail: bool = True) -> list[str]:
     """The section's lines. Unmarked by design: the 🔴/🟠 marks above belong to
     the lab's verdict, and that verdict is not about your calendar. A line that
-    appears only when there is something to say (Overlaps) is its own signal."""
+    appears only when there is something to say (Overlaps) is its own signal.
+
+    `mail=False` when the morning brief read mail itself: one answer to "what's
+    new in my inbox" per post, not two that can disagree."""
     tz = day.now.tzinfo
     lines: list[str] = ["### Today"]
 
@@ -196,7 +203,7 @@ def render_lines(day: Day) -> list[str]:
             lines.append("**Overlaps** " + " · ".join(
                 f"{_event(a, tz)} ↔ {_event(b, tz)}" for a, b in conflicts[:MAX_CONFLICTS]))
 
-    if "mail" not in day.sources:
+    if "mail" not in day.sources or not mail:
         pass
     elif day.mail is None:
         lines.append("**Mail** _not read_")

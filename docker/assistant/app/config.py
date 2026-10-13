@@ -262,6 +262,11 @@ class Config:
     activity_channel_id: int | None = None
     concierge_url: str = "http://concierge:8080"
     concierge_token: str = ""
+    # The morning brief: with each SCHEDULED digest, the concierge reads mail
+    # and calendar (read-only, no proposals) and the bot adds what needs you as
+    # the digest's last section. Needs #ask configured. Opt-in (BRIEF_ENABLED=true):
+    # it sends mail to Anthropic every morning without anyone asking.
+    brief_enabled: bool = False
 
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
@@ -336,11 +341,17 @@ class Config:
             activity_channel_id=_optional_id("DISCORD_ACTIVITY_CHANNEL_ID"),
             concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
             concierge_token=concierge_token,
+            brief_enabled=os.environ.get("BRIEF_ENABLED", "false").lower() == "true",
         )
 
     @property
     def ask_enabled(self) -> bool:
         return self.ask_channel_id is not None
+
+    @property
+    def brief_active(self) -> bool:
+        """The brief rides on the scheduled digest and the concierge: both must be on."""
+        return self.brief_enabled and self.ask_enabled and self.digest_enabled
 
     @property
     def google_enabled(self) -> bool:

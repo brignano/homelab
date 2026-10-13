@@ -86,6 +86,8 @@ class Reply:
     seconds: float = 0.0
     model: str = ""
     stop: str = ""
+    # The brief's "mail was really read" (concierge tools.google_reads_ok).
+    reads_ok: bool = False
 
 
 def parse_reply(body: dict) -> Reply:
@@ -104,6 +106,7 @@ def parse_reply(body: dict) -> Reply:
         seconds=float(body.get("seconds") or 0),
         model=str(body.get("model") or ""),
         stop=str(body.get("stop") or ""),
+        reads_ok=body.get("reads_ok") is True,
     )
 
 
@@ -138,6 +141,53 @@ def defang(answer: str) -> str:
     """
     answer = _MASKED.sub(lambda m: f"{m.group(1)} (<{m.group(2)}>)", answer)
     return _BARE.sub(r"<\1>", answer)
+
+
+@dataclass(frozen=True)
+class Brief:
+    """The morning brief as a section of the digest, not a message of its own.
+
+    `lines` go under the digest's Today section. `owns_mail` says the brief
+    really read mail, so the digest drops its own unread-count line rather
+    than print a second, narrower answer to the same question. `note` joins
+    the digest's footer.
+    """
+    lines: tuple[str, ...]
+    owns_mail: bool = False
+    note: str = ""
+
+
+BRIEF_HEADING = "### Needs you"
+
+# A `#` heading or `-#` subtext at the start of a line, also behind list or
+# quote markers, where Discord renders them too (`- # x`, `> -# x`, `1. ## x`).
+# Escaped with a backslash so it shows as typed.
+_UNHEAD = re.compile(r"^(\s*(?:(?:[-*+]|\d+[.)]|>{1,3})\s+)*)(?=-?#)")
+
+
+def brief_section(reply: Reply) -> Brief:
+    """The concierge's brief, made safe to sit inside the digest.
+
+    The answer can quote mail a stranger wrote, so it gets the same treatment
+    as #ask: links defanged here, mentions and previews suppressed where the
+    digest is sent. It sits under the lab's verdict, so a line the model wrote
+    must not pass for one of the bot's headings or footers (`#`, `-#`). A run
+    that did not finish says so above its text. Proposals are ignored: the
+    brief has none to make, and nothing here would render one. Length is the
+    digest's business (digest.render cuts the brief, never the facts).
+    """
+    lines = [BRIEF_HEADING]
+    if not reply.ok:
+        lines.append(f"⚠️ _Incomplete ({reply.stop or 'no result'}): may be partial._")
+    for ln in defang(reply.answer).split("\n"):
+        lines.append(_UNHEAD.sub(r"\1\\", ln))
+    return Brief(tuple(lines), owns_mail=reply.ok and reply.reads_ok,
+                 note=footer(reply).removeprefix("-# "))
+
+
+def brief_failed(reason: str) -> Brief:
+    """A brief that did not run: one line in its place, the digest's mail line kept."""
+    return Brief((f"⚠️ _Morning brief unavailable: {reason}_",))
 
 
 def fact_of(proposal: Proposal) -> str | None:
@@ -227,6 +277,7 @@ class Concierge:
                  timeout_s: int = 360) -> None:
         self._session = session
         self._url = base_url.rstrip("/") + "/v1/ask"
+        self._brief_url = base_url.rstrip("/") + "/v1/brief"
         self._execute_url = base_url.rstrip("/") + "/v1/execute"
         self._token = token
         # Longer than the concierge's own CONCIERGE_TIMEOUT_S, so its timeout,
@@ -234,10 +285,18 @@ class Concierge:
         self._timeout = aiohttp.ClientTimeout(total=timeout_s)
 
     async def ask(self, prompt: str, history: list[dict], memories: list[str]) -> Reply:
+        return await self._run(self._url, {"prompt": prompt, "history": history, "memories": memories})
+
+    async def brief(self, memories: list[str]) -> Reply:
+        """The scheduled morning brief. The request is fixed in the concierge;
+        only the approved memories are sent. It comes back with no proposals."""
+        return await self._run(self._brief_url, {"memories": memories})
+
+    async def _run(self, url: str, payload: dict) -> Reply:
         try:
             async with self._session.post(
-                self._url,
-                json={"prompt": prompt, "history": history, "memories": memories},
+                url,
+                json=payload,
                 headers={"Authorization": f"Bearer {self._token}"},
                 timeout=self._timeout,
             ) as resp:
