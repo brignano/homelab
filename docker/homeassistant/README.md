@@ -407,7 +407,7 @@ sequence:
         Jax went {{ visits }} time{{ '' if visits | int == 1 else 's' }} today
         {%- if last and as_local(as_datetime(last)).date() == now().date() %},
         last at {{ as_local(as_datetime(last)).strftime('%-I:%M %p') }}{% endif %}.
-        {%- if is_state('sensor.jaxons_litter_box_excretion_times_day', 'unavailable') %}
+        {%- if is_state('sensor.cat_litter_box_m2_excretion_times_day', 'unavailable') %}
         Litter box is offline.{% endif %}
   - condition: template
     value_template: "{{ echo != '' }}"
