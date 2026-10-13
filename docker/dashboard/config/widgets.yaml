@@ -1,5 +1,10 @@
 # Header widgets. Deliberately minimal and credential-free.
 #
+# Open-Meteo is the one that reaches outside the box, and it needs no key. The
+# coordinates come from .env rather than this file because the repo is public
+# and a house's latitude is not something to commit. Left unset, the widget
+# shows a button that asks the browser for its location instead.
+#
 # The resources widget reads the *dashboard container's* view of the host, which
 # is the same disk and memory everything else runs on — a cheap sanity check
 # that does not require reaching into another stack.
@@ -16,6 +21,12 @@
 - resources:
     disk: /mnt/media
     label: media drive
+
+- openmeteo:
+    latitude: "{{HOMEPAGE_VAR_LATITUDE}}"
+    longitude: "{{HOMEPAGE_VAR_LONGITUDE}}"
+    units: imperial
+    cache: 15
 
 - datetime:
     text_size: xl
