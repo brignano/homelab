@@ -29,6 +29,12 @@ services:
       # the committed YAML because this repo is public and the id is scoped to
       # the account, same reasoning as the domain.
       HOMEPAGE_VAR_HC_PROJECT: ${HEALTHCHECKS_PROJECT_ID:-}
+      # Where the header's weather is for. Optional, and kept out of the repo
+      # for the same reason as the domain: it is the house. Unset, both become
+      # empty strings, which the weather widget reads as "no location" and
+      # falls back to asking the browser for one.
+      HOMEPAGE_VAR_LATITUDE: ${WEATHER_LATITUDE:-}
+      HOMEPAGE_VAR_LONGITUDE: ${WEATHER_LONGITUDE:-}
     volumes:
       # Writable, and it took two failures to accept that.
       #
