@@ -130,20 +130,36 @@ automation blink:
 # A visit is recorded only when the daily count goes UP. The source counter's
 # own last_changed also moves on every reconnect (unavailable -> 1), which
 # made "last visit at …" report reconnects as visits.
+#
+# Each sensor also reads its source when HA starts and when templates are
+# reloaded, not only when the source changes. Without that, a sensor created
+# while the box sat on an unchanged value read `unknown` until the box next
+# reported something different (2026-10-12: the box showed 12.7 lb and one
+# visit while every Jax sensor read unknown). So the states below read the
+# source with states(), not trigger.to_state, and keep their own last value
+# whenever the source is unavailable.
 template:
   - trigger:
       - trigger: state
         entity_id: sensor.jaxons_litter_box_excretion_times_day
         not_to: [unavailable, unknown]
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
     sensor:
       - name: Jax litter visits today
         unique_id: jax_litter_visits_today
         state_class: measurement
-        state: "{{ trigger.to_state.state | int(0) }}"
+        state: >
+          {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+          {{ v | int(0) if v not in ['unavailable', 'unknown'] else this.state }}
         attributes:
           # The date of the reading, so a count carried over from yesterday
           # is never read out as today's.
-          day: "{{ now().date().isoformat() }}"
+          day: >
+            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {{ now().date().isoformat() if v not in ['unavailable', 'unknown'] else this.attributes.get('day') }}
       - name: Jax last litter visit
         unique_id: jax_last_litter_visit
         device_class: timestamp
@@ -151,39 +167,60 @@ template:
         # comparison never depends on the order sibling sensors update in.
         # A new day with a count above zero means he went while the box was
         # offline across midnight; the time is then when the box came back.
+        # The first reading after creation (no previous count) records no
+        # visit, so a restart never invents one.
         state: >
-          {% set new = trigger.to_state.state | int(0) %}
+          {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+          {% set new = v | int(0) %}
           {% set old = this.attributes.get('count') %}
           {% set today = now().date().isoformat() %}
-          {% set went = old is not none and (
+          {% set went = v not in ['unavailable', 'unknown'] and old is not none and (
                (this.attributes.get('day') == today and new > old | int(0))
                or (this.attributes.get('day') != today and new > 0)) %}
           {% if went %}{{ now().isoformat() }}
           {% elif this.state not in ['unknown', 'unavailable', none] %}{{ this.state }}
           {% else %}{{ none }}{% endif %}
         attributes:
-          count: "{{ trigger.to_state.state | int(0) }}"
-          day: "{{ now().date().isoformat() }}"
+          # Kept, not zeroed, while the box is offline: a count of 0 here
+          # would make its next real reading look like a visit.
+          count: >
+            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {{ v | int(0) if v not in ['unavailable', 'unknown'] else this.attributes.get('count') }}
+          day: >
+            {% set v = states('sensor.jaxons_litter_box_excretion_times_day') %}
+            {{ now().date().isoformat() if v not in ['unavailable', 'unknown'] else this.attributes.get('day') }}
 
   - trigger:
       - trigger: state
         entity_id: sensor.jaxons_litter_box_excretion_duration
         not_to: [unavailable, unknown]
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
     sensor:
       - name: Jax last litter visit duration
         unique_id: jax_last_litter_visit_duration
         device_class: duration
         unit_of_measurement: s
-        state: "{{ trigger.to_state.state | float(0) }}"
+        state: >
+          {% set v = states('sensor.jaxons_litter_box_excretion_duration') %}
+          {{ v | float(0) if v not in ['unavailable', 'unknown'] else this.state }}
 
   - trigger:
       - trigger: state
         entity_id: sensor.jaxons_litter_box_cat_weight
         not_to: [unavailable, unknown]
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
     sensor:
       - name: Jax weight
         unique_id: jax_weight
         state_class: measurement
         # The box reports no unit; 12.5 only makes sense as pounds.
         unit_of_measurement: lb
-        state: "{{ trigger.to_state.state | float(0) | round(1) }}"
+        state: >
+          {% set v = states('sensor.jaxons_litter_box_cat_weight') %}
+          {{ v | float(0) | round(1) if v not in ['unavailable', 'unknown'] else this.state }}

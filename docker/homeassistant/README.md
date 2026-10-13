@@ -467,6 +467,35 @@ To turn them off without a code change, disable them in **Settings →
 Automations** (they are read-only there, but can be disabled). After a pull,
 recreate HA as usual (`up -d --force-recreate homeassistant`).
 
+## Dashboard
+
+[`dashboards/home.yaml`](dashboards/home.yaml) is a "Home" dashboard: one
+sections view with a strip of badges (presence, weather, inside temperature,
+the car's battery) over three columns: **Security** and **Jax**; **Climate**
+and a **Map**; and the **Tesla**. It replaces
+the auto-generated Overview's tiles with controls you can use without opening
+a dialog.
+
+HA does not read it from git. Dashboards are UI state, like automations, so
+the file is the source you paste:
+
+1. **Settings → Dashboards → + Add dashboard → New dashboard from scratch**,
+   title *Home*, icon `mdi:view-dashboard` (Overview already has `mdi:home`).
+2. Open it, then **✏️ → ⋮ → Raw configuration editor**, replace everything
+   with the file's contents, and **Save**.
+3. Point the Blink and inside-temperature cards at the right entities. The
+   IDs marked `# check` in the file were inferred, not read from this HA, and
+   those cards stay hidden until their entity exists. In edit mode, open the
+   Security and Climate sections' cards and pick the entity (the Blink one is
+   named after your sync module).
+4. To open it instead of Overview: **Settings → Dashboards**, select *Home*
+   and set it as the default dashboard. Then hide Overview from the sidebar:
+   long-press **Home Assistant** at the top of the sidebar and remove it.
+   It is still at `/home/overview` if you want it back.
+
+When you change it in the UI and like the result, copy the raw config back
+into the file so git has it.
+
 ## Updating
 
 Not automatic. Read the [release notes](https://www.home-assistant.io/blog/categories/release-notes/)
