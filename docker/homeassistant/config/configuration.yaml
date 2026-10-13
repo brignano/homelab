@@ -81,6 +81,13 @@ automation blink:
   # 10 minutes away before arming rides out a phone's GPS briefly placing you
   # down the street. Disarming is immediate: arriving to a camera that records
   # you walking in is the annoyance this exists to remove.
+  #
+  # Both automations also flip each camera's motion detection switch. For a
+  # Blink Mini with no Sync Module, blinkpy reports the panel as armed whenever
+  # the camera's motion detection is on, so a system disarm alone leaves it
+  # reading "Armed away" (seen 2026-10-13). The switch is the camera-level
+  # setting the Blink app also shows, and turning it off stops motion clips
+  # whatever the system state. On Sync Module cameras it is harmless.
   - id: blink_arm_when_away
     alias: Blink - arm when everyone leaves
     mode: single
@@ -91,6 +98,7 @@ automation blink:
         for: "00:10:00"
     variables:
       panels: "{{ integration_entities('blink') | select('match', 'alarm_control_panel[.]') | list }}"
+      motion: "{{ integration_entities('blink') | select('match', 'switch[.]') | list }}"
       tracked: "{{ states.person | rejectattr('state', 'in', ['unknown', 'unavailable']) | list | count }}"
     conditions:
       - condition: template
@@ -100,6 +108,12 @@ automation blink:
         target:
           entity_id: "{{ panels }}"
         continue_on_error: true
+      - if: "{{ motion | count > 0 }}"
+        then:
+          - action: switch.turn_on
+            target:
+              entity_id: "{{ motion }}"
+            continue_on_error: true
 
   - id: blink_disarm_when_home
     alias: Blink - disarm when someone arrives
@@ -110,6 +124,7 @@ automation blink:
         above: 0
     variables:
       panels: "{{ integration_entities('blink') | select('match', 'alarm_control_panel[.]') | list }}"
+      motion: "{{ integration_entities('blink') | select('match', 'switch[.]') | list }}"
     conditions:
       - condition: template
         value_template: "{{ panels | count > 0 }}"
@@ -118,6 +133,12 @@ automation blink:
         target:
           entity_id: "{{ panels }}"
         continue_on_error: true
+      - if: "{{ motion | count > 0 }}"
+        then:
+          - action: switch.turn_off
+            target:
+              entity_id: "{{ motion }}"
+            continue_on_error: true
 
 # Jax's litter box: the last good reading, kept through Wi-Fi drop-outs.
 #
