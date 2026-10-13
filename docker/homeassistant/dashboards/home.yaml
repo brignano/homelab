@@ -47,31 +47,13 @@ views:
     # space under the shorter columns; three columns of similar height fit on
     # one screen.
     sections:
-      # Left column: the house, the car, Jax and the map.
+      # Left column: the car, Jax and the map.
       - type: grid
         cards:
-          - type: heading
-            heading: Security
-            icon: mdi:shield-home
-          # Blink's on/off is the camera's motion detection switch, not the
-          # alarm panel. The camera is a Blink Mini with no sync module, and
-          # for that setup blinkpy (0.25.9) reads the panel as armed whenever
-          # motion detection is on, so the panel's own arm/disarm cannot be
-          # trusted. Motion detection off = no clips, which is what disarming
-          # means here; the presence automations flip the same switch.
-          - type: tile
-            entity: switch.living_room_blink_camera_camera_motion_detection
-            name: Blink recording
-            icon: mdi:cctv
-            grid_options:
-              columns: full
-            icon_tap_action:
-              action: toggle
-          - type: tile
-            entity: automation.blink_arm_when_everyone_leaves
-            name: Auto-arm when away
-            grid_options:
-              columns: full
+          # No Security heading: Home Assistant cannot control the Blink
+          # Mini. Its motion detection switch shows on/off but does not
+          # change the camera, so the camera is armed and disarmed in the
+          # Blink app (2026-10-13).
           # Tesla Fleet, car named "Spaceship" (README → "Asking Alexa
           # questions"). Values are the car's last report; Tesla Fleet does
           # not wake it to read them.
