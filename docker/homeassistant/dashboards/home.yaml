@@ -138,6 +138,21 @@ views:
           - type: heading
             heading: Climate
             icon: mdi:home-thermometer
+          # The Honeywell T6 Pro, paired over HomeKit. Set point and mode on
+          # the card itself. No hvac_modes list, so it offers whichever modes
+          # the thermostat reports. Hidden until the entity exists.
+          - type: tile
+            entity: climate.t6_pro_smart_thermostat  # check
+            name: Thermostat
+            grid_options:
+              columns: full
+            features:
+              - type: target-temperature
+              - type: climate-hvac-modes
+            visibility:
+              - condition: state
+                entity: climate.t6_pro_smart_thermostat
+                state_not: unavailable
           - type: tile
             entity: sensor.apartment_temperature  # check
             name: Inside
@@ -152,12 +167,6 @@ views:
             forecast_type: daily
             grid_options:
               columns: full
-          # Add once the T6 Pro is paired over HomeKit (tsd-personal-assistant.md):
-          # - type: tile
-          #   entity: climate.thermostat  # check
-          #   name: Thermostat
-          #   features:
-          #     - type: target-temperature
           - type: heading
             heading: Map
             icon: mdi:map-marker-radius
