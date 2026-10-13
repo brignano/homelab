@@ -462,6 +462,13 @@ They need HA to know where you are:
 3. Check **Settings → Areas & zones → Home** has the right address and a
    radius of ~100 m.
 
+They also turn each camera's **Camera motion detection** switch on when
+arming and off when disarming. For a Blink Mini without a Sync Module, HA's
+Blink tile shows *Armed away* whenever the camera's motion detection is on, so
+disarming the system alone leaves it reading armed. Turning motion detection
+off is what makes it record nothing while you are home. While you are home, a
+Mini's tile should read *Disarmed* within one Blink poll (up to 5 minutes).
+
 Nobody tracked means both automations do nothing, rather than arming forever.
 To turn them off without a code change, disable them in **Settings →
 Automations** (they are read-only there, but can be disabled). After a pull,
