@@ -353,8 +353,8 @@ takes three parts:
    (2026-10-12). Phrases cannot contain punctuation, so no apostrophes. There
    is no catch-all: a phrase with no routine goes to Alexa's own answers.
 
-Reports so far: **Jax report** (UI-managed, reads the `jax_*` sensors in
-`configuration.yaml`) and **Tesla report**, below. Scripts live in the
+Reports so far: **Tesla report** and **Jax report** (reads the `jax_*`
+sensors in `configuration.yaml`), below. Each says one sentence. Scripts live in the
 volume's `scripts.yaml`, not git. Paste this one at **Settings → Automations
 & scenes → Scripts → + Add script → ⋮ → Edit in YAML**:
 
@@ -370,11 +370,45 @@ sequence:
       level: "{{ states('sensor.spaceship_battery_level') }}"
       range: "{{ states('sensor.spaceship_battery_range') }}"
       charging: "{{ states('sensor.spaceship_charging') }}"
+      # One sentence: the numbers, nothing else.
       message: >-
-        {% if level in ['unknown', 'unavailable'] %}I can't reach the car right now.
-        {%- else %}The Tesla is at {{ level | float(0) | round(0) | int }} percent,
-        about {{ range | float(0) | round(0) | int }} miles of range
-        {%- if charging == 'charging' %}, and it's charging{% endif %}.{% endif %}
+        {% if level in ['unknown', 'unavailable'] %}Can't reach the car.
+        {%- else %}Tesla's at {{ level | float(0) | round(0) | int }} percent,
+        {{ range | float(0) | round(0) | int }} miles
+        {%- if charging == 'charging' %}, charging{% endif %}.{% endif %}
+  - condition: template
+    value_template: "{{ echo != '' }}"
+  - action: notify.alexa_media
+    data:
+      message: "{{ message }}"
+      target: "{{ [echo] }}"
+      data:
+        type: tts
+```
+
+**Jax report**, short form. It replaces the longer UI version: paste over
+it the same way (keep its name, so the Alexa switch and routines stay).
+
+```yaml
+alias: Jax report
+mode: single
+sequence:
+  - variables:
+      echo: >-
+        {{ states.media_player | selectattr('attributes.last_called', 'eq', true)
+           | map(attribute='entity_id') | list | first | default('') }}
+      # The count is today's only if the sensor's own day says so.
+      visits: >-
+        {{ states('sensor.jax_litter_visits_today') | int(0)
+           if state_attr('sensor.jax_litter_visits_today', 'day') == now().date().isoformat()
+           else 0 }}
+      last: "{{ as_datetime(states('sensor.jax_last_litter_visit'), none) }}"
+      message: >-
+        Jax went {{ visits }} time{{ '' if visits | int == 1 else 's' }} today
+        {%- if last and as_local(as_datetime(last)).date() == now().date() %},
+        last at {{ as_local(as_datetime(last)).strftime('%-I:%M %p') }}{% endif %}.
+        {%- if is_state('sensor.jaxons_litter_box_excretion_times_day', 'unavailable') %}
+        Litter box is offline.{% endif %}
   - condition: template
     value_template: "{{ echo != '' }}"
   - action: notify.alexa_media
