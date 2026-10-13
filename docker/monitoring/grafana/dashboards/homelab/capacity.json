@@ -576,7 +576,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "node_load1{host=\"proxmox\"} / count(node_cpu_seconds_total{host=\"proxmox\",mode=\"idle\"})",
+          "expr": "sum(node_load1{host=\"proxmox\"}) / count(node_cpu_seconds_total{host=\"proxmox\",mode=\"idle\"})",
           "instant": true,
           "range": false,
           "refId": "A"
