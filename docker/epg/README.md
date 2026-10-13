@@ -102,6 +102,10 @@ for, or the browser user agent Jellyfin sends:
 1. The URL answers with an HLS playlist, or with video.
 2. For a master playlist, its first variant answers with a media playlist.
 3. That playlist's first segment answers.
+4. `ffprobe` finds a video stream in it. Steps 1–3 let through channels FFmpeg
+   could not open, and Jellyfin's web player hung on each of them. `start.sh`
+   installs `ffmpeg` from Alpine's packages on each start; if that fails, this
+   step is skipped and the log says so.
 
 Channels that pass go into `playlist.m3u`; the log line counts what was left
 out and why. The file is replaced only when every playlist answered and at
