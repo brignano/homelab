@@ -70,6 +70,7 @@ services:
       HA_TOKEN: ${HA_TOKEN:-}
       HA_ENTITIES: ${HA_ENTITIES:-}
       HA_CALENDARS: ${HA_CALENDARS:-}
+      HA_FREE_CALENDARS: ${HA_FREE_CALENDARS:-}
 
       # Optional: #ask, the act lane (docs/design/tsd-personal-assistant.md,
       # phase 3). All blank = off. The bot only forwards and renders; the agent

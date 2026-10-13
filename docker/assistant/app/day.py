@@ -28,7 +28,7 @@ import logging
 import os
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from . import stamp
 from .google import Event, Google, Mail, mail_link
@@ -274,11 +274,13 @@ class DayCollector:
                  mail_labels: tuple[str, ...], sources: tuple[str, ...],
                  state_dir: str | None, home: Home | None = None,
                  home_entities: tuple[str, ...] = (),
-                 ha_calendars: tuple[str, ...] = ()) -> None:
+                 ha_calendars: tuple[str, ...] = (),
+                 ha_free_calendars: tuple[str, ...] = ()) -> None:
         self._google = google
         self._home = home
         self._home_entities = home_entities
         self._ha_calendars = ha_calendars
+        self._ha_free_calendars = frozenset(ha_free_calendars)
         self._calendar_ids = calendar_ids
         self._mail_labels = mail_labels
         self._sources = sources
@@ -311,7 +313,12 @@ class DayCollector:
 
     async def _ha_calendar(self, now: dt.datetime) -> list[Event]:
         start, end = window(now)
-        return dedupe(*await self._home.calendars(self._ha_calendars, start, end))
+        per_calendar = await self._home.calendars(self._ha_calendars, start, end)
+        # HA has no free/busy. A calendar named in HA_FREE_CALENDARS (a TV
+        # schedule, say) is shown but never counted as a double-booking.
+        return dedupe(*(
+            [replace(e, busy=False) for e in events] if cid in self._ha_free_calendars else events
+            for cid, events in zip(self._ha_calendars, per_calendar)))
 
     async def _mail(self, now: dt.datetime, since: dt.datetime) -> tuple[list[Mail], bool]:
         ids, estimate = await self._google.list_unread(self._mail_labels)

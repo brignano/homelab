@@ -251,6 +251,9 @@ class Config:
     # calendar.* entities (iCloud through the CalDAV integration), merged into
     # the Calendar line. Blank = off.
     ha_calendars: tuple[str, ...] = ()
+    # Of those, the ones whose events never count as a conflict (Sonarr's
+    # airing schedule). HA has no free/busy of its own.
+    ha_free_calendars: tuple[str, ...] = ()
 
     # --- Concierge (the act lane: #ask; all blank = off) ---
     # See docs/design/tsd-personal-assistant.md, phase 3. The bot only forwards
@@ -336,6 +339,7 @@ class Config:
             ha_token=ha_token,
             ha_entities=ha_entities,
             ha_calendars=ha_calendars,
+            ha_free_calendars=tuple(c for c in _list("HA_FREE_CALENDARS", "") if c in ha_calendars),
             ask_channel_id=ask_id,
             memory_channel_id=memory_id,
             activity_channel_id=_optional_id("DISCORD_ACTIVITY_CHANNEL_ID"),
