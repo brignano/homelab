@@ -183,7 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     _setup_logging()
 
     if args.google_auth:
-        return asyncio.run(_google_auth_async(Config.from_env(require_token=False)))
+        return asyncio.run(_google_auth_async(Config.from_env(require_token=False, signing_in=True)))
     if args.selftest:
         return asyncio.run(_selftest_async(Config.from_env(require_token=False)))
     if args.ask:

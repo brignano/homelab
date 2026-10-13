@@ -771,7 +771,12 @@ def _():
             raise AssertionError("half Google accepted")
         except SystemExit:
             pass
+        # --google-auth starts from exactly this state: ID and secret, no token.
+        os.environ["GOOGLE_CLIENT_SECRET"] = "secret"
+        cfg = Config.from_env(require_token=False, signing_in=True)
+        assert cfg.google_client_id == "id" and not cfg.google_enabled
         os.environ.pop("GOOGLE_CLIENT_ID")
+        os.environ.pop("GOOGLE_CLIENT_SECRET")
         cfg = Config.from_env()
         assert cfg.model == "claude-opus-5-5" and not cfg.google_enabled and not cfg.home_enabled
     finally:

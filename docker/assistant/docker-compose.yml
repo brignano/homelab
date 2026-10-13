@@ -77,6 +77,8 @@ services:
       # `concierge` network below. CONCIERGE_TOKEN must match that stack's.
       DISCORD_ASK_CHANNEL_ID: ${DISCORD_ASK_CHANNEL_ID:-}
       DISCORD_MEMORY_CHANNEL_ID: ${DISCORD_MEMORY_CHANNEL_ID:-}
+      # Optional: #activity, one line per approved action. Blank = off.
+      DISCORD_ACTIVITY_CHANNEL_ID: ${DISCORD_ACTIVITY_CHANNEL_ID:-}
       CONCIERGE_URL: ${CONCIERGE_URL:-http://concierge:8080}
       CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:-}
       # The morning brief: after each scheduled digest, the concierge reads

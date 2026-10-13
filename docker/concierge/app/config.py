@@ -36,10 +36,16 @@ def _list(name: str, default: str) -> tuple[str, ...]:
     return tuple(x.strip() for x in raw.split(",") if x.strip())
 
 
-def _google() -> tuple[str, str, str]:
-    """All three, or none. Two of three is a sign-in left half done."""
+def _google(signing_in: bool = False) -> tuple[str, str, str]:
+    """All three, or none. Two of three is a sign-in left half done.
+
+    Except during --google-auth, whose whole job is to produce the third: the
+    client ID and secret with no refresh token is exactly where it starts.
+    """
     names = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN")
     values = tuple(os.environ.get(n, "").strip() for n in names)
+    if signing_in:
+        return values  # type: ignore[return-value]
     if any(values) and not all(values):
         missing = ", ".join(n for n, v in zip(names, values) if not v)
         raise SystemExit(
@@ -154,7 +160,7 @@ class Config:
         return bool(self.ha_token and self.ha_scenes)
 
     @classmethod
-    def from_env(cls, *, require_token: bool = True) -> "Config":
+    def from_env(cls, *, require_token: bool = True, signing_in: bool = False) -> "Config":
         tz_name = os.environ.get("TZ", "").strip() or "UTC"
         try:
             tz = ZoneInfo(tz_name)
@@ -164,7 +170,7 @@ class Config:
         if require_token and len(token) < 32:
             raise SystemExit("config error: CONCIERGE_TOKEN is shorter than 32 characters — "
                              "generate one with `openssl rand -hex 32`")
-        g_id, g_secret, g_refresh = _google()
+        g_id, g_secret, g_refresh = _google(signing_in)
         return cls(
             token=token,
             model=os.environ.get("CONCIERGE_MODEL", "").strip() or "claude-opus-5-5",
