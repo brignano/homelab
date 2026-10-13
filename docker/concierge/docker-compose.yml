@@ -60,6 +60,7 @@ services:
       # (weather.get_forecasts, which returns data and changes nothing). Needs
       # HA_TOKEN. Blank = off. See app/forecast.py.
       HA_WEATHER_ENTITY: ${HA_WEATHER_ENTITY-weather.forecast_home}
+      HA_CALENDARS: ${HA_CALENDARS:-}
 
       # homelab_status reads fixed instant queries from Prometheus through the
       # port it publishes on the host. Blank = off. See app/homelab.py.

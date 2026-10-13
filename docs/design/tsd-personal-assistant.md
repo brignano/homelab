@@ -280,7 +280,7 @@ only when you `/ask` about mail.
 
 **Amended 2026-10-13: or when you turn on the morning brief.** With
 `BRIEF_ENABLED=true` (off by default) the bot calls the concierge's
-`/v1/brief` after each scheduled digest, and that run reads the last day of
+`/v1/brief` with each scheduled digest, and that run reads the last day of
 mail (three on Mondays), bodies included, with nobody asking. It is opt-in
 for exactly that reason.
 
@@ -333,8 +333,10 @@ The act lane is not scheduled and needs no switch. If it is down, `/ask`
 says so.
 
 **Amended 2026-10-13: the morning brief is scheduled, by the bot.** The
-concierge still keeps no schedule; the bot calls `/v1/brief` after the
-scheduled digest. That run stamps `source-brief` only when it finishes and
+concierge still keeps no schedule; the bot calls `/v1/brief` as the scheduled
+digest starts and renders the answer as the digest's last section ("Needs
+you"), in the same message; when it really read mail, Today drops its own Mail
+count so the post gives one answer about the inbox. That run stamps `source-brief` only when it finishes and
 really read mail (`reads_ok`: a mail search ran and no Google read failed), and
 `hl-google-stale` ages it like the digest's sources (armed at startup,
 cleared when the brief is off).
@@ -411,8 +413,8 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       entity, over REST) and `homelab_status` (fixed Prometheus instant
       queries via the host port). README step 7.
 - [x] **Morning brief** (2026-10-13), the read-only first cut of proactive
-      triage: after the scheduled digest, `/v1/brief` reads mail and calendar
-      and the bot posts what needs you in #digest. **No proposals**: the run
+      triage: with the scheduled digest, `/v1/brief` reads mail and calendar
+      and the bot adds what needs you as the digest's last section. **No proposals**: the run
       registers only read tools and both gates refuse the propose tier, so a
       timer reading stranger-written mail holds no write tools (the boundary
       the "one agent that does everything" rejection draws is per run; the

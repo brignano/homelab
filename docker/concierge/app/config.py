@@ -57,6 +57,14 @@ def _scenes() -> tuple[str, ...]:
     return scenes
 
 
+def _calendars() -> tuple[str, ...]:
+    cals = _list("HA_CALENDARS", "")
+    bad = [c for c in cals if not c.startswith("calendar.") or not c[9:].replace("_", "").isalnum()]
+    if bad:
+        raise SystemExit(f"config error: HA_CALENDARS must be calendar.<id> entity IDs, not {', '.join(bad)}")
+    return cals
+
+
 def _weather() -> str:
     entity = os.environ.get("HA_WEATHER_ENTITY", "weather.forecast_home").strip()
     if entity and (not entity.startswith("weather.") or not entity[8:].replace("_", "").isalnum()):
@@ -104,6 +112,9 @@ class Config:
     ha_scenes: tuple[str, ...] = ()
     # The one weather entity weather_forecast reads (app/forecast.py). Blank = off.
     ha_weather_entity: str = "weather.forecast_home"
+    # Calendars home_calendar_events reads (app/hacalendar.py), e.g. the Apple
+    # calendar through HA's CalDAV integration. Blank = off.
+    ha_calendars: tuple[str, ...] = ()
     # Prometheus, through the port it publishes on the host. Blank = no
     # homelab_status tool (app/homelab.py).
     prometheus_url: str = "http://host.docker.internal:9090"
@@ -129,6 +140,10 @@ class Config:
     @property
     def home_enabled(self) -> bool:
         return bool(self.ha_token)
+
+    @property
+    def ha_calendars_enabled(self) -> bool:
+        return bool(self.ha_token and self.ha_calendars)
 
     @property
     def forecast_enabled(self) -> bool:
@@ -169,6 +184,7 @@ class Config:
             ha_token=os.environ.get("HA_TOKEN", "").strip(),
             ha_scenes=_scenes(),
             ha_weather_entity=_weather(),
+            ha_calendars=_calendars(),
             prometheus_url=os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090").strip().rstrip("/"),
             radarr_url=os.environ.get("RADARR_URL", "").strip().rstrip("/") or "http://radarr:7878",
             radarr_api_key=os.environ.get("RADARR_API_KEY", "").strip(),

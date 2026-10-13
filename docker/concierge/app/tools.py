@@ -29,6 +29,7 @@ from claude_agent_sdk import create_sdk_mcp_server, tool
 from . import actions, audit
 from .google import Google, GoogleError
 from .forecast import Forecast, ForecastError
+from .hacalendar import CalendarError, HaCalendars
 from .home import Home, HomeError
 from .homelab import Homelab, StatusError
 from .media import MAX_QUEUE, Media, MediaError
@@ -51,6 +52,7 @@ class TaskContext:
     scenes: tuple[str, ...] = ()
     media: Media | None = None
     forecast: Forecast | None = None
+    ha_calendars: HaCalendars | None = None
     homelab: Homelab | None = None
     # The scheduled morning brief: only read-tier tools are registered.
     read_only: bool = False
@@ -135,7 +137,7 @@ def build(ctx: TaskContext):
             ctx.google_calls[name] = ctx.google_calls.get(name, 0) + 1
         try:
             result = await fn(args)
-        except (GoogleError, HomeError, MediaError, ForecastError, StatusError) as exc:
+        except (GoogleError, HomeError, MediaError, ForecastError, CalendarError, StatusError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
             if google_read:
@@ -342,6 +344,25 @@ def build(ctx: TaskContext):
             return await run("weather_forecast", _forecast, args)
 
         tools.append(weather_forecast)
+
+    if ctx.ha_calendars is not None:
+        cals = ctx.ha_calendars
+
+        async def _ha_calendar(args: dict) -> dict:
+            days = _int_arg(args, "days_ahead", 7, 0, 14)
+            return _ok({"days_ahead": days, "calendars": await cals.events(dt.datetime.now(tz=ctx.tz), days)})
+
+        @tool("home_calendar_events",
+              "Events on the calendars Home Assistant can see, such as the user's Apple "
+              "(iCloud) calendar, which the Google tools cannot. From the start of today "
+              "through days_ahead days. Read-only.",
+              {"type": "object", "properties": {
+                  "days_ahead": {"type": "integer", "minimum": 0, "maximum": 14, "description": "Default 7."},
+              }})
+        async def home_calendar_events(args: dict) -> dict:
+            return await run("home_calendar_events", _ha_calendar, args)
+
+        tools.append(home_calendar_events)
 
     if ctx.homelab is not None:
         homelab = ctx.homelab

@@ -143,34 +143,51 @@ def defang(answer: str) -> str:
     return _BARE.sub(r"<\1>", answer)
 
 
-def render_brief(reply: Reply, when: str) -> str:
-    """The brief as posted under the digest, as ONE message.
+@dataclass(frozen=True)
+class Brief:
+    """The morning brief as a section of the digest, not a message of its own.
+
+    `lines` go under the digest's Today section. `owns_mail` says the brief
+    really read mail, so the digest drops its own unread-count line rather
+    than print a second, narrower answer to the same question. `note` joins
+    the digest's footer.
+    """
+    lines: tuple[str, ...]
+    owns_mail: bool = False
+    note: str = ""
+
+
+BRIEF_HEADING = "### Needs you"
+
+# A `#` heading or `-#` subtext at the start of a line, also behind list or
+# quote markers, where Discord renders them too (`- # x`, `> -# x`, `1. ## x`).
+# Escaped with a backslash so it shows as typed.
+_UNHEAD = re.compile(r"^(\s*(?:(?:[-*+]|\d+[.)]|>{1,3})\s+)*)(?=-?#)")
+
+
+def brief_section(reply: Reply) -> Brief:
+    """The concierge's brief, made safe to sit inside the digest.
 
     The answer can quote mail a stranger wrote, so it gets the same treatment
-    as #ask: links defanged here, mentions and previews suppressed where it is
-    sent. It posts in #digest right under the lab's verdict, so a line the
-    model wrote must not pass for one of the bot's headings or footers (`#`,
-    `-#`), and an overlong answer is cut rather than spilling into unlabelled
-    messages. A run that did not finish says so above its text. Proposals are
-    ignored: the brief has none to make, and nothing here would render one.
+    as #ask: links defanged here, mentions and previews suppressed where the
+    digest is sent. It sits under the lab's verdict, so a line the model wrote
+    must not pass for one of the bot's headings or footers (`#`, `-#`). A run
+    that did not finish says so above its text. Proposals are ignored: the
+    brief has none to make, and nothing here would render one. Length is the
+    digest's business (digest.render cuts the brief, never the facts).
     """
-    lines = []
-    for ln in defang(reply.answer).split("\n"):
-        if ln.lstrip().startswith(("#", "-#")):
-            ln = "\\" + ln.lstrip()
-        lines.append(ln)
-    head = f"### ☀️ Morning brief — {when}"
+    lines = [BRIEF_HEADING]
     if not reply.ok:
-        head += f"\n⚠️ _Incomplete ({reply.stop or 'no result'}): may be partial._"
-    tail = footer(reply)
-    room = BRIEF_LIMIT - len(head) - len(tail) - 2
-    body = "\n".join(lines)
-    if len(body) > room:
-        body = body[:room - 1].rstrip() + "…"
-    return head + "\n" + body + "\n" + tail
+        lines.append(f"⚠️ _Incomplete ({reply.stop or 'no result'}): may be partial._")
+    for ln in defang(reply.answer).split("\n"):
+        lines.append(_UNHEAD.sub(r"\1\\", ln))
+    return Brief(tuple(lines), owns_mail=reply.ok and reply.reads_ok,
+                 note=footer(reply).removeprefix("-# "))
 
 
-BRIEF_LIMIT = 1990
+def brief_failed(reason: str) -> Brief:
+    """A brief that did not run: one line in its place, the digest's mail line kept."""
+    return Brief((f"⚠️ _Morning brief unavailable: {reason}_",))
 
 
 def fact_of(proposal: Proposal) -> str | None:

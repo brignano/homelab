@@ -343,23 +343,32 @@ Setup, costs and the audit trail are in
 
 ### The morning brief
 
-With `#ask` set up, each **scheduled** digest is followed by a second message
-in `#digest`: Claude's read of what needs you today. The bot calls the
-concierge's `/v1/brief`, which reads mail (24h, 72h on Mondays) and the
+With `#ask` set up, each **scheduled** digest gets one more section at the
+bottom, **Needs you**: Claude's read of the mail and dated things that need
+you. It is part of the same message, not a second post. The bot calls the
+concierge's `/v1/brief` as the digest starts, so mail is read while the lab's
+facts are collected; the concierge reads mail (24h, 72h on Mondays) and the
 calendar with read-only tools: it cannot propose anything, so it holds no
 draft, event or scene tool while it reads mail nobody asked it to. Ask in
-`#ask` for a draft. The answer is rendered like `#ask`'s, with links shown in
-full, no previews, no pings, and any line starting with `#` escaped so it
-can't pass for one of the digest's headings. `/digest` does not run it.
+`#ask` for a draft. The section is rendered like `#ask`'s answers, with links
+shown in full, no previews, no pings, and any line starting with `#` escaped
+so it can't pass for one of the digest's headings. `/digest` does not run it.
+
+One answer about mail per post: when the brief really read mail, the Today
+section drops its own **Mail (24h)** count, which looks only at the labels in
+`GMAIL_LABELS` and could say "nothing new" right above mail the brief found.
+Today's calendar stays in Today (it includes Apple calendars through Home
+Assistant, which the brief can't see), and the brief is told not to repeat it.
 
 **Opt-in:** `BRIEF_ENABLED=true` in `.env`, because it sends a day of mail
-to Anthropic every morning without anyone asking. It runs after the digest's
-stamp is written, so a slow or failed brief never delays or fails the digest;
-it posts a one-line ⚠️ instead, and a run that stopped early says so above its
-text. It stays one message, cut if long. It stamps `source-brief` only when it
-finishes having actually read mail (an expired concierge sign-in does not
-count), so `hl-google-stale` fires if it stops working for 25h. The digest's Today section still lists Apple calendar events
-(through Home Assistant); the brief's calendar is Google only.
+to Anthropic every morning without anyone asking. A failed brief never fails
+the digest: its section becomes a one-line ⚠️ and the Mail line stays. A run
+that stopped early says so at the top of its section. If the whole post would
+not fit in one Discord message, the brief is cut, never the lab's facts. The
+digest waits for the brief, so it can post up to the concierge's timeout late.
+The brief stamps `source-brief` only when it finishes having actually read
+mail (an expired concierge sign-in does not count), so `hl-google-stale` fires
+if it stops working for 25h.
 
 ### Live homelab readings in the conversation
 

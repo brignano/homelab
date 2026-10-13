@@ -16,6 +16,7 @@ their own payloads, so the bot never reads the channel.
 
 from __future__ import annotations
 
+import asyncio
 import datetime as dt
 import logging
 import os
@@ -31,12 +32,13 @@ from .chat import (
     context_mode, is_ignorable,
 )
 from .concierge import (
-    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Concierge, ConciergeError, Proposal, approvable, defang, fact_of,
-    footer as concierge_footer, render_brief, render_proposal, usable_memories,
+    APPROVAL_TIMEOUT_S, MEMORY_SCAN, Brief, Concierge, ConciergeError, Proposal, approvable,
+    brief_failed, brief_section, defang, fact_of, footer as concierge_footer, render_proposal,
+    usable_memories,
 )
 from .config import Config
 from .day import BRIEF_SOURCE, SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
-from .digest import build as build_digest
+from .digest import build as build_digest, prepare as prepare_digest
 from .facts import FactCollector
 from .google import Google
 from .home import Home
@@ -214,7 +216,7 @@ class Assistant(discord.Client):
             log.info("concierge (#ask) active in channel %s via %s",
                      self.cfg.ask_channel_id, self.cfg.concierge_url)
         if self.cfg.brief_active:
-            log.info("morning brief active: posts under the %02d:%02d digest", *self.cfg.digest_at)
+            log.info("morning brief active: part of the %02d:%02d digest", *self.cfg.digest_at)
 
     # --- conversational channels (#chat: local model; #ask: concierge) ---
 
@@ -497,15 +499,41 @@ class Assistant(discord.Client):
         if channel is None:
             log.error("digest channel %s not found", self.cfg.digest_channel_id)
             return
+        # The morning brief is a section of this one message, not a post of
+        # its own. Started first so the concierge reads mail while the digest
+        # collects and narrates; _brief never raises, so it cannot fail the
+        # digest, only shrink its own section to a ⚠️ line. The digest waits
+        # for it, at most the concierge client's timeout.
+        brief = None
+        if self.cfg.brief_active and self.concierge is not None:
+            brief = asyncio.create_task(self._brief())
         ok = True
         try:
-            message = await self.run_digest(priority=PRIORITY_SCHEDULED)
+            now = dt.datetime.now(tz=self.cfg.tz)
+            draft = await self.queue.submit(
+                "digest",
+                lambda: prepare_digest(
+                    self.collector, self.ollama, now, self.cfg.digest_predict,
+                    day_collector=self.day,
+                ),
+                priority=PRIORITY_SCHEDULED,
+            )
+            # Outside the queue: waiting on Claude must not hold the local model.
+            message = draft.render(self.cfg.grafana_url, await brief if brief is not None else None)
         except Exception as exc:  # noqa: BLE001 — a bad day must not kill the loop
             log.exception("scheduled digest failed")
             message = f"⚠️ Homelab digest failed to run: `{exc}`"
             ok = False
+            # Claude's read of the mail does not depend on Prometheus or the
+            # local model: keep it (and its stamp) under the failure line.
+            # _brief never raises.
+            if brief is not None:
+                message += "\n\n" + "\n".join((await brief).lines)
+        # The brief quotes mail strangers wrote: no pings, no previews. The
+        # digest's masked Grafana links still render as links.
         for part in chunk(message):
-            await channel.send(part)
+            await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
+                               suppress_embeds=True)
 
         # Only the SCHEDULED run records this, and only when it worked.
         # `/digest` at three in the afternoon would refresh the timestamp and
@@ -515,35 +543,21 @@ class Assistant(discord.Client):
         if ok:
             write_stamp(self.cfg.digest_stamp_path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
 
-        # After the stamp, so a slow or failed brief can never hold back or
-        # fail the digest it rides on.
-        if self.cfg.brief_active and self.concierge is not None:
-            await self.post_brief(channel)
-
-    async def post_brief(self, channel) -> None:
-        """The concierge's read-only morning brief, as its own message under the digest."""
+    async def _brief(self) -> Brief:
+        """The concierge's read-only morning brief, as the digest's last section."""
         try:
             reply = await self.concierge.brief(await self._memories())
         except ConciergeError as exc:
             log.warning("morning brief unavailable: %s", exc)
-            text = f"⚠️ Morning brief unavailable: {exc}"
-        except Exception:  # noqa: BLE001 — a bad brief must not kill the loop
+            return brief_failed(str(exc))
+        except Exception:  # noqa: BLE001 — a bad brief must not kill the digest
             log.exception("morning brief failed")
-            text = "⚠️ Morning brief failed — see `docker logs assistant`."
-        else:
-            when = dt.datetime.now(tz=self.cfg.tz).strftime("%a %d %b")
-            text = render_brief(reply, when)
-            # Finished AND really read mail: an expired concierge sign-in
-            # still "finishes", and must age into hl-google-stale instead.
-            if reply.ok and reply.reads_ok and self._brief_stamp:
-                write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
-        try:
-            # render_brief keeps it to one message, so nothing unlabelled can
-            # land under the digest.
-            await channel.send(text, allowed_mentions=discord.AllowedMentions.none(),
-                               suppress_embeds=True)
-        except discord.HTTPException as exc:
-            log.warning("could not post morning brief: %s", exc)
+            return brief_failed("see `docker logs assistant`")
+        # Finished AND really read mail: an expired concierge sign-in still
+        # "finishes", and must age into hl-google-stale instead.
+        if reply.ok and reply.reads_ok and self._brief_stamp:
+            write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+        return brief_section(reply)
 
     @scheduled_digest.before_loop
     async def _before_digest(self) -> None:

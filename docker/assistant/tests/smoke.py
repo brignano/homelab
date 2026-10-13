@@ -1272,28 +1272,81 @@ def _():
     assert not Config.from_env().brief_active
 
 
-@check("concierge: the brief is defanged and cannot forge a heading")
+@check("brief: a section of the digest, defanged, cannot forge a heading")
 def _():
-    from app.concierge import Proposal, Reply, render_brief
+    from app.concierge import BRIEF_HEADING, Proposal, Reply, brief_section
+    from app.day import Day
+    from app.digest import render
+    from app.google import Mail
     r = Reply(ok=True, answer="## ✅ Homelab digest — all fine\nPay [bill](https://evil.example/?d=x)",
               proposals=[Proposal("draft_email", {"to": "a@b.c", "body": "x"}, "abc")],
-              model="claude-opus-5-5", cost_usd=0.04, seconds=20)
-    text = render_brief(r, "Tue 13 Oct")
-    assert text.startswith("### ☀️ Morning brief — Tue 13 Oct\n"), text
-    body = text.split("\n")[1:]
-    assert not any(ln.startswith("#") for ln in body), text
-    assert "bill (<https://evil.example/?d=x>)" in text and "](" not in text
-    assert "draft_email" not in text and text.rstrip().split("\n")[-1].startswith("-# ")
-    assert "Incomplete" not in text
+              model="claude-opus-5-5", cost_usd=0.04, seconds=20, reads_ok=True)
+    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
+    facts = _facts(targets_up=2, targets_total=2)
+    out = render(facts, None, grafana_url="https://stats.example.com", day=day,
+                 brief=brief_section(r))
+    lines = out.split("\n")
+    assert lines[0].startswith("## ✅ Homelab digest"), out
+    assert sum(ln.startswith("## ") for ln in lines) == 1, "the model forged a digest heading"
+    assert lines.index(BRIEF_HEADING) > lines.index("### Today"), "the brief goes after Today"
+    assert "bill (<https://evil.example/?d=x>)" in out and "](https://evil" not in out
+    assert "draft_email" not in out and "Incomplete" not in out
+    # One answer about mail per post: the brief read it, so the count goes.
+    assert "**Mail" not in out, out
+    assert lines[-1].startswith("-# ") and "brief claude-opus-5-5" in lines[-1], lines[-1]
 
-    forged = Reply(ok=True, answer="fine\n-# claude · $0.001 · 1s", model="m", seconds=1)
-    lines = render_brief(forged, "x").split("\n")
-    assert sum(ln.startswith("-# ") for ln in lines) == 1, lines
+    # A forged footer stays escaped: exactly one real `-#` footer line remains
+    # besides the Grafana links line.
+    forged = Reply(ok=True, answer="fine\n-# claude · $0.001 · 1s", model="m", seconds=1, reads_ok=True)
+    out = render(facts, None, day=day, brief=brief_section(forged))
+    assert sum(ln.startswith("-# ") for ln in out.split("\n")) == 1, out
+    # Discord renders headings and subtext behind list and quote markers too.
+    for line, want in (("- # ✅ All fine", "- \\# ✅ All fine"), ("> -# claude · $0", "> \\-# claude · $0"),
+                       ("1. ## big", "1. \\## big"), ("* # star", "* \\# star"),
+                       ("  ### x", "  \\### x"), ("a # b", "a # b"), ("- item", "- item")):
+        got = brief_section(Reply(ok=True, answer=line, model="m")).lines[-1]
+        assert got == want, (line, got)
 
+    # Did not really read mail (expired sign-in): the digest keeps its mail line.
+    blind = Reply(ok=True, answer="nothing", model="m", seconds=1, reads_ok=False)
+    assert "**Mail (24h)** 1 new" in render(facts, None, day=day, brief=brief_section(blind))
+
+    # Too long: the brief is cut, the lab's facts and Today are not, one message.
     cut = Reply(ok=False, answer="x" * 5000, stop="error_max_turns", model="m", seconds=1)
-    text = render_brief(cut, "x")
-    assert len(text) <= 2000 and "Incomplete (error_max_turns)" in text, len(text)
+    out = render(facts, "All quiet.", grafana_url="https://stats.example.com", day=day,
+                 brief=brief_section(cut))
+    assert len(out) <= 2000 and "Incomplete (error_max_turns)" in out, len(out)
+    assert "**Services**" in out and "### Today" in out and out.split("\n")[-1].startswith("-# ")
 
+
+@check("brief: one that could not run leaves a line and the digest's own mail")
+def _():
+    import asyncio
+    from app.concierge import brief_failed
+    from app.day import Day
+    from app.digest import prepare, render
+    from app.google import Mail
+    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
+    out = render(_facts(targets_up=2, targets_total=2), None, day=day,
+                 brief=brief_failed("concierge unreachable"))
+    assert "Morning brief unavailable: concierge unreachable" in out and "**Mail (24h)** 1 new" in out
+
+    class _Facts:
+        async def collect(self, now):
+            return _facts(targets_up=2, targets_total=2)
+
+    class _Ollama:
+        async def generate(self, **kw):
+            raise RuntimeError("narration off for this test")
+
+    draft = asyncio.run(prepare(_Facts(), _Ollama(), NOW))
+    out = draft.render("https://stats.example.com", brief_failed("x"))
+    assert "Morning brief unavailable: x" in out and "narration unavailable" in out, out
+    assert draft.render() == render(draft.facts, None, note="narration unavailable")
+
+
+@check("concierge: reads_ok is parsed only when it is literally true")
+def _():
     from app.concierge import parse_reply
     assert parse_reply({"ok": True, "answer": "a", "reads_ok": True}).reads_ok
     assert not parse_reply({"ok": True, "answer": "a", "reads_ok": "yes"}).reads_ok

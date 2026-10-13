@@ -28,8 +28,8 @@ flowchart LR
   Home Assistant and Radarr/Sonarr. It shares `proxy_proxy` with them, so the
   containers there can reach its port; the bearer token keeps them out.
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
-  `home_overview`, `weather_forecast`, `homelab_status`, `media_search`,
-  `media_downloads`.
+  `home_overview`, `weather_forecast`, `home_calendar_events`,
+  `homelab_status`, `media_search`, `media_downloads`.
 - **Every write is a proposal.** `remember`, `create_event`, `move_event`,
   `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
@@ -50,7 +50,7 @@ flowchart LR
   through the next 7 days) with only the read tools registered and the
   propose tier refused by both gates. The body may carry approved memories
   and nothing else, and its reply never becomes a pending proposal. The bot
-  calls it after each scheduled digest when its `BRIEF_ENABLED=true`, under
+  calls it with each scheduled digest when its `BRIEF_ENABLED=true`, under
   its own lower caps (`CONCIERGE_BRIEF_MAX_TURNS` 8,
   `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20); see
   [`docker/assistant/README.md`](../assistant/README.md) → "The morning brief".
@@ -196,6 +196,13 @@ else is affected.
   nothing. The path is fixed, and the entity comes from config, never from the
   model. It needs `HA_TOKEN` (step 5). Set `HA_WEATHER_ENTITY=` blank to turn
   it off.
+- **`home_calendar_events`** (off until `HA_CALENDARS` is set): events on
+  the calendars Home Assistant can see, from today through up to 14 days. This
+  is how the agent sees the Apple calendar (HA's CalDAV integration), privately,
+  with no public iCloud link. `GET /api/calendars/<entity>` only, for the
+  `calendar.*` IDs in `HA_CALENDARS`, checked at startup; the model picks only
+  how many days ahead. Use the same IDs as `docker/assistant/.env`. If the
+  concierge's HA user can't read one, the tool reports it.
 - **`homelab_status`**: *"how's the server doing?"*. Fixed Prometheus instant
   queries: targets up and down, CPU (1h), RAM, root disk, thin pool,
   restarts in 24h, and required containers that are not running. The model
@@ -245,6 +252,7 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | Google sign-in revoked/expired | the agent reports the tool error, "rerun --google-auth" |
 | HA unreachable / token revoked | `home_overview` reports the error; nothing else is affected |
 | Forecast fails | "HTTP 4xx … is weather.x the right entity?": `HA_WEATHER_ENTITY` names an entity that does not exist. Check *Settings → Entities* |
+| Home calendar fails | "HTTP 4xx … is calendar.x the right entity?": an ID in `HA_CALENDARS` that HA does not know |
 | Prometheus unreachable | `homelab_status` reports "could not reach Prometheus"; nothing else is affected. One unreadable query shows in `could_not_read` |
 | Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |
 | ✅ but nothing downloads | Radarr/Sonarr added it and searched; no indexer had a release yet. It stays monitored and grabs one when it appears. Check *Wanted* in the app |

@@ -259,9 +259,9 @@ class Config:
     memory_channel_id: int | None = None
     concierge_url: str = "http://concierge:8080"
     concierge_token: str = ""
-    # The morning brief: after each SCHEDULED digest, the concierge reads mail
-    # and calendar (read-only, no proposals) and the bot posts what needs you
-    # under the digest. Needs #ask configured. Opt-in (BRIEF_ENABLED=true):
+    # The morning brief: with each SCHEDULED digest, the concierge reads mail
+    # and calendar (read-only, no proposals) and the bot adds what needs you as
+    # the digest's last section. Needs #ask configured. Opt-in (BRIEF_ENABLED=true):
     # it sends mail to Anthropic every morning without anyone asking.
     brief_enabled: bool = False
 
