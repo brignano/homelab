@@ -11,7 +11,8 @@
 # HA strips these comments when you save in the raw editor. That is fine: git
 # keeps them, and a later edit made in the UI can be copied back here.
 #
-# Every entity ID here is confirmed against the running HA (2026-10-13).
+# Every entity ID here is confirmed against the running HA (2026-10-13),
+# except two calendars noted below.
 
 title: Home
 views:
@@ -46,7 +47,7 @@ views:
     # space under the shorter columns; three columns of similar height fit on
     # one screen.
     sections:
-      # Left column: the house, the car and Jax.
+      # Left column: the house, the car, Jax and the map.
       - type: grid
         cards:
           - type: heading
@@ -122,8 +123,22 @@ views:
           - type: tile
             entity: sensor.jax_last_litter_visit_duration
             name: Visit length
+          # The map sits under Jax, not on the right: the calendar made the
+          # right column a screen taller than the left.
+          - type: heading
+            heading: Map
+            icon: mdi:map-marker-radius
+          - type: map
+            entities:
+              - person.anthony_brignano
+              - device_tracker.spaceship_location
+            default_zoom: 13
+            hours_to_show: 0
+            grid_options:
+              columns: full
+              rows: 4
 
-      # Right column: weather and where everyone is.
+      # Right column: the thermostat, the calendar and the weather.
       - type: grid
         cards:
           - type: heading
@@ -140,6 +155,21 @@ views:
             features:
               - type: target-temperature
               - type: climate-hvac-modes
+          # The iCloud calendars from the CalDAV integration, as a list of
+          # this week's events (today first). Reminders is left out: it is a
+          # to-do list, not a calendar. calendar.appointments is confirmed;
+          # events and work are inferred from the calendar names.
+          - type: heading
+            heading: Calendar
+            icon: mdi:calendar
+          - type: calendar
+            initial_view: listWeek
+            entities:
+              - calendar.appointments
+              - calendar.events
+              - calendar.work
+            grid_options:
+              columns: full
           - type: weather-forecast
             entity: weather.forecast_home
             show_current: true
@@ -147,15 +177,3 @@ views:
             forecast_type: daily
             grid_options:
               columns: full
-          - type: heading
-            heading: Map
-            icon: mdi:map-marker-radius
-          - type: map
-            entities:
-              - person.anthony_brignano
-              - device_tracker.spaceship_location
-            default_zoom: 13
-            hours_to_show: 0
-            grid_options:
-              columns: full
-              rows: 4
