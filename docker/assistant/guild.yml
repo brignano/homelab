@@ -63,15 +63,28 @@ categories:
       # The act lane: Claude, with read access to calendar, mail and the house.
       # Routed to docker/concierge/, never to Ollama.
       # See docs/design/tsd-personal-assistant.md, phase 3.
+      # The one place to talk to the assistant, whatever the request. Each new
+      # message gets its own thread from the bot, so the channel stays a list
+      # of requests and each conversation keeps its own context and approvals.
       - name: ask
         topic: >-
-          Ask Claude about your calendar, email, home or movies — it looks
-          things up before answering. It can propose a calendar event, a Gmail
-          draft, a scene or a movie/show download; nothing happens until you
-          press ✅. REPLY to a message to continue that conversation, or start a
-          THREAD for a longer one; a plain message is a one-off with no history.
-          Costs a few cents per question.
+          Ask Otto anything: your calendar, email, home or the lab. It looks
+          things up before answering and can propose an event, a Gmail draft or
+          a scene; nothing happens until you press ✅. Each new message becomes
+          its own thread, so keep talking in the thread to continue. Costs a
+          few cents per question.
         bot_only: false
+
+      # The audit trail for writes, as #digest is for the lab's numbers: one
+      # line per approved action, linking to the thread it was approved in.
+      # Answers stay in their threads; only things that changed the world land
+      # here. Off until DISCORD_ACTIVITY_CHANNEL_ID is set.
+      - name: activity
+        topic: >-
+          Everything Otto has actually done, one line per approved action
+          (events created or moved, drafts written, scenes run), each linking
+          to the #ask thread it came from. Bot posts only.
+        bot_only: true
 
       # One message per remembered fact, read by the concierge before every
       # #ask task. Bot-only so nothing lands here unapproved — the bot posts a

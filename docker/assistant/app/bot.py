@@ -43,9 +43,13 @@ from .home import Home
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
-from .text import chunk, clamp_input
+from .text import chunk, clamp_input, thread_name
 
 log = logging.getLogger(__name__)
+
+# How long an idle #ask thread stays in the sidebar. Archived threads are still
+# listed under the channel's Threads button, and a new message reopens one.
+ASK_THREAD_ARCHIVE_MIN = 1440
 
 # No persona line, deliberately. An earlier version opened with "You are a
 # concise assistant running locally on a small home server… you have no live
@@ -247,12 +251,34 @@ class Assistant(discord.Client):
 
         Over-fetches, because ignorable and empty messages are dropped after.
         """
+        limit = self.cfg.chat_history_turns * 2
         turns: list[Turn] = []
-        async for msg in channel.history(limit=self.cfg.chat_history_turns * 2):
+        seen = 0
+        async for msg in channel.history(limit=limit):
+            seen += 1
             if (turn := self._to_turn(msg)) is not None:
+                turns.append(turn)
+        # A thread opened from a message (as every new #ask request is) does
+        # not contain that message: it stays in the parent channel, under the
+        # thread's own id. Without it a follow-up loses the original question.
+        if seen < limit and (starter := await self._starter(channel)) is not None:
+            if (turn := self._to_turn(starter)) is not None:
                 turns.append(turn)
         turns.reverse()          # history() yields newest-first
         return turns
+
+    async def _starter(self, thread) -> discord.Message | None:
+        """The parent-channel message a thread was opened from, if any."""
+        cached = getattr(thread, "starter_message", None)
+        if cached is not None:
+            return cached
+        parent = getattr(thread, "parent", None)
+        if parent is None or not hasattr(parent, "fetch_message"):
+            return None
+        try:
+            return await parent.fetch_message(thread.id)
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            return None   # a thread started from scratch has no starter
 
     async def _chain_turns(self, message: discord.Message) -> list[Turn]:
         """Walk the reply chain back from `message`, oldest first.
@@ -415,25 +441,55 @@ class Assistant(discord.Client):
             return []
         return usable_memories(rows)
 
-    async def _handle_ask(self, message: discord.Message) -> None:
-        channel = message.channel
+    async def _open_thread(self, message: discord.Message) -> discord.Thread | None:
+        """Give a new #ask request its own thread, named after the request.
+
+        The channel then reads as a list of requests, and everything about one
+        (the answer, its proposals, the ✅ result, any follow-up) stays inside
+        it, with the whole thread as context. None if Discord refuses: the
+        answer then goes in the channel, as before.
+        """
         try:
-            async with channel.typing():
-                turns, mode = await self._context_for(message)
-                if not turns:
-                    return
+            return await message.create_thread(
+                name=thread_name(message.content or ""),
+                auto_archive_duration=ASK_THREAD_ARCHIVE_MIN,
+            )
+        except discord.HTTPException as exc:
+            log.warning("could not open a thread for #ask (needs Create Public Threads): %s", exc)
+            return None
+
+    async def _handle_ask(self, message: discord.Message) -> None:
+        # Where the answer goes: a fresh thread for a new request, otherwise
+        # wherever the message was (a thread, or a reply chain in the channel).
+        out = message.channel
+        thread: discord.Thread | None = None
+
+        async def say(text: str) -> None:
+            if thread is None:
+                await message.reply(text, mention_author=False)
+            else:
+                await thread.send(text)
+
+        try:
+            turns, mode = await self._context_for(message)
+            if not turns:
+                return
+            if mode == SINGLE and not isinstance(out, discord.Thread):
+                thread = await self._open_thread(message)
+                out = thread or out
+            async with out.typing():
                 history = [{"role": t.role, "content": t.content} for t in turns[:-1]]
                 prompt, _ = clamp_input(turns[-1].content, self.cfg.max_input_chars)
                 memories = await self._memories()
-                log.info("ask: %s context, %d earlier turn(s), %d memories",
-                         mode, len(history), len(memories))
+                log.info("ask: %s context, %d earlier turn(s), %d memories, new thread=%s",
+                         mode, len(history), len(memories), thread is not None)
                 reply = await self.concierge.ask(prompt, history, memories)
         except ConciergeError as exc:
-            await message.reply(f"Concierge unavailable: {exc}", mention_author=False)
+            await say(f"Concierge unavailable: {exc}")
             return
         except Exception:  # noqa: BLE001 — a bad reply must not kill the handler
             log.exception("ask failed")
-            await message.reply("Concierge request failed — see `docker logs assistant`.", mention_author=False)
+            await say("Concierge request failed — see `docker logs assistant`.")
             return
 
         # The answer can quote an email or an event, so it may hold text a
@@ -442,13 +498,16 @@ class Assistant(discord.Client):
         quiet = discord.AllowedMentions.none()
         parts = chunk(defang(reply.answer) + "\n" + concierge_footer(reply))
         try:
-            await message.reply(parts[0], mention_author=False, allowed_mentions=quiet,
-                                suppress_embeds=True)
+            if thread is None:
+                await message.reply(parts[0], mention_author=False, allowed_mentions=quiet,
+                                    suppress_embeds=True)
+            else:
+                await thread.send(parts[0], allowed_mentions=quiet, suppress_embeds=True)
             for part in parts[1:]:
-                await channel.send(part, allowed_mentions=quiet, suppress_embeds=True)
+                await out.send(part, allowed_mentions=quiet, suppress_embeds=True)
             for proposal in reply.proposals:
                 view = ApprovalView(self, proposal) if approvable(proposal) else None
-                sent = await channel.send(
+                sent = await out.send(
                     render_proposal(proposal), view=view,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
@@ -457,6 +516,24 @@ class Assistant(discord.Client):
                 log.info("proposal shown: tool=%s approvable=%s", proposal.tool, view is not None)
         except discord.HTTPException as exc:
             log.warning("could not post ask reply: %s", exc)
+
+    async def log_activity(self, text: str, source: discord.Message | None) -> None:
+        """One line in #activity for an approved action, linking to where it
+        was approved. Best effort: the action already happened either way."""
+        if self.cfg.activity_channel_id is None:
+            return
+        channel = self.get_channel(self.cfg.activity_channel_id)
+        if channel is None:
+            log.warning("activity channel %s not found", self.cfg.activity_channel_id)
+            return
+        line = defang(text)[:1700]
+        if source is not None:
+            line += f" · {source.jump_url}"
+        try:
+            await channel.send(line, allowed_mentions=discord.AllowedMentions.none(),
+                               suppress_embeds=True)
+        except discord.HTTPException as exc:
+            log.warning("could not write to #activity: %s", exc)
 
     # --- background loops ---
 
@@ -608,9 +685,11 @@ class ApprovalView(discord.ui.View):
             log.error("approved proposal failed: tool=%s: %s", self.proposal.tool, exc)
             await self._finish("Approved, but it failed", None)
             await self._say(f"⚠️ `{self.proposal.tool}` failed: {exc}")
+            await self.client.log_activity(f"⚠️ `{self.proposal.tool}` failed: {exc}", self.message)
             return
         await self._finish("Approved — done", None)
         await self._say(f"✅ {summary}")
+        await self.client.log_activity(f"✅ {summary}", self.message)
 
     async def _say(self, text: str) -> None:
         if self.message is None:

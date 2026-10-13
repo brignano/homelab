@@ -332,9 +332,19 @@ and a 3B degrades fast when that drifts.
 
 ### #ask — Claude, through the concierge
 
-`#ask` works like `#chat` (same thread/reply/one-off scope, same allowlist),
-but this bot only forwards the message to `docker/concierge/` and renders the
-answer. The agent, its Anthropic key and its Google and Home Assistant tokens
+`#ask` works like `#chat` (same thread/reply scope, same allowlist), with one
+difference: a new message in the channel is never a one-off. The bot opens a
+thread on it and answers there, so you keep talking in the thread and it
+reads the whole conversation, starting with the message that opened it. A
+reply to an older message in the channel still follows its reply chain. The
+bot only forwards the message to `docker/concierge/` and renders the
+answer.
+
+Opening the thread uses **Create Public Threads** and **Send Messages in
+Threads**. The bot gets both from `@everyone`, which has them by default; if
+you have taken them away, the bot logs a warning and answers in the channel
+instead. Set `DISCORD_ACTIVITY_CHANNEL_ID` (from `--provision --apply`) to log
+each approved action to `#activity`. The agent, its Anthropic key and its Google and Home Assistant tokens
 all live in that stack. The bot also reads `#memory` for each request, and it
 renders any proposed memory under ✅/❌ from the proposal's arguments
 (`app/concierge.py`). Only an allowlisted ✅ within 15 minutes posts it.
@@ -622,8 +632,10 @@ logs a warning and carries on rather than aborting over something cosmetic.
    # digest     daily health log, bot posts only
    # alerts     Grafana + dead-man's-switch, webhook-fed
 
-📁 ASSISTANT    you talking to the model
-   # chat       conversational, remembers recent messages
+📁 ASSISTANT    you talking to the assistant
+   # ask        the one place to ask for anything; each request gets a thread
+   # activity   what it actually did, one line per approved action, bot only
+   # memory     what it remembers about you, bot only
 ```
 
 The split is by **direction** — things the lab tells you unprompted, versus
@@ -633,7 +645,16 @@ conversation isn't.
 Within that, one decision carries the weight: **the digest is a log, not a
 chat.** "Was disk climbing last week?" is a question you'll actually scroll back
 for, and interleaved conversation would destroy it. So `#digest` and `#alerts`
-deny `@everyone` Send Messages, and everything you type goes in `#chat`.
+deny `@everyone` Send Messages, and everything you type goes in `#ask`.
+
+**One channel for every request, a thread per request.** Questions, lookups
+and things to do all go to `#ask`; splitting by topic would only make you pick
+a channel before asking. What keeps it readable is that the bot opens a thread
+on every new message, named after it, and answers there. The channel becomes a
+list of requests, and each thread holds one conversation with its own context,
+proposals and ✅ results. `#activity` is the write side's equivalent of
+`#digest`: answers stay in their threads, and only actions that changed
+something (an event, a draft, a scene) get a line there, linking back.
 
 > **Renaming an existing channel:** do it in Discord, not here. Renaming
 > preserves the channel and its history, and the provisioner then sees the new
