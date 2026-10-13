@@ -28,6 +28,7 @@ import base64
 import datetime as dt
 import hashlib
 import logging
+import re
 import secrets
 import time
 from dataclasses import dataclass
@@ -80,6 +81,9 @@ class Mail:
     sender: str
     subject: str
     received: dt.datetime
+    # Gmail's thread id, for a link that opens the conversation. Empty when
+    # the response had none or it was not plain hex (see mail_link).
+    thread: str = ""
 
 
 # --- Response parsing (pure; no I/O, unit-testable) ---------------------------
@@ -134,11 +138,23 @@ def parse_message(payload: dict) -> Mail | None:
     headers = {h.get("name", "").lower(): h.get("value", "")
                for h in payload.get("payload", {}).get("headers", [])}
     name, addr = parseaddr(headers.get("from", ""))
+    thread = str(payload.get("threadId") or payload.get("id") or "")
     return Mail(
         sender=(name or addr or "unknown sender").strip(),
         subject=(headers.get("subject") or "(no subject)").strip(),
         received=received,
+        thread=thread if _HEX_ID.fullmatch(thread) else "",
     )
+
+
+# Gmail ids are hex. Anything else is not put into a URL at all.
+_HEX_ID = re.compile(r"[0-9a-f]{6,32}")
+
+
+def mail_link(m: Mail) -> str | None:
+    """Where a digest line about this message should point: the conversation
+    in Gmail's web app, first signed-in account. None when there is no id."""
+    return f"https://mail.google.com/mail/u/0/#all/{m.thread}" if m.thread else None
 
 
 # --- One-time sign-in (PKCE, loopback redirect) --------------------------------

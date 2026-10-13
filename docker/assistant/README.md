@@ -165,6 +165,13 @@ heading. Markdown is escaped, so there are no masked links. `@` is broken, so
 `@everyone` cannot ping, and `://` is broken, so a link in a subject is not
 clickable.
 
+**Each subject opens its email.** The one link on a mail line is added by code
+around the escaped subject, and points at the conversation in Gmail
+(`mail.google.com/mail/u/0/#all/<thread id>`, your first signed-in account).
+The URL is built only from Gmail's hex thread id; a subject cannot change where
+it points or add a link of its own. When the morning brief is on, it replaces
+this line, so these links appear only on digests without a brief.
+
 **Unmarked on purpose.** The 🔴/🟠 marks and the ✅/⚠️ heading are the lab's
 verdict, and a double-booked afternoon is not a lab problem. A line that appears
 only when there is something to say, like **Overlaps**, is its own signal.

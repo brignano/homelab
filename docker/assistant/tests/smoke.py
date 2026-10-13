@@ -801,6 +801,25 @@ def _():
     assert parse_message({"payload": {}}) is None, "no internalDate: unusable, not a crash"
 
 
+@check("digest: each mail line links its subject to the conversation in Gmail")
+def _():
+    from app.day import Day, render_lines
+    from app.google import Mail, parse_message
+    m = parse_message({"id": "18c1f0aa", "threadId": "18c1f0a9", "internalDate": "1791800000000",
+                       "payload": {"headers": [{"name": "Subject", "value": "Invoice [due](https://evil.example)"}]}})
+    assert m.thread == "18c1f0a9", m
+    line = next(ln for ln in render_lines(Day(now=NOW, events=[], mail=[m]), mail=True)
+                if ln.startswith("**Mail"))
+    assert "(https://mail.google.com/mail/u/0/#all/18c1f0a9)" in line, line
+    # The subject's own markdown stays escaped: one link, and it is Gmail's.
+    assert line.count("](") == 1 and "evil.example)" not in line.split("](")[1], line
+    # An id that is not hex never reaches a URL; the line just has no link.
+    odd = parse_message({"threadId": "x/../y", "internalDate": "1791800000000", "payload": {}})
+    assert odd.thread == ""
+    plain = render_lines(Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)]))
+    assert "](" not in "\n".join(plain)
+
+
 @check("google: the sign-in asks for read-only scopes and checks its state")
 def _():
     from urllib.parse import parse_qs, urlparse
