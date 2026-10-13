@@ -479,7 +479,7 @@ recreate HA as usual (`up -d --force-recreate homeassistant`).
 [`dashboards/home.yaml`](dashboards/home.yaml) is a "Home" dashboard: one
 sections view with a strip of badges (presence, weather, inside temperature,
 the car's battery) over two columns: **Security**, **Tesla** and **Jax** on the
-left, **Climate** and a **Map** on the right. It replaces
+left, **Climate**, this week's **Calendar** and a **Map** on the right. It replaces
 the auto-generated Overview's tiles with controls you can use without opening
 a dialog.
 
