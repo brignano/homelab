@@ -196,7 +196,7 @@
             "uid": "loki"
           },
           "editorMode": "code",
-          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"$container\"} |~ \"(?i)\\\\b(error|fatal|panic|traceback)\\\\b\" [$__auto]))",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"$container\"} |~ `(?i:\\blevel\"?\\s*[=:]\\s*\"?(?:error|err|eror|fatal|crit|critical|panic)\\b)|\\[(?:ERR|FTL|ERROR|FATAL|CRIT|CRITICAL|error|fatal|crit|critical)\\]|\\b(?:ERROR|FATAL|CRITICAL|PANIC)\\b|\\bpanic:|Traceback \\(most recent call last\\)` [$__auto]))",
           "instant": false,
           "range": true,
           "refId": "A",
@@ -205,7 +205,7 @@
       ],
       "title": "Error-ish lines",
       "type": "timeseries",
-      "description": "Crude on purpose \u2014 a keyword match across every container, with no per-service parsing to maintain. It is for spotting a spike, not for counting incidents."
+      "description": "Lines each service itself logged at error severity or worse (level=error, [ERR], ERROR, a panic or traceback), not every line that mentions the word. Same matcher as the digest's Log errors line (docker/assistant/app/logs.py). For spotting a spike, not for counting incidents."
     },
     {
       "datasource": {

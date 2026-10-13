@@ -22,6 +22,8 @@ from datetime import datetime
 
 import aiohttp
 
+from .logs import ERROR_MATCH
+
 log = logging.getLogger(__name__)
 
 # --- Queries -----------------------------------------------------------------
@@ -38,10 +40,8 @@ Q_DISK = (
 Q_RESTARTS = 'sum by (name) (changes(container_start_time_seconds{name!=""}[24h]))'
 # Loki metric query. `container` is the label Alloy sets from the Docker name
 # (docker/monitoring/alloy/config.alloy).
-Q_LOG_ERRORS = (
-    'sum by (container) (count_over_time({job="docker"}'
-    ' |~ "(?i)(error|fatal|panic)" [24h]))'
-)
+# The error matcher lives in logs.py so the daily and weekly counts agree.
+Q_LOG_ERRORS = f'sum by (container) (count_over_time({{job="docker"}} {ERROR_MATCH} [24h]))'
 
 # Thresholds — the "is this fine?" judgement, made in code, not by the model.
 CPU_WARN = 85.0
