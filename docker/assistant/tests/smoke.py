@@ -1559,6 +1559,22 @@ def _():
     assert len(asyncio.run(Assistant._thread_turns(stub, bare))) == 2
 
 
+@check("compose: every setting config.py reads is passed into the container")
+def _():
+    # The compose file lists variables one by one rather than loading .env
+    # whole, so a new setting missing here is set in .env and never reaches
+    # the bot. That is how #activity first shipped: configured, and silent.
+    import re
+    cfg = (HERE.parent / "app" / "config.py").read_text()
+    compose = (HERE.parent / "docker-compose.yml").read_text()
+    reads = set(re.findall(
+        r'(?:environ\.get|_optional_id|_req|_int|_float|_list|_hhmm)\(\s*"([A-Z][A-Z0-9_]+)"', cfg))
+    # Set inside the image, not by you: a path in the container's own volume.
+    internal = {"DIGEST_STAMP_PATH"}
+    missing = sorted(n for n in reads - internal if f"{n}:" not in compose)
+    assert reads and not missing, f"read by config.py but not in docker-compose.yml: {missing}"
+
+
 # --- report -------------------------------------------------------------------
 
 print()
