@@ -1197,7 +1197,7 @@ def _():
         "the same instant in another time zone is the same meeting"
     assert [(a.title, b.title) for a, b in day.conflicts] == [("Dentist", "Pick up kids")]
     text = "\n".join(render_lines(day))
-    assert "**Calendar** 09:00 Standup · 15:00 Dentist · 15:30 Pick up kids" in text, text
+    assert "**Calendar**\n- 09:00 Standup\n- 15:00 Dentist\n- 15:30 Pick up kids\n" in text, text
     assert "**Overlaps** 15:00 Dentist ↔ 15:30 Pick up kids" in text and "not read" not in text, text
     # iCloud alone, no Google at all.
     only = "\n".join(render_lines(Day(now=NOW, sources=("ha-calendar",), ha_events=[])))
@@ -1213,7 +1213,10 @@ def _():
         assert len(lines) == 1, lines
         return lines[0]
     assert cal(events=[]) == "**Calendar** nothing else today · _HA calendars not read_"
-    assert cal(ha_events=[_ev("Dinner", 19, 0, 20, 0)]) == "**Calendar** 19:00 Dinner · _Google not read_"
+    assert cal(ha_events=[_ev("Dinner", 19, 0, 20, 0)]) == "**Calendar** _Google not read_"
+    many = render_lines(Day(now=NOW, sources=("calendar",),
+                            events=[_ev(f"E{h}", h, 0, h, 30) for h in range(9, 17)]))
+    assert many[-2:] == ["- 14:00 E14", "- +2 more"], many
     assert cal() == "**Calendar** _not read_"
 
 

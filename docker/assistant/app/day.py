@@ -52,7 +52,7 @@ FOLLOWUPS_SOURCE = "followups"
 REVIEW_SOURCE = "review"
 STAMPED = SOURCES + (BRIEF_SOURCE, FOLLOWUPS_SOURCE, REVIEW_SOURCE)
 GOOGLE_SOURCES = ("calendar", "mail")
-# The sources merged into the one Calendar line, and how each is named when
+# The sources merged into the Calendar list, and how each is named when
 # it alone could not be read.
 CALENDAR_SOURCES = {"calendar": "Google", "ha-calendar": "HA calendars"}
 
@@ -71,7 +71,7 @@ SUBJECT_CHARS = 56
 
 # Inline markdown only. `#`, `-` and `>` act only at the start of a line, and
 # this text never starts one: newlines are stripped, and every line it appears
-# on opens with a bold label written by code.
+# on opens with a bold label or a "- HH:MM" written by code.
 _MARKDOWN = re.compile(r"([\\*_~`|\[\]()<>])")
 
 
@@ -210,9 +210,14 @@ def render_lines(day: Day, mail: bool = True) -> list[str]:
         gap = "".join(f" · _{CALENDAR_SOURCES[s]} not read_" for s in unread)
         timed = day.timed
         if timed:
-            shown = " · ".join(_event(e, tz) for e in timed[:MAX_EVENTS])
+            # One event per line: a day is read top to bottom, by time. Each
+            # line still opens with text written here ("- HH:MM"), never with
+            # a title, so the rule above holds.
+            lines.append("**Calendar**" + gap.replace(" · ", " ", 1))
+            lines.extend(f"- {_event(e, tz)}" for e in timed[:MAX_EVENTS])
             more = len(timed) - MAX_EVENTS
-            lines.append(f"**Calendar** {shown}" + (f" · +{more} more" if more > 0 else "") + gap)
+            if more > 0:
+                lines.append(f"- +{more} more")
         else:
             lines.append("**Calendar** nothing else today" + gap)
         if day.all_day:
