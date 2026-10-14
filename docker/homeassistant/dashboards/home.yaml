@@ -77,26 +77,33 @@ views:
             tap_action:
               action: navigate
               navigation_path: /calendar
-          # An agenda, not the calendar card: the card scrolls inside a
-          # fixed height, which caught swipes on a phone. The list comes from
+          # An agenda of today and tomorrow, not the calendar card: the card
+          # scrolls inside a fixed height, which caught swipes on a phone, and
+          # a whole week was too much for the home page. The list comes from
           # sensor.upcoming_events (config/configuration.yaml) and grows to
           # fit. Tap the heading for the full calendar.
           - type: markdown
             content: |-
               {%- set evs = state_attr('sensor.upcoming_events', 'events') or [] %}
-              {%- set ns = namespace(day='') %}
+              {%- set today = now().date() %}
+              {%- set ns = namespace(day='', shown=0) %}
               {%- for e in evs %}
               {%- set allday = 'T' not in e.start %}
               {%- set d = strptime(e.start, '%Y-%m-%d') if allday else as_datetime(e.start) %}
-              {%- set day = 'Today' if d.date() == now().date() else d.strftime('%A, %b %-d') %}
+              {%- set offset = (d.date() - today).days %}
+              {%- if offset <= 1 %}
+              {%- set day = 'Tomorrow' if offset == 1 else 'Today' %}
+              {%- set ns.shown = ns.shown + 1 %}
               {%- if day != ns.day %}{% set ns.day = day %}
 
               **{{ day }}**
               {%- endif %}
               - {{ 'All day' if allday else d.strftime('%-I:%M %p') }} · {{ e.summary }}
-              {%- else %}
-              Nothing in the next 7 days.
+              {%- endif %}
               {%- endfor %}
+              {%- if ns.shown == 0 %}
+              Nothing today or tomorrow.
+              {%- endif %}
             grid_options:
               columns: full
           - type: weather-forecast
