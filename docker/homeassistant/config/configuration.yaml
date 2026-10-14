@@ -300,3 +300,42 @@ template:
         state: >
           {% set v = states('sensor.cat_litter_box_m2_cat_weight') %}
           {{ v | float(0) | round(1) if v not in ['unavailable', 'unknown'] else this.state }}
+
+  # The next 7 days of events from the calendars on the Home dashboard, for
+  # its agenda card. A markdown list grows to fit; the built-in calendar card
+  # has a fixed height and scrolls inside itself, which on a phone caught the
+  # swipe meant for the page. A calendar that does not exist is skipped with a
+  # warning in the log, not an error.
+  - trigger:
+      - trigger: time_pattern
+        minutes: /15
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
+    action:
+      - action: calendar.get_events
+        target:
+          entity_id:
+            - calendar.appointments
+            - calendar.events
+            - calendar.work
+            - calendar.sonarr
+        data:
+          duration:
+            days: 7
+        response_variable: agenda
+    sensor:
+      - name: Upcoming events
+        unique_id: upcoming_events
+        icon: mdi:calendar-clock
+        # The state is how many events there are; the list is an attribute.
+        # All-day events start with a bare date, which sorts ahead of timed
+        # events on the same day. Capped at 20 to keep the attribute small.
+        state: >
+          {{ agenda.values() | map(attribute='events') | map('count') | sum }}
+        attributes:
+          events: >
+            {% set ns = namespace(e=[]) %}
+            {% for v in agenda.values() %}{% set ns.e = ns.e + v.events %}{% endfor %}
+            {{ (ns.e | sort(attribute='start'))[:20] }}
