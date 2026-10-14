@@ -237,6 +237,8 @@ def _():
     o = agent.options_for(_cfg(), "t", server, "sys", read_only=True)
     assert o.tools == [] and o.allowed_tools == [] and o.permission_mode == "default"
     assert o.max_turns == 8 and o.max_budget_usd == 0.20, "the brief has its own, lower ceilings"
+    assert o.model == "claude-haiku-5-5", "the brief runs on its own, cheaper model"
+    assert agent.options_for(_cfg(), "t", server, "sys").model == "claude-opus-5-5", "#ask keeps CONCIERGE_MODEL"
 
 
 @check("brief: fixed request, 72h on Monday, its own instructions")
@@ -1030,6 +1032,7 @@ def _():
         os.environ.pop("GOOGLE_CLIENT_SECRET")
         cfg = Config.from_env()
         assert cfg.model == "claude-opus-5-5" and not cfg.google_enabled and not cfg.home_enabled
+        assert cfg.brief_model == "claude-haiku-5-5"
     finally:
         os.environ.clear()
         os.environ.update(keep)

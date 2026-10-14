@@ -123,6 +123,9 @@ class Config:
     # workspace's monthly limit with #ask.
     brief_max_turns: int = 8
     brief_max_budget_usd: float = 0.20
+    # The brief runs every day whether or not anything needs you, and only
+    # reads and summarizes, so it gets a cheaper model than #ask by default.
+    brief_model: str = "claude-haiku-5-5"
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -211,6 +214,7 @@ class Config:
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
             brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
             brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.20),
+            brief_model=os.environ.get("CONCIERGE_BRIEF_MODEL", "").strip() or "claude-haiku-5-5",
             timeout_s=_int("CONCIERGE_TIMEOUT_S", 300),
             max_queue=_int("CONCIERGE_MAX_QUEUE", 3),
             max_proposals=_int("CONCIERGE_MAX_PROPOSALS", 3),

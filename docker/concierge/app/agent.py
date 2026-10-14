@@ -226,7 +226,7 @@ def _gate_callback(task_id: str, read_only: bool = False):
 def options_for(cfg: Config, task_id: str, server, system: str,
                 read_only: bool = False) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
-        model=cfg.model,
+        model=cfg.brief_model if read_only else cfg.model,
         system_prompt=system,
         tools=[],
         allowed_tools=[],
@@ -263,10 +263,11 @@ async def run(cfg: Config, google: Google | None, home: Home | None, *,
         ha_calendars=ha_calendars, watch=watch,
     )
     server, registered = tools.build(ctx)
-    audit.emit("task_start", task=task_id, model=cfg.model, prompt=prompt, brief=brief,
+    model = cfg.brief_model if brief else cfg.model
+    audit.emit("task_start", task=task_id, model=model, prompt=prompt, brief=brief,
                history=len(history), memories=len(memories), tools=registered)
 
-    out = Outcome(task_id=task_id, ok=False, answer="", model=cfg.model)
+    out = Outcome(task_id=task_id, ok=False, answer="", model=model)
     last_text = ""
     result: ResultMessage | None = None
     system = system_prompt(memories, now, BRIEF_SYSTEM if brief else SYSTEM)

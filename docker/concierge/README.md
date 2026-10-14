@@ -54,14 +54,16 @@ flowchart LR
   and nothing else, and its reply never becomes a pending proposal. The bot
   calls it with each scheduled digest when its `BRIEF_ENABLED=true`, under
   its own lower caps (`CONCIERGE_BRIEF_MAX_TURNS` 8,
-  `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20); see
+  `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20) and its own cheaper model
+  (`CONCIERGE_BRIEF_MODEL`, Haiku; #ask keeps `CONCIERGE_MODEL`); see
   [`docker/assistant/README.md`](../assistant/README.md) → "The morning brief".
 
 ## What it costs
 
-Nothing here keeps its own schedule. Each question, and the bot's one morning
-brief a day, is one agent run on
-`claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50. Typical
+Nothing here keeps its own schedule. Each question is one agent run on
+`claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50. The
+bot's one morning brief a day runs on `claude-haiku-5-5`, capped at 8 turns
+and $0.20. Typical
 lookups are a few cents; the footer under each answer shows the real figure.
 The monthly ceiling is the **`homelab` workspace's spend limit** in the Claude
 Console, not anything in this repo.

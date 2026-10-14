@@ -441,7 +441,10 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       the "one agent that does everything" rejection draws is per run; the
       process still holds `/v1/execute` for #ask). Drafts stay on demand in
       #ask. Own ceilings: `CONCIERGE_BRIEF_MAX_TURNS` (8) and
-      `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20). Opt-in: `BRIEF_ENABLED=true`.
+      `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20), and since 2026-10-14 its
+      own model, `CONCIERGE_BRIEF_MODEL` (Haiku): it reads and summarizes
+      daily whether or not anything needs you, so Opus stays for #ask.
+      Opt-in: `BRIEF_ENABLED=true`.
 - [ ] **Proactive triage** (proposed 2026-10-11): an evening run, and
       drafted replies as proposals, if the read-only brief earns it.
 
