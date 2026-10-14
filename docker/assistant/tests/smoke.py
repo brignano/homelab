@@ -1261,6 +1261,24 @@ def _():
         assert "Home Assistant" in out.splitlines()[-1] and "Google" not in out.splitlines()[-1]
 
 
+@check("ha calendar: HA_FREE_CALENDARS are shown but never flagged as overlaps")
+def _():
+    from app.day import DayCollector, render_lines
+    from app.home import Home
+    def item(title, h1, h2):
+        return {"summary": title, "start": {"dateTime": f"2026-10-12T{h1}:00:00+00:00"},
+                "end": {"dateTime": f"2026-10-12T{h2}:00:00+00:00"}}
+    session = _HASession({"calendar.home": [item("Dinner", 19, 21)],
+                          "calendar.sonarr": [item("Show A - 1x02", 20, 21), item("Show B - 3x01", 20, 21)]})
+    dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("ha-calendar",), state_dir=None,
+                      home=Home(session, "http://ha", "t"), ha_calendars=("calendar.home", "calendar.sonarr"),
+                      ha_free_calendars=("calendar.sonarr",))
+    day = asyncio.run(dc.collect(NOW))
+    assert [e.title for e in day.timed] == ["Dinner", "Show A - 1x02", "Show B - 3x01"], day.timed
+    assert not day.conflicts, day.conflicts
+    assert "Overlaps" not in "\n".join(render_lines(day))
+
+
 @check("config: HA_CALENDARS is its own optional source, needing HA_TOKEN")
 def _():
     from app.config import Config
@@ -1270,6 +1288,9 @@ def _():
     assert c.ha_calendar_enabled and c.day_sources == ("ha-calendar",)
     with_env(HA_TOKEN="t", HA_ENTITIES="climate.thermostat", HA_CALENDARS="calendar.home")
     assert Config.from_env().day_sources == ("home", "ha-calendar")
+    with_env(HA_TOKEN="t", HA_CALENDARS="calendar.home,calendar.sonarr",
+             HA_FREE_CALENDARS="calendar.sonarr, calendar.typo")
+    assert Config.from_env().ha_free_calendars == ("calendar.sonarr",), "only calendars that are read"
     with_env(HA_TOKEN="t", HA_ENTITIES="lock.a")
     assert not Config.from_env().ha_calendar_enabled, "off when unset"
     for bad in (dict(HA_CALENDARS="calendar.home"), dict(HA_TOKEN="t", HA_CALENDARS="home"),

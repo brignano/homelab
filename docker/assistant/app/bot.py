@@ -162,6 +162,7 @@ class Assistant(discord.Client):
                 home=home,
                 home_entities=self.cfg.ha_entities,
                 ha_calendars=self.cfg.ha_calendars,
+                ha_free_calendars=self.cfg.ha_free_calendars,
             )
             self.day.arm()
         if not stamping and state_dir:

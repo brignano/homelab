@@ -163,8 +163,10 @@ dashboard and, through `HA_CALENDARS`, the digest.
    `dashboards/home.yaml` for the calendar card.
 4. For the digest, the morning brief and Claude's calendar reads, add
    `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env`,
-   `docker/concierge/.env` and `docker/mcp-calendar/.env`, then recreate
-   those containers.
+   `docker/concierge/.env` and `docker/mcp-calendar/.env`, and
+   `HA_FREE_CALENDARS=calendar.sonarr` in `docker/assistant/.env` so two
+   shows at 9pm (or a show over dinner) never read as a double-booking.
+   Then recreate those containers.
 
 The feed URL carries Sonarr's API key, which can do anything in Sonarr. It
 stays in HA's integration settings, never in git.
