@@ -32,11 +32,11 @@ flowchart LR
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
   `home_overview`, `weather_forecast`, `home_calendar_events`,
   `homelab_status`, `media_search`, `media_downloads`, `movie_night`.
-- **Every write is a proposal.** `remember`, `create_event`, `move_event`,
+- **Every write is a proposal.** `remember`, `follow_up`, `create_event`, `move_event`,
   `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
   arguments under ✅/❌. A ✅ from an allowlisted user posts a memory to
-  #memory, or sends the proposal's id, tool and arguments back to
+  #memory or a follow-up to #follow-ups (both in the bot), or sends the proposal's id, tool and arguments back to
   `/v1/execute`, which acts only if they match exactly what it stored, once,
   within 16 minutes (`app/actions.py`). No answer within 15 minutes, a bot
   restart or a concierge restart all count as ❌.
@@ -55,15 +55,28 @@ flowchart LR
   calls it with each scheduled digest when its `BRIEF_ENABLED=true`, under
   its own lower caps (`CONCIERGE_BRIEF_MAX_TURNS` 8,
   `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20) and its own cheaper model
-  (`CONCIERGE_BRIEF_MODEL`, Haiku; #ask keeps `CONCIERGE_MODEL`); see
+  (`CONCIERGE_SCHEDULED_MODEL`, Haiku; #ask keeps `CONCIERGE_MODEL`); see
   [`docker/assistant/README.md`](../assistant/README.md) → "The morning brief".
+- **The evening review proposes, but only memories and follow-ups.**
+  `POST /v1/review` takes what the bot gathered (today's #ask threads,
+  #activity lines, upcoming follow-ups, one line per Home Assistant entity)
+  as data, builds a fixed request from it (`agent.review_prompt`), and runs
+  with no lookup tools and only `remember` and `follow_up` registered;
+  `tiers.decide(..., only=...)` refuses anything else in both gates. Its
+  proposals are carried out by the bot and never become pending here. Own
+  caps: `CONCIERGE_REVIEW_MAX_TURNS` 6, `CONCIERGE_REVIEW_MAX_BUDGET_USD`
+  $0.15, on `CONCIERGE_SCHEDULED_MODEL`. See
+  [`docker/assistant/README.md`](../assistant/README.md) → "The evening review".
 
 ## What it costs
 
 Nothing here keeps its own schedule. Each question is one agent run on
-`claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50. The
-bot's one morning brief a day runs on `claude-haiku-5-5`, capped at 8 turns
-and $0.20. Typical
+`claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50, and so
+is each follow-up set to **check** when it comes due (a **remind** costs
+nothing). The bot's scheduled runs use `claude-haiku-5-5`: the morning brief
+(8 turns, $0.20) and the evening review (6 turns, $0.15), each at most once a
+day and only when turned on; the review is skipped on a day with nothing in
+it. Typical
 lookups are a few cents; the footer under each answer shows the real figure.
 The monthly ceiling is the **`homelab` workspace's spend limit** in the Claude
 Console, not anything in this repo.
@@ -102,6 +115,10 @@ This creates **#ask** (open) and **#memory** (bot-only) and prints their IDs.
 Put them in `docker/assistant/.env` as `DISCORD_ASK_CHANNEL_ID` and
 `DISCORD_MEMORY_CHANNEL_ID`. #ask needs the **Message Content** intent, the
 same Developer Portal toggle (Bot → Privileged Gateway Intents).
+It also creates **#activity** and **#follow-ups** (both bot-only); put their
+IDs in `DISCORD_ACTIVITY_CHANNEL_ID` and `DISCORD_FOLLOWUPS_CHANNEL_ID` to log
+approved actions and to keep approved follow-ups. `REVIEW_ENABLED=true` (and
+optionally `REVIEW_HA_ENTITIES`) in the same file turns on the evening review.
 
 ### 4. Google (optional, you)
 

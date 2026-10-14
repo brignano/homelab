@@ -299,3 +299,87 @@ class Home:
             raise HomeError(f"unreachable ({exc.__class__.__name__})") from exc
         except asyncio.TimeoutError as exc:
             raise HomeError("timed out") from exc
+
+    async def history(self, entity_ids: tuple[str, ...], start: dt.datetime) -> list[list[dict]]:
+        """Each entity's state changes since `start` (the evening review's
+        "what happened at home today"). One GET to HA's recorder for the
+        entities named in REVIEW_HA_ENTITIES, nothing else."""
+        z = start.astimezone(dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
+        try:
+            status, body = await self._get(
+                f"/api/history/period/{z}",
+                {"filter_entity_id": ",".join(entity_ids), "minimal_response": "",
+                 "significant_changes_only": ""})
+        except aiohttp.ClientError as exc:
+            raise HomeError(f"unreachable ({exc.__class__.__name__})") from exc
+        except asyncio.TimeoutError as exc:
+            raise HomeError("timed out") from exc
+        if status != 200 or not isinstance(body, list):
+            raise HomeError(f"history: HTTP {status}")
+        return [rows for rows in body if isinstance(rows, list)]
+
+
+HISTORY_SHOWN = 8
+
+
+def _num(state: str) -> float | None:
+    try:
+        return float(state)
+    except (TypeError, ValueError):
+        return None
+
+
+def summarize_history(rows: list[dict], tz: dt.tzinfo) -> str | None:
+    """One line for one entity's day, computed here so the model only reads it.
+
+    A number (a battery level) becomes start → end with its low and high; a
+    state (charging, cycling) becomes how often each state began and the last
+    few changes with their times. None for an entity with no rows.
+    """
+    if not rows or not isinstance(rows[0], dict):
+        return None
+    first = rows[0]
+    attrs = first.get("attributes") or {}
+    name = " ".join(str(attrs.get("friendly_name") or first.get("entity_id") or "?").split())[:80]
+    unit = str(attrs.get("unit_of_measurement") or "")
+    changes: list[tuple[str, dt.datetime | None]] = []
+    offline = 0
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        state = " ".join(str(row.get("state", "")).split())[:40]
+        if state in OFFLINE:
+            offline += 1
+            continue
+        if changes and changes[-1][0] == state:
+            continue
+        when = _when_changed(row.get("last_changed"), tz)
+        changes.append((state, when))
+    if not changes:
+        return f"{name}: unavailable all day" if offline else None
+    tail = f"; unavailable {offline}×" if offline else ""
+    nums = [_num(s) for s, _ in changes]
+    if all(n is not None for n in nums):
+        lo, hi = min(nums), max(nums)
+        return (f"{name}: {changes[0][0]} → {changes[-1][0]}{unit and ' ' + unit}"
+                f" (low {lo:g}, high {hi:g}){tail}")
+    if len(changes) == 1:
+        return f"{name}: {changes[0][0]} all day{tail}"
+    counts: dict[str, int] = {}
+    for state, _ in changes[1:]:
+        counts[state] = counts.get(state, 0) + 1
+    began = ", ".join(f"{s} ×{n}" for s, n in sorted(counts.items(), key=lambda kv: -kv[1]))
+    shown = changes[-HISTORY_SHOWN:]
+    steps = ", ".join(f"{s} {w.strftime('%H:%M') if w else '?'}" for s, w in shown)
+    more = f" (last {HISTORY_SHOWN} of {len(changes)})" if len(changes) > HISTORY_SHOWN else ""
+    return f"{name}: {began}; {steps}{more}{tail}"
+
+
+def _when_changed(raw: object, tz: dt.tzinfo) -> dt.datetime | None:
+    if not isinstance(raw, str):
+        return None
+    try:
+        when = dt.datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return when.astimezone(tz) if when.tzinfo else None

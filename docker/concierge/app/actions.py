@@ -41,6 +41,10 @@ from .scenes import SceneError, Scenes
 EXECUTABLE = frozenset({"create_event", "move_event", "draft_email", "run_scene",
                         "add_movie", "add_show"})
 
+# Proposals the bot carries out itself after a ✅, so they never reach
+# /v1/execute: `remember` posts to #memory, `follow_up` to #follow-ups.
+IN_BOT = frozenset({"remember", "follow_up"})
+
 # A little longer than the bot's 15-minute prompt, so the bot's own expiry is
 # always the one a person sees.
 TTL_S = 16 * 60
@@ -53,6 +57,13 @@ MAX_BODY = 1500          # fits a Discord message alongside the rest of the prom
 MAX_RECIPIENTS = 10
 MAX_EVENT_DAYS = 14
 HORIZON_DAYS = 400
+
+MAX_NOTE = 200
+FOLLOW_UP_DAYS = 365
+# What the bot does when a follow-up comes due: `remind` pings the user with
+# the note (no model run); `check` runs the note as an #ask request in the
+# conversation it came from, so Otto looks again and reports.
+FOLLOW_UP_THEN = ("remind", "check")
 
 _ID = re.compile(r"^[A-Za-z0-9_\-]{1,1024}$")
 
@@ -199,6 +210,21 @@ def media_args(args: dict, id_key: str) -> str:
     if not _DIGITS.match(text) or int(text) <= 0:
         raise ValueError(f"{id_key} must be the numeric id media_search returned")
     return text
+
+
+def follow_up_args(args: dict, tz: dt.tzinfo, now: dt.datetime) -> dict:
+    """follow_up's arguments, normalized. Raises ValueError with a reason."""
+    when = parse_when(args.get("when"), tz)
+    if not isinstance(when, dt.datetime):
+        raise ValueError("when needs a time of day, e.g. 2026-10-16T09:00; pick 09:00 if the user gave none")
+    if when < now + dt.timedelta(minutes=1):
+        raise ValueError("when must be in the future")
+    if when > now + dt.timedelta(days=FOLLOW_UP_DAYS):
+        raise ValueError(f"when must be within {FOLLOW_UP_DAYS} days")
+    then = args.get("then") or "remind"
+    if then not in FOLLOW_UP_THEN:
+        raise ValueError(f"then must be one of: {', '.join(FOLLOW_UP_THEN)}")
+    return {"when": when.isoformat(), "note": _line(args.get("note"), MAX_NOTE, "note"), "then": then}
 
 
 def new_id() -> str:

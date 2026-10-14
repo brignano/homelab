@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phases 1–4 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
+**Status:** 🚧 phases 1–4 built, plus follow-ups and an evening review (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -442,11 +442,34 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       process still holds `/v1/execute` for #ask). Drafts stay on demand in
       #ask. Own ceilings: `CONCIERGE_BRIEF_MAX_TURNS` (8) and
       `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20), and since 2026-10-14 its
-      own model, `CONCIERGE_BRIEF_MODEL` (Haiku): it reads and summarizes
+      own model, `CONCIERGE_SCHEDULED_MODEL` (Haiku): it reads and summarizes
       daily whether or not anything needs you, so Opus stays for #ask.
       Opt-in: `BRIEF_ENABLED=true`.
-- [ ] **Proactive triage** (proposed 2026-10-11): an evening run, and
-      drafted replies as proposals, if the read-only brief earns it.
+- [x] **Follow-ups** (2026-10-14). Propose-tier `follow_up` (when, note,
+      then = `remind` | `check`), carried out by the bot like `remember`:
+      a ✅ posts one message to bot-only #follow-ups, which the bot reads
+      every minute and fires into the thread it was set in, deleting the
+      message first so it fires once. `remind` pings with the note (no
+      model); `check` runs the note as an #ask request in that thread, so
+      Otto looks again and anything it wants to do is a new proposal.
+      Rejected: Google Tasks as the store (its API keeps a due *date*, not
+      a time, so nothing could fire at 09:00) and a database (#memory's
+      reasons hold). Stamp `source-followups`.
+- [x] **Evening review** (2026-10-14), the reflective half of proactive
+      triage: at `REVIEW_AT` the bot sends `/v1/review` the day's #ask
+      threads, #activity, upcoming follow-ups and a code-made line per
+      `REVIEW_HA_ENTITIES` entity from HA's history, and posts the answer as
+      a thread in #ask. That run has no lookup tools and only `remember` and
+      `follow_up` (`tiers.decide(..., only=...)`), so it reads no inbox on a
+      timer and can only propose things the bot carries out after a ✅: the
+      boundary the brief draws, kept. It is what makes #memory fill up
+      without you saying "remember". Opt-in `REVIEW_ENABLED=true`; skipped
+      on an empty day; stamp `source-review`.
+- [x] **Scheduled runs on a cheaper model** (2026-10-14).
+      `CONCIERGE_SCHEDULED_MODEL` (Haiku) for the brief and the review;
+      #ask keeps `CONCIERGE_MODEL`.
+- [ ] **Drafted replies from the brief**, as proposals, if the read-only
+      brief earns it. Today the brief says "ask in #ask for a draft".
 
 **Setup left for phase 4 (you)**
 - [ ] Rerun the concierge's `--google-auth` for the write scopes and paste
@@ -552,6 +575,13 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - **Claude Code routines / scheduled cloud sessions as the always-on piece.**
   They run in Anthropic's cloud, so they cannot reach Home Assistant on the LAN
   without a public endpoint, which this lab does not have by design.
+- **OpenClaw, or another general agent framework, as the runtime**
+  (asked 2026-10-14, to save tokens). It saves none: it calls the same
+  hosted models for every turn. It is also this TSD's rejected "one agent
+  that does everything", with a large third-party skill ecosystem in
+  reach. Token cost is handled here by model choice per run
+  (`CONCIERGE_SCHEDULED_MODEL`) and by doing the scheduled parts in code
+  (a `remind` follow-up never calls a model).
 - **Auto-approving "safe" writes.** Every write starts approved by hand. If a
   write is still approved every time after a month, promote it to **read**-tier
   in code, in a reviewed commit, rather than through a setting the agent can

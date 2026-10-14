@@ -9,9 +9,11 @@ on every route but /healthz.
 One task at a time. Nobody but one person asks, and a second request arriving
 mid-task waits rather than running two agents against the same spend limit.
 
-Three routes: /v1/ask runs the agent and returns its answer and proposals;
+Four routes: /v1/ask runs the agent and returns its answer and proposals;
 /v1/brief runs the scheduled morning brief, a fixed request with read-only
-tools that can return no proposals; /v1/execute carries out ONE proposal after
+tools that can return no proposals; /v1/review runs the evening review over
+material the bot sends, with only `remember` and `follow_up`, whose
+proposals the bot carries out itself; /v1/execute carries out ONE proposal after
 the bot saw a ✅ for it. The last never runs the model, and only acts on an id
 this process handed out, with exactly the tool and arguments it stored
 (app/actions.py).
@@ -85,6 +87,58 @@ def validate_brief(body: object) -> list[str] | str:
             or not all(isinstance(m, str) for m in memories):
         return f"memories must be a list of at most {MAX_MEMORIES} strings"
     return memories
+
+
+MAX_REVIEW_CONVERSATIONS = 20
+MAX_REVIEW_LINES = 100
+MAX_LINE = 500
+
+
+def _lines(body: dict, key: str) -> list[str] | str:
+    items = body.get(key, [])
+    if not isinstance(items, list) or len(items) > MAX_REVIEW_LINES \
+            or not all(isinstance(x, str) for x in items):
+        return f"{key} must be a list of at most {MAX_REVIEW_LINES} strings"
+    return [x[:MAX_LINE] for x in items]
+
+
+def validate_review(body: object) -> tuple[list[str], dict] | str:
+    """The evening review's material: memories, today's #ask conversations,
+    #activity lines, upcoming follow-ups and home history. Data only; the
+    request itself is built in agent.review_prompt. Pure; tested."""
+    if not isinstance(body, dict):
+        return "body must be a JSON object"
+    extra = set(body) - {"memories", "conversations", "activity", "upcoming", "home"}
+    if extra:
+        return f"unexpected fields: {', '.join(sorted(extra))}"
+    memories = body.get("memories", [])
+    if not isinstance(memories, list) or len(memories) > MAX_MEMORIES \
+            or not all(isinstance(m, str) for m in memories):
+        return f"memories must be a list of at most {MAX_MEMORIES} strings"
+    convs = body.get("conversations", [])
+    if not isinstance(convs, list) or len(convs) > MAX_REVIEW_CONVERSATIONS:
+        return f"conversations must be a list of at most {MAX_REVIEW_CONVERSATIONS}"
+    clean = []
+    for c in convs:
+        if not isinstance(c, dict) or not isinstance(c.get("title"), str):
+            return "each conversation needs a title and turns"
+        turns = c.get("turns")
+        if not isinstance(turns, list) or len(turns) > MAX_HISTORY:
+            return f"each conversation needs at most {MAX_HISTORY} turns"
+        kept = []
+        for t in turns:
+            if not isinstance(t, dict) or t.get("role") not in ("user", "assistant") \
+                    or not isinstance(t.get("content"), str):
+                return "each turn needs role (user|assistant) and content"
+            kept.append({"role": t["role"], "content": t["content"]})
+        clean.append({"title": c["title"][:100], "turns": kept})
+    review = {"conversations": clean}
+    for key in ("activity", "upcoming", "home"):
+        got = _lines(body, key)
+        if isinstance(got, str):
+            return got
+        review[key] = got
+    return memories, review
 
 
 def media_from(cfg: Config, session: aiohttp.ClientSession | None) -> Media:
@@ -204,6 +258,26 @@ class Concierge:
         # tools, and this does not consult outcome.proposals at all.
         return self._reply(outcome)
 
+    async def review(self, request: web.Request) -> web.Response:
+        if not self._authorised(request):
+            log.warning("refused /v1/review from %s: bad or missing token", request.remote)
+            return _bad("unauthorised", 401)
+        try:
+            body = await request.json()
+        except ValueError:
+            return _bad("body is not JSON")
+        parsed = validate_review(body)
+        if isinstance(parsed, str):
+            return _bad(parsed)
+        memories, review = parsed
+        outcome = await self._run(prompt="", history=[], memories=memories, review=review)
+        if isinstance(outcome, web.Response):
+            return outcome
+        # Its only proposals are a memory or a follow-up, which the bot carries
+        # out itself: nothing from a review is ever made executable here.
+        outcome.proposals = [p for p in outcome.proposals if p["tool"] in actions.IN_BOT]
+        return self._reply(outcome)
+
     async def _run(self, **kwargs) -> agent.Outcome | web.Response:
         """One agent task under the lock and the timeout, or the error response."""
         if self._in_flight >= self.cfg.max_queue:
@@ -286,6 +360,7 @@ def make_app(cfg: Config) -> web.Application:
     app.router.add_get("/healthz", concierge.healthz)
     app.router.add_post("/v1/ask", concierge.ask)
     app.router.add_post("/v1/brief", concierge.brief)
+    app.router.add_post("/v1/review", concierge.review)
     app.router.add_post("/v1/execute", concierge.execute)
     return app
 

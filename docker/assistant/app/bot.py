@@ -36,12 +36,16 @@ from .concierge import (
     brief_failed, brief_section, defang, fact_of, footer as concierge_footer, render_proposal,
     usable_memories,
 )
+from . import followups
 from .config import Config
-from .day import BRIEF_SOURCE, SOURCES as DAY_SOURCES, DayCollector, stamp_path as day_stamp_path
+from .day import (
+    BRIEF_SOURCE, FOLLOWUPS_SOURCE, REVIEW_SOURCE, SOURCES as DAY_SOURCES, DayCollector,
+    stamp_path as day_stamp_path,
+)
 from .digest import Card, card as digest_card, prepare as prepare_digest
 from .facts import FactCollector
 from .google import Google
-from .home import Home
+from .home import Home, HomeError, summarize_history
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
@@ -52,6 +56,15 @@ log = logging.getLogger(__name__)
 # How long an idle #ask thread stays in the sidebar. Archived threads are still
 # listed under the channel's Threads button, and a new message reopens one.
 ASK_THREAD_ARCHIVE_MIN = 1440
+# How many #follow-ups messages one scan reads. A pending follow-up past this
+# many newer ones would never fire, so the channel is kept short by firing.
+FOLLOWUPS_SCAN = 200
+# The evening review's look back, and how much of it is sent: the threads with
+# the most recent activity first, each cut to its last turns.
+REVIEW_LOOKBACK = dt.timedelta(hours=24)
+REVIEW_MAX_THREADS = 12
+REVIEW_UPCOMING_S = 36 * 3600
+REVIEW_PREFIX = "Evening review"
 # The furthest back a digest's "new since the last one" reaches.
 SINCE_LIMIT = dt.timedelta(days=7)
 
@@ -110,6 +123,9 @@ class Assistant(discord.Client):
         self.collector: FactCollector | None = None
         self.day: DayCollector | None = None
         self._brief_stamp: str | None = None
+        self._followups_stamp: str | None = None
+        self._review_stamp: str | None = None
+        self.review_home: Home | None = None
         self._shown_stamp: str | None = None
         self.concierge: Concierge | None = None
         self._guild = discord.Object(id=cfg.guild_id)
@@ -180,6 +196,22 @@ class Assistant(discord.Client):
             elif read_stamp(self._brief_stamp) is None:
                 write_stamp(self._brief_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
 
+        # The follow-ups loop and the evening review get the same switch:
+        # armed when on, so one that never once worked still ages into
+        # hl-google-stale, and cleared when off.
+        self._followups_stamp = day_stamp_path(state_dir, FOLLOWUPS_SOURCE) if state_dir else None
+        self._review_stamp = day_stamp_path(state_dir, REVIEW_SOURCE) if state_dir else None
+        for path, active in ((self._followups_stamp, self.cfg.followups_active),
+                             (self._review_stamp, self.cfg.review_active)):
+            if not path:
+                continue
+            if not active:
+                clear_stamp(path)
+            elif read_stamp(path) is None:
+                write_stamp(path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+        self.review_home = Home(self._session, self.cfg.ha_url, self.cfg.ha_token) \
+            if self.cfg.review_history_enabled else None
+
         # When a digest last posted, scheduled or `/digest`, so the next one
         # covers only what is new since. Separate from `last-digest`: that one
         # is a dead man's switch only the schedule may refresh (see below).
@@ -212,10 +244,19 @@ class Assistant(discord.Client):
                 time=dt.time(hour=self.cfg.digest_at[0], minute=self.cfg.digest_at[1], tzinfo=self.cfg.tz)
             )
             self.scheduled_digest.start()
+        if self.cfg.followups_active:
+            self.follow_ups.start()
+        if self.cfg.review_active:
+            self.evening_review.change_interval(
+                time=dt.time(hour=self.cfg.review_at[0], minute=self.cfg.review_at[1], tzinfo=self.cfg.tz)
+            )
+            self.evening_review.start()
 
     async def close(self) -> None:
         self.heartbeat.cancel()
         self.scheduled_digest.cancel()
+        self.follow_ups.cancel()
+        self.evening_review.cancel()
         await self.queue.stop()
         if self._session is not None:
             await self._session.close()
@@ -230,6 +271,11 @@ class Assistant(discord.Client):
                      self.cfg.ask_channel_id, self.cfg.concierge_url)
         if self.cfg.brief_active:
             log.info("morning brief active: part of the %02d:%02d digest", *self.cfg.digest_at)
+        if self.cfg.followups_active:
+            log.info("follow-ups active in channel %s", self.cfg.followups_channel_id)
+        if self.cfg.review_active:
+            log.info("evening review active at %02d:%02d (%d HA entities)",
+                     *self.cfg.review_at, len(self.cfg.review_ha_entities))
 
     # --- conversational channels (#chat: local model; #ask: concierge) ---
 
@@ -517,23 +563,30 @@ class Assistant(discord.Client):
             await say("Concierge request failed — see `docker logs assistant`.")
             return
 
-        # The answer can quote an email or an event, so it may hold text a
-        # stranger wrote: never let it ping anyone, never let Discord fetch a
-        # link in it, and never hide where a link goes (see defang).
+        await self._post_answer(out, reply, message if thread is None else None)
+
+    async def _post_answer(self, out, reply, reply_to: discord.Message | None = None) -> None:
+        """An answer, its footer and its proposals, in `out` (replying to
+        `reply_to` when there is one).
+
+        The answer can quote an email or an event, so it may hold text a
+        stranger wrote: never let it ping anyone, never let Discord fetch a
+        link in it, and never hide where a link goes (see defang).
+        """
         quiet = discord.AllowedMentions.none()
         parts = chunk(defang(reply.answer) + "\n" + concierge_footer(reply))
         try:
-            if thread is None:
-                await message.reply(parts[0], mention_author=False, allowed_mentions=quiet,
-                                    suppress_embeds=True)
+            if reply_to is not None:
+                await reply_to.reply(parts[0], mention_author=False, allowed_mentions=quiet,
+                                     suppress_embeds=True)
             else:
-                await thread.send(parts[0], allowed_mentions=quiet, suppress_embeds=True)
+                await out.send(parts[0], allowed_mentions=quiet, suppress_embeds=True)
             for part in parts[1:]:
                 await out.send(part, allowed_mentions=quiet, suppress_embeds=True)
             for proposal in reply.proposals:
                 view = ApprovalView(self, proposal) if approvable(proposal) else None
                 sent = await out.send(
-                    render_proposal(proposal), view=view,
+                    render_proposal(proposal, self.cfg.tz), view=view,
                     allowed_mentions=discord.AllowedMentions.none(),
                 )
                 if view is not None:
@@ -658,6 +711,223 @@ class Assistant(discord.Client):
     async def _before_digest(self) -> None:
         await self.wait_until_ready()
 
+    # --- follow-ups (see app/followups.py) ---
+
+    @tasks.loop(seconds=60)
+    async def follow_ups(self) -> None:
+        """Fire every follow-up in #follow-ups that has come due.
+
+        Never raises: a discord.ext loop that raises stops for good, and a
+        stopped loop is exactly what the `followups` stamp is there to catch.
+        """
+        try:
+            await self._fire_due()
+        except Exception:  # noqa: BLE001
+            log.exception("follow-ups scan failed")
+            return
+        if self._followups_stamp:
+            write_stamp(self._followups_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+
+    @follow_ups.before_loop
+    async def _before_follow_ups(self) -> None:
+        await self.wait_until_ready()
+
+    # --- the evening review ---
+
+    @tasks.loop(time=dt.time(hour=21))  # replaced in setup_hook
+    async def evening_review(self) -> None:
+        """Never raises (a raising loop stops for good). Stamps `review` when
+        the run finished, or when there was nothing to review."""
+        try:
+            done = await self._review()
+        except Exception:  # noqa: BLE001
+            log.exception("evening review failed")
+            return
+        if done and self._review_stamp:
+            write_stamp(self._review_stamp, dt.datetime.now(tz=dt.timezone.utc).timestamp())
+
+    @evening_review.before_loop
+    async def _before_review(self) -> None:
+        await self.wait_until_ready()
+
+    async def _review_threads(self, since: dt.datetime) -> list[dict]:
+        """Today's #ask threads, most recent first: title and turns."""
+        guild = self.get_guild(self.cfg.guild_id)
+        if guild is None:
+            return []
+        recent = []
+        for thread in await guild.active_threads():
+            if thread.parent_id != self.cfg.ask_channel_id or thread.name.startswith(REVIEW_PREFIX):
+                continue
+            if thread.last_message_id is None:
+                continue
+            last = discord.utils.snowflake_time(thread.last_message_id)
+            if last >= since:
+                recent.append((last, thread))
+        recent.sort(key=lambda x: x[0], reverse=True)
+        out = []
+        for _, thread in recent[:REVIEW_MAX_THREADS]:
+            try:
+                turns = await self._thread_turns(thread)
+            except discord.HTTPException as exc:
+                log.warning("review could not read thread %s: %s", thread.id, exc)
+                continue
+            if turns:
+                out.append({"title": thread.name,
+                            "turns": [{"role": t.role, "content": t.content} for t in turns][-40:]})
+        return out
+
+    async def _activity_since(self, since: dt.datetime) -> list[str]:
+        if self.cfg.activity_channel_id is None:
+            return []
+        channel = self.get_channel(self.cfg.activity_channel_id)
+        if channel is None:
+            return []
+        me = self.user.id if self.user else None
+        lines = []
+        try:
+            async for msg in channel.history(after=since, limit=100):
+                if msg.author.id == me and msg.content:
+                    lines.append(" ".join(msg.content.split()))
+        except discord.HTTPException as exc:
+            log.warning("review could not read #activity: %s", exc)
+        return lines
+
+    async def _home_history(self, since: dt.datetime) -> list[str]:
+        if self.review_home is None:
+            return []
+        try:
+            rows = await self.review_home.history(self.cfg.review_ha_entities, since)
+        except HomeError as exc:
+            log.warning("review could not read Home Assistant history: %s", exc)
+            return [f"(Home Assistant history could not be read: {exc})"]
+        return [line for r in rows if (line := summarize_history(r, self.cfg.tz))]
+
+    async def _review(self) -> bool:
+        """Gather today, ask the concierge, post it as a thread in #ask.
+
+        True when it finished, or when there was nothing to review (no run,
+        no post, no cost)."""
+        now = dt.datetime.now(tz=self.cfg.tz)
+        since = now - REVIEW_LOOKBACK
+        conversations = await self._review_threads(since)
+        activity = await self._activity_since(since)
+        home = await self._home_history(since)
+        upcoming: list[followups.FollowUp] = []
+        if self.cfg.followups_active:
+            try:
+                pending = [item for _, item in await self._pending_follow_ups()]
+                upcoming = followups.upcoming(pending, int(now.timestamp()), REVIEW_UPCOMING_S)
+            except Exception as exc:  # noqa: BLE001 — the review still runs without them
+                log.warning("review could not read #follow-ups: %s", exc)
+        if not conversations and not activity and not home:
+            log.info("evening review: nothing today, skipped")
+            return True
+        upcoming_lines = [f"{followups.show_when(f.due, self.cfg.tz)}: {f.note} ({f.then})" for f in upcoming]
+        log.info("evening review: %d threads, %d activity, %d home lines, %d follow-ups",
+                 len(conversations), len(activity), len(home), len(upcoming))
+        try:
+            reply = await self.concierge.review(await self._memories(), conversations, activity,
+                                                upcoming_lines, home)
+        except ConciergeError as exc:
+            log.warning("evening review unavailable: %s", exc)
+            return False
+        channel = self.get_channel(self.cfg.ask_channel_id)
+        if channel is None:
+            log.error("ask channel %s not found", self.cfg.ask_channel_id)
+            return False
+        title = f"{REVIEW_PREFIX} · {now.strftime('%a %d %b')}"
+        quiet = discord.AllowedMentions.none()
+        head = await channel.send(f"**{title}**", allowed_mentions=quiet)
+        out = head
+        try:
+            out = await head.create_thread(name=title, auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
+        except discord.HTTPException as exc:
+            log.warning("could not open the review's thread: %s", exc)
+            out = channel
+        await self._post_answer(out, reply)
+        if upcoming_lines:
+            text = "**Coming up**\n" + "\n".join(f"- {defang(ln)}" for ln in upcoming_lines)
+            await out.send(text[:1900], allowed_mentions=quiet, suppress_embeds=True)
+        return reply.ok
+
+    async def _pending_follow_ups(self) -> list[tuple[discord.Message, followups.FollowUp]]:
+        """Every follow-up the bot saved, with its message. Raises if unreadable."""
+        channel = self.get_channel(self.cfg.followups_channel_id)
+        if channel is None:
+            raise RuntimeError(f"follow-ups channel {self.cfg.followups_channel_id} not found")
+        me = self.user.id if self.user else None
+        out = []
+        async for msg in channel.history(limit=FOLLOWUPS_SCAN):
+            if msg.author.id != me:
+                continue
+            item = followups.parse(msg.content or "")
+            if item is not None:
+                out.append((msg, item))
+        return out
+
+    async def _fire_due(self) -> None:
+        now = int(dt.datetime.now(tz=dt.timezone.utc).timestamp())
+        for msg, item in await self._pending_follow_ups():
+            if item.due > now:
+                continue
+            # Deleted first, so a follow-up fires at most once. Already gone
+            # means you cancelled it a moment ago; any other failure, try
+            # again next minute rather than risk firing twice.
+            try:
+                await msg.delete()
+            except discord.NotFound:
+                continue
+            except discord.HTTPException as exc:
+                log.warning("could not take follow-up %s off #follow-ups: %s", msg.id, exc)
+                continue
+            try:
+                await self._fire(item, now)
+            except Exception:  # noqa: BLE001 — one bad follow-up must not stop the rest
+                log.exception("follow-up %s failed to fire", msg.id)
+
+    async def _follow_up_target(self, channel_id: int):
+        """The thread a follow-up was set in, or #ask if that is gone."""
+        target = self.get_channel(channel_id)
+        if target is None:
+            try:
+                target = await self.fetch_channel(channel_id)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+                target = None
+        return target or self.get_channel(self.cfg.ask_channel_id)
+
+    async def _fire(self, item: followups.FollowUp, now: int) -> None:
+        target = await self._follow_up_target(item.channel_id)
+        if target is None:
+            log.error("follow-up has nowhere to go (thread %s and #ask both missing)", item.channel_id)
+            return
+        # Read before posting the ping, so the check sees the conversation as
+        # it was, not the reminder.
+        history: list[dict] = []
+        if item.then == "check" and isinstance(target, discord.Thread):
+            try:
+                history = [{"role": t.role, "content": t.content}
+                           for t in await self._thread_turns(target)]
+            except discord.HTTPException as exc:
+                log.warning("could not read the follow-up's thread: %s", exc)
+        # The note is yours, approved, but ping only the person it is for.
+        ping = discord.AllowedMentions(everyone=False, roles=False,
+                                       users=[discord.Object(id=item.user_id)])
+        text = defang(followups.fired_text(item, now))[:1900]
+        sent = await target.send(text, allowed_mentions=ping, suppress_embeds=True)
+        log.info("follow-up fired: then=%s thread=%s message=%s", item.then, item.channel_id, sent.id)
+        if item.then != "check" or self.concierge is None:
+            return
+        try:
+            async with target.typing():
+                reply = await self.concierge.ask(followups.check_prompt(item), history[-40:],
+                                                 await self._memories())
+        except ConciergeError as exc:
+            await target.send(f"Concierge unavailable, so I couldn't look into it: {exc}",
+                              allowed_mentions=discord.AllowedMentions.none())
+            return
+        await self._post_answer(target, reply)
+
     # --- work ---
 
     def _since(self, now: dt.datetime) -> dt.datetime | None:
@@ -747,6 +1017,9 @@ class ApprovalView(discord.ui.View):
             return
         # Before the first await: a double-click must not run it twice.
         self._done = True
+        if self.proposal.tool == "follow_up":
+            await self._save_follow_up(interaction)
+            return
         if self.proposal.tool != "remember":
             await self._execute(interaction)
             return
@@ -765,6 +1038,28 @@ class ApprovalView(discord.ui.View):
             return
         log.info("proposal approved by %s: tool=%s", interaction.user.id, self.proposal.tool)
         await self._finish("Approved — saved to #memory", interaction)
+
+    async def _save_follow_up(self, interaction: discord.Interaction) -> None:
+        """Post an approved follow-up to #follow-ups, for this thread and the
+        person who approved it. The loop in Assistant.follow_ups fires it."""
+        cfg = self.client.cfg
+        where = self.message.channel if self.message is not None else interaction.channel
+        item = followups.from_args(self.proposal.args, interaction.user.id, cfg.guild_id,
+                                   where.id) if where is not None else None
+        channel = self.client.get_channel(cfg.followups_channel_id) if cfg.followups_channel_id else None
+        if item is None or channel is None:
+            log.error("approved follow-up could not be saved (channel=%s)", cfg.followups_channel_id)
+            await self._finish("Approved, but #follow-ups is missing — not saved", interaction)
+            return
+        try:
+            await channel.send(followups.render(item), allowed_mentions=discord.AllowedMentions.none(),
+                               suppress_embeds=True)
+        except discord.HTTPException as exc:
+            log.error("could not write to #follow-ups: %s", exc)
+            await self._finish("Approved, but saving failed", interaction)
+            return
+        log.info("proposal approved by %s: tool=follow_up due=%s", interaction.user.id, item.due)
+        await self._finish(f"Set for {followups.show_when(item.due, cfg.tz)}", interaction)
 
     async def _execute(self, interaction: discord.Interaction) -> None:
         """Hand an approved calendar, draft or scene proposal to the concierge.

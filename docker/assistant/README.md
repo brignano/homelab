@@ -409,6 +409,54 @@ The brief stamps `source-brief` only when it finishes having actually read
 mail (an expired concierge sign-in does not count), so `hl-google-stale` fires
 if it stops working for 25h.
 
+### Follow-ups
+
+The concierge can propose a **follow-up**: "remind me Friday at 9 to call the
+vet", or, unasked, "nudge you Thursday if Dr. Lee hasn't replied" when an
+answer leaves you waiting on someone. It is shown under ✅/❌ like every
+other proposal, rendered from its arguments: when, the note, and what happens
+then. Approving it posts one message to the bot-only `#follow-ups` channel
+(`app/followups.py`); that message *is* the follow-up, the same idea as
+`#memory`, so a restart loses nothing and deleting the message cancels it.
+
+Every minute the bot reads `#follow-ups`, and for each one that is due it
+deletes the message first (so it fires once) and posts in the thread the
+follow-up was set in, pinging whoever approved it:
+
+- **remind** posts the note. No model runs, so it costs nothing.
+- **check** posts the note and then runs it as an `#ask` request in that
+  thread, with the thread as context, so Otto looks again (has the reply
+  come? did the package ship?) and answers there. One request's cost, and
+  anything it wants to do next is a proposal under ✅/❌ as usual.
+
+One that came due while the bot was down fires when it is back, marked late.
+Set `DISCORD_FOLLOWUPS_CHANNEL_ID` (from `--provision --apply`) to turn it on.
+Each scan that works stamps `source-followups`, so `hl-google-stale` fires if
+the loop stops.
+
+### The evening review
+
+Once a day at `REVIEW_AT` (21:00), the bot gathers the day: the `#ask`
+threads with activity in the last 24 hours (their turns, as `#ask` itself
+sends them), the lines in `#activity`, the follow-ups due in the next 36
+hours, and, with `REVIEW_HA_ENTITIES` set, those Home Assistant entities'
+last 24 hours from HA's history (one GET with the digest's token). Code turns
+the history into one line per entity ("Tesla battery: 34 → 80 % (low 30,
+high 80)", "Litter-Robot: cycling ×6, ready ×6; …"); the model only reads
+those lines. It sends all of it to the concierge's `/v1/review`, and posts the
+answer in `#ask` as a thread of its own, **Evening review · Tue 14 Oct**: what
+is still open, anything at home that stands out, and up to three proposals,
+each a memory or a follow-up. That is how `#memory` fills up without you
+saying "remember": the review proposes what you told it today, and you ✅ it.
+Code adds a **Coming up** list of the follow-ups already set. Reply in the
+thread to talk it over; it is an ordinary `#ask` thread.
+
+The review reads no mailbox, calendar or house itself: the concierge gives
+that run only `remember` and `follow_up`, both carried out by the bot. A day
+with nothing to read posts nothing and calls nobody. **Opt-in:**
+`REVIEW_ENABLED=true`, because it sends the day's conversations to Anthropic
+unasked. It stamps `source-review` when it finished (or had nothing to do).
+
 ### Live homelab readings in the conversation
 
 Ask *"how's the server doing?"* in `#chat` and you get real numbers, because
@@ -694,6 +742,7 @@ logs a warning and carries on rather than aborting over something cosmetic.
    # ask        the one place to ask for anything; each request gets a thread
    # activity   what it actually did, one line per approved action, bot only
    # memory     what it remembers about you, bot only
+   # follow-ups what it will come back to, and when, bot only
 ```
 
 The split is by **direction** — things the lab tells you unprompted, versus

@@ -35,9 +35,14 @@ services:
       # BRIEF_ENABLED=true: lower caps, since nobody asked for this spend.
       CONCIERGE_BRIEF_MAX_TURNS: ${CONCIERGE_BRIEF_MAX_TURNS:-8}
       CONCIERGE_BRIEF_MAX_BUDGET_USD: ${CONCIERGE_BRIEF_MAX_BUDGET_USD:-0.20}
-      # It only reads and summarizes, daily, so a cheaper model than #ask.
-      # claude-sonnet-5-5 if Haiku misses mail that needed you.
-      CONCIERGE_BRIEF_MODEL: ${CONCIERGE_BRIEF_MODEL:-claude-haiku-5-5}
+      # The evening review (/v1/review), when the bot's REVIEW_ENABLED=true:
+      # no lookups, only memory and follow-up proposals, so lower still.
+      CONCIERGE_REVIEW_MAX_TURNS: ${CONCIERGE_REVIEW_MAX_TURNS:-6}
+      CONCIERGE_REVIEW_MAX_BUDGET_USD: ${CONCIERGE_REVIEW_MAX_BUDGET_USD:-0.15}
+      # The brief and the review run on a timer and only read and summarize,
+      # so a cheaper model than #ask (CONCIERGE_MODEL). claude-sonnet-5-5 if
+      # Haiku misses mail that needed you.
+      CONCIERGE_SCHEDULED_MODEL: ${CONCIERGE_SCHEDULED_MODEL:-claude-haiku-5-5}
       CONCIERGE_TIMEOUT_S: ${CONCIERGE_TIMEOUT_S:-300}
       CONCIERGE_MAX_QUEUE: ${CONCIERGE_MAX_QUEUE:-3}
       CONCIERGE_MAX_PROPOSALS: ${CONCIERGE_MAX_PROPOSALS:-3}

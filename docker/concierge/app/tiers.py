@@ -13,7 +13,7 @@ Tiers
   propose  every write. The call records a proposal and nothing else, so
            allowing it here is safe: the bot renders the arguments verbatim with
            ✅/❌, and only a ✅ from an allowlisted user carries it out — in the
-           bot for `remember`, through /v1/execute for phase 4's calendar,
+           bot for `remember` and `follow_up`, through /v1/execute for phase 4's calendar,
            draft and scene tools (app/actions.py), never during the run.
   write    a tool that would act from inside the run. There are none, and
            decide() refuses one even if someone registers it: every write goes
@@ -26,6 +26,11 @@ The scheduled morning brief (/v1/brief) runs with `read_only=True`: the
 propose tier is refused too, and tools.build() never registers it. That run
 reads mail on a timer with nobody asking, so it holds no write tools at all —
 not even proposals (the TSD's rejected "one agent that does everything").
+
+The evening review (/v1/review) runs with `only={"remember", "follow_up"}`:
+it reads no mailbox, calendar or home, only what the bot sends it, and the
+one thing it can do is propose a memory or a follow-up, both carried out by
+the bot after a ✅.
 
 The same `decide()` runs twice per call — in the PreToolUse hook, which the SDK
 runs before anything else, and in `can_use_tool`. The hook is the one that
@@ -52,7 +57,7 @@ READ = frozenset({
     "homelab_status",
     "movie_night",
 })
-PROPOSE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene",
+PROPOSE = frozenset({"remember", "follow_up", "create_event", "move_event", "draft_email", "run_scene",
                      "add_movie", "add_show"})
 # Empty on purpose: see the module docstring.
 WRITE: frozenset[str] = frozenset()
@@ -86,10 +91,14 @@ def tier_of(tool_name: str) -> str:
     return "never"
 
 
-def decide(tool_name: str, read_only: bool = False) -> Decision:
+def decide(tool_name: str, read_only: bool = False,
+           only: frozenset[str] | None = None) -> Decision:
     """`read_only` is the scheduled morning brief (/v1/brief): no person asked
-    for anything, so there is nothing to propose and only read tier runs."""
+    for anything, so there is nothing to propose and only read tier runs.
+    `only` narrows a run to those tools (the evening review)."""
     tier = tier_of(tool_name)
+    if only is not None and short_name(tool_name) not in only:
+        return Decision(tool_name, tier, False, "not a tool this run may use")
     if tier == "read" or (tier == "propose" and not read_only):
         return Decision(tool_name, tier, True, f"{tier} tier")
     if tier == "propose":

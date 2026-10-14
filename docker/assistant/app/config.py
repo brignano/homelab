@@ -263,6 +263,10 @@ class Config:
     # One line per approved action that changed something (an event, a draft,
     # a scene), linking back to the thread it came from. Blank = off.
     activity_channel_id: int | None = None
+    # Approved follow-ups, one bot message each, read back every minute and
+    # fired into the thread they were set in. Blank = follow-ups can be
+    # proposed but not saved.
+    followups_channel_id: int | None = None
     concierge_url: str = "http://concierge:8080"
     concierge_token: str = ""
     # The morning brief: with each SCHEDULED digest, the concierge reads mail
@@ -270,6 +274,15 @@ class Config:
     # the digest's last section. Needs #ask configured. Opt-in (BRIEF_ENABLED=true):
     # it sends mail to Anthropic every morning without anyone asking.
     brief_enabled: bool = False
+    # The evening review: once a day the concierge reads that day's #ask
+    # threads and #activity (never the inbox) and posts what is still open in
+    # a thread of its own, proposing memories and follow-ups. Opt-in
+    # (REVIEW_ENABLED=true), like the brief: Claude spend nobody asked for.
+    review_enabled: bool = False
+    review_at: tuple[int, int] = (21, 0)
+    # Home Assistant entities whose last 24h of history the review reads
+    # (Tesla charging, a litter box), with the digest's HA_TOKEN. GET only.
+    review_ha_entities: tuple[str, ...] = ()
 
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
@@ -343,14 +356,30 @@ class Config:
             ask_channel_id=ask_id,
             memory_channel_id=memory_id,
             activity_channel_id=_optional_id("DISCORD_ACTIVITY_CHANNEL_ID"),
+            followups_channel_id=_optional_id("DISCORD_FOLLOWUPS_CHANNEL_ID"),
             concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
             concierge_token=concierge_token,
             brief_enabled=os.environ.get("BRIEF_ENABLED", "false").lower() == "true",
+            review_enabled=os.environ.get("REVIEW_ENABLED", "false").lower() == "true",
+            review_at=_hhmm("REVIEW_AT", "21:00"),
+            review_ha_entities=_list("REVIEW_HA_ENTITIES", ""),
         )
 
     @property
     def ask_enabled(self) -> bool:
         return self.ask_channel_id is not None
+
+    @property
+    def followups_active(self) -> bool:
+        return self.ask_enabled and self.followups_channel_id is not None
+
+    @property
+    def review_active(self) -> bool:
+        return self.review_enabled and self.ask_enabled
+
+    @property
+    def review_history_enabled(self) -> bool:
+        return bool(self.ha_token and self.review_ha_entities)
 
     @property
     def brief_active(self) -> bool:

@@ -15,11 +15,14 @@ that steered the agent can change what is proposed, but not how it is shown.
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import re
 from dataclasses import dataclass, field
 
 import aiohttp
+
+from . import followups
 
 log = logging.getLogger(__name__)
 
@@ -27,11 +30,12 @@ log = logging.getLogger(__name__)
 # prompt nobody looked at must never turn into a yes.
 APPROVAL_TIMEOUT_S = 15 * 60
 
-# Every tool the bot knows how to render for approval. `remember` is carried
-# out here (a post to #memory); the rest go back to the concierge's
+# Every tool the bot knows how to render for approval. `remember` and
+# `follow_up` are carried out here (a post to #memory or #follow-ups); the
+# rest go back to the concierge's
 # /v1/execute with the id it issued. A proposal naming anything else is shown
 # as refused, never executed.
-APPROVABLE = frozenset({"remember", "create_event", "move_event", "draft_email", "run_scene",
+APPROVABLE = frozenset({"remember", "follow_up", "create_event", "move_event", "draft_email", "run_scene",
                         "add_movie", "add_show"})
 
 # How each executable proposal is shown: a heading, then the fields in order.
@@ -205,6 +209,8 @@ def approvable(proposal: Proposal) -> bool:
     """Can a ✅ on this proposal do anything? Unknown or malformed: no."""
     if proposal.tool == "remember":
         return fact_of(proposal) is not None
+    if proposal.tool == "follow_up":
+        return followups.valid_args(proposal.args)
     if proposal.tool not in APPROVABLE or not proposal.id.isalnum():
         return False
     for key in _REQUIRED[proposal.tool]:
@@ -242,7 +248,7 @@ def _show(proposal: Proposal) -> str:
     return f"{heading}\n```\n" + "\n".join(lines) + "\n```"
 
 
-def render_proposal(proposal: Proposal) -> str:
+def render_proposal(proposal: Proposal, tz: dt.tzinfo = dt.timezone.utc) -> str:
     """The approval prompt, built from the arguments alone.
 
     Inside a code block, so no field can ping anyone, render a link, or
@@ -254,6 +260,10 @@ def render_proposal(proposal: Proposal) -> str:
     if proposal.tool == "remember":
         fact = fact_of(proposal).replace("`", "ˋ")
         return f"**Remember this?** Saved to #memory only if you approve.\n```\nremember(fact={fact!r})\n```"
+    if proposal.tool == "follow_up":
+        body = _inert(followups.prompt_text(proposal.args, tz))
+        return ("**Set this follow-up?** Kept in #follow-ups; delete it there to cancel."
+                f"\n```\n{body}\n```")
     return _show(proposal)
 
 
@@ -278,6 +288,7 @@ class Concierge:
         self._session = session
         self._url = base_url.rstrip("/") + "/v1/ask"
         self._brief_url = base_url.rstrip("/") + "/v1/brief"
+        self._review_url = base_url.rstrip("/") + "/v1/review"
         self._execute_url = base_url.rstrip("/") + "/v1/execute"
         self._token = token
         # Longer than the concierge's own CONCIERGE_TIMEOUT_S, so its timeout,
@@ -291,6 +302,14 @@ class Concierge:
         """The scheduled morning brief. The request is fixed in the concierge;
         only the approved memories are sent. It comes back with no proposals."""
         return await self._run(self._brief_url, {"memories": memories})
+
+    async def review(self, memories: list[str], conversations: list[dict], activity: list[str],
+                     upcoming: list[str], home: list[str]) -> Reply:
+        """The evening review. Data only: the request is fixed in the concierge,
+        and the only proposals that come back are memories and follow-ups."""
+        return await self._run(self._review_url, {
+            "memories": memories, "conversations": conversations, "activity": activity,
+            "upcoming": upcoming, "home": home})
 
     async def _run(self, url: str, payload: dict) -> Reply:
         try:
