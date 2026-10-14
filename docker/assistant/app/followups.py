@@ -1,6 +1,6 @@
 """Follow-ups: the concierge proposes one, you approve it, the bot keeps it.
 
-See docs/design/tsd-personal-assistant.md, "Follow-ups".
+See docs/design/tsd-personal-assistant.md, "Status and next up" → Follow-ups.
 
 A follow-up is one bot message in the bot-only #follow-ups channel, the same
 idea as #memory: restart-safe, no datastore, and you can see every pending one

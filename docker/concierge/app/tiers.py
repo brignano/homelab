@@ -30,7 +30,15 @@ not even proposals (the TSD's rejected "one agent that does everything").
 The evening review (/v1/review) runs with `only={"remember", "follow_up"}`:
 it reads no mailbox, calendar or home, only what the bot sends it, and the
 one thing it can do is propose a memory or a follow-up, both carried out by
-the bot after a ✅.
+the bot after a ✅. What the bot sends can include mail and events that
+earlier #ask answers quoted, so this is a timer-started run that sees
+stranger-written text second-hand and holds two proposal tools. Accepted:
+neither acts without a ✅, and neither reaches /v1/execute.
+
+A follow-up set to `check` runs as an ordinary /v1/ask request when it comes
+due, with every read and propose tool. It is a request the user approved
+earlier, deferred, not a run nobody asked for; its proposals still wait on a
+✅ like any other.
 
 The same `decide()` runs twice per call — in the PreToolUse hook, which the SDK
 runs before anything else, and in `can_use_tool`. The hook is the one that

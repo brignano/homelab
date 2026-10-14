@@ -17,6 +17,7 @@ their own payloads, so the bot never reads the channel.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import datetime as dt
 import logging
 import os
@@ -1046,6 +1047,10 @@ class ApprovalView(discord.ui.View):
         where = self.message.channel if self.message is not None else interaction.channel
         item = followups.from_args(self.proposal.args, interaction.user.id, cfg.guild_id,
                                    where.id) if where is not None else None
+        if item is not None:
+            # The model wrote the note: stored with every link's destination
+            # visible, like any answer (the fired message is defanged again).
+            item = dataclasses.replace(item, note=defang(item.note))
         channel = self.client.get_channel(cfg.followups_channel_id) if cfg.followups_channel_id else None
         if item is None or channel is None:
             log.error("approved follow-up could not be saved (channel=%s)", cfg.followups_channel_id)

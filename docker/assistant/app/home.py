@@ -18,8 +18,9 @@ disarm. So "read-only" here rests on three things, none of them Google-grade:
 
   * this code only ever sends GET: to /api/states/<entity_id> for the entities
     named in HA_ENTITIES, to /api/calendars/<entity_id> for those named in
-    HA_CALENDARS, and to /api/config for the temperature unit. It has no code
-    path that writes;
+    HA_CALENDARS, to /api/config for the temperature unit, and to
+    /api/history/period for those named in REVIEW_HA_ENTITIES (the evening
+    review). It has no code path that writes;
   * no model is involved, so nothing this module reads can steer what it does;
   * the token belongs to a dedicated non-admin HA user, so it cannot change
     HA's configuration, add integrations, or mint more tokens.

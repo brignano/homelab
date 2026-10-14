@@ -335,6 +335,17 @@ nothing. Stamps are cleared whenever no digest would refresh them.
 The act lane is not scheduled and needs no switch. If it is down, `/ask`
 says so.
 
+**Amended 2026-10-14: three things in it now run on a timer.** The brief
+(above), the evening review and due follow-ups. Each has a stamp aged by
+`hl-google-stale`: `source-review` per finished review, `source-followups`
+per scan of #follow-ups. Two of them can propose. A `check` follow-up is an
+#ask request you approved earlier, deferred, so it gets #ask's tools. The
+review gets only `remember` and `follow_up`, but what it reads can include
+mail that earlier answers quoted. That relaxes "a timer reading stranger text
+holds no proposal tools" for exactly those two runs; what still holds is that
+nothing acts without a ✅, and neither run's proposals can reach
+`/v1/execute`.
+
 **Amended 2026-10-13: the morning brief is scheduled, by the bot.** The
 concierge still keeps no schedule; the bot calls `/v1/brief` as the scheduled
 digest starts and renders the answer as the digest's last section ("Needs
@@ -462,7 +473,8 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       a thread in #ask. That run has no lookup tools and only `remember` and
       `follow_up` (`tiers.decide(..., only=...)`), so it reads no inbox on a
       timer and can only propose things the bot carries out after a ✅: the
-      boundary the brief draws, kept. It is what makes #memory fill up
+      brief's boundary, relaxed only as far as Decision 6's 2026-10-14
+      amendment says. It is what makes #memory fill up
       without you saying "remember". Opt-in `REVIEW_ENABLED=true`; skipped
       on an empty day; stamp `source-review`.
 - [x] **Scheduled runs on a cheaper model** (2026-10-14).
@@ -543,8 +555,11 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   with `docker stats` after phase 2 against the 14 GB limit, with Ollama loaded,
   before committing to phase 3.
 - **Money:** the watch lane is $0 (local model, Google APIs within free quota).
-  The act lane is Claude API usage, on demand only, and nothing in it is
-  scheduled, except the opt-in morning brief (one run a day, capped at $0.20). **Phases 1–2 never call the Claude API** (Google, Home
+  The act lane is Claude API usage, on demand only, except the opt-in
+  scheduled runs on `CONCIERGE_SCHEDULED_MODEL` (Haiku): the morning brief
+  (one a day, capped at $0.20) and the evening review (one a day, $0.15,
+  skipped on an empty day). A `check` follow-up costs one #ask request when it
+  comes due; a `remind` costs nothing. **Phases 1–2 never call the Claude API** (Google, Home
   Assistant and the local 3B only). Phase 3 is the first that does, and it
   follows the same budget isolation as the brignano.io site chat:
   - its own Console **workspace**, `homelab`, with its own monthly spend limit
