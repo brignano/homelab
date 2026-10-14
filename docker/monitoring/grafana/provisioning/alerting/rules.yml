@@ -1278,6 +1278,13 @@ groups:
       # predict_linear over 6h is deliberately short-sighted: it catches a real
       # leak (a log loop, a runaway volume) rather than slow organic growth, and
       # it un-fires on its own once the slope flattens.
+      #
+      # /mnt/media is left out. Filling it is its job: a Sonarr/Radarr backlog
+      # writes tens of GB an hour for hours, which a 6h slope reads as "full in
+      # a day or two" on a 5 TB drive that is mostly empty. It fired every time
+      # a batch was queued after the host exporter started reporting /mnt on
+      # 2026-10-12, and none of those was a leak. Its ceiling is hl-disk-full
+      # at 85%, which still covers it.
       - uid: hl-disk-filling
         title: Filesystem filling up
         condition: C
@@ -1296,7 +1303,7 @@ groups:
               refId: A
               instant: true
               expr: >-
-                predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 4 * 24 * 3600)
+                predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs",mountpoint!="/mnt/media"}[6h], 4 * 24 * 3600)
           - refId: C
             relativeTimeRange: { from: 21600, to: 0 }
             datasourceUid: __expr__
