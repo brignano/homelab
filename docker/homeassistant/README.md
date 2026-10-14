@@ -541,10 +541,17 @@ recreate HA as usual (`up -d --force-recreate homeassistant`).
 
 [`dashboards/home.yaml`](dashboards/home.yaml) is a "Home" dashboard: one
 sections view with a strip of badges (presence, weather, inside temperature,
-the car's battery) over two columns: **Tesla**, **Jax** and a **Map** on the
-left, **Climate**, this week's **Calendar** and the forecast on the right. It replaces
-the auto-generated Overview's tiles with controls you can use without opening
-a dialog.
+the car's battery) over two columns: **Climate**, the week's **Calendar** and
+the forecast on the left, **Tesla**, **Jax** and **Where** (you and the car)
+on the right. On a phone the sections stack in that order, so the thermostat
+comes first. It replaces the auto-generated Overview's tiles with controls you
+can use without opening a dialog.
+
+Nothing on it scrolls inside itself, because on a phone that catches the swipe
+meant for the page. So there is no map card (tap a Where tile, or the
+sidebar's Map), and the calendar is a markdown agenda fed by
+`sensor.upcoming_events` in `config/configuration.yaml`, which needs the
+container recreated (see the top of that file) before the agenda fills in.
 
 HA does not read it from git. Dashboards are UI state, like automations, so
 the file is the source you paste:

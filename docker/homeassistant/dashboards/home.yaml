@@ -47,7 +47,68 @@ views:
     # space under the shorter columns; three columns of similar height fit on
     # one screen.
     sections:
-      # Left column: the car, Jax and the map.
+      # First section (left column; first on a phone, where sections stack
+      # in order): the thermostat, the calendar and the weather.
+      - type: grid
+        cards:
+          - type: heading
+            heading: Climate
+            icon: mdi:home-thermometer
+          # The Honeywell T6 Pro, paired over HomeKit. Set point and mode on
+          # the card itself. No hvac_modes list, so it offers whichever modes
+          # the thermostat reports. It also shows the room's temperature.
+          - type: tile
+            entity: climate.living_room_thermostat_lyric_t6_pro_thermostat
+            name: Thermostat
+            grid_options:
+              columns: full
+            features:
+              - type: target-temperature
+              - type: climate-hvac-modes
+          # The iCloud calendars from the CalDAV integration, as a list of
+          # this week's events (today first). Reminders is left out: it is a
+          # to-do list, not a calendar. calendar.appointments is confirmed;
+          # events and work are inferred from the calendar names.
+          # calendar.sonarr is Sonarr's airing schedule, through the Remote
+          # Calendar integration (README → "Sonarr calendar").
+          - type: heading
+            heading: Calendar
+            icon: mdi:calendar
+            tap_action:
+              action: navigate
+              navigation_path: /calendar
+          # An agenda, not the calendar card: the card scrolls inside a
+          # fixed height, which caught swipes on a phone. The list comes from
+          # sensor.upcoming_events (config/configuration.yaml) and grows to
+          # fit. Tap the heading for the full calendar.
+          - type: markdown
+            content: |-
+              {%- set evs = state_attr('sensor.upcoming_events', 'events') or [] %}
+              {%- set ns = namespace(day='') %}
+              {%- for e in evs %}
+              {%- set allday = 'T' not in e.start %}
+              {%- set d = strptime(e.start, '%Y-%m-%d') if allday else as_datetime(e.start) %}
+              {%- set day = 'Today' if d.date() == now().date() else d.strftime('%A, %b %-d') %}
+              {%- if day != ns.day %}{% set ns.day = day %}
+
+              **{{ day }}**
+              {%- endif %}
+              - {{ 'All day' if allday else d.strftime('%-I:%M %p') }} · {{ e.summary }}
+              {%- else %}
+              Nothing in the next 7 days.
+              {%- endfor %}
+            grid_options:
+              columns: full
+          - type: weather-forecast
+            entity: weather.forecast_home
+            show_current: true
+            show_forecast: true
+            forecast_type: daily
+            grid_options:
+              columns: full
+
+      # Second section (right column; below the first on a phone): the car,
+      # Jax and where everyone is.
       - type: grid
         cards:
           # No Security heading: Home Assistant cannot control the Blink
@@ -105,64 +166,17 @@ views:
           - type: tile
             entity: sensor.jax_last_litter_visit_duration
             name: Visit length
-          # The map sits under Jax, not on the right: the calendar made the
-          # right column a screen taller than the left.
+          # Where things are, as tiles rather than a map card: on a phone the
+          # map took the swipe meant for scrolling the page. Tapping a tile
+          # opens its map; the sidebar's Map shows both together.
           - type: heading
-            heading: Map
+            heading: Where
             icon: mdi:map-marker-radius
-          - type: map
-            entities:
-              - person.anthony_brignano
-              # The car's marker shows its icon instead of the initial "T".
-              # The icon itself (mdi:car-electric) is set on the entity in
-              # Settings → Entities, which needs no restart.
-              - entity: device_tracker.spaceship_location
-                label_mode: icon
-            default_zoom: 13
-            hours_to_show: 0
-            grid_options:
-              columns: full
-              rows: 4
-
-      # Right column: the thermostat, the calendar and the weather.
-      - type: grid
-        cards:
-          - type: heading
-            heading: Climate
-            icon: mdi:home-thermometer
-          # The Honeywell T6 Pro, paired over HomeKit. Set point and mode on
-          # the card itself. No hvac_modes list, so it offers whichever modes
-          # the thermostat reports. It also shows the room's temperature.
           - type: tile
-            entity: climate.living_room_thermostat_lyric_t6_pro_thermostat
-            name: Thermostat
-            grid_options:
-              columns: full
-            features:
-              - type: target-temperature
-              - type: climate-hvac-modes
-          # The iCloud calendars from the CalDAV integration, as a list of
-          # this week's events (today first). Reminders is left out: it is a
-          # to-do list, not a calendar. calendar.appointments is confirmed;
-          # events and work are inferred from the calendar names.
-          # calendar.sonarr is Sonarr's airing schedule, through the Remote
-          # Calendar integration (README → "Sonarr calendar").
-          - type: heading
-            heading: Calendar
-            icon: mdi:calendar
-          - type: calendar
-            initial_view: listWeek
-            entities:
-              - calendar.appointments
-              - calendar.events
-              - calendar.work
-              - calendar.sonarr
-            grid_options:
-              columns: full
-          - type: weather-forecast
-            entity: weather.forecast_home
-            show_current: true
-            show_forecast: true
-            forecast_type: daily
-            grid_options:
-              columns: full
+            entity: person.anthony_brignano
+            name: Anthony
+          # Its icon (mdi:car-electric) is set on the entity in
+          # Settings → Entities.
+          - type: tile
+            entity: device_tracker.spaceship_location
+            name: Tesla
