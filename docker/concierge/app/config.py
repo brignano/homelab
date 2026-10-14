@@ -123,6 +123,14 @@ class Config:
     # workspace's monthly limit with #ask.
     brief_max_turns: int = 8
     brief_max_budget_usd: float = 0.20
+    # The brief and the evening review run on a timer whether or not anything
+    # needs you, and only read and summarize, so they get a cheaper model than
+    # #ask by default.
+    scheduled_model: str = "claude-haiku-5-5"
+    # The evening review (/v1/review): no lookups, at most three proposals
+    # and the answer, so fewer turns and less money than the brief.
+    review_max_turns: int = 6
+    review_max_budget_usd: float = 0.15
 
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -211,6 +219,9 @@ class Config:
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
             brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
             brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.20),
+            review_max_turns=_int("CONCIERGE_REVIEW_MAX_TURNS", 6),
+            review_max_budget_usd=_float("CONCIERGE_REVIEW_MAX_BUDGET_USD", 0.15),
+            scheduled_model=os.environ.get("CONCIERGE_SCHEDULED_MODEL", "").strip() or "claude-haiku-5-5",
             timeout_s=_int("CONCIERGE_TIMEOUT_S", 300),
             max_queue=_int("CONCIERGE_MAX_QUEUE", 3),
             max_proposals=_int("CONCIERGE_MAX_PROPOSALS", 3),

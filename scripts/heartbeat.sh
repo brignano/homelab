@@ -199,7 +199,7 @@ publish_metrics() {
   # See docker/assistant/app/day.py and docs/design/tsd-personal-assistant.md.
   _state_dir=$(dirname "$DIGEST_STAMP")
   _source_help=0
-  for _source in calendar mail home ha-calendar brief; do
+  for _source in calendar mail home ha-calendar brief followups review; do
     _f="$_state_dir/source-$_source"
     [ -r "$_f" ] || continue
     _ts=$(head -c 32 "$_f" 2>/dev/null | tr -dc '0-9' || true)

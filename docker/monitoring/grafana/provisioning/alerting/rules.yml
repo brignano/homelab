@@ -499,6 +499,12 @@ groups:
       # daily digest. If the digest itself stops, both fire, and that one is the
       # cause. Absent series (source off, or the schedule off) is silence.
       #
+      # source="followups" is the bot's minute-by-minute scan of #follow-ups
+      # and source="review" the evening review (stamped when it finished or
+      # had nothing to read); both only while turned on. 25h is slow for a
+      # one-minute loop, but the container healthcheck already catches a
+      # wedged bot; this catches the loop alone dying or losing its channel.
+      #
       # source="brief" is the morning brief: the bot stamps it only after a
       # /v1/brief run that finished AND searched mail with no Google read
       # failing (`reads_ok`), so an expired concierge sign-in or a broken
@@ -512,7 +518,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ if eq $labels.source \"brief\" }}Morning brief has not finished for {{ printf \"%.0f\" $values.A.Value }}h — check docker logs concierge and assistant, and the concierge's --google-auth{{ else }}Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else if eq $labels.source \"ha-calendar\" }}Home Assistant calendars{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else if eq $labels.source \"ha-calendar\" }}check HA_CALENDARS, the CalDAV integration and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}{{ end }}"
+          summary: "{{ if eq $labels.source \"brief\" }}Morning brief has not finished for {{ printf \"%.0f\" $values.A.Value }}h — check docker logs concierge and assistant, and the concierge's --google-auth{{ else if eq $labels.source \"followups\" }}Follow-ups have not been checked for {{ printf \"%.0f\" $values.A.Value }}h, so reminders are not firing — check docker logs assistant and DISCORD_FOLLOWUPS_CHANNEL_ID{{ else if eq $labels.source \"review\" }}Evening review has not finished for {{ printf \"%.0f\" $values.A.Value }}h — check docker logs concierge and assistant{{ else }}Digest has not read {{ if eq $labels.source \"home\" }}Home Assistant{{ else if eq $labels.source \"ha-calendar\" }}Home Assistant calendars{{ else }}Google {{ $labels.source }}{{ end }} for {{ printf \"%.0f\" $values.A.Value }}h — {{ if eq $labels.source \"home\" }}check the homeassistant container and the digest user's HA_TOKEN{{ else if eq $labels.source \"ha-calendar\" }}check HA_CALENDARS, the CalDAV integration and the digest user's HA_TOKEN{{ else }}rerun the assistant's --google-auth if the sign-in expired{{ end }}{{ end }}"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }

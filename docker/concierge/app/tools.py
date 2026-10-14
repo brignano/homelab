@@ -5,7 +5,7 @@ there is no `mail_search` to call, rather than one that always fails. Every
 name registered here must appear in tiers.READ or tiers.PROPOSE; a test fails
 otherwise, so a new tool cannot arrive without someone choosing its tier.
 
-The propose tools (`remember`, and phase 4's `create_event`, `move_event`,
+The propose tools (`remember`, `follow_up`, and phase 4's `create_event`, `move_event`,
 `draft_email`, `run_scene`, `add_movie`, `add_show`) check their arguments and record a proposal. None
 of them changes anything: the effect happens only after a ✅, through
 /v1/execute and actions.execute(). See app/actions.py for the whole flow.
@@ -58,6 +58,8 @@ class TaskContext:
     watch: Watch | None = None
     # The scheduled morning brief: only read-tier tools are registered.
     read_only: bool = False
+    # The evening review: only these tools are registered (tiers.decide's `only`).
+    only: frozenset[str] | None = None
     proposals: list[dict] = field(default_factory=list)
     # Google reads this run made, and how many failed: the brief's freshness
     # stamp needs "mail was actually read", not just "the run finished".
@@ -529,11 +531,34 @@ def build(ctx: TaskContext):
 
     tools.append(remember)
 
+    async def _follow_up(args: dict) -> dict:
+        return propose_checked(ctx, "follow_up",
+                               lambda a: actions.follow_up_args(a, ctx.tz, dt.datetime.now(tz=ctx.tz)), args)
+
+    @tool("follow_up",
+          "Propose coming back to this conversation later. At `when` the bot either pings "
+          "the user with `note` (then='remind', free) or has you look into `note` again "
+          "and report in this thread (then='check', one more request; use it for 'has "
+          "X replied?', 'did the package arrive?'). The user approves first. Use it when "
+          "they ask to be reminded or to follow up, or when your answer leaves them "
+          "waiting on someone or something with a date and checking back would help.",
+          {"type": "object", "properties": {
+              "when": {"type": "string", "description": "ISO 8601 date-time, local if no offset, e.g. 2026-10-16T09:00."},
+              "note": {"type": "string", "description": "What to remind them of or look into, one line, written to them."},
+              "then": {"type": "string", "enum": list(actions.FOLLOW_UP_THEN), "description": "Default remind."},
+          }, "required": ["when", "note"]})
+    async def follow_up(args: dict) -> dict:
+        return await run("follow_up", _follow_up, args)
+
+    tools.append(follow_up)
+
     if ctx.read_only:
         # The brief runs on a timer with nobody asking: no proposal tools at
         # all, so a steered run has nothing to reach for (tiers.decide refuses
         # them as well).
         tools = [t for t in tools if t.name in READ]
+    if ctx.only is not None:
+        tools = [t for t in tools if t.name in ctx.only]
 
     names = [t.name for t in tools]
     return create_sdk_mcp_server(name=SERVER, version="1.0.0", tools=tools), names

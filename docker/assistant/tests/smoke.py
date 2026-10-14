@@ -64,7 +64,7 @@ def with_env(**extra):
     """A clean environment holding only the required vars plus `extra`."""
     keep = {k: v for k, v in os.environ.items() if not k.startswith(
         ("DISCORD_", "CHAT_", "OLLAMA_", "ASK_", "SUMMARIZE_", "DIGEST_", "LLM_", "MAX_", "TZ",
-         "GOOGLE_", "GMAIL_", "HA_", "CONCIERGE_")
+         "GOOGLE_", "GMAIL_", "HA_", "CONCIERGE_", "REVIEW_", "BRIEF_")
     )}
     os.environ.clear()
     os.environ.update(keep)
@@ -1471,8 +1471,8 @@ def _():
 @check("concierge: unknown or malformed proposals are never approvable")
 def _():
     from app.concierge import APPROVABLE, Proposal, approvable, fact_of, render_proposal
-    assert APPROVABLE == {"remember", "create_event", "move_event", "draft_email", "run_scene",
-                          "add_movie", "add_show"}
+    assert APPROVABLE == {"remember", "follow_up", "create_event", "move_event", "draft_email",
+                          "run_scene", "add_movie", "add_show"}
     for p in (Proposal("send_email", {"to": "a@b"}), Proposal("remember", {"fact": ""}),
               Proposal("remember", {"fact": 7}), Proposal("remember", {})):
         assert fact_of(p) is None, p
@@ -1485,6 +1485,59 @@ def _():
               Proposal("draft_email", {"to": ["a@b.c"], "body": "x" * 1900}, "a1")):  # too long to show
         assert not approvable(p) and "can't carry out" in render_proposal(p), p
     assert approvable(Proposal("create_event", ev, "a1"))
+
+
+@check("follow-ups: proposal shown from its arguments, saved and read back exactly")
+def _():
+    from zoneinfo import ZoneInfo
+    from app import followups
+    from app.concierge import Proposal, approvable, render_proposal
+    tz = ZoneInfo("America/New_York")
+    args = {"when": "2026-10-16T09:00:00-04:00", "note": "Did Dr. Lee reply? ```@everyone", "then": "check"}
+    p = Proposal("follow_up", args, "a1")
+    assert approvable(p)
+    text = render_proposal(p, tz)
+    assert text.startswith("**Set this follow-up?**") and text.count("```") == 2, text
+    assert "when: Fri 16 Oct 09:00 EDT" in text and "look into it again" in text, text
+    for bad in ({**args, "when": "2026-10-16T09:00"},          # no offset
+                {**args, "when": "soon"}, {**args, "note": " "}, {**args, "then": "send"}):
+        assert not approvable(Proposal("follow_up", bad, "a1")), bad
+    item = followups.from_args(args, 42, 7, 99)
+    assert item.due == 1792155600 and item.then == "check" and item.channel_id == 99
+    msg = followups.render(item)
+    assert followups.parse(msg) == item, msg
+    assert followups.parse(msg.replace("· check", "· buy")) is None
+    assert followups.parse(msg + "\nextra") is None and followups.parse("") is None
+    assert followups.parse("⏰ <t:1:f> (<t:2:R>) · remind\nx\n-# for <@1> in https://discord.com/channels/1/2") is None
+    assert followups.from_args({"when": "2026-10-16T09:00:00-04:00", "note": "x"}, 1, 1, 1).then == "remind"
+    on_time = followups.fired_text(item, item.due + 30)
+    assert on_time.startswith("⏰ <@42> Following up") and "late" not in on_time
+    assert "late" in followups.fired_text(item, item.due + 3600)
+    assert "Did Dr. Lee reply?" in followups.check_prompt(item)
+    soon = followups.FollowUp(100, "a", "remind", 1, 1, 1)
+    later = followups.FollowUp(50, "b", "remind", 1, 1, 1)
+    gone = followups.FollowUp(10, "c", "remind", 1, 1, 1)
+    assert followups.upcoming([soon, later, gone], 20, 100) == [later, soon]
+
+
+@check("home history: a number becomes start → end with low and high; a state, counts and times")
+def _():
+    from app.home import summarize_history
+    tz = dt.timezone.utc
+    rows = [{"entity_id": "sensor.b", "state": "34", "last_changed": "2026-10-14T01:00:00+00:00",
+             "attributes": {"friendly_name": "Tesla battery", "unit_of_measurement": "%"}},
+            {"state": "30", "last_changed": "2026-10-14T02:00:00Z"},
+            {"state": "unavailable", "last_changed": "2026-10-14T03:00:00Z"},
+            {"state": "80", "last_changed": "2026-10-14T05:00:00Z"}]
+    assert summarize_history(rows, tz) == "Tesla battery: 34 → 80 % (low 30, high 80); unavailable 1×"
+    rows = [{"entity_id": "sensor.l", "state": "ready", "last_changed": "2026-10-14T01:00:00Z",
+             "attributes": {"friendly_name": "Litter-Robot"}}] + [
+        {"state": s, "last_changed": f"2026-10-14T{h:02d}:00:00Z"}
+        for h, s in enumerate(["cycling", "ready"] * 6, start=2)]
+    line = summarize_history(rows, tz)
+    assert line.startswith("Litter-Robot: cycling ×6, ready ×6; ") and "(last 8 of 13)" in line, line
+    assert summarize_history([{"entity_id": "x", "state": "on", "attributes": {}}], tz) == "x: on all day"
+    assert summarize_history([], tz) is None
 
 
 @check("concierge: write prompts show every field the concierge will act on, inert")
@@ -1539,6 +1592,7 @@ def _():
     assert chans["ask"].get("bot_only") is False
     assert chans["memory"].get("bot_only") is True
     assert chans["activity"].get("bot_only") is True
+    assert chans["follow-ups"].get("bot_only") is True
 
 
 @check("ask: a new request's thread is named from its first line, within Discord's cap")
@@ -1559,6 +1613,24 @@ def _():
     assert Config.from_env().activity_channel_id is None
     with_env(DISCORD_ACTIVITY_CHANNEL_ID="7")
     assert Config.from_env().activity_channel_id == 7
+
+
+@check("config: follow-ups and the evening review are off by default and need #ask")
+def _():
+    from app.config import Config
+    with_env()
+    c = Config.from_env()
+    assert not c.followups_active and not c.review_active and not c.review_history_enabled
+    assert c.review_at == (21, 0) and c.review_ha_entities == ()
+    with_env(DISCORD_FOLLOWUPS_CHANNEL_ID="8", REVIEW_ENABLED="true")
+    c = Config.from_env()
+    assert c.followups_channel_id == 8 and not c.followups_active and not c.review_active, "no #ask"
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             DISCORD_FOLLOWUPS_CHANNEL_ID="8", REVIEW_ENABLED="true", REVIEW_AT="20:30",
+             HA_TOKEN="h", HA_ENTITIES="lock.front", REVIEW_HA_ENTITIES="sensor.a, sensor.b")
+    c = Config.from_env()
+    assert c.followups_active and c.review_active and c.review_at == (20, 30)
+    assert c.review_history_enabled and c.review_ha_entities == ("sensor.a", "sensor.b")
 
 
 @check("ask: a follow-up in a request's thread still sees the message that opened it")

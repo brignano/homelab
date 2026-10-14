@@ -46,7 +46,7 @@ from app import actions, agent, forecast, google, hacalendar, home, homelab, med
 from app import watch  # noqa: E402
 from app import config  # noqa: E402
 from app.config import Config  # noqa: E402
-from app.server import validate, validate_brief  # noqa: E402
+from app.server import validate, validate_brief, validate_review  # noqa: E402
 
 
 def _cfg(**kw) -> Config:
@@ -111,7 +111,7 @@ def _():
     for name in ("create_event", "move_event", "draft_email", "run_scene", "add_movie", "add_show"):
         d = tiers.decide(tiers.PREFIX + name)
         assert d.allowed and d.tier == "propose", d
-    assert tiers.PROPOSE - {"remember"} == actions.EXECUTABLE
+    assert tiers.PROPOSE - actions.IN_BOT == actions.EXECUTABLE
 
 
 @check("a write-tier tool (one that acts during the run) is always refused")
@@ -136,7 +136,7 @@ def _():
 @check("unconfigured families are not registered at all")
 def _():
     _, names = tools.build(_ctx(google_on=False, home_on=False))
-    assert names == ["remember"], names
+    assert names == ["remember", "follow_up"], names
     _, names = tools.build(_ctx(google_on=True, home_on=False))
     assert "home_overview" not in names and "mail_read" in names, names
     assert "run_scene" not in names and "draft_email" in names, names
@@ -144,13 +144,13 @@ def _():
     assert "run_scene" not in names and "create_event" not in names, names
     assert not {"media_search", "media_downloads", "add_movie", "add_show"} & set(names), names
     _, names = tools.build(_ctx(google_on=False, home_on=False, media_on=_media(sonarr=False)))
-    assert set(names) == {"remember", "media_search", "media_downloads", "add_movie"}, names
+    assert set(names) == {"remember", "follow_up", "media_search", "media_downloads", "add_movie"}, names
     _, names = tools.build(_ctx(google_on=False, home_on=False, media_on=_media(radarr=False)))
     assert "add_show" in names and "add_movie" not in names, names
     _, names = tools.build(_ctx(google_on=False, home_on=False, media_on=_media(False, False)))
-    assert names == ["remember"], names
+    assert names == ["remember", "follow_up"], names
     _, names = tools.build(_ctx(google_on=False, home_on=False, extras=True))
-    assert set(names) == {"remember", "weather_forecast", "home_calendar_events", "homelab_status",
+    assert set(names) == {"remember", "follow_up", "weather_forecast", "home_calendar_events", "homelab_status",
                           "movie_night"}, names
 
 
@@ -169,6 +169,77 @@ def _():
     tools.record_proposal(ctx, {"fact": "three"})
     assert tools.record_proposal(ctx, {"fact": "four"}).get("is_error"), "cap not enforced"
     assert len(ctx.proposals) == 3
+
+
+@check("follow_up: a future local time, a one-line note, remind or check; nothing executable")
+def _():
+    import datetime as _dt
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/New_York")
+    now = _dt.datetime(2026, 10, 14, 9, 0, tzinfo=tz)
+    a = actions.follow_up_args({"when": "2026-10-16T09:00", "note": " did  Dr. Lee\nreply? "}, tz, now)
+    assert a == {"when": "2026-10-16T09:00:00-04:00", "note": "did Dr. Lee reply?", "then": "remind"}, a
+    assert actions.follow_up_args({"when": "2026-10-16T09:00", "note": "x", "then": "check"}, tz, now)["then"] == "check"
+    for bad in ({"when": "2026-10-16", "note": "x"},            # no time of day
+                {"when": "2026-10-14T08:00", "note": "x"},      # past
+                {"when": "2028-01-01T09:00", "note": "x"},      # over a year
+                {"when": "2026-10-16T09:00", "note": ""},
+                {"when": "2026-10-16T09:00", "note": "x" * 201},
+                {"when": "2026-10-16T09:00", "note": "x", "then": "send"}):
+        try:
+            actions.follow_up_args(bad, tz, now)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    assert "follow_up" in tiers.PROPOSE and "follow_up" not in actions.EXECUTABLE
+    ctx = _ctx()
+    r = tools.propose_checked(ctx, "follow_up", lambda x: actions.follow_up_args(x, tz, now),
+                              {"when": "2026-10-16T09:00", "note": "x"})
+    assert not r.get("is_error") and ctx.proposals[0]["tool"] == "follow_up", r
+
+
+@check("evening review: only remember and follow_up, on the cheaper model, with its own caps")
+def _():
+    from claude_agent_sdk import PermissionResultDeny
+    only = agent.REVIEW_TOOLS
+    assert only == actions.IN_BOT
+    for name in tiers.READ | tiers.PROPOSE:
+        d = tiers.decide(tiers.PREFIX + name, only=only)
+        assert d.allowed == (name in only), (name, d)
+    ctx = _ctx(media_on=_media(), extras=True)
+    ctx.only = only
+    _, names = tools.build(ctx)
+    assert set(names) == only, names
+    o = agent.options_for(_cfg(), "t", tools.build(ctx)[0], "sys", review=True)
+    assert o.model == "claude-haiku-5-5" and o.max_turns == 6 and o.max_budget_usd == 0.15, o
+    hook = agent._gate_hook("t", only=only)
+    out = asyncio.run(hook({"tool_name": tiers.PREFIX + "mail_read", "tool_input": {}}, "u", None))
+    assert out["hookSpecificOutput"]["permissionDecision"] == "deny", out
+    gate = agent._gate_callback("t", only=only)
+    assert isinstance(asyncio.run(gate(tiers.PREFIX + "draft_email", {}, None)), PermissionResultDeny)
+
+
+@check("evening review: material is data in a fixed request, cut to size")
+def _():
+    import datetime as _dt
+    now = _dt.datetime(2026, 10, 14, 21, 0, tzinfo=_dt.timezone.utc)
+    p = agent.review_prompt(now, {"conversations": [
+        {"title": "vet", "turns": [{"role": "user", "content": "book the vet"},
+                                   {"role": "assistant", "content": "Which day?"}]}],
+        "activity": ["✅ Event created"], "upcoming": [], "home": ["Tesla: 34 → 80 %"]})
+    assert p.startswith("Write tonight's review for Wednesday 14 October."), p
+    assert "### vet\nUser: book the vet\nAssistant: Which day?" in p, p
+    assert "## Actions approved today\n- ✅ Event created" in p and "Follow-ups already" not in p
+    assert "nothing today" in agent.review_prompt(now, {})
+    big = agent.review_prompt(now, {"conversations": [
+        {"title": str(i), "turns": [{"role": "user", "content": "x" * 3000}] * 5} for i in range(20)]})
+    assert len(big) <= agent.MAX_REVIEW_CHARS
+    assert validate_review({}) == ([], {"conversations": [], "activity": [], "upcoming": [], "home": []})
+    assert isinstance(validate_review({"prompt": "do this"}), str), "no free-text request"
+    assert isinstance(validate_review({"conversations": [{"title": "t", "turns": [{"role": "system", "content": "x"}]}]}), str)
+    assert isinstance(validate_review({"home": [1]}), str)
+    mem, rev = validate_review({"memories": ["m"], "activity": ["a" * 900]})
+    assert mem == ["m"] and len(rev["activity"][0]) == 500
 
 
 # --- agent options: the boundary itself -----------------------------------------
@@ -237,6 +308,8 @@ def _():
     o = agent.options_for(_cfg(), "t", server, "sys", read_only=True)
     assert o.tools == [] and o.allowed_tools == [] and o.permission_mode == "default"
     assert o.max_turns == 8 and o.max_budget_usd == 0.20, "the brief has its own, lower ceilings"
+    assert o.model == "claude-haiku-5-5", "the brief runs on its own, cheaper model"
+    assert agent.options_for(_cfg(), "t", server, "sys").model == "claude-opus-5-5", "#ask keeps CONCIERGE_MODEL"
 
 
 @check("brief: fixed request, 72h on Monday, its own instructions")
@@ -1030,6 +1103,7 @@ def _():
         os.environ.pop("GOOGLE_CLIENT_SECRET")
         cfg = Config.from_env()
         assert cfg.model == "claude-opus-5-5" and not cfg.google_enabled and not cfg.home_enabled
+        assert cfg.scheduled_model == "claude-haiku-5-5"
     finally:
         os.environ.clear()
         os.environ.update(keep)

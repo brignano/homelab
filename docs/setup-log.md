@@ -27,6 +27,46 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-14 — Follow-ups and an evening review for #ask
+
+**Goal:** a more proactive, reflective assistant ("like Muse"): come back to
+things later, and look back over the day, without spending Opus tokens on
+routine runs.
+
+**Steps:**
+1. `CONCIERGE_SCHEDULED_MODEL` (default `claude-haiku-5-5`) for the brief and
+   the review; #ask keeps `CONCIERGE_MODEL`.
+2. Concierge: propose-tier `follow_up` (`actions.follow_up_args`: a future
+   local date-time within a year, a one-line note, `remind` or `check`).
+   Not executable: the bot carries it out, like `remember` (`actions.IN_BOT`).
+3. Bot: a ✅ posts the follow-up to bot-only `#follow-ups`
+   (`app/followups.py` renders and parses it). A 60s loop fires due ones into
+   their thread: `remind` pings, `check` runs the note as an #ask request
+   there. Stamp `source-followups`.
+4. Concierge: `POST /v1/review` with today's material as data, no lookup
+   tools, only `remember` and `follow_up` (`tiers.decide(..., only=...)`).
+   Bot: daily at `REVIEW_AT`, gathers #ask threads, #activity, upcoming
+   follow-ups and `REVIEW_HA_ENTITIES` history (`GET /api/history/period`,
+   summarized in code by `home.summarize_history`), posts a thread in #ask.
+   Opt-in `REVIEW_ENABLED=true`; stamp `source-review`.
+5. `heartbeat.sh` publishes both stamps; `hl-google-stale` names them.
+
+**Issues encountered:**
+- Google Tasks was the planned home for follow-ups, but its API stores a due
+  date only, so a reminder could not fire at a time. #follow-ups in Discord
+  keeps #memory's properties instead (visible, deletable, restart-safe).
+- OpenClaw and a local model were considered for token cost and rejected
+  (TSD → Rejected alternatives; the box is CPU-only, and tool calling on the
+  3B was reverted twice).
+
+**Notes / next steps:**
+- (you) `--provision --apply` for `#follow-ups`; set
+  `DISCORD_FOLLOWUPS_CHANNEL_ID`, `REVIEW_ENABLED=true` and, if wanted,
+  `REVIEW_HA_ENTITIES` (Tesla battery/charging, litter box) in
+  `docker/assistant/.env`; rebuild assistant and concierge.
+
+---
+
 ## 2026-10-13 — Digest shows only what is new since the last one
 
 **Goal:** Stop the digest repeating mail, restarts and log errors already shown.

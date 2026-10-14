@@ -1,6 +1,6 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phases 1–4 built (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
+**Status:** 🚧 phases 1–4 built, plus follow-ups and an evening review (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -335,6 +335,17 @@ nothing. Stamps are cleared whenever no digest would refresh them.
 The act lane is not scheduled and needs no switch. If it is down, `/ask`
 says so.
 
+**Amended 2026-10-14: three things in it now run on a timer.** The brief
+(above), the evening review and due follow-ups. Each has a stamp aged by
+`hl-google-stale`: `source-review` per finished review, `source-followups`
+per scan of #follow-ups. Two of them can propose. A `check` follow-up is an
+#ask request you approved earlier, deferred, so it gets #ask's tools. The
+review gets only `remember` and `follow_up`, but what it reads can include
+mail that earlier answers quoted. That relaxes "a timer reading stranger text
+holds no proposal tools" for exactly those two runs; what still holds is that
+nothing acts without a ✅, and neither run's proposals can reach
+`/v1/execute`.
+
 **Amended 2026-10-13: the morning brief is scheduled, by the bot.** The
 concierge still keeps no schedule; the bot calls `/v1/brief` as the scheduled
 digest starts and renders the answer as the digest's last section ("Needs
@@ -441,9 +452,36 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
       the "one agent that does everything" rejection draws is per run; the
       process still holds `/v1/execute` for #ask). Drafts stay on demand in
       #ask. Own ceilings: `CONCIERGE_BRIEF_MAX_TURNS` (8) and
-      `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20). Opt-in: `BRIEF_ENABLED=true`.
-- [ ] **Proactive triage** (proposed 2026-10-11): an evening run, and
-      drafted replies as proposals, if the read-only brief earns it.
+      `CONCIERGE_BRIEF_MAX_BUDGET_USD` ($0.20), and since 2026-10-14 its
+      own model, `CONCIERGE_SCHEDULED_MODEL` (Haiku): it reads and summarizes
+      daily whether or not anything needs you, so Opus stays for #ask.
+      Opt-in: `BRIEF_ENABLED=true`.
+- [x] **Follow-ups** (2026-10-14). Propose-tier `follow_up` (when, note,
+      then = `remind` | `check`), carried out by the bot like `remember`:
+      a ✅ posts one message to bot-only #follow-ups, which the bot reads
+      every minute and fires into the thread it was set in, deleting the
+      message first so it fires once. `remind` pings with the note (no
+      model); `check` runs the note as an #ask request in that thread, so
+      Otto looks again and anything it wants to do is a new proposal.
+      Rejected: Google Tasks as the store (its API keeps a due *date*, not
+      a time, so nothing could fire at 09:00) and a database (#memory's
+      reasons hold). Stamp `source-followups`.
+- [x] **Evening review** (2026-10-14), the reflective half of proactive
+      triage: at `REVIEW_AT` the bot sends `/v1/review` the day's #ask
+      threads, #activity, upcoming follow-ups and a code-made line per
+      `REVIEW_HA_ENTITIES` entity from HA's history, and posts the answer as
+      a thread in #ask. That run has no lookup tools and only `remember` and
+      `follow_up` (`tiers.decide(..., only=...)`), so it reads no inbox on a
+      timer and can only propose things the bot carries out after a ✅: the
+      brief's boundary, relaxed only as far as Decision 6's 2026-10-14
+      amendment says. It is what makes #memory fill up
+      without you saying "remember". Opt-in `REVIEW_ENABLED=true`; skipped
+      on an empty day; stamp `source-review`.
+- [x] **Scheduled runs on a cheaper model** (2026-10-14).
+      `CONCIERGE_SCHEDULED_MODEL` (Haiku) for the brief and the review;
+      #ask keeps `CONCIERGE_MODEL`.
+- [ ] **Drafted replies from the brief**, as proposals, if the read-only
+      brief earns it. Today the brief says "ask in #ask for a draft".
 
 **Setup left for phase 4 (you)**
 - [ ] Rerun the concierge's `--google-auth` for the write scopes and paste
@@ -517,8 +555,11 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
   with `docker stats` after phase 2 against the 14 GB limit, with Ollama loaded,
   before committing to phase 3.
 - **Money:** the watch lane is $0 (local model, Google APIs within free quota).
-  The act lane is Claude API usage, on demand only, and nothing in it is
-  scheduled, except the opt-in morning brief (one run a day, capped at $0.20). **Phases 1–2 never call the Claude API** (Google, Home
+  The act lane is Claude API usage, on demand only, except the opt-in
+  scheduled runs on `CONCIERGE_SCHEDULED_MODEL` (Haiku): the morning brief
+  (one a day, capped at $0.20) and the evening review (one a day, $0.15,
+  skipped on an empty day). A `check` follow-up costs one #ask request when it
+  comes due; a `remind` costs nothing. **Phases 1–2 never call the Claude API** (Google, Home
   Assistant and the local 3B only). Phase 3 is the first that does, and it
   follows the same budget isolation as the brignano.io site chat:
   - its own Console **workspace**, `homelab`, with its own monthly spend limit
@@ -549,6 +590,13 @@ next unchecked item". Tick items in the PR that finishes them. Items marked
 - **Claude Code routines / scheduled cloud sessions as the always-on piece.**
   They run in Anthropic's cloud, so they cannot reach Home Assistant on the LAN
   without a public endpoint, which this lab does not have by design.
+- **OpenClaw, or another general agent framework, as the runtime**
+  (asked 2026-10-14, to save tokens). It saves none: it calls the same
+  hosted models for every turn. It is also this TSD's rejected "one agent
+  that does everything", with a large third-party skill ecosystem in
+  reach. Token cost is handled here by model choice per run
+  (`CONCIERGE_SCHEDULED_MODEL`) and by doing the scheduled parts in code
+  (a `remind` follow-up never calls a model).
 - **Auto-approving "safe" writes.** Every write starts approved by hand. If a
   write is still approved every time after a month, promote it to **read**-tier
   in code, in a reviewed commit, rather than through a setting the agent can

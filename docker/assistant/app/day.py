@@ -46,7 +46,11 @@ SOURCES = ("calendar", "mail", "home", "ha-calendar")
 # Not a Today source, but stamped beside them: the morning brief, written by
 # the bot after a /v1/brief run that finished (bot.Assistant._brief).
 BRIEF_SOURCE = "brief"
-STAMPED = SOURCES + (BRIEF_SOURCE,)
+# Likewise the follow-ups loop (each scan of #follow-ups that worked) and the
+# evening review (each run that finished, or found nothing to review).
+FOLLOWUPS_SOURCE = "followups"
+REVIEW_SOURCE = "review"
+STAMPED = SOURCES + (BRIEF_SOURCE, FOLLOWUPS_SOURCE, REVIEW_SOURCE)
 GOOGLE_SOURCES = ("calendar", "mail")
 # The sources merged into the one Calendar line, and how each is named when
 # it alone could not be read.

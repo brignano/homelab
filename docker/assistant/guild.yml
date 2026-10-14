@@ -96,3 +96,15 @@ categories:
           question. Added only when you approve one. Delete a message to make it
           forget that fact.
         bot_only: true
+
+      # Approved follow-ups waiting to come due, one message each, the same
+      # idea as #memory. The bot reads it every minute, fires what is due into
+      # the thread it was set in, and deletes the message. Off until
+      # DISCORD_FOLLOWUPS_CHANNEL_ID is set.
+      - name: follow-ups
+        topic: >-
+          Reminders and check-backs Otto will come back to, one per message,
+          each added only when you approve it. When one is due Otto posts in
+          the thread it came from and removes it here. Delete a message to
+          cancel that follow-up.
+        bot_only: true
