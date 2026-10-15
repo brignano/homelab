@@ -438,6 +438,16 @@ Set `DISCORD_FOLLOWUPS_CHANNEL_ID` (from `--provision --apply`) to turn it on.
 Each scan that works stamps `source-followups`, so `hl-google-stale` fires if
 the loop stops.
 
+### One thread a day
+
+With `#ask` set up, each **scheduled** digest opens a thread under itself,
+named for the day (**Thu 15 Oct**). Reply there to ask about anything in the
+digest or to act on it ("draft a reply to that", "move the haircut"): a
+message in a thread under `#digest` is answered exactly like one in `#ask`,
+with the digest itself as the first turn, so "what does that mean?" works.
+The evening review posts in the same thread, so a day reads top to bottom in
+one place. `#digest` itself stays bot-only; only its threads are answered.
+
 ### The evening review
 
 Once a day at `REVIEW_AT` (21:00), the bot gathers the day: the `#ask`
@@ -448,12 +458,13 @@ last 24 hours from HA's history (one GET with the digest's token). Code turns
 the history into one line per entity ("Tesla battery: 34 → 80 % (low 30,
 high 80)", "Litter-Robot: cycling ×6, ready ×6; …"); the model only reads
 those lines. It sends all of it to the concierge's `/v1/review`, and posts the
-answer in `#ask` as a thread of its own, **Evening review · Tue 14 Oct**: what
+answer in that day's thread under the morning digest in `#digest` (or, if
+there is none, a thread of its own there, **Evening review · Tue 14 Oct**): what
 is still open, anything at home that stands out, and up to three proposals,
 each a memory or a follow-up. That is how `#memory` fills up without you
 saying "remember": the review proposes what you told it today, and you ✅ it.
 Code adds a **Coming up** list of the follow-ups already set. Reply in the
-thread to talk it over; it is an ordinary `#ask` thread.
+thread to talk it over; it answers like `#ask`.
 
 The review reads no mailbox, calendar or house itself: the concierge gives
 that run only `remember` and `follow_up`, both carried out by the bot. A day

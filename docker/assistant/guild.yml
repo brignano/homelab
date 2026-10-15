@@ -39,7 +39,9 @@ categories:
           Daily health digest, posted automatically each morning — services up,
           CPU/RAM/disk, container restarts, log-error counts. Bot posts only, so
           it stays a clean timeline you can scroll back through to spot drift
-          that no single alert would ever fire on. Ask questions in #ask.
+          that no single alert would ever fire on. Each morning's digest opens
+          a thread for the day: reply there to ask about it or act on it, and
+          the evening review lands there too.
         bot_only: true
 
       # Fed by webhooks, never by the bot — that's the point. See
