@@ -1197,8 +1197,8 @@ def _():
         "the same instant in another time zone is the same meeting"
     assert [(a.title, b.title) for a, b in day.conflicts] == [("Dentist", "Pick up kids")]
     text = "\n".join(render_lines(day))
-    assert "**Calendar**\n- 09:00 Standup\n- 15:00 Dentist\n- 15:30 Pick up kids\n" in text, text
-    assert "**Overlaps** 15:00 Dentist ↔ 15:30 Pick up kids" in text and "not read" not in text, text
+    assert "**Calendar**\n- 9am Standup\n- 3pm Dentist\n- 3:30pm Pick up kids\n" in text, text
+    assert "**Overlaps** 3pm Dentist ↔ 3:30pm Pick up kids" in text and "not read" not in text, text
     # iCloud alone, no Google at all.
     only = "\n".join(render_lines(Day(now=NOW, sources=("ha-calendar",), ha_events=[])))
     assert "**Calendar** nothing else today" in only and "Mail" not in only, only
@@ -1216,7 +1216,7 @@ def _():
     assert cal(ha_events=[_ev("Dinner", 19, 0, 20, 0)]) == "**Calendar** _Google not read_"
     many = render_lines(Day(now=NOW, sources=("calendar",),
                             events=[_ev(f"E{h}", h, 0, h, 30) for h in range(9, 17)]))
-    assert many[-2:] == ["- 14:00 E14", "- +2 more"], many
+    assert many[-2:] == ["- 2pm E14", "- +2 more"], many
     assert cal() == "**Calendar** _not read_"
 
 
@@ -1259,7 +1259,7 @@ def _():
                 raise RuntimeError("narration off")
 
         out = asyncio.run(build(_Facts(), _Ollama(), NOW, day_collector=dc))
-        assert "SECRET" not in seen["prompt"] and "19:00 SECRET-ICLOUD" in out, out
+        assert "SECRET" not in seen["prompt"] and "7pm SECRET-ICLOUD" in out, out
         assert all("/api/states/" not in c[1] for c in session.calls)
         assert "Home Assistant" in out.splitlines()[-1] and "Google" not in out.splitlines()[-1]
 
@@ -1501,7 +1501,7 @@ def _():
     assert approvable(p)
     text = render_proposal(p, tz)
     assert text.startswith("**Set this follow-up?**") and text.count("```") == 2, text
-    assert "when: Fri 16 Oct 09:00 EDT" in text and "look into it again" in text, text
+    assert "when: Fri 16 Oct 9am" in text and "look into it again" in text, text
     for bad in ({**args, "when": "2026-10-16T09:00"},          # no offset
                 {**args, "when": "soon"}, {**args, "note": " "}, {**args, "then": "send"}):
         assert not approvable(Proposal("follow_up", bad, "a1")), bad
@@ -1697,6 +1697,29 @@ def _():
               embeds=[NS(title="Homelab digest", description="**Calendar**\n- 06:30 Work")])
     turn = Assistant._to_turn(stub, card)
     assert turn.role == "assistant" and "- 06:30 Work" in turn.content, turn
+
+
+@check("today: an all-day event shows only on its own date, whatever the server's zone")
+def _():
+    from app.day import Day
+    from app.google import Event
+    from app.text import clock
+    et = dt.timezone(dt.timedelta(hours=-4))
+    night = dt.datetime(2026, 10, 14, 21, 36, tzinfo=et)   # Wed 9:36pm Eastern
+    d = dt.date
+
+    def ev(title, start, end):
+        return Event(title, start, end, True, True)
+    day = Day(now=night, sources=("calendar",), events=[
+        ev("Tomorrow PTO", d(2026, 10, 15), d(2026, 10, 16)),
+        ev("Trip", d(2026, 10, 12), d(2026, 10, 17)),
+        ev("Today", d(2026, 10, 14), d(2026, 10, 15)),
+        ev("Ended", d(2026, 10, 13), d(2026, 10, 14)),
+        ev("No end", d(2026, 10, 14), d(2026, 10, 14)),
+    ])
+    assert [e.title for e in day.all_day] == ["Trip", "Today", "No end"], day.all_day
+    assert [clock(dt.datetime(2026, 1, 1, h, m)) for h, m in ((0, 0), (6, 30), (12, 0), (22, 5))] \
+        == ["12am", "6:30am", "12pm", "10:05pm"]
 
 
 @check("compose: every setting config.py reads is passed into the container")

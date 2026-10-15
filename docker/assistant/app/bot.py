@@ -50,7 +50,7 @@ from .home import Home, HomeError, summarize_history
 from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
 from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
-from .text import chunk, clamp_input, thread_name
+from .text import chunk, clamp_input, clock, thread_name
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,9 @@ REVIEW_LOOKBACK = dt.timedelta(hours=24)
 REVIEW_MAX_THREADS = 12
 REVIEW_UPCOMING_S = 36 * 3600
 REVIEW_PREFIX = "Evening review"
+# The day thread's first line. A footer line (FOOTER_PREFIX), so it is dropped
+# from the conversation the concierge sees.
+DAY_THREAD_HINT = "-# Reply here to ask about today or have me act on it. The evening review lands here too."
 # The furthest back a digest's "new since the last one" reaches.
 SINCE_LIMIT = dt.timedelta(days=7)
 
@@ -695,11 +698,8 @@ class Assistant(discord.Client):
         # it, and the evening review lands here too (_review). Only with #ask
         # on: without the concierge nothing would answer in it.
         if self.cfg.ask_enabled:
-            try:
-                await posted.create_thread(name=day_title(dt.datetime.now(tz=self.cfg.tz)),
-                                           auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
-            except discord.HTTPException as exc:
-                log.warning("could not open the day's thread: %s", exc)
+            await self._open_thread_for_you(posted, day_title(dt.datetime.now(tz=self.cfg.tz)),
+                                            DAY_THREAD_HINT)
 
         # Only the SCHEDULED run records this, and only when it worked.
         # `/digest` at three in the afternoon would refresh the timestamp and
@@ -869,16 +869,38 @@ class Assistant(discord.Client):
                 return False
             title = f"{REVIEW_PREFIX} · {day_title(now)}"
             head = await channel.send(f"**{title}**", allowed_mentions=quiet)
-            try:
-                out = await head.create_thread(name=title, auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
-            except discord.HTTPException as exc:
-                log.warning("could not open the review's thread: %s", exc)
-                out = channel
+            out = await self._open_thread_for_you(head, title) or channel
         await self._post_answer(out, reply)
         if upcoming_lines:
             text = "**Coming up**\n" + "\n".join(f"- {defang(ln)}" for ln in upcoming_lines)
             await out.send(text[:1900], allowed_mentions=quiet, suppress_embeds=True)
         return reply.ok
+
+    async def _open_thread_for_you(self, message: discord.Message, name: str,
+                                   hint: str | None = None) -> discord.Thread | None:
+        """A thread on one of the bot's own posts, with you in it.
+
+        Discord lists a thread in your sidebar only once you are a member, and
+        a thread the bot opens on its own message has no members but the bot.
+        #ask threads start from your message, which is why they show and these
+        did not. Adding you is silent: no ping. The hint gives the thread a
+        first message, so it doesn't open on "no messages yet"."""
+        try:
+            thread = await message.create_thread(name=name, auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
+        except discord.HTTPException as exc:
+            log.warning("could not open thread %r: %s", name, exc)
+            return None
+        for uid in self.cfg.allowed_user_ids:
+            try:
+                await thread.add_user(discord.Object(id=uid))
+            except discord.HTTPException as exc:
+                log.warning("could not add %s to thread %r: %s", uid, name, exc)
+        if hint:
+            try:
+                await thread.send(hint, allowed_mentions=discord.AllowedMentions.none())
+            except discord.HTTPException as exc:
+                log.warning("could not post in thread %r: %s", name, exc)
+        return thread
 
     async def _day_thread(self, now: dt.datetime) -> discord.Thread | None:
         """Today's thread under the morning digest, if it is still open."""
@@ -1311,7 +1333,7 @@ def register_commands(client: Assistant) -> None:
         ]
         if cfg.digest_enabled:
             nxt = client.scheduled_digest.next_iteration
-            when = nxt.astimezone(cfg.tz).strftime("%a %d %b %H:%M %Z") if nxt else "pending"
+            when = f"{nxt.astimezone(cfg.tz).strftime('%a %d %b')} {clock(nxt.astimezone(cfg.tz))}" if nxt else "pending"
             lines.append(f"**Next digest** {when}")
             # The question "is the schedule actually firing" should be
             # answerable without reading Grafana or the box.

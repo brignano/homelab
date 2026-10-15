@@ -27,6 +27,25 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-15 — Day thread in your sidebar, 12-hour times, all-day by date
+
+**Goal:** The first real day thread (a test run at 9:36pm) had three rough
+edges: the thread was missing from Anthony's sidebar, times read as "22:00",
+and tomorrow's all-day "PTO" showed as today.
+
+**Steps:**
+1. `_open_thread_for_you`: the bot adds each allowlisted user to threads it
+   opens on its own posts (Discord lists a thread only for members; #ask threads
+   start from your message, so you were already in them), and posts a one-line
+   `-#` hint so the thread doesn't open empty.
+2. `text.clock`: "10pm", "6:30am" for the calendar, follow-ups and `/status`.
+3. `Day.all_day` keeps an all-day event only when its dates cover today's local
+   date. Home Assistant places all-day events in its own zone, so late in the
+   evening Eastern the next day's event overlapped the "until midnight" window.
+
+**Notes / next steps:**
+- Deploy: rebuild assistant. No config changes.
+
 ## 2026-10-15 — One thread a day under the digest
 
 **Goal:** The morning digest in #digest and the evening review as a separate

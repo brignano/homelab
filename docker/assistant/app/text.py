@@ -9,6 +9,13 @@ import datetime as dt
 DISCORD_LIMIT = 1900
 
 
+def clock(when: dt.datetime) -> str:
+    """A time of day the way people say it here: "10pm", "6:30am"."""
+    hour = when.hour % 12 or 12
+    mins = f":{when.minute:02d}" if when.minute else ""
+    return f"{hour}{mins}{'am' if when.hour < 12 else 'pm'}"
+
+
 def clamp_input(text: str, max_chars: int) -> tuple[str, bool]:
     """Trim oversized input before it reaches the model.
 
