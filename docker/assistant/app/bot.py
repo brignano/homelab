@@ -299,11 +299,21 @@ class Assistant(discord.Client):
             return "chat"
         if self.cfg.ask_enabled and self.cfg.ask_channel_id in here:
             return "ask"
+        # A day's thread under #digest is an #ask conversation about that day.
+        # The channel itself stays bot-only: only its threads are answered.
+        if self.cfg.ask_enabled and getattr(channel, "parent_id", None) == self.cfg.digest_channel_id:
+            return "ask"
         return None
 
     def _to_turn(self, message: discord.Message) -> Turn | None:
         """One Discord message as a conversation turn, or None if it's noise."""
         content = message.content or ""
+        if not content and message.author.id == (self.user.id if self.user else None):
+            # The digest is posted as a card: its text lives in the embed. A
+            # day thread opens from it, and "what does that mean?" needs it.
+            content = "\n".join(filter(None, (
+                f"{e.title or ''}\n{e.description or ''}".strip()
+                for e in getattr(message, "embeds", None) or ())))
         if getattr(message, "components", None):
             # An approval prompt. It is the bot's own rendering of a proposal,
             # not something the assistant said, so it is not conversation.
@@ -676,11 +686,20 @@ class Assistant(discord.Client):
         # (and suppress_embeds would hide the card itself).
         card = digest_card(message, self.cfg.grafana_url)
         if card is not None:
-            await channel.send(embed=to_embed(card), allowed_mentions=discord.AllowedMentions.none())
+            posted = await channel.send(embed=to_embed(card), allowed_mentions=discord.AllowedMentions.none())
         else:
-            for part in chunk(message):
-                await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
-                                   suppress_embeds=True)
+            parts = [await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
+                                        suppress_embeds=True) for part in chunk(message)]
+            posted = parts[0]
+        # The day's thread: reply under the digest to ask about it or act on
+        # it, and the evening review lands here too (_review). Only with #ask
+        # on: without the concierge nothing would answer in it.
+        if self.cfg.ask_enabled:
+            try:
+                await posted.create_thread(name=day_title(dt.datetime.now(tz=self.cfg.tz)),
+                                           auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
+            except discord.HTTPException as exc:
+                log.warning("could not open the day's thread: %s", exc)
 
         # Only the SCHEDULED run records this, and only when it worked.
         # `/digest` at three in the afternoon would refresh the timestamp and
@@ -752,13 +771,15 @@ class Assistant(discord.Client):
         await self.wait_until_ready()
 
     async def _review_threads(self, since: dt.datetime) -> list[dict]:
-        """Today's #ask threads, most recent first: title and turns."""
+        """Today's #ask threads and #digest day threads, most recent first:
+        title and turns."""
         guild = self.get_guild(self.cfg.guild_id)
         if guild is None:
             return []
         recent = []
         for thread in await guild.active_threads():
-            if thread.parent_id != self.cfg.ask_channel_id or thread.name.startswith(REVIEW_PREFIX):
+            if thread.parent_id not in (self.cfg.ask_channel_id, self.cfg.digest_channel_id) \
+                    or thread.name.startswith(REVIEW_PREFIX):
                 continue
             if thread.last_message_id is None:
                 continue
@@ -773,7 +794,9 @@ class Assistant(discord.Client):
             except discord.HTTPException as exc:
                 log.warning("review could not read thread %s: %s", thread.id, exc)
                 continue
-            if turns:
+            # A day thread you never replied in is just the digest: nothing
+            # was said, and counting it would end every quiet day's skip.
+            if any(t.role == "user" for t in turns):
                 out.append({"title": thread.name,
                             "turns": [{"role": t.role, "content": t.content} for t in turns][-40:]})
         return out
@@ -805,7 +828,7 @@ class Assistant(discord.Client):
         return [line for r in rows if (line := summarize_history(r, self.cfg.tz))]
 
     async def _review(self) -> bool:
-        """Gather today, ask the concierge, post it as a thread in #ask.
+        """Gather today, ask the concierge, post it in today's #digest thread.
 
         True when it finished, or when there was nothing to review (no run,
         no post, no cost)."""
@@ -833,24 +856,43 @@ class Assistant(discord.Client):
         except ConciergeError as exc:
             log.warning("evening review unavailable: %s", exc)
             return False
-        channel = self.get_channel(self.cfg.ask_channel_id)
-        if channel is None:
-            log.error("ask channel %s not found", self.cfg.ask_channel_id)
-            return False
-        title = f"{REVIEW_PREFIX} · {now.strftime('%a %d %b')}"
         quiet = discord.AllowedMentions.none()
-        head = await channel.send(f"**{title}**", allowed_mentions=quiet)
-        out = head
-        try:
-            out = await head.create_thread(name=title, auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
-        except discord.HTTPException as exc:
-            log.warning("could not open the review's thread: %s", exc)
-            out = channel
+        out = await self._day_thread(now)
+        if out is not None:
+            await out.send(f"**{REVIEW_PREFIX}**", allowed_mentions=quiet)
+        else:
+            # No digest thread today (the digest failed, or ran before this
+            # existed): a thread of its own in #digest, still one place a day.
+            channel = self.get_channel(self.cfg.digest_channel_id)
+            if channel is None:
+                log.error("digest channel %s not found", self.cfg.digest_channel_id)
+                return False
+            title = f"{REVIEW_PREFIX} · {day_title(now)}"
+            head = await channel.send(f"**{title}**", allowed_mentions=quiet)
+            try:
+                out = await head.create_thread(name=title, auto_archive_duration=ASK_THREAD_ARCHIVE_MIN)
+            except discord.HTTPException as exc:
+                log.warning("could not open the review's thread: %s", exc)
+                out = channel
         await self._post_answer(out, reply)
         if upcoming_lines:
             text = "**Coming up**\n" + "\n".join(f"- {defang(ln)}" for ln in upcoming_lines)
             await out.send(text[:1900], allowed_mentions=quiet, suppress_embeds=True)
         return reply.ok
+
+    async def _day_thread(self, now: dt.datetime) -> discord.Thread | None:
+        """Today's thread under the morning digest, if it is still open."""
+        guild = self.get_guild(self.cfg.guild_id)
+        if guild is None:
+            return None
+        name = day_title(now)
+        try:
+            threads = await guild.active_threads()
+        except discord.HTTPException as exc:
+            log.warning("could not list threads: %s", exc)
+            return None
+        return next((t for t in threads
+                     if t.parent_id == self.cfg.digest_channel_id and t.name == name), None)
 
     async def _pending_follow_ups(self) -> list[tuple[discord.Message, followups.FollowUp]]:
         """Every follow-up the bot saved, with its message. Raises if unreadable."""
@@ -1112,6 +1154,11 @@ class ApprovalView(discord.ui.View):
         if not self._done:
             log.info("proposal expired unanswered: tool=%s", self.proposal.tool)
             await self._finish("Expired — nothing done", None)
+
+
+def day_title(now: dt.datetime) -> str:
+    """The name of a day's thread under #digest, e.g. "Wed 15 Oct"."""
+    return now.strftime("%a %d %b")
 
 
 def to_embed(card: Card) -> discord.Embed:

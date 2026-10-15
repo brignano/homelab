@@ -27,6 +27,24 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-15 — One thread a day under the digest
+
+**Goal:** The morning digest in #digest and the evening review as a separate
+thread in #ask felt disjointed, and the digest could not be replied to.
+
+**Steps:**
+1. The scheduled digest opens a thread under itself named for the day
+   (`day_title`, "Thu 15 Oct"), when #ask is on.
+2. `_route`: a message in a thread under #digest goes to the concierge like
+   #ask. #digest itself is still ignored. `_to_turn` reads the digest card's
+   embed, so the digest is the thread's first turn.
+3. The evening review posts in today's thread (`_day_thread`), else a thread
+   of its own in #digest. It also reads the day threads.
+
+**Notes / next steps:**
+- Deploy: rebuild assistant. No config changes. guild.yml's #digest topic
+  changed; `--provision --apply` updates it (optional, cosmetic).
+
 ## 2026-10-14 — A shorter digest: calendar as a list, brief as bullets
 
 **Goal:** The first real digest with the brief read as a wall of text: today's

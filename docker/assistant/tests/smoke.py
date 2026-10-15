@@ -1674,6 +1674,31 @@ def _():
     assert len(asyncio.run(Assistant._thread_turns(stub, bare))) == 2
 
 
+@check("digest: a day's thread under #digest is an #ask conversation; the channel is not")
+def _():
+    from types import SimpleNamespace as NS
+    from app.bot import Assistant, day_title
+    assert day_title(dt.datetime(2026, 10, 15, 7, 30)) == "Thu 15 Oct"
+    cfg = NS(allowed_user_ids={5}, chat_channel_id=None, ask_enabled=True,
+             ask_channel_id=20, digest_channel_id=10)
+    stub = NS(cfg=cfg, user=NS(id=1))
+
+    def route(channel, author=5):
+        m = NS(author=NS(id=author, bot=False), content="what does that mean?", channel=channel)
+        return Assistant._route(stub, m)
+    assert route(NS(id=31, parent_id=10)) == "ask", "a reply in the day's thread"
+    assert route(NS(id=10)) is None, "#digest itself stays bot-only"
+    assert route(NS(id=31, parent_id=10), author=6) is None, "only allowlisted people"
+    cfg.ask_enabled = False
+    assert route(NS(id=31, parent_id=10)) is None, "nothing answers without #ask"
+
+    # The digest card is an embed: its text is the thread's first turn.
+    card = NS(author=NS(id=1, bot=True), content="", components=[],
+              embeds=[NS(title="Homelab digest", description="**Calendar**\n- 06:30 Work")])
+    turn = Assistant._to_turn(stub, card)
+    assert turn.role == "assistant" and "- 06:30 Work" in turn.content, turn
+
+
 @check("compose: every setting config.py reads is passed into the container")
 def _():
     # The compose file lists variables one by one rather than loading .env
