@@ -24,6 +24,8 @@ import datetime as dt
 import re
 from dataclasses import dataclass
 
+from .text import clock
+
 MAX_NOTE = 200
 THEN = ("remind", "check")
 # Fired this long after it was due, a follow-up says so: the bot was down.
@@ -96,7 +98,8 @@ def parse(content: str) -> FollowUp | None:
 
 
 def show_when(due: int, tz: dt.tzinfo) -> str:
-    return dt.datetime.fromtimestamp(due, tz=tz).strftime("%a %d %b %H:%M %Z")
+    when = dt.datetime.fromtimestamp(due, tz=tz)
+    return f"{when.strftime('%a %d %b')} {clock(when)}"
 
 
 def prompt_text(args: dict, tz: dt.tzinfo) -> str:

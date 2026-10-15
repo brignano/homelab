@@ -150,12 +150,12 @@ readings:
 ```
 ### Today
 **Calendar**
-- 09:00 Standup
-- 13:00 Focus block
-- 15:00 Dentist
-- 15:30 1:1 with Sam
+- 9am Standup
+- 1pm Focus block
+- 3pm Dentist
+- 3:30pm 1:1 with Sam
 **All day** Mom's birthday
-**Overlaps** 15:00 Dentist ↔ 15:30 1:1 with Sam
+**Overlaps** 3pm Dentist ↔ 3:30pm 1:1 with Sam
 **Mail (24h)** 3 new — Alice Chen: Re: flights for the 24th · Billing: Your invoice is ready
 ```
 

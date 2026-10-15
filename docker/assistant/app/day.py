@@ -33,7 +33,7 @@ from dataclasses import dataclass, field, replace
 from . import stamp
 from .google import Event, Google, Mail, mail_link
 from .home import Home, Reading, for_how_long
-from .text import span
+from .text import clock, span
 
 log = logging.getLogger(__name__)
 
@@ -139,7 +139,20 @@ class Day:
 
     @property
     def all_day(self) -> list[Event]:
-        return [e for e in self.merged if e.all_day]
+        """All-day events that cover today's date where you are.
+
+        A calendar asked for "now until midnight" can still return tomorrow's
+        all-day event: Home Assistant (and some CalDAV servers) place an
+        all-day event in their own time zone, so at 9pm Eastern, Thursday's
+        "PTO" already overlaps the window when the server thinks in UTC. The
+        date is the truth for an all-day event, so it is checked here. The end
+        date is exclusive, as Google and HA both send it."""
+        today = self.now.date()
+
+        def day(d) -> dt.date:
+            return d.date() if isinstance(d, dt.datetime) else d
+        return [e for e in self.merged if e.all_day
+                and day(e.start) <= today < max(day(e.end), day(e.start) + dt.timedelta(days=1))]
 
     @property
     def conflicts(self) -> list[tuple[Event, Event]]:
@@ -166,7 +179,7 @@ def window(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
 # --- Rendering ------------------------------------------------------------------
 
 def _hhmm(when: dt.datetime | dt.date, tz) -> str:
-    return when.astimezone(tz).strftime("%H:%M") if isinstance(when, dt.datetime) else ""
+    return clock(when.astimezone(tz)) if isinstance(when, dt.datetime) else ""
 
 
 def _event(e: Event, tz) -> str:
