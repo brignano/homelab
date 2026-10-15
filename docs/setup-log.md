@@ -27,6 +27,21 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-14 — A shorter digest: calendar as a list, brief as bullets
+
+**Goal:** The first real digest with the brief read as a wall of text: today's
+events ran together on one line, and "Needs you" spent three paragraphs saying
+nothing needed you.
+
+**Steps:**
+1. `day.render_lines`: **Calendar** is a label, then one `- HH:MM title` per
+   timed event (`+N more` past six). All day and Overlaps stay one line each.
+2. `BRIEF_SYSTEM`: up to five one-line bullets, most urgent first, and never a
+   line about what does not need you; "Nothing needs you today." when empty.
+
+**Notes / next steps:**
+- Deploy: rebuild concierge and assistant. No config changes.
+
 ## 2026-10-14 — Follow-ups and an evening review for #ask
 
 **Goal:** a more proactive, reflective assistant ("like Muse"): come back to
