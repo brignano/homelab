@@ -446,7 +446,10 @@ digest or to act on it ("draft a reply to that", "move the haircut"): a
 message in a thread under `#digest` is answered exactly like one in `#ask`,
 with the digest itself as the first turn, so "what does that mean?" works.
 The evening review posts in the same thread, so a day reads top to bottom in
-one place. `#digest` itself stays bot-only; only its threads are answered.
+one place. Whichever runs first that day opens the thread and the rest join
+it: a second scheduled digest goes inside it, the review opens it if the
+digest hasn't, and `/digest` run in `#digest` posts into it too. `#digest`
+itself stays bot-only; only its threads are answered.
 
 ### The evening review
 
