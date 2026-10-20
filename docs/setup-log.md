@@ -27,6 +27,24 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-20 — Every post of a day in its one thread
+
+**Goal:** Anthony saw only the night post in a thread; the rest of the day's
+digests were loose in #digest. He wants one thread to review per day.
+
+**Steps:**
+1. `scheduled_digest` looks for today's thread first (`_day_thread`) and posts
+   inside it when it exists; only the day's first post opens one.
+2. The evening review, finding no thread, opens the day's thread under the
+   day's own name (it used to name it "Evening review · …", which nothing
+   else would find).
+3. `/digest` run in #digest posts into today's thread when there is one.
+
+**Notes / next steps:**
+- Check `DIGEST_AT=07:30` in docker/assistant/.env: the Oct 14 test moved it
+  to the evening, which alone explains a digest arriving at night.
+- Deploy: rebuild assistant.
+
 ## 2026-10-15 — Day thread in your sidebar, 12-hour times, all-day by date
 
 **Goal:** The first real day thread (a test run at 9:36pm) had three rough

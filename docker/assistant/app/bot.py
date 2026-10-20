@@ -687,19 +687,17 @@ class Assistant(discord.Client):
         # The brief quotes mail strangers wrote: no pings, no previews. A
         # link inside an embed never unfurls, so the card needs no suppression
         # (and suppress_embeds would hide the card itself).
-        card = digest_card(message, self.cfg.grafana_url)
-        if card is not None:
-            posted = await channel.send(embed=to_embed(card), allowed_mentions=discord.AllowedMentions.none())
-        else:
-            parts = [await channel.send(part, allowed_mentions=discord.AllowedMentions.none(),
-                                        suppress_embeds=True) for part in chunk(message)]
-            posted = parts[0]
-        # The day's thread: reply under the digest to ask about it or act on
-        # it, and the evening review lands here too (_review). Only with #ask
+        # One thread a day holds everything that day posts: reply in it to ask
+        # about the digest or act on it, and the evening review lands there too
+        # (_review). If today's thread already exists (a second digest, or the
+        # review ran first) the digest goes inside it; otherwise the digest is
+        # the day's one message in #digest and opens the thread. Only with #ask
         # on: without the concierge nothing would answer in it.
-        if self.cfg.ask_enabled:
-            await self._open_thread_for_you(posted, day_title(dt.datetime.now(tz=self.cfg.tz)),
-                                            DAY_THREAD_HINT)
+        today = dt.datetime.now(tz=self.cfg.tz)
+        thread = await self._day_thread(today) if self.cfg.ask_enabled else None
+        posted = await self._send_digest(thread or channel, message)
+        if thread is None and self.cfg.ask_enabled and posted is not None:
+            await self._open_thread_for_you(posted, day_title(today), DAY_THREAD_HINT)
 
         # Only the SCHEDULED run records this, and only when it worked.
         # `/digest` at three in the afternoon would refresh the timestamp and
@@ -710,6 +708,17 @@ class Assistant(discord.Client):
             write_stamp(self.cfg.digest_stamp_path, dt.datetime.now(tz=dt.timezone.utc).timestamp())
         if complete:
             self._shown(now)
+
+    async def _send_digest(self, out, message: str) -> discord.Message | None:
+        """The digest as a card (or plain text if it can't be one), in `out`.
+        The first message sent, or None if none could be."""
+        quiet = discord.AllowedMentions.none()
+        card = digest_card(message, self.cfg.grafana_url)
+        if card is not None:
+            return await out.send(embed=to_embed(card), allowed_mentions=quiet)
+        parts = [await out.send(part, allowed_mentions=quiet, suppress_embeds=True)
+                 for part in chunk(message)]
+        return parts[0] if parts else None
 
     async def _brief(self) -> Brief:
         """The concierge's read-only morning brief, as the digest's last section."""
@@ -861,15 +870,15 @@ class Assistant(discord.Client):
         if out is not None:
             await out.send(f"**{REVIEW_PREFIX}**", allowed_mentions=quiet)
         else:
-            # No digest thread today (the digest failed, or ran before this
-            # existed): a thread of its own in #digest, still one place a day.
+            # No thread yet today (the digest failed, or is scheduled later):
+            # the review opens the day's thread itself, under the same name,
+            # so a digest later today joins it rather than starting another.
             channel = self.get_channel(self.cfg.digest_channel_id)
             if channel is None:
                 log.error("digest channel %s not found", self.cfg.digest_channel_id)
                 return False
-            title = f"{REVIEW_PREFIX} · {day_title(now)}"
-            head = await channel.send(f"**{title}**", allowed_mentions=quiet)
-            out = await self._open_thread_for_you(head, title) or channel
+            head = await channel.send(f"**{REVIEW_PREFIX} · {day_title(now)}**", allowed_mentions=quiet)
+            out = await self._open_thread_for_you(head, day_title(now), DAY_THREAD_HINT) or channel
         await self._post_answer(out, reply)
         if upcoming_lines:
             text = "**Coming up**\n" + "\n".join(f"- {defang(ln)}" for ln in upcoming_lines)
@@ -1311,6 +1320,17 @@ def register_commands(client: Assistant) -> None:
             log.exception("on-demand digest failed")
             await reply(interaction, f"Digest failed: `{exc}`")
             return
+        # Run from #digest itself: into today's thread, so the day stays in one
+        # place. Run anywhere else (a thread, #ask): answered right there.
+        if cfg.ask_enabled and interaction.channel_id == cfg.digest_channel_id:
+            thread = await client._day_thread(dt.datetime.now(tz=cfg.tz))
+            if thread is not None:
+                try:
+                    await client._send_digest(thread, message)
+                    await interaction.followup.send(f"Posted in today's thread: {thread.mention}")
+                    return
+                except discord.HTTPException as exc:
+                    log.warning("digest into the day's thread failed (%s); answering here", exc)
         card = digest_card(message, client.cfg.grafana_url)
         if card is None:
             await reply(interaction, message)

@@ -1722,6 +1722,34 @@ def _():
         == ["12am", "6:30am", "12pm", "10:05pm"]
 
 
+@check("digest: today's thread is found by name under #digest, and a digest can go inside it")
+def _():
+    from types import SimpleNamespace as NS
+    from app.bot import Assistant, day_title
+    now = dt.datetime(2026, 10, 19, 21, 0)
+    threads = [NS(parent_id=20, name=day_title(now)), NS(parent_id=10, name="Sun 18 Oct"),
+               NS(parent_id=10, name=day_title(now), id=7)]
+
+    class Guild:
+        async def active_threads(self):
+            return threads
+    stub = NS(cfg=NS(guild_id=1, digest_channel_id=10, grafana_url=""),
+              get_guild=lambda gid: Guild())
+    found = asyncio.run(Assistant._day_thread(stub, now))
+    assert found is threads[2], "only today's, and only under #digest"
+    threads.pop()
+    assert asyncio.run(Assistant._day_thread(stub, now)) is None
+
+    sent = []
+
+    class Out:
+        async def send(self, *a, **kw):
+            sent.append((a, kw))
+            return len(sent)
+    first = asyncio.run(Assistant._send_digest(stub, Out(), "plain text, not a card"))
+    assert first == 1 and sent[0][1]["allowed_mentions"] is not None
+
+
 @check("compose: every setting config.py reads is passed into the container")
 def _():
     # The compose file lists variables one by one rather than loading .env
