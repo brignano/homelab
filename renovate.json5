@@ -115,6 +115,15 @@ or its kill switch behaves, so each is a PR to read, one per image.",
       groupName: null,
     },
     {
+      description: "qBittorrent: linuxserver still publishes its 2021-era tags \
+(14.3.9.99...-ubuntu20.04.1), which Renovate parses as version 20.04.1 and offers \
+as a 'major' bump from 5.x -- really a four-year downgrade (#150). Cap below 14 \
+so only real qBittorrent releases are proposed.",
+      matchFileNames: ["docker/downloads/**"],
+      matchPackageNames: ["linuxserver/qbittorrent"],
+      allowedVersions: "<14",
+    },
+    {
       description: "Matterbridge (docker/matterbridge/): the base image, pinned \
 by tag and digest, and the matterbridge-hass plugin in the Dockerfile's ARG. One \
 group, because each plugin release names the Matterbridge it needs -- bumped \
