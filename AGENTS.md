@@ -259,6 +259,8 @@ when the task matches.
 | [`alerting`](.claude/skills/alerting/SKILL.md) | Adding or changing an alert, probe, dashboard, textfile metric or scheduled job |
 | [`dashboard-visuals`](.claude/skills/dashboard-visuals/SKILL.md) | Touching `docker/dashboard/`, an icon, a colour, or any visual choice |
 | [`local-llm`](.claude/skills/local-llm/SKILL.md) | Touching `docker/ai/`, a Modelfile, `docker/assistant/`, or anything that calls Ollama |
+| [`home-assistant`](.claude/skills/home-assistant/SKILL.md) | Touching `docker/homeassistant/` or `docker/matterbridge/`, adding a smart-home device, automation or dashboard card, or any HA, Alexa or Echo question |
+| [`media-stack`](.claude/skills/media-stack/SKILL.md) | Touching `docker/downloads/`, `docker/jellyfin/` or `docker/epg/`, or any download, queue, playback, casting or skip-credits question |
 
 Subagents live in `.claude/agents/`. They run in their own context and hand back
 a report:
