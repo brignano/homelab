@@ -34,6 +34,7 @@ from .google import Google
 from .home import Home
 from .forecast import Forecast
 from .hacalendar import HaCalendars
+from .github import GitHub
 from .homelab import Homelab
 from .media import Media, Radarr, Sonarr
 from .scenes import Scenes
@@ -173,6 +174,7 @@ class Concierge:
         self.forecast: Forecast | None = None
         self.ha_calendars: HaCalendars | None = None
         self.homelab: Homelab | None = None
+        self.github: GitHub | None = None
         self.watch: Watch | None = None
         self.pending = actions.Pending()
 
@@ -194,16 +196,19 @@ class Concierge:
                                             self.cfg.ha_calendars)
         if self.cfg.prometheus_url:
             self.homelab = Homelab(self._session, self.cfg.prometheus_url)
+        if self.cfg.github_enabled:
+            self.github = GitHub(self._session, self.cfg.github_token, self.cfg.github_repos)
         if self.cfg.watch_enabled:
             # Built once, so TMDB and Jellyfin replies stay cached between questions.
             self.watch = watch_from(self.cfg, self._session)
         log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s "
-                 "forecast=%s ha_calendars=%d homelab=%s tmdb=%s jellyfin=%s",
+                 "forecast=%s ha_calendars=%d homelab=%s github=%d tmdb=%s jellyfin=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
                  len(self.cfg.ha_scenes) if self.scenes else 0,
                  bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr),
                  self.forecast is not None, len(self.cfg.ha_calendars) if self.ha_calendars else 0,
-                 self.homelab is not None, bool(self.watch and self.watch.tmdb),
+                 self.homelab is not None, len(self.cfg.github_repos) if self.github else 0,
+                 bool(self.watch and self.watch.tmdb),
                  bool(self.watch and self.watch.jellyfin))
 
     async def stop(self, app: web.Application) -> None:
@@ -287,7 +292,7 @@ class Concierge:
                 return await agent.run(self.cfg, self.google, self.home,
                                        media=self.media, forecast=self.forecast,
                                        ha_calendars=self.ha_calendars,
-                                       homelab=self.homelab, watch=self.watch, **kwargs)
+                                       homelab=self.homelab, github=self.github, watch=self.watch, **kwargs)
 
         self._in_flight += 1
         try:

@@ -27,6 +27,48 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-25 — Otto reads GitHub; brignano.io gets an uptime probe
+
+**Goal:** Anthony wanted Otto to answer "anything broken on brignano.io?" the
+way it answers "how's the server doing?", and the site watched between the
+weekly GitHub check run from the brignano.io project.
+
+**Steps:**
+1. `docker/concierge/app/github.py` and a read-tier `github_status` tool:
+   open PRs, workflows whose latest default-branch run failed, and open
+   Dependabot alerts for each repository in `GITHUB_REPOS`. GET only, fixed
+   paths; the model can name one configured repository and nothing else.
+   `tests/smoke.py` pins all of it.
+2. `GITHUB_TOKEN` / `GITHUB_REPOS` in the concierge's compose and
+   `.env.example`. Blank token = no tool, like every other family.
+3. A `blackbox-public` Prometheus job probing `https://brignano.io/` with a
+   new `http_2xx_public` module (real TLS, 10s), and `hl-site-down` in
+   `rules.yml`, which stands down while the upstream DNS probe is failing.
+
+**Issues encountered:**
+- The digest's Services line counts Prometheus `up`, which for a blackbox
+  target says the exporter answered, not that the probe passed. So a down
+  brignano.io pages #alerts through `hl-site-down` but does not turn the
+  digest red. Left as it is: changing what the Services line counts changes
+  it for every probe, and that is its own decision.
+
+**Resolution:**
+- A fine-grained token, not a GitHub App: one person, read-only, and an App
+  would put a private key on the box and a JWT exchange in the code for
+  short-lived tokens that buy little here. 1-year expiry; a 401 comes back as
+  one sentence saying the token lapsed, never as "nothing open".
+
+**Notes / next steps:**
+- On CT 100: make the token (Metadata, Pull requests, Actions, Dependabot
+  alerts, all Read-only, only the listed repositories), set `GITHUB_TOKEN`
+  and `GITHUB_REPOS` in `docker/concierge/.env`, recreate the concierge, run
+  `--selftest`. `monitoring` is on HL_NO_AUTOHEAL, so the probe and the
+  rule need `/deploy monitoring` (Prometheus reload, blackbox and Grafana
+  restart) rather than waiting for the nightly sync.
+- Calendar reminder a week before the token expires.
+
+---
+
 ## 2026-10-20 — Every post of a day in its one thread
 
 **Goal:** Anthony saw only the night post in a thread; the rest of the day's

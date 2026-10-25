@@ -31,7 +31,7 @@ flowchart LR
   containers there can reach its port; the bearer token keeps them out.
 - **Read tools run freely:** `calendar_events`, `mail_search`, `mail_read`,
   `home_overview`, `weather_forecast`, `home_calendar_events`,
-  `homelab_status`, `media_search`, `media_downloads`, `movie_night`.
+  `homelab_status`, `github_status`, `media_search`, `media_downloads`, `movie_night`.
 - **Every write is a proposal.** `remember`, `follow_up`, `create_event`, `move_event`,
   `draft_email`, `run_scene`, `add_movie` and `add_show` check their arguments and record a proposal;
   none of them changes anything during the run. The bot renders the stored
@@ -230,8 +230,22 @@ else is affected.
   passes no PromQL. It reaches Prometheus through the port it publishes
   (`host.docker.internal:9090`), so the concierge joins no monitoring network.
   Set `PROMETHEUS_URL=` blank to turn it off.
+- **`github_status`** (off until `GITHUB_TOKEN` is set): *"anything broken on
+  brignano.io?"*. For each repository in `GITHUB_REPOS`: open PRs (author,
+  age, draft, bot or not), workflows whose latest run on the default branch
+  failed, and open Dependabot alerts by severity. GET only, fixed paths on
+  `api.github.com`; the model can name one of the configured repositories and
+  nothing else. The token is a **fine-grained** personal access token
+  (github.com → Settings → Developer settings → Fine-grained tokens): only
+  those repositories, and Metadata, Pull requests, Actions and Dependabot
+  alerts, all **Read-only**, with a 1-year expiry. Not a GitHub App: one
+  person, read-only, so short-lived installation tokens buy little for a
+  private key on the box and a JWT exchange to maintain. An expired token is
+  a 401, and the tool says so in one sentence instead of reporting "nothing
+  open". A permission it lacks (alerts turned off, a repository left out of
+  the token) shows in `could_not_read`, never as zero.
 
-`--selftest` checks both (`Forecast ok`, `Prometheus ok`).
+`--selftest` checks all three (`Forecast ok`, `Prometheus ok`, `GitHub ok`).
 
 ### 8. Movie night (optional, you)
 
@@ -327,6 +341,8 @@ log in the **assistant** container (`{container="assistant"} |= "proposal"`).
 | Forecast fails | "HTTP 4xx … is weather.x the right entity?": `HA_WEATHER_ENTITY` names an entity that does not exist. Check *Settings → Entities* |
 | Home calendar fails | "HTTP 4xx … is calendar.x the right entity?": an ID in `HA_CALENDARS` that HA does not know |
 | Prometheus unreachable | `homelab_status` reports "could not reach Prometheus"; nothing else is affected. One unreadable query shows in `could_not_read` |
+| GitHub token expired or revoked | `github_status` says "GitHub refused the token (401)" and how to make a new one; nothing else is affected |
+| GitHub token missing a permission or repository | that repository's `could_not_read` names it (e.g. `alerts (HTTP 403)`); `--selftest` fails on it |
 | TMDB or Jellyfin down, key wrong | `movie_night` still answers from the other one and says which it couldn't read |
 | A service in `STREAMING_SERVICES` not matched | `--selftest` names it; use the name JustWatch shows |
 | Radarr/Sonarr down or key wrong | the media tools report "could not reach it" or "API key rejected (401)"; nothing else is affected |

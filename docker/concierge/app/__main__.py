@@ -150,6 +150,21 @@ async def _selftest_async(cfg: Config) -> int:
                 failed = True
         else:
             print("Prometheus       off (no PROMETHEUS_URL) — homelab_status not registered")
+        if cfg.github_enabled:
+            from .github import GitHub
+            try:
+                report = await GitHub(session, cfg.github_token, cfg.github_repos).status()
+                unread = [f"{r['repo']}: {', '.join(r['could_not_read'])}"
+                          for r in report["repos"] if r.get("could_not_read")]
+                print(f"GitHub           ok ({len(report['repos'])} repositories"
+                      + (f"; could not read {'; '.join(unread)}" if unread else "") + ")")
+                if unread:
+                    failed = True
+            except Exception as exc:  # noqa: BLE001
+                print(f"GitHub           FAILED: {exc}")
+                failed = True
+        else:
+            print("GitHub           off (no GITHUB_TOKEN) — github_status not registered")
     return 1 if failed else 0
 
 
@@ -169,10 +184,12 @@ async def _ask_async(cfg: Config, question: str) -> int:
         forecast = Forecast(session, cfg.ha_url, cfg.ha_token, cfg.ha_weather_entity) \
             if cfg.forecast_enabled else None
         homelab = Homelab(session, cfg.prometheus_url) if cfg.prometheus_url else None
+        from .github import GitHub
+        github = GitHub(session, cfg.github_token, cfg.github_repos) if cfg.github_enabled else None
         from .server import watch_from
         watch = watch_from(cfg, session) if cfg.watch_enabled else None
         out = await agent.run(cfg, google, home, prompt=question, history=[], memories=[],
-                              media=media, forecast=forecast, homelab=homelab, watch=watch)
+                              media=media, forecast=forecast, homelab=homelab, github=github, watch=watch)
     print(out.answer)
     for p in out.proposals:
         print(f"[proposal] {p['tool']}({p['args']})")

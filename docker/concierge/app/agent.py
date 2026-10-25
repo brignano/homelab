@@ -43,6 +43,7 @@ from .google import Google
 from .home import Home
 from .forecast import Forecast
 from .hacalendar import HaCalendars
+from .github import GitHub
 from .homelab import Homelab
 from .media import Media
 from .watch import Watch
@@ -54,7 +55,8 @@ SYSTEM = """\
 You are a personal assistant for one person, reached through their private \
 Discord server. You can look things up with the tools you have: their calendar, \
 their email, the state of their home and its weather forecast, the health of \
-their home server, and their movie and TV library.
+their home server, their GitHub repositories (open pull requests, failing \
+workflows, Dependabot alerts), and their movie and TV library.
 
 You can also PROPOSE a few changes, with whichever of these tools you have: \
 create or move a calendar event, save an email draft, run a home scene, add a \
@@ -332,7 +334,7 @@ def options_for(cfg: Config, task_id: str, server, system: str,
 async def run(cfg: Config, google: Google | None, home: Home | None, *,
               prompt: str, history: list[dict], memories: list[str],
               media: Media | None = None, forecast: Forecast | None = None,
-              homelab: Homelab | None = None, brief: bool = False,
+              homelab: Homelab | None = None, github: GitHub | None = None, brief: bool = False,
               ha_calendars: HaCalendars | None = None, watch: Watch | None = None,
               review: dict | None = None) -> Outcome:
     """`brief=True` is the scheduled morning brief: a fixed request, the brief's
@@ -347,13 +349,13 @@ async def run(cfg: Config, google: Google | None, home: Home | None, *,
         # Like the brief: the request is built here from the material, so no
         # caller text becomes the task, and the run sees nothing else.
         prompt, history = review_prompt(now, review), []
-        google = home = media = forecast = homelab = ha_calendars = watch = None
+        google = home = media = forecast = homelab = github = ha_calendars = watch = None
 
     ctx = tools.TaskContext(
         task_id=task_id, tz=cfg.tz, google=google, calendar_ids=cfg.google_calendar_ids,
         home=home, max_proposals=cfg.max_proposals,
         scenes=cfg.ha_scenes if cfg.scenes_enabled else (),
-        media=media, forecast=forecast, homelab=homelab, read_only=brief,
+        media=media, forecast=forecast, homelab=homelab, github=github, read_only=brief,
         ha_calendars=ha_calendars, watch=watch,
         only=REVIEW_TOOLS if review is not None else None,
     )
