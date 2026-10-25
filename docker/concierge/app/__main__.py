@@ -156,7 +156,8 @@ async def _selftest_async(cfg: Config) -> int:
                 report = await GitHub(session, cfg.github_token, cfg.github_repos).status()
                 unread = [f"{r['repo']}: {', '.join(r['could_not_read'])}"
                           for r in report["repos"] if r.get("could_not_read")]
-                print(f"GitHub           ok ({len(report['repos'])} repositories"
+                count = len(report["repos"]) + len(report.get("quiet", []))
+                print(f"GitHub           ok ({count} repositories"
                       + (f"; could not read {'; '.join(unread)}" if unread else "") + ")")
                 if unread:
                     failed = True

@@ -202,12 +202,12 @@ class Concierge:
             # Built once, so TMDB and Jellyfin replies stay cached between questions.
             self.watch = watch_from(self.cfg, self._session)
         log.info("concierge ready: model=%s google=%s home=%s scenes=%d radarr=%s sonarr=%s "
-                 "forecast=%s ha_calendars=%d homelab=%s github=%d tmdb=%s jellyfin=%s",
+                 "forecast=%s ha_calendars=%d homelab=%s github=%s tmdb=%s jellyfin=%s",
                  self.cfg.model, self.google is not None, self.home is not None,
                  len(self.cfg.ha_scenes) if self.scenes else 0,
                  bool(self.media and self.media.radarr), bool(self.media and self.media.sonarr),
                  self.forecast is not None, len(self.cfg.ha_calendars) if self.ha_calendars else 0,
-                 self.homelab is not None, len(self.cfg.github_repos) if self.github else 0,
+                 self.homelab is not None, ",".join(self.cfg.github_repos) if self.github else "off",
                  bool(self.watch and self.watch.tmdb),
                  bool(self.watch and self.watch.jellyfin))
 

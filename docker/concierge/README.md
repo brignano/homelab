@@ -231,19 +231,24 @@ else is affected.
   (`host.docker.internal:9090`), so the concierge joins no monitoring network.
   Set `PROMETHEUS_URL=` blank to turn it off.
 - **`github_status`** (off until `GITHUB_TOKEN` is set): *"anything broken on
-  brignano.io?"*. For each repository in `GITHUB_REPOS`: open PRs (author,
+  brignano.io?"*. For each repository in `GITHUB_REPOS` (`*` = every
+  repository the token can see, minus forks and archived ones, re-listed
+  hourly; repositories with nothing open collapse into one `quiet` list):
+  open PRs (author,
   age, draft, bot or not), workflows whose latest run on the default branch
   failed, and open Dependabot alerts by severity. GET only, fixed paths on
   `api.github.com`; the model can name one of the configured repositories and
   nothing else. The token is a **fine-grained** personal access token
-  (github.com → Settings → Developer settings → Fine-grained tokens): only
-  those repositories, and Metadata, Pull requests, Actions and Dependabot
+  (github.com → Settings → Developer settings → Fine-grained tokens): All
+  repositories with `GITHUB_REPOS=*`, or only the listed ones, and Metadata, Pull requests, Actions and Dependabot
   alerts, all **Read-only**, with a 1-year expiry. Not a GitHub App: one
   person, read-only, so short-lived installation tokens buy little for a
   private key on the box and a JWT exchange to maintain. An expired token is
   a 401, and the tool says so in one sentence instead of reporting "nothing
   open". A permission it lacks (alerts turned off, a repository left out of
-  the token) shows in `could_not_read`, never as zero.
+  the token) shows in `could_not_read`, never as zero. The morning brief
+  calls it too and gives a bullet only for a red default-branch workflow or a
+  critical/high Dependabot alert, or for an expired token.
 
 `--selftest` checks all three (`Forecast ok`, `Prometheus ok`, `GitHub ok`).
 

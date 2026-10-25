@@ -75,8 +75,9 @@ services:
       PROMETHEUS_URL: ${PROMETHEUS_URL-http://host.docker.internal:9090}
 
       # Optional: github_status reads open PRs, failing workflows and Dependabot
-      # alerts on GITHUB_REPOS, GET only. A fine-grained token, read-only on
-      # those repositories. Blank token = off. See app/github.py.
+      # alerts on GITHUB_REPOS (owner/name list, or * for every repository the
+      # token can see), GET only. A fine-grained token, read-only. Blank token
+      # = off. See app/github.py.
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_REPOS: ${GITHUB_REPOS:-}
 

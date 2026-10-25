@@ -72,10 +72,16 @@ def _calendars() -> tuple[str, ...]:
 
 
 def _github_repos() -> tuple[str, ...]:
-    """owner/name, comma-separated. With a token set and no repositories there
-    is nothing to read, which is a mistake rather than "off"."""
-    from .github import REPO_RE
+    """owner/name, comma-separated, or * for every repository the token can
+    see. With a token set and no repositories there is nothing to read, which
+    is a mistake rather than "off"."""
+    from .github import ALL, REPO_RE
     repos = _list("GITHUB_REPOS", "")
+    if ALL in repos:
+        if repos != (ALL,):
+            raise SystemExit("config error: GITHUB_REPOS is either * (every repository the token "
+                             "can see) or a list of owner/name, not both")
+        return repos
     bad = [r for r in repos if not REPO_RE.match(r)]
     if bad:
         raise SystemExit(f"config error: GITHUB_REPOS must be owner/name repositories, not {', '.join(bad)}")

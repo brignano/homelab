@@ -836,6 +836,47 @@ def _():
     assert part["could_not_read"] == ["runs", "alerts (HTTP 403)"], part
     assert "401" in github.EXPIRED and "GITHUB_TOKEN" in github.EXPIRED
 
+    # Nothing to report collapses to a name in `quiet`; anything else stays.
+    assert github.quiet({"repo": "a/b", "open_prs": 0, "workflows_checked": 3, "dependabot_alerts": {}})
+    assert not github.quiet({"repo": "a/b", "open_prs": 1})
+    assert not github.quiet({"repo": "a/b", "could_not_read": ["alerts (HTTP 403)"]})
+
+
+@check("github_status: GITHUB_REPOS=* reads what the token sees, minus forks and archived")
+def _():
+    found = github.discovered([
+        {"full_name": "brignano/homelab"}, {"full_name": "brignano/old", "archived": True},
+        {"full_name": "brignano/fork", "fork": True}, {"full_name": "../etc"}, "junk",
+        {"full_name": "brignano/brignano.io"},
+    ])
+    assert found == ("brignano/brignano.io", "brignano/homelab"), found
+    try:
+        github.discovered({"message": "Bad credentials"})
+        raise AssertionError("a non-list accepted as the repository list")
+    except github.GitHubError:
+        pass
+    g = github.GitHub(None, "t", ("*",))
+    assert g.all
+    try:
+        github.GitHub(None, "t", ("*", "a/b"))
+        raise AssertionError("* mixed with a list accepted")
+    except ValueError:
+        pass
+    # With *, the model's repo is checked against what was discovered, at call time.
+    g._found, g._found_at = ("brignano/homelab",), float("inf")
+
+    async def probe():
+        try:
+            await g.status("someone/else")
+            raise AssertionError("an undiscovered repository was read")
+        except github.GitHubError:
+            pass
+    asyncio.run(probe())
+    ctx = _ctx(google_on=False, home_on=False)
+    ctx.github = g
+    _, names = tools.build(ctx)
+    assert "github_status" in names, names
+
 
 @check("config: GITHUB_REPOS must be owner/name; a token with no repos is an error")
 def _():
@@ -856,6 +897,14 @@ def _():
                 raise AssertionError(f"{bad!r} accepted")
             except SystemExit:
                 pass
+        os.environ["GITHUB_REPOS"] = "*"
+        assert Config.from_env().github_repos == ("*",)
+        os.environ["GITHUB_REPOS"] = "*,brignano/homelab"
+        try:
+            Config.from_env()
+            raise AssertionError("* mixed with a list accepted")
+        except SystemExit:
+            pass
         os.environ["GITHUB_REPOS"] = ""
         try:
             Config.from_env()

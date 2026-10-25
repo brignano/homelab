@@ -9,6 +9,16 @@ Only GET, only api.github.com, only the fixed paths below, and only the
 repositories in GITHUB_REPOS. The model picks at most one of those by name; it
 cannot send a path, a query or an owner of its own.
 
+GITHUB_REPOS=* means every repository the token can see, listed from
+/user/repos and refreshed hourly, so a new repository is covered without a
+config change. Archived repositories and forks are left out: neither runs CI
+or gets alerts worth a morning line. The token's own repository access is
+then the only list, which is the point of choosing "All repositories" there.
+
+Repositories with nothing to report are collapsed into one `quiet` list, so
+twenty healthy repositories cost a line, not twenty objects, in a run that
+pays per token.
+
 The token is a fine-grained personal access token, read-only, on these
 repositories: Metadata, Pull requests, Actions and Dependabot alerts, all
 "Read". Nothing here could write with a broader token either (there is no
@@ -35,6 +45,11 @@ MAX_ITEMS = 10
 # owner/name, as GitHub allows them. Checked in config.py, again here.
 REPO_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})/[A-Za-z0-9._-]{1,100}$")
 SEVERITIES = ("critical", "high", "medium", "low")
+ALL = "*"
+DISCOVER_TTL_S = 3600
+MAX_REPOS = 60
+# GitHub's secondary rate limit dislikes bursts; four requests per repository.
+CONCURRENCY = 8
 
 EXPIRED = ("GitHub refused the token (401): it has expired or been revoked. Make a new "
            "fine-grained token (read-only: Metadata, Pull requests, Actions, Dependabot "
@@ -146,14 +161,54 @@ def summarize(repo: str, results: dict[str, object], now: dt.datetime) -> dict:
     return out
 
 
+def quiet(report: dict) -> bool:
+    """Nothing in it needs anyone: no PR, no red workflow, no alert, nothing unread."""
+    return not (report.get("open_prs") or report.get("failing_workflows")
+                or report.get("dependabot_alerts") or report.get("could_not_read"))
+
+
+def discovered(payload: object) -> tuple[str, ...]:
+    """/user/repos as owner/name, without archived repositories and forks. Pure; tested."""
+    if not isinstance(payload, list):
+        raise GitHubError("GitHub's repository list was not a list")
+    out = []
+    for r in payload:
+        if not isinstance(r, dict) or r.get("archived") or r.get("fork") or r.get("disabled"):
+            continue
+        name = str(r.get("full_name") or "")
+        if REPO_RE.match(name):
+            out.append(name)
+    return tuple(sorted(out))[:MAX_REPOS]
+
+
 class GitHub:
     def __init__(self, session: aiohttp.ClientSession | None, token: str, repos: tuple[str, ...]) -> None:
-        for r in repos:
-            if not REPO_RE.match(r):
-                raise ValueError(f"not an owner/name repository: {r!r}")
+        if repos != (ALL,):
+            for r in repos:
+                if not REPO_RE.match(r):
+                    raise ValueError(f"not an owner/name repository: {r!r}")
         self._session = session
         self._token = token
         self.repos = repos
+        self.all = repos == (ALL,)
+        self._found: tuple[str, ...] = ()
+        self._found_at = 0.0
+        self._sem = asyncio.Semaphore(CONCURRENCY)
+
+    async def targets(self) -> tuple[str, ...]:
+        """The repositories this reads: the configured list, or for `*` what the
+        token can see right now (cached for an hour)."""
+        if not self.all:
+            return self.repos
+        loop = asyncio.get_running_loop()
+        if not self._found or loop.time() - self._found_at > DISCOVER_TTL_S:
+            try:
+                payload = await self._get("/user/repos", {"per_page": "100", "sort": "pushed"})
+            except Unreadable as exc:
+                raise GitHubError(f"could not list the token's repositories ({exc})")
+            self._found = discovered(payload)
+            self._found_at = loop.time()
+        return self._found
 
     async def _get(self, path: str, params: dict | None = None) -> object:
         if self._session is None:
@@ -162,8 +217,8 @@ class GitHub:
                    "Accept": "application/vnd.github+json",
                    "X-GitHub-Api-Version": "2022-11-28",
                    "User-Agent": "homelab-concierge"}
-        async with self._session.get(API + path, params=params, headers=headers,
-                                     timeout=aiohttp.ClientTimeout(total=TIMEOUT_S)) as resp:
+        async with self._sem, self._session.get(API + path, params=params, headers=headers,
+                                                timeout=aiohttp.ClientTimeout(total=TIMEOUT_S)) as resp:
             if resp.status == 401:
                 raise GitHubError(EXPIRED)
             if resp.status in (403, 404):
@@ -197,17 +252,25 @@ class GitHub:
         return out
 
     async def status(self, repo: str | None = None) -> dict:
-        """Every configured repository, or the one named. Raises GitHubError
+        """Every repository this reads, or the one named. Raises GitHubError
         for an expired token or when nothing at all could be reached."""
-        if repo is not None and repo not in self.repos:
-            raise GitHubError(f"not a repository this assistant reads; it reads: {', '.join(self.repos)}")
+        known = await self.targets()
+        if repo is not None and repo not in known:
+            raise GitHubError(f"not a repository this assistant reads; it reads: {', '.join(known)}")
+        if not known:
+            raise GitHubError("the token can see no repositories (check its repository access)")
         now = dt.datetime.now(dt.timezone.utc)
-        targets = [repo] if repo else list(self.repos)
+        targets = [repo] if repo else list(known)
         replies = await asyncio.gather(*(self._repo(r, now) for r in targets), return_exceptions=True)
         for r in replies:
             if isinstance(r, GitHubError):
                 raise r
         if all(isinstance(r, Exception) for r in replies):
             raise GitHubError(f"could not reach GitHub ({replies[0].__class__.__name__})")
-        return {"repos": [r if not isinstance(r, Exception) else {"repo": t, "could_not_read": ["all"]}
-                          for t, r in zip(targets, replies)]}
+        reports = [r if not isinstance(r, Exception) else {"repo": t, "could_not_read": ["all"]}
+                   for t, r in zip(targets, replies)]
+        out: dict = {"repos": [r for r in reports if not quiet(r)]}
+        calm = [r["repo"] for r in reports if quiet(r)]
+        if calm:
+            out["quiet"] = calm
+        return out

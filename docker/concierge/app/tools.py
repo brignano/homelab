@@ -393,18 +393,22 @@ def build(ctx: TaskContext):
 
         async def _github(args: dict) -> dict:
             repo = args.get("repo") or None
-            if repo is not None and repo not in github.repos:
-                return _err(f"repo must be one of: {', '.join(github.repos)}")
+            if repo is not None and not isinstance(repo, str):
+                return _err("repo must be an owner/name string")
+            # status() refuses anything outside what it reads, `*` included.
             return _ok(await github.status(repo))
 
         @tool("github_status",
               "What needs attention on the user's GitHub repositories: open pull requests "
               "(who opened them, how old, draft or not), workflows whose latest run on the "
               "default branch failed, and open Dependabot alerts by severity. All of the "
-              "user's configured repositories, or the one named. Read-only.",
+              "user's repositories, or the one named. Repositories with nothing open are "
+              "listed together under `quiet`. Read-only.",
               {"type": "object", "properties": {
-                  "repo": {"type": "string", "enum": list(github.repos),
-                           "description": "One repository (owner/name). Default: all of them."},
+                  "repo": ({"type": "string", "description": "One repository (owner/name). Default: all of them."}
+                           if github.all else
+                           {"type": "string", "enum": list(github.repos),
+                            "description": "One repository (owner/name). Default: all of them."}),
               }})
         async def github_status(args: dict) -> dict:
             return await run("github_status", _github, args)

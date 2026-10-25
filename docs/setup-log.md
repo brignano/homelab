@@ -41,7 +41,11 @@ weekly GitHub check run from the brignano.io project.
    `tests/smoke.py` pins all of it.
 2. `GITHUB_TOKEN` / `GITHUB_REPOS` in the concierge's compose and
    `.env.example`. Blank token = no tool, like every other family.
-3. A `blackbox-public` Prometheus job probing `https://brignano.io/` with a
+   `GITHUB_REPOS=*` reads every repository the token can see (Anthony chose
+   an All-repositories token), minus forks and archived ones.
+3. The morning brief (read-only already) calls `github_status` and bullets
+   only red default-branch workflows and critical/high Dependabot alerts.
+4. A `blackbox-public` Prometheus job probing `https://brignano.io/` with a
    new `http_2xx_public` module (real TLS, 10s), and `hl-site-down` in
    `rules.yml`, which stands down while the upstream DNS probe is failing.
 
@@ -59,9 +63,9 @@ weekly GitHub check run from the brignano.io project.
   one sentence saying the token lapsed, never as "nothing open".
 
 **Notes / next steps:**
-- On CT 100: make the token (Metadata, Pull requests, Actions, Dependabot
-  alerts, all Read-only, only the listed repositories), set `GITHUB_TOKEN`
-  and `GITHUB_REPOS` in `docker/concierge/.env`, recreate the concierge, run
+- On CT 100: make the token (All repositories; Metadata, Pull requests,
+  Actions, Dependabot alerts, all Read-only), set `GITHUB_TOKEN` and
+  `GITHUB_REPOS=*` in `docker/concierge/.env`, recreate the concierge, run
   `--selftest`. `monitoring` is on HL_NO_AUTOHEAL, so the probe and the
   rule need `/deploy monitoring` (Prometheus reload, blackbox and Grafana
   restart) rather than waiting for the nightly sync.
