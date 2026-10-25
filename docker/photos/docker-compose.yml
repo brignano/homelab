@@ -1,0 +1,62 @@
+services:
+  # iCloud Photos mirror: icloudpd downloads every photo and video from iCloud
+  # onto the 5 TB drive, nightly. See docs/design/tsd-photo-library.md and
+  # README.md.
+  #
+  # Nothing here is ever `up`. The service carries a profile, so `docker
+  # compose up -d` (bootstrap, /deploy, repo-sync) starts nothing, and the only
+  # way in is `docker compose run`, from scripts/photos-sync.sh at 01:00 or by
+  # hand. The arguments live in that script, not in a `command:` here, so the
+  # nightly run and the sign-in (`photos-sync.sh --auth`) cannot drift apart.
+  #
+  # Three things here protect the rest of the lab:
+  #
+  #   1. The download target refuses to create its own source directory
+  #      (`create_host_path: false`), as Jellyfin's mounts do. If the media
+  #      drive is missing, Docker would otherwise create /media/photos/icloud on
+  #      CT 100's rootfs, i.e. on the thin pool and inside every vzdump, and
+  #      start writing 1.5 TB into it.
+  #
+  #   2. No ports, no Caddy route, no external network. It only makes outbound
+  #      requests to Apple.
+  #
+  #   3. cpus / mem_limit. A sync is network-bound and small, so one core and
+  #      512m keep a bad night off Ollama's four cores.
+  #
+  # No container_name: `run` names its own container, and health.sh and
+  # heartbeat.sh treat every container_name as one that must be running.
+  #
+  # Version: pinned by tag AND digest. Repo-sync's auto-pull skips stacks with
+  # nothing running, which this stack always is, so Renovate (renovate.json5)
+  # is what proposes bumps. Apple changes its sign-in flow every so often and
+  # the fix arrives as an icloudpd release, so a sign-in that keeps failing is
+  # worth checking against the release notes.
+  icloudpd:
+    image: icloudpd/icloudpd:1.32.3@sha256:af2bf40cb2c1d42051793b4c3c04c825950697d7fedcd12bd8455d6952395801
+    profiles: ["job"]
+    restart: "no"
+    # tini as PID 1, so the docker stop at the budget or the deadline ends
+    # icloudpd at once instead of waiting out the grace period.
+    init: true
+    cpus: 1
+    mem_limit: 512m
+    environment:
+      TZ: ${TZ:-UTC}
+      # Informational: the --username argument comes from scripts/photos-sync.sh,
+      # which refuses to run without it. Not `:?required`, because then every
+      # `docker compose config` on a box without docker/photos/.env would fail,
+      # and repo-sync asks this stack's compose file what it runs.
+      ICLOUD_USERNAME: ${ICLOUD_USERNAME:-}
+    volumes:
+      # The session cookie. After the first sign-in it can read the whole
+      # library, so it lives here and never in the repo or .env. Small, and in
+      # the nightly vzdump, which is one more reason the backup drive is LUKS.
+      - session:/config
+      - type: bind
+        source: /media/photos/icloud
+        target: /data
+        bind:
+          create_host_path: false
+
+volumes:
+  session:

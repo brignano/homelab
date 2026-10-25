@@ -1,6 +1,8 @@
 # TSD: A local mirror of iCloud Photos, and a cleanup that keeps it under 2 TB
 
-**Status:** 📝 draft, awaiting approval. Phase 1 waits on the 5 TB drive and the ISP switch.
+**Status:** 🚧 Phase 1 built 2026-10-25 (`docker/photos/`), not yet deployed. The
+5 TB drive is in; the ISP switch is no longer a prerequisite (see *First sync*).
+Archiving off iCloud is now wanted and is an open decision (Open questions).
 **Date:** 2026-10-10
 **Owner:** Anthony
 
@@ -79,9 +81,17 @@ flowchart LR
   of its own, because iCloud is the primary copy. If the photos ever left
   iCloud, that would stop being true.
 - **No ports, no Caddy route.** It only makes outbound requests to Apple.
-- **First sync:** about 1.5 TB. Do it **after the Frontier switch**
-  (`docs/runbook-isp-switch.md`), because some Xfinity plans cap at about
-  1.2 TB a month. After that, nightly runs move only what is new.
+- **First sync:** about 1.5 TB, and some Xfinity plans cap at about 1.2 TB a
+  month. Rather than wait for the Frontier switch, `scripts/photos-sync.sh`
+  counts what the container receives and stops at `PHOTOS_MONTHLY_BUDGET_GB`
+  (default 500) per calendar month and at `PHOTOS_STOP_HOUR` (default 07:00);
+  icloudpd skips what is on disk and resumes partial files, so the backfill
+  spreads over about three months by itself. Over budget, runs still fetch the
+  last 7 days. After the switch, set the budget to 0.
+- **Filenames and metadata:** `--file-match-policy name-id7` puts the iCloud
+  asset id in every filename (no collisions, and a file can be traced back to
+  its asset), and `--xmp-sidecar` keeps favourites, titles, keywords and
+  location beside each file. Both matter most if a photo ever leaves iCloud.
 
 ### Half 2 — the cleanup (on the Mac)
 
@@ -158,16 +168,25 @@ the arithmetic then, with the real numbers.
 | Phase | Needs | What |
 |---|---|---|
 | 0 | nothing | You: open Photos → *Duplicates* and merge. Note how much it saved. |
-| 1 | 5 TB drive, ISP switch done | `docker/photos/` stack, first sync, Healthchecks check, metrics, alert. |
+| 1 | 5 TB drive ✅ | `docker/photos/` stack, first sync (budgeted), Healthchecks check, metrics, alert. 🚧 built 2026-10-25 |
 | 2 | Phase 1 | `tools/photos/` dry-run report: what each review album would hold. |
 | 3 | You approve thresholds | The script fills the review albums; you delete by hand. |
 
 ## Open questions
 
-- [ ] **Where is the rest of the "3 TB of photos"?** iCloud holds about 1.5 TB.
-      If the rest lives only on a Mac or an external drive, it has **no** second
-      copy and should move onto the 5 TB drive before anything else in this
-      document happens.
+- [ ] **Archive the weak photos off iCloud? (wanted, 2026-10-25)** Anthony wants
+      the camera roll to hold only good photos, with the rest kept on the
+      homelab, ideally ongoing. Doable: the Mac-side script already sorts
+      photos by Apple's scores; an archive album would hold only photos it has
+      confirmed are in the mirror, and deleting them stays a person's tap.
+      What blocks it is the second copy. Off iCloud, the media drive
+      (`backup=0`, no offsite yet) would be the only copy, so archiving needs
+      the archive in restic → B2 first (about $6/TB/month), or an explicit
+      decision to accept one copy. The money only works out if the library
+      drops under 200 GB (the $2.99 tier); otherwise the gain is a cleaner
+      camera roll. Supersedes the non-goal "Archiving off iCloud" once decided.
+- [x] **Where is the rest of the "3 TB of photos"?** Answered 2026-10-25:
+      everything is in iCloud, so nothing is waiting without a second copy.
 - [ ] **Is Advanced Data Protection on?** See Security.
 - [ ] **Should the mirror ever forget?** Download-only keeps every photo you
       delete in cleanup. Options: keep everything forever (simplest, safest),

@@ -78,6 +78,11 @@ def stack_model(stack, doc):
 
     services = {}
     for svc, spec in (doc.get("services") or {}).items():
+        # A service with a profile is not started by `up -d`, only by
+        # `docker compose run` (docker/photos/ runs from cron), so it has no
+        # place in a start order.
+        if spec.get("profiles"):
+            continue
         if spec.get("network_mode"):
             nets = []
         else:
@@ -100,6 +105,10 @@ def main(argv):
     # blamed on its owner even when that owner was left out of the plan.
     owner = {n: s for s, svcs in model.items()
              for v in svcs.values() for n, ext in v["nets"] if not ext}
+
+    # A stack with nothing `up` would start (every service has a profile) is
+    # not a step.
+    wanted = [s for s in wanted if model[s]]
 
     exists = set()
     pending = {s: set(model[s]) for s in wanted}

@@ -498,6 +498,15 @@ for dir in docker/*/; do
   abs=$(cd "$dir" && pwd)
   cids=$(running_ids "$abs")
   if [ -z "$cids" ]; then
+    # A stack whose every service carries a profile (docker/photos/) is a job
+    # that cron starts with `docker compose run`; `up -d` starts nothing, so
+    # nothing running is its normal state. Asked of Compose rather than listed
+    # here, and only an answer that parsed counts: a stack whose compose file
+    # cannot be read is still reported.
+    if _svcs=$(cd "$REPO" && docker compose -f "$compose" config --services 2>/dev/null) \
+       && [ -z "$_svcs" ]; then
+      continue
+    fi
     NOT_RUNNING="$NOT_RUNNING $stack"
     M_STACK_RUNNING="$M_STACK_RUNNING
 homelab_stack_running{$(metric_kv stack "$stack")} 0"

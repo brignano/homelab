@@ -944,6 +944,52 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- The iCloud Photos mirror failed ---
+      #
+      # scripts/photos-sync.sh, nightly at 01:00: icloudpd downloads what is
+      # new in iCloud Photos onto the media drive (docker/photos/). The known
+      # failure is Apple ending the session, roughly every two months; the
+      # script recognises it and says so, and the summary names the one
+      # command that fixes it. A stop at the monthly budget or the morning
+      # deadline counts as success. Warning, not critical: iCloud still holds
+      # every photo, so a missed night loses nothing.
+      #
+      # Re-run by hand once fixed: ./scripts/photos-sync.sh
+      - uid: hl-photos-sync-failed
+        title: iCloud Photos mirror failed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ if gt $values.B.Value 0.0 }}Apple ended the iCloud Photos session, so last night's photo mirror did not run. On CT 100: cd /root/homelab && ./scripts/photos-sync.sh --auth{{ else }}The iCloud Photos mirror failed. See /var/log/photos-sync.log on CT 100{{ end }}"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_photos_success
+          - refId: B
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              expr: homelab_photos_auth_needed or on() vector(0)
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- The backup drive is filling ---
       #
       # The nightly vzdump keeps a fixed number of archives (prune-backups on
