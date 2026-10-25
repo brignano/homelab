@@ -170,6 +170,48 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- A public site is down ---
+      #
+      # brignano.io is on Vercel, so this is the one probe that leaves the
+      # house, and the house's own internet is a failure it shares with every
+      # other outbound check. `unless` stands it down while the upstream DNS
+      # probe (AdGuard recursing out to the internet) is failing too: that is
+      # hl-dns-down's page, not a site outage. If that guard's series is
+      # missing altogether, `unless` drops nothing and this still fires.
+      #
+      # 5m, not 2m: a Vercel deploy or a blip on the way out of the house can
+      # fail a couple of probes, and there is nothing to do here in the first
+      # two minutes of an outage that Vercel is not already doing.
+      - uid: hl-site-down
+        title: Public site unreachable
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.service }} is not answering 2xx over HTTPS from the house ({{ $labels.instance }}), while the house's own internet works"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: |
+                probe_success{job="blackbox-public"}
+                  unless on() (probe_success{job="blackbox-dns-upstream"} == 0)
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- Caddy's route to Home Assistant is broken ---
       #
       # The direct HA probe (service="home-assistant" above) goes around Caddy,

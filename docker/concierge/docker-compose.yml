@@ -74,6 +74,13 @@ services:
       # port it publishes on the host. Blank = off. See app/homelab.py.
       PROMETHEUS_URL: ${PROMETHEUS_URL-http://host.docker.internal:9090}
 
+      # Optional: github_status reads open PRs, failing workflows and Dependabot
+      # alerts on GITHUB_REPOS (owner/name list, or * for every repository the
+      # token can see), GET only. A fine-grained token, read-only. Blank token
+      # = off. See app/github.py.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_REPOS: ${GITHUB_REPOS:-}
+
       # Optional: Radarr / Sonarr API keys (each app → Settings → General).
       # Blank = no movie or show tools. Reached by name over proxy_proxy.
       # Every add is a proposal approved in #ask with the exact title, id,

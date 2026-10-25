@@ -21,6 +21,10 @@ import traceback
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+# GITHUB_TOKEN is commonly set in a developer's shell or a CI runner, and the
+# config tests build a Config from the environment. Offline means none of it.
+for _k in ("GITHUB_TOKEN", "GITHUB_REPOS"):
+    os.environ.pop(_k, None)
 sys.path.insert(0, str(HERE.parent))
 
 _failures: list[str] = []
@@ -42,7 +46,7 @@ def check(name: str):
     return wrap
 
 
-from app import actions, agent, forecast, google, hacalendar, home, homelab, media, scenes, tiers, tools  # noqa: E402
+from app import actions, agent, forecast, github, google, hacalendar, home, homelab, media, scenes, tiers, tools  # noqa: E402
 from app import watch  # noqa: E402
 from app import config  # noqa: E402
 from app.config import Config  # noqa: E402
@@ -74,6 +78,7 @@ def _ctx(google_on: bool = True, home_on: bool = True,
                              scenes=scene_ids if home_on else (), media=media_on,
                              forecast=forecast.Forecast(None, "http://ha:8123", "t", "weather.home") if extras else None,
                              homelab=homelab.Homelab(None, "http://prom:9090") if extras else None,
+                             github=github.GitHub(None, "t", ("brignano/brignano.io",)) if extras else None,
                              ha_calendars=hacalendar.HaCalendars(None, "http://ha:8123", "t", ("calendar.icloud",))
                              if extras else None,
                              watch=watch.Watch(watch.Tmdb(None, "t", "US"), None, "", ()) if extras else None)
@@ -151,7 +156,7 @@ def _():
     assert names == ["remember", "follow_up"], names
     _, names = tools.build(_ctx(google_on=False, home_on=False, extras=True))
     assert set(names) == {"remember", "follow_up", "weather_forecast", "home_calendar_events", "homelab_status",
-                          "movie_night"}, names
+                          "github_status", "movie_night"}, names
 
 
 @check("remember records a bounded one-line proposal and nothing else")
@@ -785,6 +790,130 @@ def _():
     empty = homelab.summarize({k: vec() for k in homelab.QUERIES})
     assert {"cpu", "mem", "disk", "thinpool", "inventory"} <= set(empty["could_not_read"]), empty
     assert "required_containers_not_running" not in empty and "thinpool_pct" not in empty, empty
+
+
+@check("github_status: GET only, fixed paths, configured repos only, nothing unread reads as zero")
+def _():
+    src = inspect.getsource(github)
+    assert "self._session.get(" in src and not any(m in src for m in (".post(", ".put(", ".patch(", ".delete("))
+    assert 'API = "https://api.github.com"' in src
+    assert tiers.tier_of(tiers.PREFIX + "github_status") == "read"
+    for bad in ("brignano", "../x", "a/b/c", "a b/c", "-x/y"):
+        try:
+            github.GitHub(None, "t", (bad,))
+            raise AssertionError(f"{bad!r} accepted as a repository")
+        except ValueError:
+            pass
+    g = github.GitHub(None, "t", ("brignano/brignano.io",))
+    try:
+        asyncio.run(g.status("someone/else"))
+        raise AssertionError("an unconfigured repository was read")
+    except github.GitHubError:
+        pass
+
+    now = dt.datetime(2026, 10, 25, tzinfo=dt.timezone.utc)
+    pr = {"number": 7, "title": "chore(deps):\n bump x", "draft": False, "html_url": "u",
+          "created_at": "2026-10-20T00:00:00Z", "user": {"login": "renovate[bot]", "type": "Bot"}}
+
+    def run(name, conclusion, status="completed"):
+        return {"name": name, "status": status, "conclusion": conclusion,
+                "updated_at": "2026-10-24T00:00:00Z", "html_url": name}
+    runs = {"workflow_runs": [run("CI", None, "in_progress"), run("CI", "failure"), run("CI", "success"),
+                              run("Deploy", "success"), run("Deploy", "failure")]}
+    alert = {"html_url": "a", "dependency": {"package": {"name": "next"}},
+             "security_advisory": {"severity": "high", "summary": "SSRF"}}
+    out = github.summarize("brignano/brignano.io", {"pulls": [pr], "runs": runs, "alerts": [alert]}, now)
+    assert out["open_prs"] == 1 and out["prs"][0]["title"] == "chore(deps): bump x", out
+    assert out["prs"][0]["bot"] and out["prs"][0]["age_days"] == 5, out
+    # Latest completed run per workflow: CI is red now, Deploy recovered.
+    assert out["workflows_checked"] == 2 and [f["workflow"] for f in out["failing_workflows"]] == ["CI"], out
+    assert out["dependabot_alerts"] == {"high": 1} and out["worst_alerts"][0]["package"] == "next", out
+    assert "could_not_read" not in out, out
+    # No permission for alerts is named, never "no alerts".
+    part = github.summarize("r/r", {"pulls": [], "runs": RuntimeError("x"),
+                                    "alerts": github.Unreadable("HTTP 403")}, now)
+    assert part["open_prs"] == 0 and "dependabot_alerts" not in part and "workflows_checked" not in part, part
+    assert part["could_not_read"] == ["runs", "alerts (HTTP 403)"], part
+    assert "401" in github.EXPIRED and "GITHUB_TOKEN" in github.EXPIRED
+
+    # Nothing to report collapses to a name in `quiet`; anything else stays.
+    assert github.quiet({"repo": "a/b", "open_prs": 0, "workflows_checked": 3, "dependabot_alerts": {}})
+    assert not github.quiet({"repo": "a/b", "open_prs": 1})
+    assert not github.quiet({"repo": "a/b", "could_not_read": ["alerts (HTTP 403)"]})
+
+
+@check("github_status: GITHUB_REPOS=* reads what the token sees, minus forks and archived")
+def _():
+    found = github.discovered([
+        {"full_name": "brignano/homelab"}, {"full_name": "brignano/old", "archived": True},
+        {"full_name": "brignano/fork", "fork": True}, {"full_name": "../etc"}, "junk",
+        {"full_name": "brignano/brignano.io"},
+    ])
+    assert found == ("brignano/brignano.io", "brignano/homelab"), found
+    try:
+        github.discovered({"message": "Bad credentials"})
+        raise AssertionError("a non-list accepted as the repository list")
+    except github.GitHubError:
+        pass
+    g = github.GitHub(None, "t", ("*",))
+    assert g.all
+    try:
+        github.GitHub(None, "t", ("*", "a/b"))
+        raise AssertionError("* mixed with a list accepted")
+    except ValueError:
+        pass
+    # With *, the model's repo is checked against what was discovered, at call time.
+    g._found, g._found_at = ("brignano/homelab",), float("inf")
+
+    async def probe():
+        try:
+            await g.status("someone/else")
+            raise AssertionError("an undiscovered repository was read")
+        except github.GitHubError:
+            pass
+    asyncio.run(probe())
+    ctx = _ctx(google_on=False, home_on=False)
+    ctx.github = g
+    _, names = tools.build(ctx)
+    assert "github_status" in names, names
+
+
+@check("config: GITHUB_REPOS must be owner/name; a token with no repos is an error")
+def _():
+    keep = dict(os.environ)
+    try:
+        os.environ["CONCIERGE_TOKEN"] = "a" * 64
+        for k in ("GITHUB_TOKEN", "GITHUB_REPOS"):
+            os.environ.pop(k, None)
+        c = Config.from_env()
+        assert not c.github_enabled and c.github_repos == ()
+        os.environ.update(GITHUB_TOKEN="t", GITHUB_REPOS=" brignano/brignano.io , brignano/homelab ")
+        c = Config.from_env()
+        assert c.github_enabled and c.github_repos == ("brignano/brignano.io", "brignano/homelab"), c.github_repos
+        for bad in ("brignano", "a/b/c"):
+            os.environ["GITHUB_REPOS"] = bad
+            try:
+                Config.from_env()
+                raise AssertionError(f"{bad!r} accepted")
+            except SystemExit:
+                pass
+        os.environ["GITHUB_REPOS"] = "*"
+        assert Config.from_env().github_repos == ("*",)
+        os.environ["GITHUB_REPOS"] = "*,brignano/homelab"
+        try:
+            Config.from_env()
+            raise AssertionError("* mixed with a list accepted")
+        except SystemExit:
+            pass
+        os.environ["GITHUB_REPOS"] = ""
+        try:
+            Config.from_env()
+            raise AssertionError("token with no repos accepted")
+        except SystemExit:
+            pass
+    finally:
+        os.environ.clear()
+        os.environ.update(keep)
 
 
 @check("config: HA_WEATHER_ENTITY must be weather.*; blanks turn tools off")

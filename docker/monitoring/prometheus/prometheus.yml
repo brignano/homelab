@@ -174,6 +174,29 @@ scrape_configs:
       - target_label: __address__
         replacement: blackbox-exporter:9115
 
+  # brignano.io, the public site, which lives on Vercel and not on this box.
+  # Its own job because the module differs (real TLS, out through the house's
+  # internet, see blackbox/blackbox.yml) and because it wants its own alert
+  # rule (hl-site-down): that rule stands down while the house itself has no
+  # internet, which hl-probe-down has no reason to know about. A 7-day weekly
+  # check reads GitHub; this is what notices the site is down on a Tuesday.
+  - job_name: blackbox-public
+    metrics_path: /probe
+    params:
+      module: [http_2xx_public]
+    static_configs:
+      - targets:
+          - https://brignano.io/
+        labels:
+          service: brignano.io
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
   # DNS probing via blackbox-exporter. Separate job rather than another target
   # in `blackbox`, because the module differs per target and `params` is set per
   # job — and because these two want their own alert wording: "the house has no

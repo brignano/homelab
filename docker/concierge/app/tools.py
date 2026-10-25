@@ -31,6 +31,7 @@ from .google import Google, GoogleError
 from .forecast import Forecast, ForecastError
 from .hacalendar import CalendarError, HaCalendars
 from .home import Home, HomeError
+from .github import GitHub, GitHubError
 from .homelab import Homelab, StatusError
 from .media import MAX_QUEUE, Media, MediaError
 from .tiers import READ, SERVER
@@ -55,6 +56,7 @@ class TaskContext:
     forecast: Forecast | None = None
     ha_calendars: HaCalendars | None = None
     homelab: Homelab | None = None
+    github: GitHub | None = None
     watch: Watch | None = None
     # The scheduled morning brief: only read-tier tools are registered.
     read_only: bool = False
@@ -142,7 +144,7 @@ def build(ctx: TaskContext):
         try:
             result = await fn(args)
         except (GoogleError, HomeError, MediaError, ForecastError, CalendarError, StatusError,
-                WatchError) as exc:
+                GitHubError, WatchError) as exc:
             audit.emit("tool_result", task=ctx.task_id, tool=name, ok=False,
                        ms=int((time.monotonic() - started) * 1000), error=str(exc))
             if google_read:
@@ -385,6 +387,33 @@ def build(ctx: TaskContext):
             return await run("homelab_status", _status, args)
 
         tools.append(homelab_status)
+
+    if ctx.github is not None:
+        github = ctx.github
+
+        async def _github(args: dict) -> dict:
+            repo = args.get("repo") or None
+            if repo is not None and not isinstance(repo, str):
+                return _err("repo must be an owner/name string")
+            # status() refuses anything outside what it reads, `*` included.
+            return _ok(await github.status(repo))
+
+        @tool("github_status",
+              "What needs attention on the user's GitHub repositories: open pull requests "
+              "(who opened them, how old, draft or not), workflows whose latest run on the "
+              "default branch failed, and open Dependabot alerts by severity. All of the "
+              "user's repositories, or the one named. Repositories with nothing open are "
+              "listed together under `quiet`. Read-only.",
+              {"type": "object", "properties": {
+                  "repo": ({"type": "string", "description": "One repository (owner/name). Default: all of them."}
+                           if github.all else
+                           {"type": "string", "enum": list(github.repos),
+                            "description": "One repository (owner/name). Default: all of them."}),
+              }})
+        async def github_status(args: dict) -> dict:
+            return await run("github_status", _github, args)
+
+        tools.append(github_status)
 
     if ctx.media is not None and (ctx.media.radarr or ctx.media.sonarr):
         media = ctx.media

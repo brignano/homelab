@@ -63,6 +63,7 @@ READ = frozenset({
     "weather_forecast",
     "home_calendar_events",
     "homelab_status",
+    "github_status",
     "movie_night",
 })
 PROPOSE = frozenset({"remember", "follow_up", "create_event", "move_event", "draft_email", "run_scene",

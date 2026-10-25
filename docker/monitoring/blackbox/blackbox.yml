@@ -33,6 +33,20 @@ modules:
       fail_if_body_not_matches_regexp:
         - "Home Assistant"
 
+  # A public site, reached the way a visitor reaches it: real DNS, real TLS,
+  # out through the house's internet connection. A plain http:// answer or a
+  # redirect chain that ends somewhere without TLS fails it. The longer timeout
+  # is for the trip out of the house, not for a slow page.
+  http_2xx_public:
+    prober: http
+    timeout: 10s
+    http:
+      method: GET
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: true
+      valid_status_codes: []        # any 2xx is a pass
+      fail_if_not_ssl: true
+
   tcp_connect:
     prober: tcp
     timeout: 5s

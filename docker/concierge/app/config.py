@@ -71,6 +71,26 @@ def _calendars() -> tuple[str, ...]:
     return cals
 
 
+def _github_repos() -> tuple[str, ...]:
+    """owner/name, comma-separated, or * for every repository the token can
+    see. With a token set and no repositories there is nothing to read, which
+    is a mistake rather than "off"."""
+    from .github import ALL, REPO_RE
+    repos = _list("GITHUB_REPOS", "")
+    if ALL in repos:
+        if repos != (ALL,):
+            raise SystemExit("config error: GITHUB_REPOS is either * (every repository the token "
+                             "can see) or a list of owner/name, not both")
+        return repos
+    bad = [r for r in repos if not REPO_RE.match(r)]
+    if bad:
+        raise SystemExit(f"config error: GITHUB_REPOS must be owner/name repositories, not {', '.join(bad)}")
+    if os.environ.get("GITHUB_TOKEN", "").strip() and not repos:
+        raise SystemExit("config error: GITHUB_TOKEN is set but GITHUB_REPOS is empty — "
+                         "list the repositories to read, e.g. brignano/brignano.io")
+    return repos
+
+
 def _weather() -> str:
     entity = os.environ.get("HA_WEATHER_ENTITY", "weather.forecast_home").strip()
     if entity and (not entity.startswith("weather.") or not entity[8:].replace("_", "").isalnum()):
@@ -150,6 +170,10 @@ class Config:
     # Prometheus, through the port it publishes on the host. Blank = no
     # homelab_status tool (app/homelab.py).
     prometheus_url: str = "http://host.docker.internal:9090"
+    # github_status (app/github.py): a read-only fine-grained token and the
+    # repositories it reads. Blank token = no github_status tool.
+    github_token: str = ""
+    github_repos: tuple[str, ...] = ()
 
     # Radarr / Sonarr. Each is on when its API key is set. The profile and the
     # folders are what every approved add uses; the model does not choose them.
@@ -175,6 +199,10 @@ class Config:
     @property
     def watch_enabled(self) -> bool:
         return bool(self.tmdb_token or self.jellyfin_api_key)
+
+    @property
+    def github_enabled(self) -> bool:
+        return bool(self.github_token and self.github_repos)
 
     @property
     def media_enabled(self) -> bool:
@@ -236,6 +264,8 @@ class Config:
             ha_weather_entity=_weather(),
             ha_calendars=_calendars(),
             prometheus_url=os.environ.get("PROMETHEUS_URL", "http://host.docker.internal:9090").strip().rstrip("/"),
+            github_token=os.environ.get("GITHUB_TOKEN", "").strip(),
+            github_repos=_github_repos(),
             radarr_url=os.environ.get("RADARR_URL", "").strip().rstrip("/") or "http://radarr:7878",
             radarr_api_key=os.environ.get("RADARR_API_KEY", "").strip(),
             radarr_root=_root("RADARR_ROOT", "/data/library/movies"),
