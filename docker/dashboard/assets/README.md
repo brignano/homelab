@@ -17,7 +17,7 @@ whole install.
 
 ```sh
 ./scripts/update-design-tokens.sh            # refresh at the pinned versions
-./scripts/update-design-tokens.sh 0.2.0      # move to a version, or `latest`
+./scripts/update-design-tokens.sh 0.3.0      # move to a version, or `latest`
 ./scripts/update-design-tokens.sh --check    # what CI runs; offline
 ```
 
@@ -35,7 +35,7 @@ colour:
 
 ```css
 .theme-zinc { --color-800: 39 39 42; }          /* Homepage */
-:root       { --n-900: #111111; }               /* the design system */
+:root       { --n-900: light-dark(#111114, #f2f2f4); }   /* the design system */
 ```
 
 CSS cannot turn one into the other, so something has to translate. Do it by

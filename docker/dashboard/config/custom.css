@@ -72,6 +72,21 @@ html[class*="theme-"] {
   --color-sky-500: var(--i);
 }
 
+/* Theme the tokens from Homepage's own class, not only from custom.js.
+   Since @brignano/design 0.3.0 every token is `light-dark()`, which picks its
+   side from `color-scheme` — so a stylesheet can now pin the tokens, where
+   before only the `data-theme` attribute could. custom.js still mirrors that
+   attribute (the icon swaps below key off it), but it runs after hydration;
+   this closes the gap before it, when a light-mode phone on the dark dashboard
+   would otherwise paint light cards on a dark page. Same value either way. */
+html.dark[class*="theme-"] {
+  color-scheme: dark;
+}
+
+html[class*="theme-"]:not(.dark) {
+  color-scheme: light;
+}
+
 /* Homepage hard-codes Manrope and 0.1px of tracking on `html, body`, so this
    has to out-specify an element selector to land. */
 html[class*="theme-"],
@@ -97,17 +112,17 @@ html[class*="theme-"] :focus-visible {
  * theme, and a `prefers-color-scheme` step inside it follows the OS instead.
  * The dashboard does not — `theme: dark` in settings.yaml pins it — so the two
  * disagree by default, and icons/brignano.svg spent that disagreement drawing
- * #111111 ink on a near-black card. It is now one ink, and this is what moves
+ * n-900 ink on a near-black card. It is now one ink, and this is what moves
  * it: `data-theme` is set by config/custom.js from whatever theme Homepage
  * settled on, which is the same attribute the tokens read, so the mark tracks
  * the dashboard and the header toggle rather than the phone.
  *
  * `invert(1)` rather than a token because a filter cannot take one. On the
- * single ink the file draws it lands on #eeeeee — a hair off `--ink`'s dark
- * step (#f2f2f0), measured 16.73:1 on `--card`, and not a colour anyone can
- * pick out of a 32px monogram. Matching on `src` keeps this off class names;
- * the substring is deliberately bare so it still matches if the src is ever
- * proxied and URL-encoded.
+ * single ink the file draws it lands on #eeeeeb — a hair off `--ink`'s dark
+ * value (#f2f2f4), measured 16.70:1 on `--bg` and 15.39:1 on `--card`, and not
+ * a colour anyone can pick out of a 32px monogram. Matching on `src` keeps this
+ * off class names; the substring is deliberately bare so it still matches if
+ * the src is ever proxied and URL-encoded.
  *
  * A vendor logo cannot be re-inked this way — inverting Portainer's mark would
  * invent a colour it does not have — so those are swapped whole, below. */

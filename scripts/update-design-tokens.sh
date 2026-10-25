@@ -27,7 +27,7 @@
 #
 # Usage:
 #   ./scripts/update-design-tokens.sh            # refresh at the pinned versions
-#   ./scripts/update-design-tokens.sh 0.2.0      # move tokens to a version, or `latest`
+#   ./scripts/update-design-tokens.sh 0.3.0      # move tokens to a version, or `latest`
 #   ./scripts/update-design-tokens.sh --check    # regenerate and diff; no network
 #
 # --check is what CI runs: it proves the generated palette still matches the
@@ -106,17 +106,30 @@ import os, re, sys
 
 tokens = open(os.environ["TOKENS"], encoding="utf-8").read()
 
-def ramp(selector):
-    """The `--n-*` steps declared in one theme scope of tokens.css."""
-    start = tokens.index(selector)
-    body = tokens[start:tokens.index("\n}", start)]
-    found = dict(re.findall(r"--n-(\d+):\s*(#[0-9a-fA-F]{6})", body))
-    if len(found) < 12:
-        sys.exit(f"update-design-tokens: only {len(found)} neutral steps under {selector!r}")
-    return found
+# Since 0.3.0 every colour is ONE declaration holding both themes,
+# `--n-900: light-dark(#111114, #f2f2f4);` — light value first, dark second,
+# always concrete hexes (the package's own rule 2). There is no dark block to
+# read any more, so both sides come from the same line. A step written any
+# other way (a bare hex, a var(), a third argument) is refused rather than
+# guessed at: a parser that half-matches is how a palette silently drifts.
+STEP = re.compile(
+    r"--n-(\d+):\s*light-dark\(\s*(#[0-9a-fA-F]{6})\s*,\s*(#[0-9a-fA-F]{6})\s*\)\s*;"
+)
 
-light = ramp(":root {")
-dark = ramp(":root[data-theme='dark']")
+def ramps():
+    """The `--n-*` steps as two dicts, light and dark, from light-dark() pairs."""
+    declared = set(re.findall(r"--n-(\d+):", tokens))
+    pairs = {n: (l, d) for n, l, d in STEP.findall(tokens)}
+    odd = sorted(declared - pairs.keys(), key=int)
+    if odd:
+        sys.exit("update-design-tokens: neutral steps not written as "
+                 f"light-dark(#hex, #hex): {', '.join('n-' + n for n in odd)}")
+    if len(pairs) < 12:
+        sys.exit(f"update-design-tokens: only {len(pairs)} neutral steps in tokens.css")
+    return ({n: l for n, (l, _) in pairs.items()},
+            {n: d for n, (_, d) in pairs.items()})
+
+light, dark = ramps()
 
 def channels(hexcolour):
     h = hexcolour.lstrip("#")

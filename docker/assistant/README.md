@@ -61,8 +61,8 @@ the card's title and links to Triage, the side bar is green on a ✅ day and
 amber on a ⚠️ one, and the model and sources line is the card's footer. The
 card is built from the same text (`digest.card`), so the two cannot disagree,
 and a digest that failed to run stays a plain message. The bar colours are
-brignano/design's dark-scope `--success` and `--attention`, written as hex
-because Discord cannot read CSS.
+the dark values of brignano/design's `--success` and `--attention`, written as
+hex because Discord cannot read CSS.
 
 **Only what is new.** Restarts, log errors and mail count from when the last
 digest posted, scheduled or `/digest`, and the label says how far back that is:

@@ -36,49 +36,102 @@
    1. NEVER hardcode a hex outside this file. A literal survives a theme
       change silently — that is how `life`'s status pills sat light grey in
       dark mode for months.
-   2. Every colour is declared in BOTH theme scopes. CSS cannot share a
-      declaration block between a media query and a plain selector, so the
-      dark list is duplicated on purpose. Edit one, edit the other.
+   2. Every colour is ONE declaration holding both themes:
+      `light-dark(<light>, <dark>)`. There is no dark list to keep in step.
+      The arguments are always concrete colours, never a var() to another
+      theme-dependent token — nested light-dark() is legal CSS, but not
+      every engine has been verified to resolve it. Where that forces a
+      value to repeat (a wash repeats its hue), `npm run check` holds the
+      copies to their source.
    3. Ratios in the comments are MEASURED. Change a value, re-measure it.
 
    See DESIGN.md for the rules that govern use, DECISIONS.md for why.
    ───────────────────────────────────────────────────────────────────────── */
 
-:root {
-  color-scheme: light;
+/* ── Themes ─────────────────────────────────────────────────────────────
+   One declaration per colour, light value first: light-dark(<light>, <dark>).
+   The browser picks the side from the element's color-scheme:
 
+     default            follows the OS (light dark below)
+     [data-theme]       the in-app toggle, which must WIN over the OS
+                        — `light` forces light under a dark OS
+
+   Because the pick happens where a colour is USED, not where it's declared,
+   [data-theme] (or color-scheme) on ANY element themes that subtree — a dark
+   hero band on a light page is one attribute. Give that element its own
+   `background: var(--bg)`; it doesn't inherit the page's.
+
+   Dark is selected, not inverted:
+   1. Not pure black. #0d0d0f — pure black behind bright text causes
+      halation and is fatiguing at night, which is when a personal tool
+      actually gets opened.
+   2. Surfaces LIGHTEN with elevation instead of gaining borders.
+   3. Accents lift in luminance rather than shifting hue, and washes carry
+      a higher mix — 12% over #0d0d0f is invisible where it reads on white.
+
+   Ratios are given light / dark. */
+:root {
+  color-scheme: light dark;
+}
+[data-theme='light'] {
+  color-scheme: light;
+}
+[data-theme='dark'] {
+  color-scheme: dark;
+}
+
+:root {
   /* ── Neutral ramp ─────────────────────────────────────────────────────
      Twelve steps, up from five. The gap that mattered most: there was no
      hover or pressed background token, so every interactive surface in
      both repos was improvising.
 
-     Deliberately COOL-leaning — a cool grey lets the warm mark and the
-     amber attention state read as warm, instead of muddying into them. */
-  --n-0: #ffffff;
-  --n-25: #fafafa;
-  --n-50: #f3f3f1;
-  --n-100: #ececea; /* hairline */
-  --n-200: #e2e2e0; /* hover surface */
-  --n-300: #cbcbce; /* strong border, pressed surface */
-  --n-400: #a9a9ae;
-  --n-500: #8a8a8f; /* muted label   3.44:1 — large text / UI marks only */
-  --n-600: #6b6b73; /*               5.28:1 */
-  --n-700: #52525b; /* secondary     7.73:1 */
-  --n-800: #33333a;
-  --n-900: #111111; /* primary      18.88:1 */
+     Deliberately COOL — a cool grey lets the warm mark and the amber
+     attention state read as warm, instead of muddying into them.
 
-  /* Semantic aliases. Components use THESE, not the raw steps. */
-  --bg: var(--n-25);
-  --card: var(--n-0);
+     ONE TEMPERATURE, top to bottom, both themes: every tinted step sits at
+     OKLCH hue 286° (±3°, `npm run check` holds it). Chroma is a whisper at
+     the ends (~0.0015 at n-25) and peaks in the mid-tones (~0.015 at
+     n-700), where a grey reads most neutral-flat without it. Only pure
+     white (light n-0) is untinted. An earlier ramp mixed warm hairlines
+     (106°) with cool text, so a border and the label beside it disagreed.
+
+     Changing a step: keep its OKLCH lightness, keep the hue, re-run the
+     check. */
+  --n-0: light-dark(#ffffff, #0d0d0f);
+  --n-25: light-dark(#fafafb, #131316);
+  --n-50: light-dark(#f3f3f4, #17171a);
+  --n-100: light-dark(#ececee, #202024); /* hairline */
+  --n-200: light-dark(#e1e1e4, #2a2a2f); /* hover surface */
+  --n-300: light-dark(#cbcbce, #3a3a41); /* strong border, pressed surface */
+  --n-400: light-dark(#a9a9ae, #55555e);
+  --n-500: light-dark(#8a8a8f, #8b8b93); /* 3.44:1 — UI marks only, never text / 5.29:1 */
+  --n-600: light-dark(#6b6b73, #9c9ca4); /* muted label 5.28:1 */
+  --n-700: light-dark(#52525b, #a8a8b0); /* secondary 7.73:1 / 7.58:1 */
+  --n-800: light-dark(#33333a, #d0d0d5);
+  --n-900: light-dark(#111114, #f2f2f4); /* primary 18.85:1 / 16.00:1 */
+
+  /* Semantic aliases. Components use THESE, not the raw steps.
+     Where a role sits on a different step in each theme, the step's two
+     hexes are written out (rule 2) and named in the comment; the check
+     holds them to the ramp. */
+  --bg: light-dark(#fafafb, #0d0d0f); /* n-25 / n-0 */
+  --card: light-dark(#ffffff, #17171a); /* n-0 / n-50 */
   --surface-hover: var(--n-100);
   --surface-active: var(--n-200);
   --ink: var(--n-900);
   --ink-soft: var(--n-700);
-  --slate: var(--n-500);
+  --slate: light-dark(#6b6b73, #8b8b93); /* n-600 / n-500 — text-safe: eyebrows, axis labels, captions */
   --line: var(--n-100);
   --line-soft: var(--n-50);
-  --line-strong: var(--n-300);
-  --on-dark: var(--n-25);
+  --line-strong: var(--n-300); /* 1.62:1 — decoration, not a boundary */
+  /* The edge that tells you a control is there: inputs, secondary buttons.
+     WCAG 1.4.11 asks 3:1 of a boundary you need to find the control, which
+     --line-strong is nowhere near. Light is n-500 (3.44:1 on card, 3.29:1
+     on bg); dark sits between n-400 and n-500, which the ramp has no step
+     for (3.39:1 on card, 3.68:1 on bg). */
+  --line-control: light-dark(#8a8a8f, #6b6b73);
+  --on-dark: light-dark(#fafafb, #0d0d0f); /* n-25 / n-0 */
 
   /* ── Interactive — cobalt ─────────────────────────────────────────────
      Everything you can act on: links, buttons, focus, selection. Chosen to
@@ -86,21 +139,28 @@
      green and red do — and complementary to the mark hue, so identity and
      affordance never compete for the same attention.
 
-       --i          fill               5.17:1  (white label 5.17:1)
-       --i-ink      link/icon/focus    6.70:1  on #fff
-       --i-hover    hover fill        10.36:1
-       --i-pressed  pressed fill      12.65:1
+     Every step sits at OKLCH hue 256° (`npm run check` holds it), as near
+     to larch's opposite (~248°) as sRGB allows while keeping cobalt's
+     chroma. It is deliberately NOT Tailwind's blue-600 (263°, a touch
+     violet and electric): same affordance, our own colour (ADR-0008).
+
+       --i          fill               5.18:1 / 7.07:1  (label 5.18 / 7.46)
+       --i-ink      link/icon/focus    6.78:1 / 7.07:1
+       --i-hover    hover fill         8.65:1 / 10.50:1 (label)
+       --i-pressed  pressed fill      10.44:1 / 13.32:1 (label)
+
+     In dark, fill and ink converge, and hover/pressed get LIGHTER.
 
      DISABLED IS NEUTRAL, NEVER HUED — a greyed-out control must stop
      signalling "click me". */
-  --i: #2563eb;
-  --i-ink: #1d4ed8;
-  --i-hover: #1e40af;
-  --i-pressed: #1e3a8a;
-  --i-surface: color-mix(in srgb, var(--i) 12%, transparent);
-  --i-line: color-mix(in srgb, var(--i) 32%, transparent);
-  --i-selection: color-mix(in srgb, var(--i) 26%, transparent);
-  --on-i: #ffffff;
+  --i: light-dark(#076bd3, #6ba5f3);
+  --i-ink: light-dark(#0159b5, #6ba5f3);
+  --i-hover: light-dark(#014a97, #98c4ff);
+  --i-pressed: light-dark(#003e82, #c0dbff);
+  --i-surface: light-dark(color-mix(in srgb, #076bd3 12%, transparent), color-mix(in srgb, #6ba5f3 20%, transparent));
+  --i-line: light-dark(color-mix(in srgb, #076bd3 32%, transparent), color-mix(in srgb, #6ba5f3 44%, transparent));
+  --i-selection: light-dark(color-mix(in srgb, #076bd3 26%, transparent), color-mix(in srgb, #6ba5f3 30%, transparent));
+  --on-i: light-dark(#ffffff, #111111);
   --i-disabled-bg: var(--n-200);
   --i-disabled-ink: var(--n-400);
 
@@ -109,31 +169,32 @@
      tiers. Always shipped with an ICON AND A WORD — colour is never the
      only signal.
 
-       --success    settled · confirmed · done · succeeded    6.29:1
-       --attention  now · next · warning · needs you          6.08:1
-       --danger     overdue · failed · invalid                6.10:1
+       --success    settled · confirmed · done · succeeded    6.29:1 / 8.15:1
+       --attention  now · next · warning · needs you          6.08:1 / 8.17:1  (ink)
+       --danger     overdue · failed · invalid                6.10:1 / 6.06:1
 
      `--info` is the interactive hue on purpose: an informational message
      is the same "neutral, no action implied" register as a link.
 
      `-ink` is the text-safe step; the bare token is for marks and fills.
-     `-surface` and `-line` are the wash and its edge. */
-  --success: #2f6b4f;
-  --success-ink: #245740;
-  --attention: #b4741f; /* 3.85:1 — mark/fill only, NOT text */
-  --attention-ink: #8a5714; /* 6.08:1 */
-  --danger: #a4442c;
-  --danger-ink: #8a3722;
+     `-surface` and `-line` are the wash and its edge: 12% / 32% of the hue
+     in light, 20% / 44% in dark. */
+  --success: light-dark(#2f6b4f, #6fbf95);
+  --success-ink: light-dark(#245740, #8fd4ae);
+  --attention: light-dark(#b4741f, #e0a44f); /* 3.85:1 in light — mark/fill only, NOT text */
+  --attention-ink: light-dark(#8a5714, #e0a44f); /* 6.08:1 / 8.17:1 — mark and label converge in dark */
+  --danger: light-dark(#a4442c, #e07a5f);
+  --danger-ink: light-dark(#8a3722, #ec9880);
   --info: var(--i);
   --info-ink: var(--i-ink);
 
-  --success-surface: color-mix(in srgb, var(--success) 12%, transparent);
-  --attention-surface: color-mix(in srgb, var(--attention) 12%, transparent);
-  --danger-surface: color-mix(in srgb, var(--danger) 12%, transparent);
+  --success-surface: light-dark(color-mix(in srgb, #2f6b4f 12%, transparent), color-mix(in srgb, #6fbf95 20%, transparent));
+  --attention-surface: light-dark(color-mix(in srgb, #b4741f 12%, transparent), color-mix(in srgb, #e0a44f 20%, transparent));
+  --danger-surface: light-dark(color-mix(in srgb, #a4442c 12%, transparent), color-mix(in srgb, #e07a5f 20%, transparent));
   --info-surface: var(--i-surface);
-  --success-line: color-mix(in srgb, var(--success) 32%, transparent);
-  --attention-line: color-mix(in srgb, var(--attention) 32%, transparent);
-  --danger-line: color-mix(in srgb, var(--danger) 32%, transparent);
+  --success-line: light-dark(color-mix(in srgb, #2f6b4f 32%, transparent), color-mix(in srgb, #6fbf95 44%, transparent));
+  --attention-line: light-dark(color-mix(in srgb, #b4741f 32%, transparent), color-mix(in srgb, #e0a44f 44%, transparent));
+  --danger-line: light-dark(color-mix(in srgb, #a4442c 32%, transparent), color-mix(in srgb, #e07a5f 44%, transparent));
   --info-line: var(--i-line);
 
   /* ── Diff ─────────────────────────────────────────────────────────────
@@ -144,8 +205,7 @@
        --diff-changed  modified by this change     interactive — informational
        --diff-removed  removed by this change      danger — can lose data
 
-     Always with a symbol and a word (+ added, ~ changed, − removed). Aliased
-     in this block only: these resolve against whichever theme block wins. */
+     Always with a symbol and a word (+ added, ~ changed, − removed). */
   --diff-added: var(--success);
   --diff-added-ink: var(--success-ink);
   --diff-added-surface: var(--success-surface);
@@ -168,21 +228,21 @@
      the attention state are the same warmth, and because --mark never
      appears as a UI surface the two can never be mistaken for each other
      in the same context. */
-  --mark: #b4741f;
-  --mark-ink: #8a5714; /* when the mark carries a label, 6.08:1 */
+  --mark: light-dark(#b4741f, #e0a44f);
+  --mark-ink: light-dark(#8a5714, #e0a44f); /* when the mark carries a label, 6.08:1 / 8.17:1 */
 
   /* ── Legacy aliases ───────────────────────────────────────────────────
      Kept so existing `life` components keep compiling. Do not use in new
      work — reach for the semantic tokens above.
 
-     --larch-deep is declared explicitly in BOTH themes rather than
-     aliased, because "deep" inverts: darker in light, BRIGHTER in dark. An
-     alias to either role silently changes one theme — it moved
-     .pill-active from #f0bd74 to #e0a44f before this was caught. */
+     --larch-deep is written out rather than aliased, because "deep"
+     inverts: darker in light, BRIGHTER in dark. An alias to either role
+     silently changes one theme — it moved .pill-active from #f0bd74 to
+     #e0a44f before this was caught. */
   --forest: var(--success);
   --forest-deep: var(--success-ink);
   --larch: var(--attention);
-  --larch-deep: #8a5714;
+  --larch-deep: light-dark(#8a5714, #f0bd74);
   --rust: var(--danger);
   --rust-deep: var(--danger-ink);
   --gold: var(--slate);
@@ -204,151 +264,34 @@
   --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px;
 
   /* ── Shape & elevation ────────────────────────────────────────────────
-     In LIGHT these are shadows; in DARK the surface lightens instead. */
+     In LIGHT these are shadows; in DARK the surface lightens instead, and
+     the shadow only has to separate it from a near-black ground.
+
+     light-dark() switches colours, not geometry, and the two themes' blur
+     differs. So shadows 2 and 3 carry one layer per theme, with the other
+     theme's layer transparent — it draws nothing. */
   --radius-sm: 6px;
   --radius: 12px;
   --radius-lg: 18px;
-  --shadow-1: 0 1px 2px rgba(17, 17, 17, 0.04);
-  --shadow-2: 0 2px 8px rgba(17, 17, 17, 0.07);
-  --shadow-3: 0 8px 24px rgba(17, 17, 17, 0.10);
-  --scrim: rgba(17, 17, 17, 0.55);
+  --shadow-1: 0 1px 2px light-dark(rgba(17, 17, 17, 0.04), rgba(0, 0, 0, 0.45));
+  --shadow-2:
+    0 2px 8px light-dark(rgba(17, 17, 17, 0.07), transparent),
+    0 2px 10px light-dark(transparent, rgba(0, 0, 0, 0.55));
+  --shadow-3:
+    0 8px 24px light-dark(rgba(17, 17, 17, 0.10), transparent),
+    0 10px 28px light-dark(transparent, rgba(0, 0, 0, 0.65));
+  --scrim: light-dark(rgba(17, 17, 17, 0.55), rgba(0, 0, 0, 0.68));
   --shadow: var(--shadow-1); /* legacy alias */
 
   /* ── Motion ───────────────────────────────────────────────────────────
      Content is ALWAYS visible by default; motion is enhancement layered on
      top, never the thing that makes content appear. brignano.io shipped a
      homepage whose contact CTA was invisible on 100% of loads because an
-     animation library owned the visible state. See DESIGN.md §6. */
+     animation library owned the visible state. See DESIGN.md §7. */
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --dur-fast: 150ms;
   --dur: 250ms;
   --dur-slow: 600ms;
-}
-
-/* ── Dark ───────────────────────────────────────────────────────────────
-   Selected, not inverted:
-   1. Not pure black. #0d0d0f — pure black behind bright text causes
-      halation and is fatiguing at night, which is when a personal tool
-      actually gets opened.
-   2. Surfaces LIGHTEN with elevation instead of gaining borders.
-   3. Accents lift in luminance rather than shifting hue, and washes carry
-      a higher mix — 12% over #0d0d0f is invisible where it reads on white.
-
-   Declared twice: the media query is the default and no-JS fallback;
-   [data-theme] is the in-app toggle and must WIN over the system.
-   `:not([data-theme='light'])` lets the toggle force light under a dark OS. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme='light']) {
-    color-scheme: dark;
-
-    --n-0: #0d0d0f;
-    --n-25: #131316;
-    --n-50: #17171a;
-    --n-100: #202024;
-    --n-200: #2a2a2f;
-    --n-300: #3a3a41;
-    --n-400: #55555e;
-    --n-500: #8b8b93; /* 5.29:1 on card */
-    --n-600: #9c9ca4;
-    --n-700: #a8a8b0; /* 7.58:1 */
-    --n-800: #d0d0d2;
-    --n-900: #f2f2f0; /* 15.96:1 */
-
-    --bg: var(--n-0);
-    --card: var(--n-50);
-    --surface-hover: var(--n-100);
-    --surface-active: var(--n-200);
-    --on-dark: var(--n-0);
-
-    --i: #60a5fa; /* 7.04:1 */
-    --i-ink: #60a5fa;
-    --i-hover: #93c5fd;
-    --i-pressed: #bfdbfe;
-    --i-surface: color-mix(in srgb, var(--i) 20%, transparent);
-    --i-line: color-mix(in srgb, var(--i) 44%, transparent);
-    --i-selection: color-mix(in srgb, var(--i) 30%, transparent);
-    --on-i: #111111;
-
-    --success: #6fbf95;
-    --success-ink: #8fd4ae;
-    --attention: #e0a44f;
-    --attention-ink: #e0a44f; /* 8.17:1 — mark and label converge in dark */
-    --danger: #e07a5f;
-    --danger-ink: #ec9880;
-
-    --success-surface: color-mix(in srgb, var(--success) 20%, transparent);
-    --attention-surface: color-mix(in srgb, var(--attention) 20%, transparent);
-    --danger-surface: color-mix(in srgb, var(--danger) 20%, transparent);
-    --success-line: color-mix(in srgb, var(--success) 44%, transparent);
-    --attention-line: color-mix(in srgb, var(--attention) 44%, transparent);
-    --danger-line: color-mix(in srgb, var(--danger) 44%, transparent);
-
-    --mark: #e0a44f;
-    --mark-ink: #e0a44f;
-
-    --larch-deep: #f0bd74; /* brighter step in dark — see the light block */
-
-    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
-    --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.55);
-    --shadow-3: 0 10px 28px rgba(0, 0, 0, 0.65);
-    --scrim: rgba(0, 0, 0, 0.68);
-  }
-}
-
-:root[data-theme='dark'] {
-  color-scheme: dark;
-
-  --n-0: #0d0d0f;
-  --n-25: #131316;
-  --n-50: #17171a;
-  --n-100: #202024;
-  --n-200: #2a2a2f;
-  --n-300: #3a3a41;
-  --n-400: #55555e;
-  --n-500: #8b8b93;
-  --n-600: #9c9ca4;
-  --n-700: #a8a8b0;
-  --n-800: #d0d0d2;
-  --n-900: #f2f2f0;
-
-  --bg: var(--n-0);
-  --card: var(--n-50);
-  --surface-hover: var(--n-100);
-  --surface-active: var(--n-200);
-  --on-dark: var(--n-0);
-
-  --i: #60a5fa;
-  --i-ink: #60a5fa;
-  --i-hover: #93c5fd;
-  --i-pressed: #bfdbfe;
-  --i-surface: color-mix(in srgb, var(--i) 20%, transparent);
-  --i-line: color-mix(in srgb, var(--i) 44%, transparent);
-  --i-selection: color-mix(in srgb, var(--i) 30%, transparent);
-  --on-i: #111111;
-
-  --success: #6fbf95;
-  --success-ink: #8fd4ae;
-  --attention: #e0a44f;
-  --attention-ink: #e0a44f;
-  --danger: #e07a5f;
-  --danger-ink: #ec9880;
-
-  --success-surface: color-mix(in srgb, var(--success) 20%, transparent);
-  --attention-surface: color-mix(in srgb, var(--attention) 20%, transparent);
-  --danger-surface: color-mix(in srgb, var(--danger) 20%, transparent);
-  --success-line: color-mix(in srgb, var(--success) 44%, transparent);
-  --attention-line: color-mix(in srgb, var(--attention) 44%, transparent);
-  --danger-line: color-mix(in srgb, var(--danger) 44%, transparent);
-
-  --mark: #e0a44f;
-  --mark-ink: #e0a44f;
-
-  --larch-deep: #f0bd74;
-
-  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.45);
-  --shadow-2: 0 2px 10px rgba(0, 0, 0, 0.55);
-  --shadow-3: 0 10px 28px rgba(0, 0, 0, 0.65);
-  --scrim: rgba(0, 0, 0, 0.68);
 }
 
 :root {
@@ -381,13 +324,19 @@
   --text-xl: 1.5rem;
   --text-2xl: 2rem;
   --text-3xl: 2.75rem;
-  --text-4xl: clamp(2.75rem, 6vw, 4rem);
+  --text-4xl: clamp(2.75rem, 1rem + 4.5vw, 4rem); /* rem term keeps it zoomable (WCAG 1.4.4) */
   --section-gap: var(--s9);
   --measure: 68ch;
 }
 
 ::selection {
   background: var(--i-selection);
+}
+
+/* Native checkboxes, radios, range and progress take the control hue
+   instead of the browser's own blue. */
+:root {
+  accent-color: var(--i);
 }
 
 /* Ships here so no surface can forget it. */
