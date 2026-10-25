@@ -1,8 +1,10 @@
 """Read-only MCP server over the calendars Home Assistant can see.
 
 Served at /calendar/mcp on mcp.$HOMELAB_DOMAIN, behind the same Caddy bearer
-check as mcp-grafana. Two tools, both reads: list_calendars and
-calendar_events. See docker/mcp-calendar/README.md.
+check as mcp-grafana (port 8000). Optionally also on PUBLIC_PORT for the
+Cloudflare Tunnel, where every request needs a verified Cloudflare Access JWT
+(app/access.py). Two tools, both reads: list_calendars and calendar_events.
+See docker/mcp-calendar/README.md.
 """
 
 from __future__ import annotations
@@ -12,11 +14,14 @@ import os
 from zoneinfo import ZoneInfo
 
 import aiohttp
+import anyio
+import uvicorn
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from .access import PUBLIC_PORT, AccessCheck, gate
 from .calendars import MAX_DAYS, CalendarError, HaCalendars, parse_entities, window
 
 PATH = "/calendar/mcp"
@@ -29,6 +34,11 @@ CALENDARS = HaCalendars(
     os.environ.get("HA_URL") or "http://host.docker.internal:8123",
     os.environ.get("HA_TOKEN", ""),
     parse_entities(os.environ.get("HA_CALENDARS", "")),
+)
+ACCESS = AccessCheck(
+    os.environ.get("ACCESS_TEAM_DOMAIN", ""),
+    os.environ.get("ACCESS_AUD", ""),
+    os.environ.get("ACCESS_EMAILS", ""),
 )
 
 mcp = FastMCP(
@@ -81,5 +91,23 @@ async def healthz(_: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
 
 
+def app():
+    """The MCP app, with the Access gate in front of PUBLIC_PORT."""
+    return gate(mcp.streamable_http_app(), ACCESS, ALLOWED_HOST.encode())
+
+
+async def serve() -> None:
+    # One app, two listeners. Only the first runs the lifespan (the MCP session
+    # manager starts once). The public one is opened only when Access is set up,
+    # so an unconfigured server has nothing for the tunnel to reach.
+    asgi = app()
+    servers = [uvicorn.Server(uvicorn.Config(asgi, host="0.0.0.0", port=8000))]
+    if ACCESS.configured:
+        servers.append(uvicorn.Server(uvicorn.Config(asgi, host="0.0.0.0", port=PUBLIC_PORT, lifespan="off")))
+    async with anyio.create_task_group() as tg:
+        for server in servers:
+            tg.start_soon(server.serve)
+
+
 if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+    anyio.run(serve)

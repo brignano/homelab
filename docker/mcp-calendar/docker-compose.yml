@@ -2,6 +2,8 @@ services:
   # Read-only MCP server over the calendars Home Assistant can see (iCloud via
   # CalDAV). Claude Code reaches it at https://mcp.$HOMELAB_DOMAIN/calendar/mcp,
   # behind the same Caddy bearer check as mcp-grafana. Two tools, both reads.
+  # Optionally reachable from Claude in the cloud through the Cloudflare Tunnel
+  # on port 8001, where every request needs a verified Cloudflare Access JWT.
   # See README.md.
   mcp-calendar:
     build: .
@@ -21,15 +23,27 @@ services:
       # The ceiling: calendar.* entity IDs, comma-separated. Nothing else in
       # Home Assistant is reachable through this server.
       HA_CALENDARS: ${HA_CALENDARS:-}
+      # Cloudflare Access, for the public listener (port 8001). All three blank =
+      # port 8001 is never opened, so the tunnel has nothing to reach.
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:-}
+      ACCESS_AUD: ${ACCESS_AUD:-}
+      ACCESS_EMAILS: ${ACCESS_EMAILS:-}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - monitoring
+      - public
 
 # Caddy is attached to monitoring_monitoring (docker/proxy/docker-compose.yml),
 # so joining it is what lets mcp.$HOMELAB_DOMAIN proxy here by container name.
 # Bring the monitoring stack up first.
+#
+# `public` holds only this container and cloudflared (docker/tunnel), so the
+# tunnel can reach port 8001 here and nothing else on monitoring. Bring this
+# stack up before the tunnel one.
 networks:
   monitoring:
     external: true
     name: monitoring_monitoring
+  public:
+    name: mcp_calendar_public
