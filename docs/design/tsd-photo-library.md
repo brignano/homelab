@@ -169,7 +169,7 @@ the arithmetic then, with the real numbers.
 |---|---|---|
 | 0 | nothing | You: open Photos → *Duplicates* and merge. Note how much it saved. |
 | 1 | 5 TB drive ✅ | `docker/photos/` stack, first sync (budgeted), Healthchecks check, metrics, alert. 🚧 built 2026-10-25 |
-| 2 | Phase 1 | `tools/photos/` dry-run report: what each review album would hold. |
+| 2 | nothing (reads the Mac's library, not the mirror) | `tools/photos/estimate.py` dry-run report: what each category would hold and which iCloud plan the rest fits. 🚧 built 2026-10-25 |
 | 3 | You approve thresholds | The script fills the review albums; you delete by hand. |
 
 ## Open questions
