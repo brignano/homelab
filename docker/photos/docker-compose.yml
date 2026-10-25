@@ -26,9 +26,9 @@ services:
   # No container_name: `run` names its own container, and health.sh and
   # heartbeat.sh treat every container_name as one that must be running.
   #
-  # Version: pinned by tag AND digest. Repo-sync's auto-pull skips stacks with
-  # nothing running, which this stack always is, so Renovate (renovate.json5)
-  # is what proposes bumps. Apple changes its sign-in flow every so often and
+  # Version: pinned by tag AND digest. Repo-sync skips profile-only stacks
+  # entirely (no auto-pull, no heal, no drift report), so Renovate
+  # (renovate.json5) is what proposes bumps. Apple changes its sign-in flow every so often and
   # the fix arrives as an icloudpd release, so a sign-in that keeps failing is
   # worth checking against the release notes.
   icloudpd:

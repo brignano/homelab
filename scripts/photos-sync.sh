@@ -107,9 +107,20 @@ set_args() {
 
 AUTH_HINT="on CT 100, run cd /root/homelab && ./scripts/photos-sync.sh --auth"
 
+# Never two at once, the sign-in included: a hand run during the night would
+# otherwise force-remove the nightly container (and fail its ping), and two
+# icloudpd processes would share one session volume. Taken where each mode
+# starts, so a run that is merely unconfigured never touches the lock.
+LOCK="${HL_PHOTOS_LOCK:-/run/photos-sync.lock}"
+take_lock() {
+  exec 9>"$LOCK"
+  flock -n 9 || { echo "photos-sync: another photos-sync is still running" >&2; exit 1; }
+}
+
 if [ "${1:-}" = "--auth" ]; then
   [ -n "$USERNAME" ] || { echo "photos-sync: set ICLOUD_USERNAME in $PHOTOS_ENV first" >&2; exit 2; }
   [ -d "$LIBRARY" ] || { echo "photos-sync: $LIBRARY is missing (media drive not mounted, or README step 1 not done)" >&2; exit 1; }
+  take_lock
   # shellcheck disable=SC2046  # one argument per line, none contain newlines
   IFS='
 '
@@ -236,6 +247,8 @@ if [ ! -d "$LIBRARY" ]; then
   echo "$(date -Is) photos-sync: $LIBRARY is missing (media drive not mounted?)" >&2
   exit 1
 fi
+
+take_lock
 
 files_before=$(count_files)
 
