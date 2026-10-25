@@ -44,9 +44,10 @@ layout:
 # too (Homepage falls back to `slate`, still a `theme-` class), but the class
 # has to exist.
 #
-# `theme: dark` is the default the dashboard opens in. custom.js mirrors
-# whichever theme Homepage lands on onto <html data-theme>, so the tokens
-# follow the page rather than the phone's OS setting.
+# `theme: dark` is the default the dashboard opens in. custom.css sets
+# `color-scheme` from whichever theme Homepage lands on, and custom.js mirrors
+# it onto <html data-theme>, so the tokens follow the page rather than the
+# phone's OS setting.
 headerStyle: boxedWidgets
 statusStyle: dot
 cardBlur: sm

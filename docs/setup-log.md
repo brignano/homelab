@@ -27,6 +27,60 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-25 — Dashboard tokens to @brignano/design 0.3.0
+
+**Goal:** Move the vendored design tokens from 0.2.0 to 0.3.0, which rewrites
+every colour as one `light-dark(<light>, <dark>)` declaration and picks the
+theme from `color-scheme`, and fix whatever that breaks here.
+
+**Steps:**
+1. `scripts/update-design-tokens.sh`: the palette generator read the neutral
+   ramp from two blocks, `:root {` (light) and `:root[data-theme='dark']`
+   (dark). 0.3.0 has no dark block, so it now reads both sides of each
+   `--n-*: light-dark(#hex, #hex);` line, first argument light and second
+   dark. A step in any other form (a bare hex, a `var()`) stops the script by
+   name rather than being half-read, and it does stop on the 0.2.0 file.
+2. `./scripts/update-design-tokens.sh 0.3.0`: `design-tokens.css` is byte-for-byte
+   the package's, and `homepage-palette.css` is regenerated. Neutrals moved by
+   up to four units toward blue (the re-tinted ramp), and the rest held.
+   Geist stayed at 5.3.0.
+3. `config/custom.css` sets `color-scheme` from Homepage's own `dark` class.
+   In 0.2.0 only the `data-theme` attribute could switch the tokens, and
+   `custom.js` sets that after hydration. In that window a light-mode phone
+   got light token cards on the dark page. `custom.js` still mirrors the
+   attribute, because the icon swaps key off it.
+4. `n-900` light is now `#111114` (was `#111111`). The ink ground of the app
+   icons, the `brignano.svg` monogram and the manifest's colours all name that
+   step, so `gen-dashboard-icons.py`'s `INK` moved with it and the rasters
+   were regenerated. At the old ink they regenerate byte-identically, so the
+   diff is only the colour.
+
+**Issues encountered:**
+- The `custom.css` comment said the inverted monogram measured 16.73:1 on
+  `--card`. Re-measured, that was on `--bg`. It is now 16.70:1 on `--bg` and
+  15.39:1 on `--card`.
+
+**Resolution:**
+- Rendered `custom.css` with the vendored assets in Chromium, for OS light and
+  dark × Homepage light and dark × before and after `custom.js`. Every case
+  takes the side Homepage chose: page, card, ink, cobalt, state dots, washes,
+  the monogram invert and the Portainer swap. Before step 3, the before-JS
+  cases followed the OS.
+- The Discord embed colours in `docker/assistant/app/digest.py` did not change
+  (`--success` dark `#6fbf95`, `--attention` dark `#e0a44f`). Only the comment
+  wording changed, because "dark scope" no longer exists.
+
+**Notes / next steps:**
+- Deploy: `deploy-plan.sh` already asks for a dashboard recreate when
+  `assets/` or `icons/` change. No new filenames.
+- Browser floor for `light-dark()` is Chrome 123 / Firefox 120 / Safari 17.5.
+  An older browser drops every colour token, though Homepage's own
+  `--color-*` channels still theme it.
+- Not checked against a live Homepage container: no Docker daemon was
+  available where this was made.
+
+---
+
 ## 2026-10-25 — Otto reads GitHub; brignano.io gets an uptime probe
 
 **Goal:** Anthony wanted Otto to answer "anything broken on brignano.io?" the

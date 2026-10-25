@@ -41,7 +41,7 @@ from PIL import Image
 
 ICONS = Path(__file__).resolve().parent.parent / "docker" / "dashboard" / "icons"
 SOURCE = ICONS / "icon-source.svg"
-INK = (17, 17, 17, 255)  # the design system's n-900, light scope
+INK = (17, 17, 20, 255)  # the design system's n-900, light value (#111114)
 
 
 def tile(size: int, pad: int = 0) -> Image.Image:

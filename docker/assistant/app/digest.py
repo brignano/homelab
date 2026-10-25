@@ -364,10 +364,11 @@ async def build(
 # disagree, and so the failure path (no heading) simply stays a plain message.
 #
 # Hex, not tokens: Discord cannot read CSS. These are brignano/design's
-# dark-scope --success and --attention steps, the ones meant for a fill on a
-# dark ground, which is what an embed bar is in Discord's usual theme.
-CARD_OK = 0x6FBF95       # --success (dark scope)
-CARD_ATTENTION = 0xE0A44F  # --attention (dark scope)
+# --success and --attention dark values (the second light-dark() argument,
+# unchanged through 0.3.0), the ones meant for a fill on a dark ground, which
+# is what an embed bar is in Discord's usual theme.
+CARD_OK = 0x6FBF95       # --success (dark)
+CARD_ATTENTION = 0xE0A44F  # --attention (dark)
 CARD_DESCRIPTION_LIMIT = 4096
 SUBTEXT = "-# "
 
