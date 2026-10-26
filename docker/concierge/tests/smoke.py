@@ -15,6 +15,7 @@ import asyncio
 import base64
 import datetime as dt
 import inspect
+import json
 import os
 import sys
 import traceback
@@ -312,7 +313,7 @@ def _():
     server, _ = tools.build(_ctx())
     o = agent.options_for(_cfg(), "t", server, "sys", read_only=True)
     assert o.tools == [] and o.allowed_tools == [] and o.permission_mode == "default"
-    assert o.max_turns == 8 and o.max_budget_usd == 0.20, "the brief has its own, lower ceilings"
+    assert o.max_turns == 8 and o.max_budget_usd == 0.30, "the brief has its own, lower ceilings"
     assert o.model == "claude-haiku-5-5", "the brief runs on its own, cheaper model"
     assert agent.options_for(_cfg(), "t", server, "sys").model == "claude-opus-5-5", "#ask keeps CONCIERGE_MODEL"
 
@@ -840,6 +841,19 @@ def _():
     assert github.quiet({"repo": "a/b", "open_prs": 0, "workflows_checked": 3, "dependabot_alerts": {}})
     assert not github.quiet({"repo": "a/b", "open_prs": 1})
     assert not github.quiet({"repo": "a/b", "could_not_read": ["alerts (HTTP 403)"]})
+
+    # The brief's view: only red runs, critical/high alerts and unreadable;
+    # PRs, medium/low and URLs dropped, an emptied repository goes quiet.
+    slim = github.for_brief({"repos": [
+        out,
+        {"repo": "a/prs", "open_prs": 4, "prs": [{"title": "bump"}], "dependabot_alerts": {"low": 2}},
+        part,
+    ], "quiet": ["q/q"]})
+    assert slim["repos"][0] == {"repo": "brignano/brignano.io", "failing_workflows": ["CI"],
+                                "dependabot_alerts": {"high": 1},
+                                "worst_alerts": [{"package": "next", "severity": "high"}]}, slim
+    assert slim["repos"][1] == {"repo": "r/r", "could_not_read": ["runs", "alerts (HTTP 403)"]}, slim
+    assert slim["quiet"] == ["q/q", "a/prs"] and "url" not in json.dumps(slim), slim
 
 
 @check("github_status: GITHUB_REPOS=* reads what the token sees, minus forks and archived")

@@ -122,7 +122,8 @@ def footer(reply: Reply) -> str:
         parts.append(f"${reply.cost_usd:.3f}")
     parts.append(f"{reply.seconds:.0f}s")
     if not reply.ok and reply.stop:
-        parts.append(reply.stop)
+        # Escaped: error_max_budget_usd would otherwise render half in italics.
+        parts.append(reply.stop.replace("_", "\\_"))
     return "-# " + " · ".join(parts)
 
 
@@ -169,6 +170,17 @@ BRIEF_HEADING = "### Needs you"
 _UNHEAD = re.compile(r"^(\s*(?:(?:[-*+]|\d+[.)]|>{1,3})\s+)*)(?=-?#)")
 
 
+# Why a brief stopped early, in words: the SDK's codes (error_max_budget_usd)
+# are full of underscores, which Discord reads as italics inside the _…_ line.
+_STOPPED = {
+    "error_max_budget_usd": "hit its spending cap",
+    "error_max_turns": "ran out of steps",
+    "error_during_execution": "hit an error",
+    "no_result": "got no result",
+}
+_STOPPED_NOTE = re.compile(r"\n*\(Stopped (?:at|after) [^\n]*\)\s*$")
+
+
 def brief_section(reply: Reply) -> Brief:
     """The concierge's brief, made safe to sit inside the digest.
 
@@ -181,9 +193,13 @@ def brief_section(reply: Reply) -> Brief:
     digest's business (digest.render cuts the brief, never the facts).
     """
     lines = [BRIEF_HEADING]
+    answer = reply.answer
     if not reply.ok:
-        lines.append(f"⚠️ _Incomplete ({reply.stop or 'no result'}): may be partial._")
-    for ln in defang(reply.answer).split("\n"):
+        lines.append(f"⚠️ _Incomplete: {_STOPPED.get(reply.stop, 'did not finish')}, so this may be partial._")
+        # The concierge closes a cut-off answer with its own "(Stopped at …)"
+        # line; the warning above already says it.
+        answer = _STOPPED_NOTE.sub("", answer).rstrip()
+    for ln in defang(answer).split("\n"):
         lines.append(_UNHEAD.sub(r"\1\\", ln))
     return Brief(tuple(lines), owns_mail=reply.ok and reply.reads_ok,
                  note=footer(reply).removeprefix("-# "))

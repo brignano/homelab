@@ -1410,8 +1410,16 @@ def _():
     cut = Reply(ok=False, answer="x" * 5000, stop="error_max_turns", model="m", seconds=1)
     out = render(facts, "All quiet.", grafana_url="https://stats.example.com", day=day,
                  brief=brief_section(cut))
-    assert len(out) <= 2000 and "Incomplete (error_max_turns)" in out, len(out)
+    assert len(out) <= 2000 and "Incomplete: ran out of steps" in out, len(out)
     assert "**Services**" in out and "### Today" in out and out.split("\n")[-1].startswith("-# ")
+
+    # Over budget: the reason in words (no underscores to break the italics),
+    # the concierge's own "(Stopped at …)" line dropped, the footer escaped.
+    over = brief_section(Reply(ok=False, stop="error_max_budget_usd", model="m", seconds=1,
+                               answer="- one\n- two\n\n(Stopped at the $0.20 per-request budget.)"))
+    assert over.lines[1] == "⚠️ _Incomplete: hit its spending cap, so this may be partial._", over
+    assert over.lines[-1] == "- two" and "Stopped" not in "\n".join(over.lines), over
+    assert "error\\_max\\_budget\\_usd" in over.note, over.note
 
 
 @check("brief: one that could not run leaves a line and the digest's own mail")

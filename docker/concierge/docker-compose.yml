@@ -34,7 +34,7 @@ services:
       # The morning brief (/v1/brief), which the bot runs daily when its
       # BRIEF_ENABLED=true: lower caps, since nobody asked for this spend.
       CONCIERGE_BRIEF_MAX_TURNS: ${CONCIERGE_BRIEF_MAX_TURNS:-8}
-      CONCIERGE_BRIEF_MAX_BUDGET_USD: ${CONCIERGE_BRIEF_MAX_BUDGET_USD:-0.20}
+      CONCIERGE_BRIEF_MAX_BUDGET_USD: ${CONCIERGE_BRIEF_MAX_BUDGET_USD:-0.30}
       # The evening review (/v1/review), when the bot's REVIEW_ENABLED=true:
       # no lookups, only memory and follow-up proposals, so lower still.
       CONCIERGE_REVIEW_MAX_TURNS: ${CONCIERGE_REVIEW_MAX_TURNS:-6}
