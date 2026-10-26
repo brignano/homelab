@@ -1,0 +1,54 @@
+# Tailscale runs on the host only, as the subnet router that makes 10.0.0.201
+# reachable from every tailnet device (AGENTS.md → Networking rules). Logging
+# in is the one step that needs a browser, so it is reported, not attempted.
+
+- name: Is Tailscale installed?
+  ansible.builtin.stat:
+    path: /usr/bin/tailscale
+  register: hl_tailscale_bin
+
+- name: Install Tailscale
+  when: not hl_tailscale_bin.stat.exists
+  block:
+    - name: Fetch the official installer
+      ansible.builtin.get_url:
+        url: https://tailscale.com/install.sh
+        dest: /root/tailscale-install.sh
+        mode: "0700"
+
+    - name: Run it
+      ansible.builtin.command: sh /root/tailscale-install.sh
+      changed_when: true
+
+- name: Forward packets for the subnet route
+  ansible.builtin.lineinfile:
+    path: /etc/sysctl.d/99-tailscale.conf
+    regexp: '^net\.ipv4\.ip_forward'
+    line: net.ipv4.ip_forward = 1
+    create: true
+    mode: "0644"
+  notify: Reload sysctl
+
+- name: Is this node logged in to the tailnet?
+  ansible.builtin.command: tailscale status --json
+  register: hl_ts_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Advertise the LAN and allow Tailscale SSH
+  # Idempotent: `set` only changes what differs. The route still needs
+  # approving once in the admin console, and key expiry turning off for m5.
+  ansible.builtin.command: tailscale set --advertise-routes={{ hl_lan_cidr }} --ssh
+  changed_when: false
+  when:
+    - hl_ts_status.rc == 0
+    - (hl_ts_status.stdout | from_json).BackendState == 'Running'
+
+- name: Say what is left to do by hand
+  ansible.builtin.debug:
+    msg: >-
+      Tailscale is not logged in on m5. Run `tailscale up --ssh
+      --advertise-routes={{ hl_lan_cidr }}`, open the link it prints, then in
+      the admin console approve the route and disable key expiry for m5.
+  when: hl_ts_status.rc != 0 or (hl_ts_status.stdout | from_json).BackendState != 'Running'

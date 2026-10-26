@@ -1,0 +1,126 @@
+# CT 100, the Docker host. Up to the checkout and the cron jobs this is what
+# the 2026-06-07 setup log did by hand; past that, the repo's own scripts
+# already know how, and this only calls them.
+
+- name: Packages
+  ansible.builtin.apt:
+    name:
+      - git
+      - curl
+      - locales
+      - python3-yaml   # bootstrap-plan.py
+      - restic         # offsite-backup.sh, restore-offsite.sh
+      - sqlite3        # offsite-backup.sh's consistent database copies
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Locale en_US.UTF-8 (perl and apt warn on every run without it)
+  ansible.builtin.lineinfile:
+    path: /etc/locale.gen
+    regexp: '^#?\s*en_US\.UTF-8 UTF-8'
+    line: en_US.UTF-8 UTF-8
+  notify: Generate locales
+
+- name: IPv6 on, for Matter (docker/matterbridge/README.md, "Before you start")
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-ipv6.conf
+    mode: "0644"
+    content: |
+      net.ipv6.conf.all.disable_ipv6 = 0
+      net.ipv6.conf.default.disable_ipv6 = 0
+      net.ipv6.conf.eth0.disable_ipv6 = 0
+  notify: Reload sysctl
+
+- name: The repo
+  # Cloned once and never updated from here: repo-sync.sh owns pulls, and
+  # reports and verifies them. A pull from Ansible would be a deploy nothing
+  # checked.
+  ansible.builtin.git:
+    repo: "{{ hl_repo_url }}"
+    dest: "{{ hl_repo_dir }}"
+    version: main
+    update: false
+
+- name: Docker
+  ansible.builtin.command: bash {{ hl_repo_dir }}/scripts/bootstrap-docker.sh
+  args:
+    creates: /usr/bin/docker
+
+- name: Is the offsite backup configured?
+  ansible.builtin.stat:
+    path: /root/.config/homelab/restic.env
+  register: hl_restic_env
+
+- name: Say how to configure it
+  ansible.builtin.debug:
+    msg: >-
+      /root/.config/homelab/restic.env is missing, so nothing leaves the house
+      and a lost box plus backup drive means rebuilding every secret by hand.
+      docs/runbook-backups.md §1.
+  when: not hl_restic_env.stat.exists
+
+- name: Put .env files and volumes back from B2
+  # Its last lines are the Postgres replay, which needs the core stack up.
+  ansible.builtin.command: "{{ hl_repo_dir }}/scripts/restore-offsite.sh"
+  register: hl_restore
+  changed_when: "' restored' in hl_restore.stdout"
+  when:
+    - hl_restore_offsite | bool
+    - hl_restic_env.stat.exists
+
+- name: Scheduled jobs installed?
+  ansible.builtin.command: "{{ hl_repo_dir }}/scripts/install-cron.sh --check"
+  register: hl_cron_check
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  when: hl_install_cron | bool
+
+- name: Install them
+  # Idempotent, and leaves an entry you moved by hand where you put it.
+  ansible.builtin.command: "{{ hl_repo_dir }}/scripts/install-cron.sh"
+  changed_when: true
+  when:
+    - hl_install_cron | bool
+    - hl_cron_check.rc != 0
+
+- name: Which stacks have a .env?
+  ansible.builtin.find:
+    paths: "{{ hl_repo_dir }}/docker"
+    patterns: .env
+    hidden: true
+    recurse: true
+    depth: 2
+  register: hl_env_files
+
+- name: Say which stacks have no .env
+  ansible.builtin.debug:
+    msg: >-
+      {{ hl_env_files.files | length }} stacks have a .env. A stack without one
+      is not deployed; copy its .env.example and fill it in, or restore it with
+      -e hl_restore_offsite=true.
+
+- name: Bring the stacks up, in dependency order
+  # Only on request: on the live box an `up` can recreate `proxy`, and the
+  # house's DNS with it. The order comes from bootstrap-plan.py, which reads it
+  # from the compose files' networks: blocks (.claude/commands/bootstrap-stack.md).
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd {{ hl_repo_dir }}
+    stacks="{{ hl_env_files.files | map(attribute='path') | map('dirname') | map('basename') | sort | join(' ') }}"
+    plan=$(./scripts/bootstrap-plan.py $stacks | grep -v '^#')
+    # One stack failing (Jellyfin refuses to start without its GPU and drive,
+    # on purpose) must not leave every stack after it down too.
+    failed=""
+    while read -r stack services; do
+      echo "==> $stack ${services:-(all)}"
+      # shellcheck disable=SC2086
+      docker compose -f "docker/$stack/docker-compose.yml" up -d $services \
+        || failed="$failed $stack"
+    done <<< "$plan"
+    [ -z "$failed" ] || { echo "FAILED:$failed"; exit 1; }
+  args:
+    executable: /bin/bash
+  changed_when: true
+  when: hl_bring_up | bool

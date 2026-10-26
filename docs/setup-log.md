@@ -27,6 +27,47 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-26 — The host as code: an Ansible playbook and a rebuild runbook
+
+**Goal:** Losing m5 would have meant rebuilding it from this log. The Docker
+layer was already in git, but the host under it was not: CT 100's devices and
+mounts, apt sources, Tailscale, the drive mounts, the vzdump job, the hook,
+three cron files. Make the host repeatable, and write down what to do for each
+way of losing it.
+
+**Steps:**
+1. `ansible/`: one playbook, two roles. `proxmox_host` covers m5 and creates
+   CT 100 when it is missing (from the template, or from a vzdump archive when
+   `hl_ct_restore_archive` names one). `docker_lxc` covers the inside of CT 100
+   and calls the repo's own scripts rather than repeating them.
+2. A plain run is safe on the live box. It installs what is missing and copies
+   the vzdump hook (replacing the hand `pct pull`). It **reports** any
+   difference between `pct config 100` and `group_vars/all.yml` without
+   applying it. Restarts, restores and `pct set` each need their own `-e`
+   switch.
+3. `scripts/restore-offsite.sh`: the inverse of `offsite-backup.sh`. It puts
+   `.env` files and volumes back from B2 on a fresh CT 100 and never overwrites.
+   It was tested against a fake restic and docker. It has not yet run against
+   real B2.
+4. `offsite-backup.sh` now also copies `matterbridge_data` (the Echo's Matter
+   pairing) and the four `downloads_*` config volumes. All five arrived after
+   the inventory in the backups TSD was written.
+5. `docs/runbook-rebuild.md`: the scenarios, from "CT 100 broken" to "host and
+   drive gone", plus a twice-yearly drill.
+6. CI: `ansible-playbook --syntax-check` and `ansible-lint`.
+
+**Notes / next steps:**
+- **First run:** from the Mac, `cd ansible && ansible-playbook site.yml --check --diff`.
+  Expect the drift report to find something: the vars were read off this log,
+  not off the box. Fix whichever side is wrong.
+- `hl_backup_luks_uuid` is empty until filled in from `blkid` on m5. Until
+  then the backup-drive tasks are skipped, and the run says so.
+- B2 is still not configured (`runbook-backups.md` §1). Until it is, losing
+  the box and the backup drive together is still the "days" row of the
+  rebuild table.
+
+---
+
 ## 2026-10-25 — Dashboard tokens to @brignano/design 0.3.0
 
 **Goal:** Move the vendored design tokens from 0.2.0 to 0.3.0, which rewrites

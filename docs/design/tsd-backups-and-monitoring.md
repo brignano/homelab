@@ -52,6 +52,8 @@ restore.
 | Kali home directory | `kali_config` volume | Gone | ❌ |
 | Home Assistant (users, integration sign-ins, automations, recorder DB) | `homeassistant_config` volume (SQLite recorder) | Onboarding, every integration and every automation redone by hand | ❌ (added 2026-10-10; `docker/homeassistant/README.md` → Backups points here) |
 | Portainer settings | `portainer_data` volume | Minor | ❌ |
+| Matterbridge (the Matter pairing with the Echo) | `matterbridge_data` volume | Alexa re-paired and every device re-discovered | offsite since 2026-10-26 |
+| Sonarr, Radarr, Prowlarr, qBittorrent settings (indexers, quality profiles, API keys) | `downloads_*` volumes (SQLite) | An evening re-entering indexers and profiles | offsite since 2026-10-26 |
 | Caddy ACME account + certificates | `caddy_data` volume | Re-issued automatically (rate limits apply if repeated) | ❌ (acceptable) |
 | Assistant digest state | `/var/lib/homelab/assistant` | One missed-digest alert | ❌ (acceptable) |
 | Postgres | `postgres_data` → `/opt/backups/postgres` | Nothing today | ✅ nightly dump, same disk |

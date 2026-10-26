@@ -1,0 +1,17 @@
+# The whole lab: the Proxmox host first (it creates CT 100 when missing), then
+# CT 100. See README.md here for the three ways to run it.
+#
+# Safe against the live box: with every hl_* switch at its default this
+# installs what is missing, copies the vzdump hook, and REPORTS anything about
+# CT 100 that differs from group_vars/all.yml. It never restarts a stack,
+# reboots CT 100, or touches a disk's contents.
+
+- name: Proxmox host
+  hosts: proxmox
+  roles:
+    - proxmox_host
+
+- name: Docker LXC
+  hosts: docker
+  roles:
+    - docker_lxc

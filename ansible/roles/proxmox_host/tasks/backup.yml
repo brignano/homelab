@@ -1,0 +1,80 @@
+# The nightly vzdump of CT 100 and its hook (docs/runbook-backups.md §2).
+#
+# The hook used to reach the host by `pct pull` from CT 100's checkout, by hand,
+# every time the script changed — and nothing said when the copy was stale.
+# Now this copies it from the checkout Ansible runs from.
+
+- name: Hook config directory
+  ansible.builtin.file:
+    path: /etc/homelab
+    state: directory
+    mode: "0700"
+
+- name: The vzdump hook
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/host/hl-vzdump-hook"
+    dest: /usr/local/bin/hl-vzdump-hook
+    mode: "0755"
+
+- name: Drive temperature every 15 minutes
+  ansible.builtin.copy:
+    dest: /etc/cron.d/hl-drive-temp
+    content: "*/15 * * * * root /usr/local/bin/hl-vzdump-hook temp\n"
+    mode: "0644"
+
+- name: Is the hook's dead man's switch armed?
+  ansible.builtin.stat:
+    path: /etc/homelab/healthchecks.env
+  register: hl_hook_env
+
+- name: Say how to arm it
+  ansible.builtin.debug:
+    msg: >-
+      /etc/homelab/healthchecks.env is missing: the nightly image would run
+      with nothing noticing if it stopped. Put
+      HEALTHCHECKS_VZDUMP_URL=<ping URL of the "vzdump" check> in it, mode 600.
+  when: not hl_hook_env.stat.exists
+
+- name: Proxmox storage and schedule
+  when: hl_backup_luks_uuid | length > 0
+  block:
+    - name: Is the backup drive mounted?
+      ansible.builtin.command: mountpoint -q {{ hl_backup_mount }}
+      register: hl_backup_mounted
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Is the hl-backup storage defined?
+      ansible.builtin.command: pvesm status --storage hl-backup
+      register: hl_backup_storage
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Define it
+      # is_mountpoint 1 is load-bearing: without it an unplugged drive leaves
+      # an empty directory and vzdump fills the host's root disk instead.
+      ansible.builtin.command: >-
+        pvesm add dir hl-backup --path {{ hl_backup_mount }} --content backup
+        --is_mountpoint 1 --prune-backups {{ hl_vzdump_prune }}
+      changed_when: true
+      when:
+        - hl_backup_storage.rc != 0
+        - hl_backup_mounted.rc == 0
+
+    - name: Is the nightly job defined?
+      ansible.builtin.command: pvesh get /cluster/backup/{{ hl_vzdump_job_id }}
+      register: hl_vzdump_job
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Define it
+      ansible.builtin.command: >-
+        pvesh create /cluster/backup --id {{ hl_vzdump_job_id }}
+        --schedule '{{ hl_vzdump_schedule }}' --vmid {{ hl_ct_id }}
+        --storage hl-backup --mode snapshot --compress zstd
+        --script /usr/local/bin/hl-vzdump-hook --notes-template '{{ "{{" }}guestname{{ "}}" }}'
+      changed_when: true
+      when: hl_vzdump_job.rc != 0

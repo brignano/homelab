@@ -161,6 +161,17 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 Adding or reloading a model (`docker/ai/load-models.sh`) is in
 [`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
 
+## Host config is code
+
+The Proxmox host and CT 100's own config are described in
+[`ansible/`](ansible/README.md): apt sources, packages, Tailscale, drive
+mounts, the vzdump job and hook, cron files on m5, and `pct config 100`. A
+plain run changes nothing that restarts a service and **reports** CT 100 drift
+instead of fixing it. Anything done by hand on m5 (`pct set`, a new
+`/etc/cron.d` file, a package) belongs in a role or `group_vars/all.yml` in the
+same change, or the next run flags it and the next rebuild loses it. What to do
+when hardware is lost is [`docs/runbook-rebuild.md`](docs/runbook-rebuild.md).
+
 ## Repo conventions
 - Each Docker stack lives in its own `docker/<name>/` directory with its own `docker-compose.yml` and `.env.example`.
 - Never commit `.env` files — only `.env.example` with placeholder values.

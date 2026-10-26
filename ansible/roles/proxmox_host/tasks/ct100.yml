@@ -1,0 +1,146 @@
+# CT 100: create it if it is missing, otherwise compare it with what it should
+# be and say what differs.
+#
+# On the live box this changes nothing by default. A wrong `pct set` here is a
+# reboot of the container that serves the house's DNS, so drift is REPORTED,
+# and fixed only with `-e hl_apply_ct_config=true`, at a moment you choose.
+
+- name: Render group id (for dev0)
+  ansible.builtin.command: getent group render
+  register: hl_render_group
+  changed_when: false
+  check_mode: false
+
+- name: The full expected config, dev0 included
+  ansible.builtin.set_fact:
+    hl_ct_expected: >-
+      {{ hl_ct_config | combine({'dev0': hl_ct_render_node ~ ',gid=' ~ hl_render_group.stdout.split(':')[2]}) }}
+
+- name: Does CT 100 exist?
+  ansible.builtin.command: pct status {{ hl_ct_id }}
+  register: hl_ct_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Create CT 100
+  when: hl_ct_status.rc != 0
+  block:
+    - name: From the nightly image
+      # The fast path: the backup drive survived, and this brings back all of
+      # CT 100 — volumes, .env files, Postgres — as of last night.
+      ansible.builtin.command: >-
+        pct restore {{ hl_ct_id }} {{ hl_ct_restore_archive }}
+        --storage {{ hl_ct_storage }}
+      changed_when: true
+      when: hl_ct_restore_archive | length > 0
+
+    - name: From the template
+      when: hl_ct_restore_archive | length == 0
+      block:
+        - name: Refresh the template list
+          ansible.builtin.command: pveam update
+          changed_when: false
+
+        - name: Newest debian-13-standard
+          ansible.builtin.shell: >-
+            set -o pipefail;
+            pveam available --section system | awk '{print $2}'
+            | grep '^debian-13-standard_' | sort -V | tail -n1
+          args:
+            executable: /bin/bash
+          register: hl_newest_template
+          changed_when: false
+          when: hl_ct_template | length == 0
+
+        - name: Download it
+          ansible.builtin.command: >-
+            pveam download local {{ hl_ct_template or hl_newest_template.stdout }}
+          args:
+            creates: "/var/lib/vz/template/cache/{{ hl_ct_template or hl_newest_template.stdout }}"
+
+        - name: SSH keys for CT 100's root
+          ansible.builtin.copy:
+            content: "{{ lookup('ansible.builtin.file', hl_ct_ssh_pubkeys | expanduser) }}\n"
+            dest: /root/.hl-ct-authorized-keys
+            mode: "0600"
+
+        - name: Create it with pct
+          # Privileged with nesting: Docker-in-LXC (setup log 2026-06-07). The
+          # wizard hides both toggles, which is why this was always the CLI.
+          ansible.builtin.command: >-
+            pct create {{ hl_ct_id }}
+            local:vztmpl/{{ hl_ct_template or hl_newest_template.stdout }}
+            --hostname {{ hl_ct_hostname }}
+            --unprivileged 0
+            --rootfs {{ hl_ct_storage }}:{{ hl_ct_rootfs_gb }}
+            --ssh-public-keys /root/.hl-ct-authorized-keys
+            {% for key, value in hl_ct_expected.items() %}--{{ key }} {{ value }} {% endfor %}
+          changed_when: true
+
+    - name: Start it
+      ansible.builtin.command: pct start {{ hl_ct_id }}
+      changed_when: true
+
+    - name: Wait for SSH
+      ansible.builtin.wait_for:
+        host: "{{ hl_ct_ip.split('/')[0] }}"
+        port: 22
+        timeout: 120
+
+- name: Live config
+  ansible.builtin.command: pct config {{ hl_ct_id }}
+  register: hl_ct_live_raw
+  changed_when: false
+  check_mode: false
+  when: hl_ct_status.rc == 0
+
+- name: Compare
+  # A key drifts when any comma-separated part we expect is missing from the
+  # live value. Extra parts Proxmox adds (hwaddr, type) are not drift.
+  ansible.builtin.set_fact:
+    hl_ct_drift_json: >-
+      {%- set live = {} -%}
+      {%- for line in hl_ct_live_raw.stdout_lines if ': ' in line -%}
+      {%- set _ = live.update({line.split(': ', 1)[0]: line.split(': ', 1)[1]}) -%}
+      {%- endfor -%}
+      {%- set out = {} -%}
+      {%- for key, want in hl_ct_expected.items() -%}
+      {%- set have = live.get(key, '') -%}
+      {%- if want.split(',') | difference(have.split(',')) | length > 0 -%}
+      {%- set _ = out.update({key: {'want': want, 'have': have or '(unset)'}}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {%- if live.get('unprivileged', '0') == '1' -%}
+      {%- set _ = out.update({'unprivileged': {'want': '0', 'have': '1'}}) -%}
+      {%- endif -%}
+      {{ out | to_json }}
+  when: hl_ct_status.rc == 0
+
+- name: Drift, as data
+  ansible.builtin.set_fact:
+    hl_ct_drift: "{{ hl_ct_drift_json | from_json }}"
+  when: hl_ct_status.rc == 0
+
+- name: Report drift
+  ansible.builtin.debug:
+    msg: >-
+      CT {{ hl_ct_id }} differs from group_vars/all.yml in
+      {{ hl_ct_drift | dict2items | map(attribute='key') | join(', ') }}:
+      {{ hl_ct_drift }}.
+      Either the vars are wrong (fix them) or the CT is (re-run with
+      -e hl_apply_ct_config=true, then `pct reboot {{ hl_ct_id }}` at a quiet
+      moment and check DNS twice).
+  when:
+    - hl_ct_status.rc == 0
+    - hl_ct_drift | length > 0
+
+- name: Fix drift
+  ansible.builtin.command: pct set {{ hl_ct_id }} --{{ item.key }} {{ item.value.want }}
+  loop: "{{ hl_ct_drift | dict2items | selectattr('key', 'in', hl_ct_apply_keys) }}"
+  loop_control:
+    label: "{{ item.key }}"
+  changed_when: true
+  when:
+    - hl_ct_status.rc == 0
+    - hl_apply_ct_config | bool

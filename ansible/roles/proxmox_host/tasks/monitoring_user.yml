@@ -1,0 +1,37 @@
+# pve-exporter reads the Proxmox API as monitoring@pve with the PVEAuditor
+# role (docker/monitoring/README.md step 2). The user and its permission are
+# made here; the token is not, because its secret is shown once and belongs in
+# docker/monitoring/.env, not in an Ansible log.
+
+- name: Does monitoring@pve exist?
+  ansible.builtin.command: pveum user list --output-format json
+  register: hl_pve_users
+  changed_when: false
+  check_mode: false
+
+- name: Create monitoring@pve
+  ansible.builtin.command: pveum user add monitoring@pve --comment "pve-exporter (read-only)"
+  changed_when: true
+  when: "'monitoring@pve' not in (hl_pve_users.stdout | from_json | map(attribute='userid') | list)"
+
+- name: Read-only on everything
+  # `acl modify` with the same user, role and path is a no-op.
+  ansible.builtin.command: pveum acl modify / --users monitoring@pve --roles PVEAuditor
+  changed_when: false
+
+- name: Does its token exist?
+  ansible.builtin.command: pveum user token list monitoring@pve --output-format json
+  register: hl_pve_tokens
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Say how to make the token
+  ansible.builtin.debug:
+    msg: >-
+      monitoring@pve has no `grafana` token. On m5 run `pveum user token add
+      monitoring@pve grafana --privsep 0` and put the value it prints in
+      docker/monitoring/.env as PVE_TOKEN_VALUE.
+  when: >-
+    hl_pve_tokens.rc != 0 or
+    'grafana' not in (hl_pve_tokens.stdout | from_json | map(attribute='tokenid') | list)
