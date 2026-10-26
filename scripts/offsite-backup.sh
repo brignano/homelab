@@ -204,7 +204,9 @@ fi
 # 3. Volumes, with SQLite databases copied consistently. Loops read from files
 # rather than pipes, so a failure inside one stops the script instead of dying
 # in a subshell while the next volume carries on.
-is_sqlite() { [ "$(head -c 15 "$1" 2>/dev/null)" = "SQLite format 3" ]; }
+# tr drops NUL bytes: a binary *.db that is not SQLite would otherwise make bash
+# print "ignored null byte" into the log for every such file, every night.
+is_sqlite() { [ "$(head -c 15 "$1" 2>/dev/null | tr -d '\000')" = "SQLite format 3" ]; }
 
 : > "$STAGING/.paths"
 printf '%s\n' "$VOLUMES" > "$STAGING/.volumes"

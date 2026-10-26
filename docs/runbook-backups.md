@@ -57,10 +57,13 @@ nano /root/.config/homelab/restic.env
 
 ```bash
 # /root/.config/homelab/restic.env  (never committed; mode 600)
-RESTIC_REPOSITORY=s3:https://<endpoint>/<bucket>/homelab
-RESTIC_PASSWORD=<restic password from the password manager>
-AWS_ACCESS_KEY_ID=<B2 keyID>
-AWS_SECRET_ACCESS_KEY=<B2 applicationKey>
+# Single quotes: the scripts source this file with the shell, so ) ] * # in
+# an unquoted value is a syntax error. Generate the restic password with
+# letters and numbers only, so it can never contain a ' itself.
+RESTIC_REPOSITORY='s3:https://<endpoint>/<bucket>/homelab'
+RESTIC_PASSWORD='<restic password from the password manager>'
+AWS_ACCESS_KEY_ID='<B2 keyID>'
+AWS_SECRET_ACCESS_KEY='<B2 applicationKey>'
 ```
 
 ```bash
@@ -81,8 +84,9 @@ Then the dead man's switch and the first run:
    above) lists one snapshot with host `homelab`.
 
 What goes up: every `docker/*/.env`, the newest Postgres dump, and the volumes
-for Open WebUI, Grafana, AdGuard, Home Assistant, Kali, Portainer and (once it
-exists) Jellyfin's config, without caches. SQLite databases are copied with
+for Open WebUI, Grafana, AdGuard, Home Assistant, Kali, Portainer, Jellyfin's
+config, Matterbridge, and the Sonarr, Radarr, Prowlarr and qBittorrent configs,
+without caches. SQLite databases are copied with
 `sqlite3 .backup` first, so they restore consistent. The list is `VOLUMES` at
 the top of the script.
 
