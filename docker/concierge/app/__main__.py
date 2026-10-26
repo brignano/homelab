@@ -4,9 +4,20 @@
   python -m app --selftest     check the CLI, Google, Home Assistant, Radarr, Sonarr, TMDB and Jellyfin; no API spend
   python -m app --ask "..."    run one task from the terminal and print it (costs money)
   python -m app --google-auth  one-time Google sign-in (read, calendar writes, drafts)
+  python -m app --read TOOL [--args JSON]
+                               run one read-tier tool and print what it returns;
+                               no model, no API spend, nothing written
 
 From the box:
   docker compose -f docker/concierge/docker-compose.yml run --rm concierge --selftest
+  docker exec concierge python -m app --read github_status --args '{"repo": "brignano/brignano.io"}'
+
+Why --read exists: a Claude Code session on the box (Remote Control) must not
+read docker/concierge/.env, and its safety check rightly refuses commands that
+reach for the secrets in it. --read runs inside the concierge, with the
+container's own environment, and prints only what a tool returns, so the
+tokens never leave the container. Only tiers.READ tools: a propose tool, or
+any name outside READ, is refused before anything is built.
 """
 
 from __future__ import annotations
@@ -199,6 +210,63 @@ async def _ask_async(cfg: Config, question: str) -> int:
     return 0 if out.ok else 1
 
 
+async def _read_async(cfg: Config, name: str, raw_args: str) -> int:
+    import datetime as dt
+    import json
+
+    from . import tiers, tools
+    from .forecast import Forecast
+    from .github import GitHub
+    from .google import Google
+    from .hacalendar import HaCalendars
+    from .home import Home
+    from .homelab import Homelab
+    from .server import media_from, watch_from
+
+    if name not in tiers.READ:
+        print(f"refused: {name!r} is not a read-tier tool; one of: {', '.join(sorted(tiers.READ))}",
+              file=sys.stderr)
+        return 2
+    try:
+        args = json.loads(raw_args or "{}")
+    except ValueError as exc:
+        print(f"--args is not JSON: {exc}", file=sys.stderr)
+        return 2
+    if not isinstance(args, dict):
+        print("--args must be a JSON object", file=sys.stderr)
+        return 2
+
+    async with aiohttp.ClientSession() as session:
+        ctx = tools.TaskContext(
+            task_id="cli-read", tz=cfg.tz,
+            google=Google(session, cfg.google_client_id, cfg.google_client_secret,
+                          cfg.google_refresh_token) if cfg.google_enabled else None,
+            calendar_ids=cfg.google_calendar_ids,
+            home=Home(cfg.ha_url, cfg.ha_token) if cfg.home_enabled else None,
+            max_proposals=0,
+            media=media_from(cfg, session) if cfg.media_enabled else None,
+            forecast=Forecast(session, cfg.ha_url, cfg.ha_token, cfg.ha_weather_entity)
+            if cfg.forecast_enabled else None,
+            ha_calendars=HaCalendars(session, cfg.ha_url, cfg.ha_token, cfg.ha_calendars)
+            if cfg.ha_calendars_enabled else None,
+            homelab=Homelab(session, cfg.prometheus_url) if cfg.prometheus_url else None,
+            github=GitHub(session, cfg.github_token, cfg.github_repos) if cfg.github_enabled else None,
+            watch=watch_from(cfg, session) if cfg.watch_enabled else None,
+            # Same as the morning brief: only read-tier tools get registered.
+            read_only=True,
+        )
+        tools.build(ctx)
+        found = ctx.registered.get(name)
+        if found is None:
+            print(f"{name} is not configured here (its family is off in .env)", file=sys.stderr)
+            return 1
+        result = await found.handler(args)
+    for block in result.get("content", []):
+        print(block.get("text", ""))
+    print(f"-- {name} · {dt.datetime.now(tz=cfg.tz):%Y-%m-%d %H:%M %Z}", file=sys.stderr)
+    return 1 if result.get("is_error") else 0
+
+
 async def _google_auth_async(cfg: Config) -> int:
     from .google import auth_request, code_from_redirect, exchange_code, SCOPES
 
@@ -235,6 +303,9 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--selftest", action="store_true", help="check CLI, Google and HA; no API spend")
     mode.add_argument("--ask", metavar="QUESTION", help="run one task and print it (spends API credit)")
     mode.add_argument("--google-auth", action="store_true", help="one-time Google sign-in")
+    mode.add_argument("--read", metavar="TOOL",
+                      help="run one read-tier tool and print its result (no model, no spend)")
+    parser.add_argument("--args", default="{}", metavar="JSON", help="arguments for --read, as a JSON object")
     args = parser.parse_args(argv)
     _setup_logging()
 
@@ -244,6 +315,11 @@ def main(argv: list[str] | None = None) -> int:
         return asyncio.run(_selftest_async(Config.from_env(require_token=False)))
     if args.ask:
         return asyncio.run(_ask_async(Config.from_env(require_token=False), args.ask))
+    if args.read is not None:
+        # stdout is the tool's result alone; the audit line goes to stderr.
+        logging.basicConfig(level=logging.INFO, stream=sys.stderr, force=True,
+                            format="%(asctime)s %(levelname)s %(name)s %(message)s")
+        return asyncio.run(_read_async(Config.from_env(require_token=False), args.read, args.args))
 
     from .server import serve
     serve(Config.from_env())

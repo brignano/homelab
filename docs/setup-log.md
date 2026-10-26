@@ -81,6 +81,41 @@ theme from `color-scheme`, and fix whatever that breaks here.
 
 ---
 
+## 2026-10-26 — `--read`: the concierge's read tools from the box
+
+**Goal:** Let a Claude Code session on the box (Remote Control) answer "any
+Dependabot alerts on brignano.io?" or "what's on the Apple calendar?" with the
+concierge's tools, without that session ever handling a token.
+
+**Steps:**
+1. `python -m app --read TOOL [--args JSON]` in `docker/concierge/app/__main__.py`:
+   builds a read-only task context from the container's own environment, calls
+   one read-tier tool's handler, and prints its result. No model call.
+2. `tools.build()` now records each registered tool by name on the context, so
+   the CLI calls exactly what the agent would.
+3. `tests/smoke.py` pins it: proposals and made-up names are refused with exit
+   2, bad `--args` too, and an unconfigured family exits 1.
+
+**Issues encountered:**
+- On 2026-10-26 a Remote Control session was asked to list Dependabot alerts.
+  Claude Code's auto-mode check refused both reading `GITHUB_TOKEN` from
+  `.env` and a one-off `docker exec … python -c` that used it, as credential
+  exploration. That is correct, and why this is a fixed, reviewed command
+  instead.
+- An empty `--read ""` fell through to `serve()`; it is tested now.
+
+**Resolution:**
+- The allow rule lives in `/root/.claude/settings.json`, the user-level file,
+  not in the repo: a committed `.claude/settings.json` would grant it to every
+  checkout, and a `settings.local.json` in `~/homelab` would leave the tree
+  dirty for `repo-sync.sh`.
+
+**Notes / next steps:**
+- After merge: `git pull`, `docker compose -f docker/concierge/docker-compose.yml up -d --build`,
+  then add the allow rule (README → "Reading from the box").
+
+---
+
 ## 2026-10-25 — Otto reads GitHub; brignano.io gets an uptime probe
 
 **Goal:** Anthony wanted Otto to answer "anything broken on brignano.io?" the

@@ -67,6 +67,9 @@ class TaskContext:
     # stamp needs "mail was actually read", not just "the run finished".
     google_calls: dict[str, int] = field(default_factory=dict)
     google_errors: int = 0
+    # Every registered tool by short name, filled by build(). The --read CLI
+    # calls a read-tier handler directly from here, without an agent run.
+    registered: dict[str, Any] = field(default_factory=dict)
 
 
 def google_reads_ok(ctx: TaskContext) -> bool:
@@ -590,4 +593,5 @@ def build(ctx: TaskContext):
         tools = [t for t in tools if t.name in ctx.only]
 
     names = [t.name for t in tools]
+    ctx.registered = {t.name: t for t in tools}
     return create_sdk_mcp_server(name=SERVER, version="1.0.0", tools=tools), names

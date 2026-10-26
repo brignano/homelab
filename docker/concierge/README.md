@@ -321,6 +321,40 @@ Once it is up, `heartbeat.sh` requires the `concierge` container to be running
 (`hl-container-missing`). Check RAM with `docker stats` while Ollama is loaded,
 and raise `mem_limit` if a real task gets near 1 GB.
 
+## Reading from the box (`--read`)
+
+The concierge's tools are useful outside Discord too, for example a Claude Code
+session on the box answering "any Dependabot alerts?" or "what's on the Apple
+calendar this week?". That session must not read `docker/concierge/.env`, and
+Claude Code's own safety check refuses commands that reach for it. So the
+container answers for itself:
+
+```bash
+docker exec concierge python -m app --read github_status --args '{"repo": "brignano/brignano.io"}'
+docker exec concierge python -m app --read home_calendar_events --args '{"days_ahead": 7}'
+docker exec concierge python -m app --read calendar_events
+docker exec concierge python -m app --read homelab_status
+```
+
+- **Read tier only.** Any name outside `tiers.READ` (a proposal, a made-up
+  name) is refused before anything is built, and the context is built
+  `read_only`, as for the morning brief. Nothing here can create an event,
+  write a draft or run a scene.
+- **No model, no spend.** It calls the tool's handler directly and prints what
+  the agent would have seen. The `tool_result` audit line goes to stderr.
+- **The tokens never leave the container.** It uses the container's own
+  environment, and only the tool's result reaches stdout.
+- **A tool whose family is off** exits 1 with "not configured here", never an
+  empty result.
+
+To let a Claude Code session on the box run it without asking every time, add
+this rule to `/root/.claude/settings.json`, the user-level file, so the
+checkout stays clean for `repo-sync.sh`'s `git pull --ff-only`:
+
+```json
+{ "permissions": { "allow": ["Bash(docker exec concierge python -m app --read:*)"] } }
+```
+
 ## Audit
 
 Every tool call logs one line to stdout, which Alloy ships to Loki:
