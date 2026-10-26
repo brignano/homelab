@@ -50,7 +50,7 @@ hl_ct_apply_keys: [cores, memory, features, nameserver, onboot, dev0, dev1, mp0]
 # The LUKS partition's UUID (`blkid -s UUID -o value /dev/sdX1`). Empty means
 # "this host has no backup drive yet": the drive tasks are skipped and say so.
 # Formatting is never automated — docs/runbook-backups.md §2 does that by hand.
-hl_backup_luks_uuid: ""
+hl_backup_luks_uuid: 497bab99-484d-4dd1-b012-4ddd4ddf42f2   # the 2 TB WD, read from m5's crypttab 2026-10-26
 hl_backup_keyfile: /root/.hl-backup.key
 hl_backup_mount: /mnt/hl-backup
 hl_media_mount: /mnt/media
