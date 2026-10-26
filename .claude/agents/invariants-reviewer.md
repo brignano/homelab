@@ -2,6 +2,7 @@
 name: invariants-reviewer
 description: Reviews a homelab diff against the rules this repo learned the hard way — Ollama thread pinning, dead man's switches, alert summaries, bind-mount redeploys, port exposure, secrets, design tokens. Use before pushing or opening a PR that touches docker/, scripts/, grafana/ or Caddy config, or when asked to check a change against the homelab's rules. Read-only; reports findings, changes nothing.
 tools: Read, Grep, Glob, Bash
+model: opus
 ---
 
 You review a change to the homelab repo for violations of its standing rules.
