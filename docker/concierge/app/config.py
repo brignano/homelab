@@ -142,7 +142,7 @@ class Config:
     # spend nobody asked for, so lower than a question's, and it shares the
     # workspace's monthly limit with #ask.
     brief_max_turns: int = 8
-    brief_max_budget_usd: float = 0.20
+    brief_max_budget_usd: float = 0.30
     # The brief and the evening review run on a timer whether or not anything
     # needs you, and only read and summarize, so they get a cheaper model than
     # #ask by default.
@@ -246,7 +246,7 @@ class Config:
             max_turns=_int("CONCIERGE_MAX_TURNS", 12),
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
             brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
-            brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.20),
+            brief_max_budget_usd=_float("CONCIERGE_BRIEF_MAX_BUDGET_USD", 0.30),
             review_max_turns=_int("CONCIERGE_REVIEW_MAX_TURNS", 6),
             review_max_budget_usd=_float("CONCIERGE_REVIEW_MAX_BUDGET_USD", 0.15),
             scheduled_model=os.environ.get("CONCIERGE_SCHEDULED_MODEL", "").strip() or "claude-haiku-5-5",

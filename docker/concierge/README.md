@@ -54,7 +54,7 @@ flowchart LR
   and nothing else, and its reply never becomes a pending proposal. The bot
   calls it with each scheduled digest when its `BRIEF_ENABLED=true`, under
   its own lower caps (`CONCIERGE_BRIEF_MAX_TURNS` 8,
-  `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.20) and its own cheaper model
+  `CONCIERGE_BRIEF_MAX_BUDGET_USD` $0.30) and its own cheaper model
   (`CONCIERGE_SCHEDULED_MODEL`, Haiku; #ask keeps `CONCIERGE_MODEL`); see
   [`docker/assistant/README.md`](../assistant/README.md) → "The morning brief".
 - **The evening review proposes, but only memories and follow-ups.**
@@ -74,7 +74,7 @@ Nothing here keeps its own schedule. Each question is one agent run on
 `claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50, and so
 is each follow-up set to **check** when it comes due (a **remind** costs
 nothing). The bot's scheduled runs use `claude-haiku-5-5`: the morning brief
-(8 turns, $0.20) and the evening review (6 turns, $0.15), each at most once a
+(8 turns, $0.30) and the evening review (6 turns, $0.15), each at most once a
 day and only when turned on; the review is skipped on a day with nothing in
 it. Typical
 lookups are a few cents; the footer under each answer shows the real figure.

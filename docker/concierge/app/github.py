@@ -167,6 +167,38 @@ def quiet(report: dict) -> bool:
                 or report.get("dependabot_alerts") or report.get("could_not_read"))
 
 
+def for_brief(status: dict) -> dict:
+    """The morning brief's view of status(): only what it may bullet. Pure; tested.
+
+    The brief bullets a red workflow, a critical or high alert, or something
+    unreadable, and nothing else, so open PRs (every Renovate bump across
+    every repository), medium and low counts and URLs are dropped here rather
+    than paid for in tokens on every turn of a scheduled run. A repository
+    left with nothing joins `quiet`.
+    """
+    repos, calm = [], list(status.get("quiet") or [])
+    for r in status.get("repos") or []:
+        slim: dict = {"repo": r.get("repo")}
+        if r.get("failing_workflows"):
+            slim["failing_workflows"] = [w.get("workflow") for w in r["failing_workflows"]]
+        alerts = {s: n for s, n in (r.get("dependabot_alerts") or {}).items() if s in ("critical", "high")}
+        if alerts:
+            slim["dependabot_alerts"] = alerts
+            slim["worst_alerts"] = [{"package": a.get("package"), "severity": a.get("severity")}
+                                    for a in r.get("worst_alerts") or []
+                                    if a.get("severity") in ("critical", "high")][:3]
+        if r.get("could_not_read"):
+            slim["could_not_read"] = r["could_not_read"]
+        if len(slim) > 1:
+            repos.append(slim)
+        else:
+            calm.append(r.get("repo"))
+    out: dict = {"repos": repos}
+    if calm:
+        out["quiet"] = calm
+    return out
+
+
 def discovered(payload: object) -> tuple[str, ...]:
     """/user/repos as owner/name, without archived repositories and forks. Pure; tested."""
     if not isinstance(payload, list):

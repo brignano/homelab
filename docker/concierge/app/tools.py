@@ -31,7 +31,7 @@ from .google import Google, GoogleError
 from .forecast import Forecast, ForecastError
 from .hacalendar import CalendarError, HaCalendars
 from .home import Home, HomeError
-from .github import GitHub, GitHubError
+from .github import GitHub, GitHubError, for_brief
 from .homelab import Homelab, StatusError
 from .media import MAX_QUEUE, Media, MediaError
 from .tiers import READ, SERVER
@@ -396,7 +396,9 @@ def build(ctx: TaskContext):
             if repo is not None and not isinstance(repo, str):
                 return _err("repo must be an owner/name string")
             # status() refuses anything outside what it reads, `*` included.
-            return _ok(await github.status(repo))
+            status = await github.status(repo)
+            # The brief bullets only red runs and critical/high alerts.
+            return _ok(for_brief(status) if ctx.read_only else status)
 
         @tool("github_status",
               "What needs attention on the user's GitHub repositories: open pull requests "
