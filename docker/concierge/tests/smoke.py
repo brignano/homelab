@@ -878,6 +878,32 @@ def _():
     assert "github_status" in names, names
 
 
+@check("--read: read tier only, refused before anything is built, unconfigured is an error")
+def _():
+    from app import __main__ as cli
+    keep = dict(os.environ)
+    try:
+        for k in ("CONCIERGE_TOKEN", "GITHUB_TOKEN", "GITHUB_REPOS", "HA_TOKEN", "GOOGLE_CLIENT_ID",
+                  "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN", "RADARR_API_KEY", "SONARR_API_KEY",
+                  "TMDB_TOKEN", "JELLYFIN_API_KEY"):
+            os.environ.pop(k, None)
+        os.environ["PROMETHEUS_URL"] = ""
+        for name in ("draft_email", "create_event", "remember", "send_email", "Bash", ""):
+            assert cli.main(["--read", name]) == 2, name
+        assert cli.main(["--read", "github_status", "--args", "[1]"]) == 2
+        assert cli.main(["--read", "github_status", "--args", "{bad"]) == 2
+        # Configured nowhere: a clear failure, not an empty "all clear".
+        assert cli.main(["--read", "github_status"]) == 1
+    finally:
+        os.environ.clear()
+        os.environ.update(keep)
+    # build() exposes handlers by name, and a read-only context registers no proposals.
+    ctx = _ctx(media_on=_media(), extras=True)
+    ctx.read_only = True
+    _, names = tools.build(ctx)
+    assert set(ctx.registered) == set(names) and set(names) <= tiers.READ, names
+
+
 @check("config: GITHUB_REPOS must be owner/name; a token with no repos is an error")
 def _():
     keep = dict(os.environ)
