@@ -58,7 +58,12 @@ proxy_adguard_conf -
 homeassistant_homeassistant_config tts,backups
 desktops_kali_config .cache,.local/share/Trash
 core_portainer_data -
-jellyfin_config metadata,cache,log,data/transcodes,data/subtitles,data/keyframes,data/attachments}"
+jellyfin_config metadata,cache,log,data/transcodes,data/subtitles,data/keyframes,data/attachments
+downloads_sonarr MediaCover,logs,Backups
+downloads_radarr MediaCover,logs,Backups
+downloads_prowlarr logs,Backups
+downloads_qbittorrent qBittorrent/logs
+matterbridge_data .npm,.cache}"
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"

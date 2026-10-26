@@ -1,0 +1,49 @@
+# The Proxmox host, m5. Everything here used to be a command in a doc, typed
+# once on the day it was needed. Order matters only where noted.
+
+- name: Proxmox apt sources (no-subscription on, enterprise off)
+  ansible.builtin.import_tasks: apt.yml
+
+- name: Host packages
+  ansible.builtin.apt:
+    name:
+      - cryptsetup                # backup drive (Proxmox does not ship it)
+      - gdisk                     # sgdisk, for the drive runbook
+      - smartmontools             # hl-vzdump-hook's SMART and temperature reads
+      - prometheus-node-exporter  # host metrics, scraped as node-proxmox
+      - zstd                      # hl-vzdump-hook verifies each archive with zstd -t
+      - curl
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
+- name: Tailscale (subnet router for the LAN)
+  ansible.builtin.import_tasks: tailscale.yml
+
+- name: Node exporter reports /mnt (Debian's default hides it)
+  # docs/runbook-backups.md → "Drive usage on the host". The packaged default
+  # exclude list contains mnt|media, so neither drive had a disk alert.
+  ansible.builtin.lineinfile:
+    path: /etc/default/prometheus-node-exporter
+    regexp: '^ARGS='
+    line: 'ARGS="--collector.filesystem.mount-points-exclude=^/(dev|proc|run|sys|var/lib/docker/.+|var/lib/containers/storage/.+)($|/)"'
+  notify: Restart node exporter
+
+- name: Read-only Proxmox API user for pve-exporter
+  ansible.builtin.import_tasks: monitoring_user.yml
+
+- name: Drives
+  ansible.builtin.import_tasks: drives.yml
+
+- name: The nightly image and its hook
+  ansible.builtin.import_tasks: backup.yml
+
+- name: Weekly trim of CT 100 (the thin pool does not reclaim on its own)
+  # AGENTS.md → Disk. 05:00 Sunday, an hour after repo-sync's image prune.
+  ansible.builtin.copy:
+    dest: /etc/cron.d/fstrim-ct100
+    content: "0 5 * * 0 root /usr/sbin/pct fstrim {{ hl_ct_id }} >/dev/null 2>&1\n"
+    mode: "0644"
+
+- name: CT 100
+  ansible.builtin.import_tasks: ct100.yml

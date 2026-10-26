@@ -1,0 +1,4 @@
+# Every variable here is hl_*: the lab's one namespace, shared by both roles
+# through group_vars, rather than a prefix per role.
+skip_list:
+  - var-naming[no-role-prefix]

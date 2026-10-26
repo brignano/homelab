@@ -1,0 +1,92 @@
+# Unlock-and-mount for the two USB drives (docs/runbook-backups.md §2–3).
+# Partitioning, LUKS and mkfs are never here: they erase a disk, and which disk
+# is a judgement made by reading `lsblk`, not a variable.
+#
+# Both mounts are `nofail`, so an unplugged drive never blocks boot, and both
+# have a guard against writing into the empty directory left behind:
+#   backup → Proxmox storage `is_mountpoint 1` (backup.yml)
+#   media  → `chattr +i` on the bare directory (below)
+
+- name: Backup drive (LUKS, unlocked at boot by keyfile)
+  when: hl_backup_luks_uuid | length > 0
+  block:
+    - name: Is the keyfile on this host?
+      ansible.builtin.stat:
+        path: "{{ hl_backup_keyfile }}"
+      register: hl_keyfile
+
+    - name: Say how to get a keyfile onto a new host
+      ansible.builtin.debug:
+        msg: >-
+          {{ hl_backup_keyfile }} is missing, so the backup drive cannot unlock
+          at boot. On a rebuilt host, make a new one and add it with the
+          passphrase from the password manager: docs/runbook-rebuild.md →
+          "The backup drive on a new host".
+      when: not hl_keyfile.stat.exists
+
+    - name: Unlock at boot
+      ansible.builtin.lineinfile:
+        path: /etc/crypttab
+        regexp: '^hl-backup\s'
+        line: "hl-backup UUID={{ hl_backup_luks_uuid }} {{ hl_backup_keyfile }} luks,nofail"
+        create: true
+        mode: "0600"
+      notify: Reload systemd
+
+    - name: Mount point
+      ansible.builtin.file:
+        path: "{{ hl_backup_mount }}"
+        state: directory
+        mode: "0755"
+
+    - name: Mount at boot
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        regexp: '^/dev/mapper/hl-backup\s'
+        line: "/dev/mapper/hl-backup {{ hl_backup_mount }} ext4 defaults,nofail 0 2"
+      notify: Reload systemd
+
+- name: Say the backup drive is not configured
+  ansible.builtin.debug:
+    msg: >-
+      hl_backup_luks_uuid is empty, so no backup drive is set up on this host
+      and there will be no nightly image. Set it in group_vars/all.yml once the
+      drive exists (docs/runbook-backups.md §2).
+  when: hl_backup_luks_uuid | length == 0
+
+- name: Media drive mount point
+  ansible.builtin.file:
+    path: "{{ hl_media_mount }}"
+    state: directory
+    mode: "0755"
+
+- name: Media drive at boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^LABEL=hl-media\s'
+    line: "LABEL=hl-media {{ hl_media_mount }} ext4 defaults,nofail 0 2"
+  notify: Reload systemd
+
+- name: Is the media drive mounted?
+  ansible.builtin.command: mountpoint -q {{ hl_media_mount }}
+  register: hl_media_mounted
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Is the bare directory immutable?
+  ansible.builtin.command: lsattr -d {{ hl_media_mount }}
+  register: hl_media_attr
+  changed_when: false
+  check_mode: false
+  when: hl_media_mounted.rc != 0
+
+- name: Make the bare directory refuse writes
+  # Unmounted, Jellyfin's cache would otherwise land on the host's root disk.
+  # Only ever while unmounted: on the mounted drive this would hit the drive's
+  # root instead.
+  ansible.builtin.command: chattr +i {{ hl_media_mount }}
+  changed_when: true
+  when:
+    - hl_media_mounted.rc != 0
+    - "'i' not in hl_media_attr.stdout.split()[0]"

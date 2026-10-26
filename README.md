@@ -94,7 +94,9 @@ homelab/
 │   └── check-observability.sh # CI: dashboards render, metrics have a writer
 ├── .github/
 │   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
+├── ansible/                 # The host and CT 100 as code (rebuild + drift check)
 ├── docs/
+│   ├── runbook-rebuild.md   # What to do when the box, or more, is gone
 │   └── setup-log.md         # Chronological setup notes
 └── .gitignore
 ```

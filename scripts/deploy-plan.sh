@@ -117,7 +117,8 @@ plan_for() {
   fi
   if printf '%s\n' "$paths" | grep -qE '^scripts/host/'; then
     say "scripts/host changed — the Proxmox host runs its own copy, git pull does not reach it."
-    say "    On m5: pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook"
+    say "    From the Mac: cd ansible && ansible-playbook site.yml --limit proxmox"
+    say "    (or on m5: pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook)"
     say "    Then the check in docs/runbook-backups.md → SMART metrics."
     quiet=0
   fi

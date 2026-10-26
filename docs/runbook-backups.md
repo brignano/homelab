@@ -147,8 +147,10 @@ pvesm status | grep hl-backup
 
 ### The hook and its dead man's switch
 
-The host has no checkout of the repo, but CT 100 does. Copy the hook out of
-it, on the host:
+The playbook installs the hook, its config directory and the temperature cron
+file (`cd ansible && ansible-playbook site.yml --limit proxmox`). By hand
+instead: the host has no checkout of the repo, but CT 100 does. Copy the hook
+out of it, on the host:
 
 ```bash
 pct exec 100 -- git -C /root/homelab pull --ff-only

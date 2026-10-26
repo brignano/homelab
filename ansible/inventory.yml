@@ -1,0 +1,14 @@
+# The two machines the lab is made of. Addresses are the LAN ones; from off the
+# LAN they are reached through the tailnet's subnet route like everything else.
+all:
+  children:
+    proxmox:
+      hosts:
+        m5:
+          ansible_host: 10.0.0.200
+          ansible_user: root
+    docker:
+      hosts:
+        ct100:
+          ansible_host: 10.0.0.201
+          ansible_user: root

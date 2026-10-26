@@ -1,0 +1,79 @@
+# What the lab IS, in one place. Every value here was read off the docs and
+# setup log, which is where it lived until now; the first run against the live
+# box (`--check --diff`) is what proves each one still matches. Where it does
+# not, the drift report in roles/proxmox_host/tasks/ct100.yml names the key.
+#
+# Secrets are deliberately NOT here: they live in docker/*/.env, restic.env and
+# /etc/homelab/healthchecks.env on the boxes, and in the password manager. The
+# playbook checks they exist and says which step makes each one.
+
+# --- Proxmox host (m5) -------------------------------------------------------
+hl_lan_cidr: 10.0.0.0/24            # advertised to the tailnet by m5
+hl_gateway: 10.0.0.1
+
+# --- CT 100, the Docker LXC --------------------------------------------------
+hl_ct_id: 100
+hl_ct_hostname: docker
+hl_ct_ip: 10.0.0.201/24
+hl_ct_storage: local-lvm
+hl_ct_rootfs_gb: 400                # thin; the pool (~348 GiB) is the real ceiling (AGENTS.md → Disk)
+# Template for a fresh create. The newest `debian-13-standard` that
+# `pveam available` lists is used when this is empty.
+hl_ct_template: ""
+# Public keys put in CT 100's root account at create time, so this playbook
+# (and you) can SSH in. A path on the machine running Ansible.
+hl_ct_ssh_pubkeys: "~/.ssh/id_ed25519.pub"
+
+# The settings that matter in `pct config 100`, as `pct set` takes them. A
+# value is several comma-separated parts; the drift check passes when every
+# part listed here is present in the live value, so Proxmox's own additions
+# (hwaddr=…, type=veth) do not count as drift.
+#
+# `dev0` is filled in at run time with the host's render gid.
+hl_ct_config:
+  cores: "6"
+  memory: "14336"
+  features: nesting=1
+  nameserver: 1.1.1.1               # not the host's: MagicDNS is unreachable from the CT (setup log 2026-06-07)
+  onboot: "1"
+  net0: name=eth0,bridge=vmbr0,ip=10.0.0.201/24,gw=10.0.0.1
+  dev1: /dev/net/tun                # gluetun (docker/downloads)
+  mp0: /mnt/media,mp=/media,backup=0   # backup=0 or vzdump copies the library
+hl_ct_render_node: /dev/dri/renderD128 # dev0: Jellyfin's VA-API, never all of /dev/dri
+
+# Keys `pct set` may change on the live CT when you pass
+# `-e hl_apply_ct_config=true`. net0 is never applied automatically: writing it
+# without the live hwaddr gives the CT a new MAC address.
+hl_ct_apply_keys: [cores, memory, features, nameserver, onboot, dev0, dev1, mp0]
+
+# --- Drives on m5 -------------------------------------------------------------
+# The LUKS partition's UUID (`blkid -s UUID -o value /dev/sdX1`). Empty means
+# "this host has no backup drive yet": the drive tasks are skipped and say so.
+# Formatting is never automated — docs/runbook-backups.md §2 does that by hand.
+hl_backup_luks_uuid: ""
+hl_backup_keyfile: /root/.hl-backup.key
+hl_backup_mount: /mnt/hl-backup
+hl_media_mount: /mnt/media
+
+# --- Nightly image --------------------------------------------------------------
+hl_vzdump_job_id: hl-ct100
+hl_vzdump_schedule: "02:30"         # after pg-backup (02:00), before repo-sync (04:00)
+hl_vzdump_prune: keep-daily=7,keep-weekly=4,keep-monthly=3
+
+# --- CT 100 contents ------------------------------------------------------------
+hl_repo_url: https://github.com/brignano/homelab.git
+hl_repo_dir: /root/homelab
+
+# --- Switches for a rebuild. All off: a plain run never restarts anything. ------
+# Create CT 100 by restoring this vzdump archive instead of from the template
+# (the backup drive survived). A path on m5.
+hl_ct_restore_archive: ""
+# Put .env files and volumes back from B2 (box and backup drive both lost).
+hl_restore_offsite: false
+# Bring every stack that has a .env up, in bootstrap-plan.py's order.
+hl_bring_up: false
+# Install the scheduled jobs on the docker host. Off only for a restore drill
+# on a scratch CT, whose restored .env would ping the real Healthchecks checks.
+hl_install_cron: true
+# Let the drift check fix CT 100's config with `pct set` (needs a `pct reboot`).
+hl_apply_ct_config: false
