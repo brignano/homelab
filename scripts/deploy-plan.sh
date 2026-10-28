@@ -292,13 +292,18 @@ $(printf '%s\n' "$watched" | grep -v '^$' | while read -r p; do
   # code. That happened on the very deploy this script was written for.
   #
   # So ask the image when it was built, not the container when it started, and
-  # only about the files that go INTO an image. Gated on the stack having a
-  # Dockerfile at all: a pulled image (grafana, loki) carries an upstream build
-  # date from months ago, and comparing repo files against that would flag the
-  # whole lab forever.
+  # only about the files that go INTO an image. Gated on this SERVICE having a
+  # `build:` key, not on the stack having a Dockerfile: a pulled image
+  # (grafana, loki) carries an upstream build date from months ago, and
+  # comparing repo files against that would flag the whole lab forever. The
+  # stack-level gate did exactly that to AdGuard, a pulled image that shares
+  # docker/proxy with Caddy's Dockerfile, and called the resolver stale.
   img=""
   built=""
-  if [ -f "$dir/Dockerfile" ]; then
+  svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$c" 2>/dev/null || true)
+  if [ -f "$dir/Dockerfile" ] && [ -n "$svc" ] && \
+     docker compose --project-directory "$dir" -f "$dir/docker-compose.yml" config --format json 2>/dev/null \
+       | jq -e --arg s "$svc" '.services[$s].build != null' >/dev/null 2>&1; then
     img=$(docker inspect -f '{{.Image}}' "$c" 2>/dev/null || true)
     built=$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)
   fi
