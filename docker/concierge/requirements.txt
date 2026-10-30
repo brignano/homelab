@@ -6,6 +6,6 @@ claude-agent-sdk==0.2.160
 # The SDK allows mcp>=1.23,<3. Pinned to 1.x: app/home.py uses
 # `streamable_http_client`, and 2.x is a major version nobody has read yet.
 mcp==1.30.0
-aiohttp==3.14.3
+aiohttp==3.14.4
 # zoneinfo needs a tz database; python:*-slim doesn't ship one.
 tzdata==2024.2
