@@ -7,7 +7,7 @@
 Run on the Mac whose Photos app holds the library (docs/design/tsd-photo-library.md,
 Phase 2, "dry-run report"):
 
-    uv run tools/photos/estimate.py --icloud-used-gb 1500
+    uv run tools/photos/estimate.py --icloud-used-gb YOUR_GB
     uv run tools/photos/estimate.py --csv ~/Desktop/photo-candidates.csv
 
 Read-only. It opens a copy of the library's database through osxphotos, reads
