@@ -293,6 +293,27 @@ Given no argument it asks Docker instead — each container's start time against
 the mtime of the files it reads — which is the answer when the pull already
 happened and nothing recorded where it started. It reports; it never deploys.
 
+## Who runs the deploy
+
+**Claude does, not me.** CT 100 is connected to Claude as a Remote Control
+device ("docker (homelab)", folder `/root/homelab`). A cloud session that
+merges or finishes a change to anything CT 100 runs starts a Remote Control
+session there and runs `/deploy` itself, then reports the result. Do not hand me
+`ssh` + commands for CT 100; that is the job this connection exists for.
+
+- [`.claude/settings.json`](.claude/settings.json) pre-approves the read-only
+  checks and the `up -d` / `restart` / `deploy-plan.sh` steps `/deploy` uses, so
+  the session on the box does not stop to ask for each one. `git push`, volume
+  deletes and prunes are denied there outright.
+- **Still mine to confirm:** a recreate of `proxy` (AdGuard + Caddy, see
+  `/deploy` → Safety), which `settings.json` routes to an `ask`, and anything on
+  the Proxmox host itself, which Remote Control on CT 100 cannot reach. The
+  host patches itself instead: Debian security updates through
+  unattended-upgrades and Tailscale through `--auto-update`, both set by
+  Ansible (`proxmox_host` role).
+- Remote Control asks me once per session before it starts. That one tap is the
+  only confirmation an ordinary deploy should need.
+
 ## How to help me
 - When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.
 - When I describe a problem with a container, check `docker logs`, `docker inspect`, and the compose file before suggesting fixes.

@@ -20,6 +20,9 @@
 - name: Tailscale (subnet router for the LAN)
   ansible.builtin.import_tasks: tailscale.yml
 
+- name: Debian security updates install themselves
+  ansible.builtin.import_tasks: security_updates.yml
+
 - name: Node exporter reports /mnt (Debian's default hides it)
   # docs/runbook-backups.md → "Drive usage on the host". The packaged default
   # exclude list contains mnt|media, so neither drive had a disk alert.
