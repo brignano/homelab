@@ -164,6 +164,18 @@ read -- check its notes for new security defaults before merging.",
       groupName: null,
       addLabels: ["pinned-image"],
     },
+    {
+      description: "icloudpd (docker/photos/), pinned by tag and digest. The \
+stack is only ever `docker compose run` from cron, and repo-sync skips \
+profile-only stacks, so its auto-pull never updates it. Apple changes its \
+sign-in flow now and then and the fix ships as an icloudpd release, so these \
+bumps are worth merging promptly.",
+      matchFileNames: ["docker/photos/**"],
+      enabled: true,
+      pinDigests: true,
+      groupName: null,
+      addLabels: ["pinned-image"],
+    },
   ],
 
   customManagers: [

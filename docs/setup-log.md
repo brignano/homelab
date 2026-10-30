@@ -68,6 +68,39 @@ way of losing it.
 
 ---
 
+## 2026-10-25 — iCloud Photos mirror built (docker/photos/), cap-safe on Xfinity
+
+**Goal:** Start the photo library work (tsd-photo-library.md, Phase 1) now that
+the 5 TB drive is in, without waiting for the Frontier switch.
+
+**Steps:**
+1. `docker/photos/`: icloudpd 1.32.3, pinned by tag and digest, behind a
+   compose profile so `up -d` starts nothing. Download target
+   `/media/photos/icloud` with `create_host_path: false`; session cookie in
+   the `photos_session` volume.
+2. `scripts/photos-sync.sh`, nightly at 01:00 via `install-cron.sh`: runs
+   icloudpd with `docker compose run`, download only, `{:%Y/%m}` folders,
+   `name-id7` filenames and XMP sidecars. `--auth` does the interactive
+   sign-in.
+3. Instead of waiting for fiber, the script counts the container's received
+   bytes and stops at `PHOTOS_MONTHLY_BUDGET_GB` (default 500) per calendar
+   month, and at `PHOTOS_STOP_HOUR` (default 07:00). Over budget, runs fetch
+   the last 7 days only.
+4. Metrics `homelab_photos_*`, Healthchecks `HEALTHCHECKS_PHOTOS_URL`, alert
+   `hl-photos-sync-failed`, which names the sign-in command when Apple ended
+   the session.
+5. A stack whose every service has a profile is no longer reported as "not
+   running" by repo-sync, and is left out of `bootstrap-plan.py`.
+
+**Notes / next steps:**
+- Not deployed. Setup is `docker/photos/README.md` → "Setup, once", including
+  the Advanced Data Protection check.
+- Anthony wants weak photos moved off iCloud, not just mirrored. That makes
+  the drive the only copy of those photos; it waits on how they get a second
+  copy (tsd-photo-library.md → Open questions).
+
+---
+
 ## 2026-10-25 — Dashboard tokens to @brignano/design 0.3.0
 
 **Goal:** Move the vendored design tokens from 0.2.0 to 0.3.0, which rewrites

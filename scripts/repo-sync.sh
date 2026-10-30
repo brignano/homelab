@@ -255,6 +255,16 @@ verify_stack() {
   return 1
 }
 
+# job_only <compose>: every service carries a profile, so `up -d` starts
+# nothing and cron runs it with `docker compose run` (docker/photos/). Its
+# one-off container can be up when this runs, which must not read as a stack to
+# pull, heal or call stale. Asked of Compose rather than listed here, and only
+# an answer that parsed counts: a compose file that cannot be read is not one.
+job_only() {
+  _jo=$(cd "$REPO" && docker compose -f "$1" config --services 2>/dev/null) || return 1
+  [ -z "$_jo" ]
+}
+
 in_list() {
   for _w in $2; do [ "$_w" = "$1" ] && return 0; done
   return 1
@@ -368,6 +378,7 @@ for dir in docker/*/; do
   stack=$(basename "$dir")
   compose="${dir}docker-compose.yml"
   [ -f "$compose" ] || continue
+  if job_only "$compose"; then continue; fi
 
   # `if`, not `&&`: under `set -e` an AND-list whose test fails takes the whole
   # script down, and the test failing is the normal case. Same reason the report
@@ -472,6 +483,7 @@ for dir in docker/*/; do
   stack=$(basename "$dir")
   compose="${dir}docker-compose.yml"
   [ -f "$compose" ] || continue
+  if job_only "$compose"; then continue; fi
 
   # Newest commit touching this stack that could actually change what runs.
   #
@@ -808,6 +820,7 @@ for dir in docker/*/; do
   stack=$(basename "$dir")
   compose="${dir}docker-compose.yml"
   [ -f "$compose" ] || continue
+  if job_only "$compose"; then continue; fi
 
   abs=$(cd "$dir" && pwd)
   cids=$(running_ids "$abs")
