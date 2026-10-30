@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(hostname)",
+      "Bash(pwd)",
+      "Bash(git status*)",
+      "Bash(git pull --ff-only)",
+      "Bash(git rev-parse *)",
+      "Bash(git log *)",
+      "Bash(git --no-pager log *)",
+      "Bash(git diff *)",
+      "Bash(./scripts/deploy-plan.sh*)",
+      "Bash(./scripts/install-cron.sh)",
+      "Bash(./scripts/repo-sync.sh)",
+      "Bash(./scripts/pg-backup.sh)",
+      "Bash(./scripts/check-probes.sh*)",
+      "Bash(./scripts/health.sh*)",
+      "Bash(docker ps*)",
+      "Bash(docker inspect *)",
+      "Bash(docker logs *)",
+      "Bash(docker compose -f docker/* ps*)",
+      "Bash(docker compose -f docker/* up -d*)",
+      "Bash(docker compose -f docker/* restart *)",
+      "Bash(curl -s localhost:*)",
+      "Bash(curl -s 'localhost:*)",
+      "Bash(dig +short *)"
+    ],
+    "ask": [
+      "Bash(docker compose -f docker/proxy/*)"
+    ],
+    "deny": [
+      "Bash(git push*)",
+      "Bash(git reset --hard*)",
+      "Bash(docker system prune*)",
+      "Bash(docker volume rm*)",
+      "Bash(docker compose * down -v*)"
+    ]
+  }
+}
