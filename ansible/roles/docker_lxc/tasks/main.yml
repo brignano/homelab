@@ -124,3 +124,49 @@
     executable: /bin/bash
   changed_when: true
   when: hl_bring_up | bool
+
+- name: Is Claude Code installed and signed in?
+  # Installing it and `claude` login are by hand (one browser sign-in); this
+  # only keeps Remote Control running across reboots once it is.
+  ansible.builtin.stat:
+    path: /root/.local/bin/claude
+  register: hl_claude
+
+- name: Claude Remote Control as a service
+  # Claude deploys through this (AGENTS.md, "Who runs the deploy"). Started by
+  # hand it did not survive the 2026-10-30 host reboot.
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/claude-rc.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Claude Remote Control (homelab)
+      After=network-online.target docker.service
+      Wants=network-online.target
+
+      [Service]
+      WorkingDirectory={{ hl_repo_dir }}
+      ExecStart=/root/.local/bin/claude remote-control
+      Restart=always
+      RestartSec=10
+      Environment=HOME=/root
+
+      [Install]
+      WantedBy=multi-user.target
+  when: hl_claude.stat.exists
+
+- name: Start it, and on every boot
+  ansible.builtin.systemd:
+    name: claude-rc
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: hl_claude.stat.exists
+
+- name: Say how to set it up
+  ansible.builtin.debug:
+    msg: >-
+      Claude Code is not installed, so Claude can't deploy to this box. Install
+      it (curl -fsSL https://claude.ai/install.sh | bash), run `claude` once in
+      {{ hl_repo_dir }} to sign in, then run this playbook again.
+  when: not hl_claude.stat.exists

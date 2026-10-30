@@ -314,6 +314,14 @@ session there and runs `/deploy` itself, then reports the result. Do not hand me
 - Remote Control asks me once per session before it starts. That one tap is the
   only confirmation an ordinary deploy should need.
 
+## Agent fleet
+
+Homelab's backlog is worked by agents under the fleet standard in
+[`brignano/ai-tools` `fleet/README.md`](https://github.com/brignano/ai-tools/blob/main/fleet/README.md).
+Issues are specs and only I set `agent:ready`. Every builder PR touching
+`docker/`, `scripts/`, `grafana/` or Caddy runs `invariants-reviewer` first, and
+"Who runs the deploy" above still governs what happens after merge.
+
 ## How to help me
 - When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.
 - When I describe a problem with a container, check `docker logs`, `docker inspect`, and the compose file before suggesting fixes.
