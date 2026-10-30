@@ -54,3 +54,43 @@ its reasons (and, for a similar shot, which one it would keep), so you can spot-
 
 Tune it with `--similar-seconds`, `--low-quality-percent`, `--screenshot-months`, `--video-years`,
 `--include-albums` and `--include-people`. `--help` lists them all.
+
+## `climb_judge.py`: did this climbing clip end in a send or a fall?
+
+Runs on CT 100 against the mirror, not on the Mac. Read-only: it writes one
+CSV of verdicts and changes nothing in iCloud or Photos. It compares two ways
+of telling, so you can see which one to trust before it judges every clip:
+
+- **local**: body tracking (MediaPipe) on the box. Free and private. A send
+  is a pause at the high point, hands up, before any drop; a fall is a fast
+  drop with no pause. Shaky handheld clips are hard on it.
+- **claude**: about 12 frames per clip, with timestamps, sent to the Claude
+  API (`claude-opus-5-5`, about $0.02 a clip). More context, but the frames
+  leave the house.
+
+### Test it on clips you have labelled
+
+1. Pick ~20 climbing clips that are already in the mirror (the backfill
+   starts with the newest), about half sends and half falls. In Photos,
+   ⌘I on a clip shows its file name, e.g. `IMG_5069.MOV`.
+2. On CT 100, write them to `/root/climb-judge/labels.csv`:
+   ```
+   file,label
+   IMG_5069,send
+   IMG_5102,fall
+   ```
+   (`none` for a clip with no attempt in it.)
+3. Run both methods:
+   ```bash
+   export ANTHROPIC_API_KEY=...        # for the claude half only
+   cd /root/homelab && tools/photos/climb-judge.sh --labels /out/labels.csv
+   ```
+   Leave out the key and add `--methods local` to try the local half alone.
+
+It prints a line per clip, then a score per method: how many it got right
+and, the number that matters, how many sends it called falls (those are the
+clips that would be offered for removal). Every verdict, with the reason, is
+in `/root/climb-judge/climb-verdicts.csv`.
+
+The first run downloads its Python packages (~300 MB, cached in
+`/root/climb-judge/cache`). The container is limited to two cores and 3 GB.

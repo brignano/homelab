@@ -177,6 +177,7 @@ the arithmetic then, with the real numbers.
 | 1 | 5 TB drive ✅ | `docker/photos/` stack, first sync (budgeted), Healthchecks check, metrics, alert. 🚧 built 2026-10-25 |
 | 2 | nothing (reads the Mac's library, not the mirror) | `tools/photos/estimate.py` dry-run report: what each category would hold and which iCloud plan the rest fits. 🚧 built 2026-10-25 |
 | 3 | You approve thresholds | The script fills the review albums; you delete by hand. |
+| 3b | Phase 1's mirror | `tools/photos/climb_judge.py`: send or fall, per climbing clip, by body tracking on the box and by Claude on sampled frames, scored against ~20 clips Anthony labels. Picks which one decides which climbing videos leave iCloud (the rest stay). 🚧 built 2026-10-30 |
 
 ## Open questions
 
