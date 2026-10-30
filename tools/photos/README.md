@@ -13,7 +13,7 @@ of junk takes:
 - screenshots and screen recordings older than 3 months
 - burst frames you never picked
 - extra copies of the same photo
-- several shots of the same moment (taken within 20 seconds of each other):
+- several shots of the same moment (all within 20 seconds of the first):
   all but the best one, picked by Photos' own score, or your favourite if
   you marked one
 - receipts, documents and photos of screens, from Photos' own labels
@@ -34,14 +34,15 @@ shared-album photos are never counted.
    → Full Disk Access → turn on Terminal. (Turn it off again afterwards if you
    like.)
 2. Check what iCloud says Photos uses: Settings → your name → iCloud. Use
-   that number, in GB, below.
+   that number, in GB, in place of YOUR_GB below (not a guess: a wrong figure
+   scales every size in the report).
 3. In Terminal, from a checkout of this repo:
    ```bash
    brew install uv            # once
-   uv run tools/photos/estimate.py --icloud-used-gb 1500 --csv ~/Desktop/photo-candidates.csv
+   uv run tools/photos/estimate.py --icloud-used-gb YOUR_GB --csv ~/Desktop/photo-candidates.csv
    ```
    Without Homebrew: `python3 -m pip install --user osxphotos`, then
-   `python3 tools/photos/estimate.py --icloud-used-gb 1500`.
+   `python3 tools/photos/estimate.py --icloud-used-gb YOUR_GB`.
 
 Add `--videos-csv ~/Desktop/videos.csv` for every video, largest first, with
 its resolution, frame rate and length: a quick way to find the 4K clips worth
