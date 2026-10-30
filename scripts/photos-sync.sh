@@ -107,6 +107,12 @@ set_args() {
 
 AUTH_HINT="on CT 100, run cd /root/homelab && ./scripts/photos-sync.sh --auth"
 
+# What icloudpd prints when Apple refused the sign-in. Matched in the log as
+# well as judged by the exit code, because icloudpd 1.32.3 exits 0 after a
+# rejected password (2026-10-30: "Invalid email/password combination", 401,
+# and photos-sync.sh --auth then said "signed in").
+AUTH_FAIL_RE='Invalid email/password|PyiCloudAPIResponseException|PyiCloudFailedLoginException|PyiCloudFailedMFAException|Authentication required|-20101|EOFError|EOF when reading'
+
 # Never two at once, the sign-in included: a hand run during the night would
 # otherwise force-remove the nightly container (and fail its ping), and two
 # icloudpd processes would share one session volume. Taken where each mode
@@ -128,11 +134,19 @@ if [ "${1:-}" = "--auth" ]; then
   # ask for the password and the code Apple sends to your devices.
   docker compose -f "$COMPOSE" run --rm icloudpd $(set_args) --auth-only
   rc=$?
+  # The exit code alone is not proof (see AUTH_FAIL_RE), so ask again with no
+  # terminal: a saved session answers without a password, and anything else
+  # fails at the prompt. Same check the nightly run will face.
+  out=$(docker compose -f "$COMPOSE" run --rm -T icloudpd $(set_args) --auth-only </dev/null 2>&1)
+  vrc=$?
   unset IFS
-  if [ "$rc" -eq 0 ]; then
+  if [ "$rc" -eq 0 ] && [ "$vrc" -eq 0 ] && ! printf '%s' "$out" | grep -qiE "$AUTH_FAIL_RE"; then
     echo "photos-sync: signed in. Run ./scripts/photos-sync.sh to sync now and clear the alert."
+    exit 0
   fi
-  exit "$rc"
+  printf '%s\n' "$out" | grep -iE "$AUTH_FAIL_RE" | tail -n 3 >&2
+  echo "photos-sync: NOT signed in. Check the Apple ID in $PHOTOS_ENV (Settings → your name on the iPhone) and the password, then run --auth again." >&2
+  exit 1
 elif [ -n "${1:-}" ]; then
   echo "usage: $0 [--auth]" >&2
   exit 2
@@ -323,9 +337,14 @@ if [ "$stopped" != none ]; then
   code=0
 fi
 
+# A refused sign-in can exit 0 (AUTH_FAIL_RE), so the log decides too.
+if printf '%s' "$logs" | grep -qiE "$AUTH_FAIL_RE"; then
+  [ "$code" -ne 0 ] || code=1
+fi
+
 if [ "$code" -ne 0 ]; then
   printf '%s\n' "$logs" | tail -n 20 >&2
-  if printf '%s' "$logs" | grep -qiE 'password|authenticat|two-factor|two-step|2fa|mfa|security code'; then
+  if printf '%s' "$logs" | grep -qiE "$AUTH_FAIL_RE|password|authenticat|two-factor|two-step|2fa|mfa|security code"; then
     auth_needed=1
     echo "$(date -Is) photos-sync: icloudpd exited $code; Apple wants the sign-in again: $AUTH_HINT" >&2
   else
