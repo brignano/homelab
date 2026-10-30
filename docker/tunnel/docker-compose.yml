@@ -10,6 +10,7 @@ services:
       - tunnel
       - core
       - ai
+      - mcp_calendar
 
 # Attach to existing networks so cloudflared can proxy to other stacks.
 # Run the other stacks first, then bring this one up.
@@ -22,3 +23,8 @@ networks:
   ai:
     external: true
     name: ai_ai
+  # Shared only with mcp-calendar (docker/mcp-calendar), for its Access-gated
+  # public listener on 8001. Bring that stack up first.
+  mcp_calendar:
+    external: true
+    name: mcp_calendar_public

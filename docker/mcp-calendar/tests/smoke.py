@@ -2,7 +2,8 @@
 
 Pins the read-only boundary: which tools exist, that the only HA call is a GET
 to the fixed path for a configured calendar, and that a request with the wrong
-Host never reaches the MCP endpoint.
+Host never reaches the MCP endpoint. Also pins the public listener's gate: no
+request on PUBLIC_PORT reaches the app without a valid Cloudflare Access JWT.
 
     python tests/smoke.py
 """
@@ -160,6 +161,73 @@ def test_server():
         listed = client.post(server.PATH, headers=headers,
                              json={"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         assert {t["name"] for t in listed.json()["result"]["tools"]} == {"calendar_events", "list_calendars"}
+
+
+def test_access_gate():
+    import time
+
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from starlette.testclient import TestClient
+
+    from app import __main__ as server
+    from app.access import PUBLIC_PORT, AccessCheck, gate
+
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    team, aud = "lab.cloudflareaccess.com", "a" * 64
+
+    def token(signer=key, **over):
+        now = int(time.time())
+        claims = {"iss": f"https://{team}", "aud": [aud], "email": "Me@Example.com",
+                  "iat": now, "exp": now + 300, **over}
+        return jwt.encode(claims, signer, algorithm="RS256", headers={"kid": "k"})
+
+    check = AccessCheck(team, aud, "me@example.com")
+    check._keys.get_signing_key_from_jwt = lambda _t: type("K", (), {"key": key.public_key()})()
+    assert check.configured and check.verify(token()) == "me@example.com"
+    assert not AccessCheck("", aud, "me@example.com").configured
+    assert not AccessCheck("evil.example.com", aud, "me@example.com").configured
+    assert not AccessCheck(team, "", "me@example.com").configured
+    assert not AccessCheck(team, aud, "").configured
+
+    def fresh():
+        # The session manager runs once per instance; test_server already used it.
+        server.mcp._session_manager = None
+        return server.mcp.streamable_http_app()
+
+    app = gate(fresh(), check, server.ALLOWED_HOST.encode())
+    init = {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                       "clientInfo": {"name": "smoke", "version": "0"}}}
+    headers = {"Accept": "application/json, text/event-stream", "Content-Type": "application/json"}
+    public = f"http://cal-mcp.example.com:{PUBLIC_PORT}"
+    with TestClient(app, base_url=public) as client:
+        bad = {
+            "none": {},
+            "wrong key": {"Cf-Access-Jwt-Assertion": token(signer=other)},
+            "wrong aud": {"Cf-Access-Jwt-Assertion": token(aud="b" * 64)},
+            "wrong iss": {"Cf-Access-Jwt-Assertion": token(iss="https://evil.cloudflareaccess.com")},
+            "expired": {"Cf-Access-Jwt-Assertion": token(exp=int(time.time()) - 60)},
+            "other email": {"Cf-Access-Jwt-Assertion": token(email="someone@example.com")},
+            "garbage": {"Cf-Access-Jwt-Assertion": "x.y.z"},
+        }
+        for name, extra in bad.items():
+            assert client.post(server.PATH, json=init, headers={**headers, **extra}).status_code == 403, name
+            assert client.get("/healthz", headers=extra).status_code == 403, name
+        # A verified request reaches the app, which sees the internal Host.
+        ok = client.post(server.PATH, json=init, headers={**headers, "Cf-Access-Jwt-Assertion": token()})
+        assert ok.status_code == 200, (ok.status_code, ok.text)
+
+    # Unconfigured, the public port refuses even a well-formed token.
+    closed = gate(fresh(), AccessCheck("", "", ""), server.ALLOWED_HOST.encode())
+    with TestClient(closed, base_url=public) as client:
+        assert client.post(server.PATH, json=init, headers={**headers, "Cf-Access-Jwt-Assertion": token()}).status_code == 403
+
+    # The internal port is untouched by the gate, and still refuses the public Host.
+    with TestClient(gate(fresh(), check, server.ALLOWED_HOST.encode()), base_url="http://mcp-calendar:8000") as client:
+        assert client.post(server.PATH, json=init, headers=headers).status_code == 200
+        assert client.post(server.PATH, json=init, headers={**headers, "Host": "cal-mcp.example.com"}).status_code == 421
 
 
 if __name__ == "__main__":

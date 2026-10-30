@@ -91,6 +91,12 @@ rather than a login.
 
 ## Non-browser endpoints must not get HTML
 
+The calendar MCP server is the one MCP endpoint meant to go through the tunnel,
+on its own hostname with Managed OAuth; setup is in
+[`../mcp-calendar/README.md`](../mcp-calendar/README.md). It is not `mcp.$HOMELAB_DOMAIN`,
+which stays tailnet-only.
+
+
 `mcp.$HOMELAB_DOMAIN` speaks streamable HTTP to an MCP client, and Caddy
 already fails it closed with a plain `401` (see [`../proxy/Caddyfile`](../proxy/Caddyfile)).
 If Access ever goes in front of it, turn on **401 Response for Service Auth
