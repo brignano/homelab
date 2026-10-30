@@ -70,7 +70,8 @@ def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--library", help="path to a .photoslibrary (default: the one Photos last opened)")
     ap.add_argument("--icloud-used-gb", type=float,
-                    help="what iCloud says Photos uses, in GB, to scale the estimate")
+                    help="what iCloud says Photos uses, in GB, to scale the estimate "
+                         "(a total far above the library is treated as the whole account)")
     ap.add_argument("--low-quality-percent", type=float, default=10.0,
                     help="treat the lowest-scored N%% of photos as low quality (default 10)")
     ap.add_argument("--screenshot-months", type=int, default=3,
@@ -199,6 +200,14 @@ def main(argv: list[str]) -> int:
     total = sum(p.original_filesize or 0 for p in photos)
     videos = sum(p.original_filesize or 0 for p in photos if p.ismovie)
     scale = (args.icloud_used_gb * 1e9 / total) if args.icloud_used_gb and total else None
+    # Live Photo videos explain a gap of a few tens of percent, not 3x. A figure
+    # far above the library is the whole iCloud account (backups, iCloud Drive,
+    # Messages), and scaling by it would triple every category. Keep sizes as
+    # they are and carry the rest of iCloud into the plan sum unchanged.
+    other = 0.0
+    if scale and scale > 1.5:
+        other = args.icloud_used_gb * 1e9 - total
+        scale = None
 
     def line(label: str, count: int, size: int) -> str:
         s = "  %-54s %8d  %10s" % (label, count, gb(size))
@@ -211,6 +220,11 @@ def main(argv: list[str]) -> int:
           % (len(photos), gb(total), gb(videos), 100 * videos / total if total else 0))
     if scale:
         print("iCloud says %s, so sizes below are also scaled by %.2fx" % (gb(args.icloud_used_gb * 1e9), scale))
+    elif other:
+        print("iCloud says %s, %s more than the library: that is iCloud's other data"
+              % (gb(args.icloud_used_gb * 1e9), gb(other)))
+        print("(device backups, iCloud Drive, Messages), which cleaning Photos does not touch.")
+        print("Settings, your name, iCloud shows the breakdown.")
     print()
     print("  %-54s %8s  %10s" % ("Category (a photo can be in several)", "items", "size"))
     for key, label in CATEGORIES:
@@ -252,12 +266,12 @@ def main(argv: list[str]) -> int:
         shrink = sum((p.original_filesize or 0) * (0.8 if fps(p) >= 50 else 0.75) for p in uhd)
         print(line("Saved if the 4K clips were kept at 1080p (rough)", len(uhd), int(shrink)))
 
-    left = (total - union) * (scale or 1)
+    left = (total - union) * (scale or 1) + other
     left_gb = left / 1e9
     print()
     print("Left after removing all of them: about %s" % gb(left))
     t = tier_for(left_gb)
-    if not scale:
+    if not args.icloud_used_gb:
         print("(Pass --icloud-used-gb for the plan this would fit.)")
     elif t:
         size, price = t
