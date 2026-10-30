@@ -120,7 +120,11 @@ AUTH_HINT="on CT 100, run cd /root/homelab && ./scripts/photos-sync.sh --auth"
 # well as judged by the exit code, because icloudpd 1.32.3 exits 0 after a
 # rejected password (2026-10-30: "Invalid email/password combination", 401,
 # and photos-sync.sh --auth then said "signed in").
-AUTH_FAIL_RE='None of providers|Password was not saved|Invalid email/password|PyiCloudAPIResponseException|PyiCloudFailedLoginException|PyiCloudFailedMFAException|Authentication required|-20101|EOFError|EOF when reading'
+# Not "Authentication required": icloudpd logs that (as ERROR, code 421) on
+# almost every run, when Apple has dropped the short-lived session, and then
+# signs in again with the saved password. Matching it made a good --auth
+# report "NOT signed in" (2026-10-30).
+AUTH_FAIL_RE='None of providers|Password was not saved|Invalid email/password|PyiCloudAPIResponseException|PyiCloudFailedLoginException|PyiCloudFailedMFAException|-20101|EOFError|EOF when reading'
 
 # Never two at once, the sign-in included: a hand run during the night would
 # otherwise force-remove the nightly container (and fail its ping), and two

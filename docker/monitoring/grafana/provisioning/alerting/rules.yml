@@ -964,7 +964,12 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "{{ if gt $values.B.Value 0.0 }}Apple ended the iCloud Photos session, so last night's photo mirror did not run. On CT 100: cd /root/homelab && ./scripts/photos-sync.sh --auth{{ else }}The iCloud Photos mirror failed. See /var/log/photos-sync.log on CT 100{{ end }}"
+          # Plain text on purpose. The first version picked a message with
+          # {{ if gt $values.B.Value 0.0 }}, and the first real firing
+          # (2026-10-30) posted that template raw to Discord: B never joined
+          # this alert's series, so the template errored. The log names the
+          # cause; the summary only has to point at both fixes.
+          summary: "The iCloud Photos mirror failed. If /var/log/photos-sync.log on CT 100 says Apple wants the sign-in again, run: cd /root/homelab && ./scripts/photos-sync.sh --auth"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }
@@ -973,13 +978,6 @@ groups:
               refId: A
               instant: true
               expr: homelab_photos_success
-          - refId: B
-            relativeTimeRange: { from: 3600, to: 0 }
-            datasourceUid: prometheus
-            model:
-              refId: B
-              instant: true
-              expr: homelab_photos_auth_needed or on() vector(0)
           - refId: C
             relativeTimeRange: { from: 3600, to: 0 }
             datasourceUid: __expr__
