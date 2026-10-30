@@ -58,8 +58,11 @@ inside CT 100.
    cd /root/homelab && ./scripts/photos-sync.sh --auth
    ```
    It asks for the Apple ID password and the code Apple sends to your
-   devices. The password is not stored. The session it creates lives in the
-   `photos_session` volume.
+   devices. Both the session and the password are saved in the
+   `photos_session` volume: Apple's session lasts hours, so the nightly run
+   signs in again with the saved password, and the 2FA code is needed only
+   every couple of months. Each `--auth` starts from scratch, so run it
+   again after changing the Apple ID password.
 6. **Schedule it**, then try a short run:
    ```bash
    ./scripts/install-cron.sh

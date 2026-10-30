@@ -141,8 +141,14 @@ Same rules as every other job here (the `alerting` skill):
   named volume, never in the repo. That volume is inside CT 100, so it is in
   the nightly vzdump, which is one more reason the backup drive should be
   encrypted (LUKS, `tsd-backups-and-monitoring.md` decision 2).
-- **The Apple ID password** is needed only for the first login and each
-  re-authentication. It is entered interactively, never stored in `.env`.
+- **The Apple ID password** is entered interactively by `photos-sync.sh
+  --auth` and saved in the session volume (keyrings.alt's plaintext file,
+  mode 600), never in `.env` or the repo. The first design kept no password,
+  on the assumption that a session lasts months; the first real test run
+  (2026-10-30) showed Apple's session token expiring within the hour, after
+  which icloudpd needs the password to sign in again. The ~2-month limit is
+  the 2FA trust token, not the session. The volume already held a credential
+  that reads the whole library, so this adds little.
 - **Advanced Data Protection:** if it is on, icloudpd needs *Settings → Apple ID
   → iCloud → Access iCloud Data on the Web* enabled. Turning that on is a real
   trade-off: it reopens web access to the account. Decide it deliberately.

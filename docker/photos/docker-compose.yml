@@ -47,9 +47,15 @@ services:
       # `docker compose config` on a box without docker/photos/.env would fail,
       # and repo-sync asks this stack's compose file what it runs.
       ICLOUD_USERNAME: ${ICLOUD_USERNAME:-}
+      # The Apple ID password, which the nightly run needs to sign in again
+      # (scripts/photos-sync.sh, PW_PROVIDERS). keyrings.alt's plaintext file
+      # (mode 600), put on the session volume by XDG_DATA_HOME, since the
+      # container has no system keyring and its own filesystem is thrown away.
+      PYTHON_KEYRING_BACKEND: keyrings.alt.file.PlaintextKeyring
+      XDG_DATA_HOME: /config
     volumes:
-      # The session cookie. After the first sign-in it can read the whole
-      # library, so it lives here and never in the repo or .env. Small, and in
+      # The session cookie and the saved password. Together they can read the
+      # whole library, so they live here and never in the repo or .env. Small, and in
       # the nightly vzdump, which is one more reason the backup drive is LUKS.
       - session:/config
       - type: bind
