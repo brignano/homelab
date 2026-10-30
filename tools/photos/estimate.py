@@ -48,6 +48,7 @@ CATEGORIES = [
     ("screenshots", "Screenshots and screen recordings"),
     ("bursts", "Burst frames you never picked"),
     ("duplicates", "Extra copies of the same photo"),
+    ("similar", "Same moment, several shots: all but the best"),
     ("documents", "Receipts, documents, screens (by Photos' labels)"),
     ("low_quality", "Lowest-scored photos (by Photos' own score)"),
     ("old_videos", "Videos, not favourites, older than --video-years"),
@@ -76,6 +77,10 @@ def main(argv: list[str]) -> int:
                     help="only count screenshots older than this many months (default 3)")
     ap.add_argument("--video-years", type=int, default=0,
                     help="also count non-favourite videos older than N years (default 0 = off)")
+    ap.add_argument("--similar-seconds", type=float, default=20.0,
+                    help="photos taken within N seconds of the previous one form a group; "
+                         "the best of each group is kept (default 20, 0 = off)")
+    ap.add_argument("--videos-csv", help="write every video, largest first, with resolution, fps and length")
     ap.add_argument("--include-albums", action="store_true",
                     help="allow photos that are in one of your albums")
     ap.add_argument("--include-people", action="store_true",
@@ -154,6 +159,39 @@ def main(argv: list[str]) -> int:
         if args.video_years and p.ismovie and age_days(p) > args.video_years * 365:
             reasons[p.uuid].append("old_videos")
 
+    # Several shots of the same thing: photos taken within --similar-seconds of
+    # the one before form a group, and every one but the best is a candidate.
+    # Best = a favourite if there is one, else Photos' highest overall score.
+    # Bursts and screenshots are left to their own rules. Time alone can put
+    # two different subjects in one group, which is why this proposes and the
+    # CSV says which shot it would keep.
+    keep_of: dict[str, str] = {}
+    if args.similar_seconds > 0:
+        stills = sorted((p for p in photos
+                         if not p.ismovie and not p.burst and not p.screenshot),
+                        key=lambda p: p.date.timestamp())
+        groups, cur = [], []
+        for p in stills:
+            if cur and p.date.timestamp() - cur[-1].date.timestamp() > args.similar_seconds:
+                groups.append(cur)
+                cur = []
+            cur.append(p)
+        if cur:
+            groups.append(cur)
+
+        def rank(p):
+            sc = p.score.overall if p.score and p.score.overall is not None else -1e9
+            return (bool(p.favorite), sc, p.original_filesize or 0)
+
+        for g in groups:
+            if len(g) < 2:
+                continue
+            best = max(g, key=rank)
+            for p in g:
+                if p is not best and not protected(p):
+                    reasons[p.uuid].append("similar")
+                    keep_of[p.uuid] = best.original_filename
+
     by_uuid = {p.uuid: p for p in photos}
     total = sum(p.original_filesize or 0 for p in photos)
     videos = sum(p.original_filesize or 0 for p in photos if p.ismovie)
@@ -181,6 +219,36 @@ def main(argv: list[str]) -> int:
     print("  " + "-" * 74)
     print(line("All candidates, each counted once", len(reasons), union))
 
+    # Videos: where the space actually is. Information, not candidates:
+    # whether a clip is a send or a fall is not something Photos records.
+    vids = [p for p in photos if p.ismovie]
+    if vids:
+        def res(p):
+            return max(p.width or 0, p.height or 0)
+
+        def fps(p):
+            e = p.exif_info
+            return (e.fps or 0) if e else 0
+
+        def is_climb(p):
+            return any(k in l.lower() for l in (p.labels or [])
+                       for k in ("climb", "boulder"))
+
+        uhd = [p for p in vids if res(p) >= 3840]
+        uhd60 = [p for p in uhd if fps(p) >= 50]
+        climb = [p for p in vids if is_climb(p)]
+        print()
+        print("  %-54s %8s  %10s" % ("Videos (information, not counted above)", "items", "size"))
+        print(line("All videos", len(vids), sum(p.original_filesize or 0 for p in vids)))
+        print(line("4K", len(uhd), sum(p.original_filesize or 0 for p in uhd)))
+        print(line("4K at 50-60 fps", len(uhd60), sum(p.original_filesize or 0 for p in uhd60)))
+        print(line("Labelled climbing or bouldering by Photos", len(climb),
+                   sum(p.original_filesize or 0 for p in climb)))
+        # 1080p30 HEVC is roughly a fifth of 4K60, a quarter of 4K30: a rule of
+        # thumb for "what if the raw footage were kept smaller", not a promise.
+        shrink = sum((p.original_filesize or 0) * (0.8 if fps(p) >= 50 else 0.75) for p in uhd)
+        print(line("Saved if the 4K clips were kept at 1080p (rough)", len(uhd), int(shrink)))
+
     left = (total - union) * (scale or 1)
     left_gb = left / 1e9
     print()
@@ -204,12 +272,26 @@ def main(argv: list[str]) -> int:
     if args.csv:
         with open(args.csv, "w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["uuid", "filename", "date", "bytes", "video", "reasons"])
+            w.writerow(["uuid", "filename", "date", "bytes", "video", "reasons", "keeps_instead"])
             for u, r in sorted(reasons.items(), key=lambda kv: by_uuid[kv[0]].date):
                 p = by_uuid[u]
                 w.writerow([u, p.original_filename, p.date.isoformat(), p.original_filesize or 0,
-                            int(p.ismovie), " ".join(r)])
+                            int(p.ismovie), " ".join(r), keep_of.get(u, "")])
         print("Candidates written to %s" % args.csv)
+
+    if args.videos_csv:
+        with open(args.videos_csv, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["uuid", "filename", "date", "bytes", "width", "height", "fps",
+                        "seconds", "favourite", "labels"])
+            for p in sorted((p for p in photos if p.ismovie),
+                            key=lambda p: p.original_filesize or 0, reverse=True):
+                e = p.exif_info
+                w.writerow([p.uuid, p.original_filename, p.date.isoformat(),
+                            p.original_filesize or 0, p.width, p.height,
+                            (e.fps if e else "") or "", (e.duration if e else "") or "",
+                            int(p.favorite), "; ".join(p.labels or [])])
+        print("Videos written to %s" % args.videos_csv)
     return 0
 
 
