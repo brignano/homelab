@@ -375,10 +375,22 @@ fi
 if printf '%s' "$logs" | grep -qiE "$AUTH_FAIL_RE"; then
   [ "$code" -ne 0 ] || code=1
 fi
+# icloudpd 1.32.3 exits 0 after ANY error (fixed upstream after 1.32.3,
+# "executables always exit with code 0"), so a run that ended on its own
+# only counts if it reached its last line. Its first "ok" (2026-10-30) was
+# Apple refusing Photos with AUTHENTICATION_FAILED: 0 MB in seconds.
+if [ "$stopped" = none ] && [ "$code" -eq 0 ] \
+    && ! printf '%s' "$logs" | grep -q 'have been downloaded'; then
+  code=1
+fi
 
 if [ "$code" -ne 0 ]; then
   printf '%s\n' "$logs" | tail -n 20 >&2
-  if printf '%s' "$logs" | grep -qiE "$AUTH_FAIL_RE|password|authenticat|two-factor|two-step|2fa|mfa|security code"; then
+  if printf '%s' "$logs" | grep -qE 'setup is not complete|AUTHENTICATION_FAILED|ZONE_NOT_FOUND'; then
+    # Signed in, but Apple will not serve Photos to the web yet. Seen when
+    # the account had new iCloud terms to accept ("termsUpdateNeeded": true).
+    echo "$(date -Is) photos-sync: Apple refused iCloud Photos; sign in at https://www.icloud.com in a browser and accept any new terms, then run ./scripts/photos-sync.sh" >&2
+  elif printf '%s' "$logs" | grep -qiE "$AUTH_FAIL_RE|password|authenticat|two-factor|two-step|2fa|mfa|security code"; then
     auth_needed=1
     echo "$(date -Is) photos-sync: icloudpd exited $code; Apple wants the sign-in again: $AUTH_HINT" >&2
   else
