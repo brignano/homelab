@@ -85,16 +85,25 @@ BUDGET_BYTES=$((BUDGET_GB * 1000000000))
 #   --xmp-sidecar                 keeps favourites, titles, keywords and
 #                                 location next to each file, which is what
 #                                 survives if a photo ever leaves iCloud
-#   --password-provider console   no stored password. Under cron there is no
-#                                 stdin, so an expired session fails at once
-#                                 instead of waiting on a prompt.
+#   --password-provider keyring   the Apple ID password, saved by --auth in a
+#                                 file on the session volume. Apple's session
+#                                 token lasts hours, not months: icloudpd signs
+#                                 in again with the password on most runs, and
+#                                 the trust token (~2 months) is what spares
+#                                 the 2FA code. With the console provider
+#                                 instead, the first test run after --auth
+#                                 (2026-10-30) got "Authentication required
+#                                 (421)" and sat at a password prompt. Only
+#                                 --auth adds console, so a night never waits.
+PW_PROVIDERS='--password-provider
+keyring'
 set_args() {
   # Global options first, then the user and its options: icloudpd's usage is
   # `icloudpd [GLOBAL] [COMMON] [--username <user> [COMMON]]`.
   set -- icloudpd \
     --log-level info \
     --no-progress-bar \
-    --password-provider console \
+    $PW_PROVIDERS \
     --mfa-provider console \
     --username "$USERNAME" \
     --directory /data \
@@ -111,7 +120,7 @@ AUTH_HINT="on CT 100, run cd /root/homelab && ./scripts/photos-sync.sh --auth"
 # well as judged by the exit code, because icloudpd 1.32.3 exits 0 after a
 # rejected password (2026-10-30: "Invalid email/password combination", 401,
 # and photos-sync.sh --auth then said "signed in").
-AUTH_FAIL_RE='Invalid email/password|PyiCloudAPIResponseException|PyiCloudFailedLoginException|PyiCloudFailedMFAException|Authentication required|-20101|EOFError|EOF when reading'
+AUTH_FAIL_RE='None of providers|Password was not saved|Invalid email/password|PyiCloudAPIResponseException|PyiCloudFailedLoginException|PyiCloudFailedMFAException|Authentication required|-20101|EOFError|EOF when reading'
 
 # Never two at once, the sign-in included: a hand run during the night would
 # otherwise force-remove the nightly container (and fail its ping), and two
@@ -131,9 +140,30 @@ if [ "${1:-}" = "--auth" ]; then
   IFS='
 '
   # Interactive on purpose: compose run gives it the terminal, so icloudpd can
-  # ask for the password and the code Apple sends to your devices.
+  # ask for the password and the code Apple sends to your devices. Keyring
+  # first: icloudpd writes a password that worked back to it, which is what
+  # lets the nightly run sign in again on its own.
+  PW_PROVIDERS='--password-provider
+keyring
+--password-provider
+console'
+  # Start from no session: icloudpd only asks for (and saves) the password
+  # when its session token is invalid, and an --auth run while it still works
+  # would otherwise leave the keyring empty. The saved password goes too, so
+  # a changed Apple ID password replaces it.
+  docker compose -f "$COMPOSE" run --rm -T --entrypoint sh icloudpd \
+    -c 'rm -rf /config/* /config/.[!.]*' </dev/null
   docker compose -f "$COMPOSE" run --rm icloudpd $(set_args) --auth-only
   rc=$?
+  PW_PROVIDERS='--password-provider
+keyring'
+  # A valid session would let the check below pass even if the password never
+  # reached the keyring, and then the first expired token fails a night.
+  if ! docker compose -f "$COMPOSE" run --rm -T --entrypoint test icloudpd \
+      -s /config/python_keyring/keyring_pass.cfg </dev/null; then
+    rc=1
+    echo "photos-sync: the password was not saved on the session volume" >&2
+  fi
   # The exit code alone is not proof (see AUTH_FAIL_RE), so ask again with no
   # terminal: a saved session answers without a password, and anything else
   # fails at the prompt. Same check the nightly run will face.
@@ -300,7 +330,7 @@ docker rm -f "$NAME" >/dev/null 2>&1 || true
 IFS='
 '
 # shellcheck disable=SC2046,SC2086
-if ! docker compose -f "$COMPOSE" run -d --name "$NAME" icloudpd $(set_args) $extra >/dev/null; then
+if ! docker compose -f "$COMPOSE" run -d -T --name "$NAME" icloudpd $(set_args) $extra >/dev/null; then
   unset IFS
   echo "$(date -Is) photos-sync: could not start icloudpd" >&2
   exit 1
