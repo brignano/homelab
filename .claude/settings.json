@@ -35,5 +35,18 @@
       "Bash(docker volume rm*)",
       "Bash(docker compose * down -v*)"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash .claude/hooks/session-start.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
   }
 }
