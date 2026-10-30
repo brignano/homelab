@@ -54,7 +54,7 @@ drift.
    ```
 5. Mount the media drive (`mount /mnt/media`, or reboot m5) **before** CT 100
    is next restarted, or Jellyfin starts without its library.
-6. **By hand, once:** `tailscale up --ssh --advertise-routes=10.0.0.0/24` on m5
+6. **By hand, once:** `tailscale up --ssh --auto-update --advertise-routes=10.0.0.0/24` on m5
    and approve the route in the admin console. Make a new pve-exporter token
    (the playbook prints the command) and update `PVE_TOKEN_VALUE` in
    `docker/monitoring/.env`. Write `/etc/homelab/healthchecks.env`.

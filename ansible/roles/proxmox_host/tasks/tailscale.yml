@@ -20,6 +20,15 @@
       ansible.builtin.command: sh /root/tailscale-install.sh
       changed_when: true
 
+- name: Keep Tailscale current
+  # The installer adds Tailscale's apt repo, so a run pulls the latest stable.
+  # Tailscale SSH runs as root on m5; Tailworm (TS-2026-014..017) needed 1.104.4.
+  ansible.builtin.apt:
+    name: tailscale
+    state: latest  # noqa: package-latest
+    update_cache: true
+    cache_valid_time: 3600
+
 - name: Forward packets for the subnet route
   ansible.builtin.lineinfile:
     path: /etc/sysctl.d/99-tailscale.conf
@@ -36,10 +45,11 @@
   failed_when: false
   check_mode: false
 
-- name: Advertise the LAN and allow Tailscale SSH
+- name: Advertise the LAN, allow Tailscale SSH, and update on its own
   # Idempotent: `set` only changes what differs. The route still needs
   # approving once in the admin console, and key expiry turning off for m5.
-  ansible.builtin.command: tailscale set --advertise-routes={{ hl_lan_cidr }} --ssh
+  # --auto-update covers the weeks between Ansible runs.
+  ansible.builtin.command: tailscale set --advertise-routes={{ hl_lan_cidr }} --ssh --auto-update
   changed_when: false
   when:
     - hl_ts_status.rc == 0
@@ -48,7 +58,7 @@
 - name: Say what is left to do by hand
   ansible.builtin.debug:
     msg: >-
-      Tailscale is not logged in on m5. Run `tailscale up --ssh
+      Tailscale is not logged in on m5. Run `tailscale up --ssh --auto-update
       --advertise-routes={{ hl_lan_cidr }}`, open the link it prints, then in
       the admin console approve the route and disable key expiry for m5.
   when: hl_ts_status.rc != 0 or (hl_ts_status.stdout | from_json).BackendState != 'Running'
