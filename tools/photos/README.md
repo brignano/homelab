@@ -13,7 +13,7 @@ of junk takes:
 - screenshots and screen recordings older than 3 months
 - burst frames you never picked
 - extra copies of the same photo
-- several shots of the same moment (taken within 20 seconds of each other):
+- several shots of the same moment (all within 20 seconds of the first):
   all but the best one, picked by Photos' own score, or your favourite if
   you marked one
 - receipts, documents and photos of screens, from Photos' own labels

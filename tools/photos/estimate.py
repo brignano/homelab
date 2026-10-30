@@ -78,7 +78,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--video-years", type=int, default=0,
                     help="also count non-favourite videos older than N years (default 0 = off)")
     ap.add_argument("--similar-seconds", type=float, default=20.0,
-                    help="photos taken within N seconds of the previous one form a group; "
+                    help="photos taken within N seconds of a group's first shot join it; "
                          "the best of each group is kept (default 20, 0 = off)")
     ap.add_argument("--videos-csv", help="write every video, largest first, with resolution, fps and length")
     ap.add_argument("--include-albums", action="store_true",
@@ -160,7 +160,10 @@ def main(argv: list[str]) -> int:
             reasons[p.uuid].append("old_videos")
 
     # Several shots of the same thing: photos taken within --similar-seconds of
-    # the one before form a group, and every one but the best is a candidate.
+    # the FIRST shot of a group join it, and every one but the best is a
+    # candidate. Measured from the first shot, not the previous one: chaining
+    # let a camera fired every few seconds through an afternoon (a DSLR at an
+    # event) become one 100-photo group that kept a single frame.
     # Best = a favourite if there is one, else Photos' highest overall score.
     # Bursts and screenshots are left to their own rules. Time alone can put
     # two different subjects in one group, which is why this proposes and the
@@ -172,7 +175,7 @@ def main(argv: list[str]) -> int:
                         key=lambda p: p.date.timestamp())
         groups, cur = [], []
         for p in stills:
-            if cur and p.date.timestamp() - cur[-1].date.timestamp() > args.similar_seconds:
+            if cur and p.date.timestamp() - cur[0].date.timestamp() > args.similar_seconds:
                 groups.append(cur)
                 cur = []
             cur.append(p)
