@@ -349,12 +349,13 @@ async function load(keepId){
 }
 function refilter(keepId){
   const m=$('month').value, hide=$('hide').checked;
-  list=all.filter(c=>(!m||c.month===m)&&(!hide||!['send','fall','none'].includes(c.label)||c.id===keepId));
+  list=all.filter(c=>c.present&&(!m||c.month===m)&&(!hide||!['send','fall','none'].includes(c.label)||c.id===keepId));
   i=Math.max(0,list.findIndex(c=>c.id===keepId)); show();
 }
 function show(){
   const done=all.filter(c=>['send','fall','none'].includes(c.label)).length;
-  $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} labelled`;
+  const waiting=all.filter(c=>!c.present).length;
+  $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} labelled`+(waiting?` · ${waiting} not on the drive yet`:'');
   const c=list[i];
   if(!c){v.removeAttribute('src');$('name').textContent='Nothing left in this view';return}
   $('name').textContent=c.name;
