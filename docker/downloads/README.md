@@ -95,12 +95,17 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   While a torrent seeds it costs no extra space (the library copy is a
   hardlink), but a file deleted from the library still fills the drive until
   its torrent goes.
-- **Downloads → Excluded file names:** tick it and enter `*.exe`, `*.scr`,
-  `*.bat`, `*.cmd`, `*.lnk`, `*.msi`, one per line. A show or film is never an
-  executable; a release that is one is fake and usually malware. On
-  2026-10-27 an 809 MB `.exe` posing as an episode sat in downloads (Sonarr
-  refused to import it). With this set, qBittorrent skips such files and the
-  torrent stalls instead, so Sonarr/Radarr's queue shows it to blocklist.
+- **Downloads → Excluded file names:** tick it and enter, one per line:
+  `*.exe`, `*.scr`, `*.com`, `*.pif`, `*.bat`, `*.cmd`, `*.lnk`, `*.msi`,
+  `*.vbs`, `*.js`, `*.jar`, `*.ps1`, `*.hta`, `*.wsf`, `*.apk`, `*.dmg`,
+  `*.zip`, `*.rar`, `*.7z`. A show or film is never an executable, and
+  nothing here unpacks archives, so a release that is either is fake (usually
+  malware) or useless. On 2026-10-27 an 809 MB `.exe` posing as an episode
+  sat in downloads. qBittorrent has no allowlist mode; the allowlist is
+  Sonarr/Radarr's import, which only takes video and subtitle files, so
+  nothing else reaches Jellyfin. This list keeps the rest off the disk: a
+  torrent made only of excluded files never starts, and the queue in
+  Sonarr/Radarr shows it to blocklist.
 - **Advanced:** Network interface **tun0**. Belt and braces: the namespace
   already has no other way out.
 

@@ -36,9 +36,9 @@ Chronological record of significant configuration steps, decisions, and issues.
    Proton's (port forwarding on), it lives in gluetun's namespace (`lo`,
    `eth0`, `tun0` only) with gluetun's firewall on; 606 show and 55 movie
    files in the library, latest import 10-30. #245 closed.
-2. `docker/downloads/README.md` step 4: *Excluded file names* `*.exe`,
-   `*.scr`, `*.bat`, `*.cmd`, `*.lnk`, `*.msi`; a troubleshooting row for
-   fake releases.
+2. `docker/downloads/README.md` step 4: *Excluded file names* for
+   executables, scripts and archives (`*.exe`, `*.scr`, `*.lnk`, `*.zip`,
+   `*.rar`, ...); a troubleshooting row for fake releases.
 
 **Issues encountered:**
 - A Survivor S51E06 grab from 10-27 was an 809 MB `.exe`. Sonarr refused it
