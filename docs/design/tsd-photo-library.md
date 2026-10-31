@@ -77,9 +77,12 @@ flowchart LR
   the files are useful without any software: a folder per month, originals as
   Apple stores them (HEIC, MOV, and the live-photo pairs).
 - **Storage:** the 5 TB drive, mounted into CT 100 with **`backup=0`** (see
-  `tsd-backups-and-monitoring.md`, Phase 1 step 7). The mirror needs no backup
-  of its own, because iCloud is the primary copy. If the photos ever left
-  iCloud, that would stop being true.
+  `tsd-backups-and-monitoring.md`, Phase 1 step 7). Once anything is deleted from
+  iCloud the mirror is the only copy, so it is in the restic → B2 offsite
+  backup (`scripts/offsite-backup.sh`, tag `photos`, added 2026-10-31,
+  homelab#260): nightly after the lab's data, stopping at 07:00 and at a
+  monthly upload budget (`HL_OFFSITE_PHOTOS_MONTHLY_BUDGET_GB`, default 300).
+  About $6/TB/month; `HL_OFFSITE_PHOTOS_VIDEOS_ONLY=1` backs up only videos.
 - **No ports, no Caddy route.** It only makes outbound requests to Apple.
 - **First sync:** about 1.5 TB, and some Xfinity plans cap at about 1.2 TB a
   month. Rather than wait for the Frontier switch, `scripts/photos-sync.sh`
