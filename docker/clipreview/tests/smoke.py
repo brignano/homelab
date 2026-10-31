@@ -19,6 +19,17 @@ for n in ("IMG_1_aaaaaaa.MOV", "IMG_2_bbbbbbb.MOV", "IMG_3_ccccccc.MOV"):
     (tmp / "photos/2026/10" / n).write_bytes(b"0123456789")
 os.environ["PHOTOS_DIR"] = str(tmp / "photos")
 os.environ["DATA_DIR"] = str(tmp / "data")
+(tmp / "assets/fonts").mkdir(parents=True)
+(tmp / "assets/design-tokens.css").write_text(":root{--bg:#fff}")
+(tmp / "assets/fonts/geist.woff2").write_bytes(b"wOF2")
+os.environ["ASSETS_DIR"] = str(tmp / "assets")
+# videos with no climb verdict: a pair of identical copies, a lone one, a Live Photo half
+(tmp / "photos/2026/09").mkdir(parents=True)
+(tmp / "photos/2026/09/IMG_20.MOV").write_bytes(b"A" * 3000)
+(tmp / "photos/2026/09/IMG_20 (1).MOV").write_bytes(b"A" * 3000)
+(tmp / "photos/2026/09/IMG_21.MOV").write_bytes(b"B" * 5000)
+(tmp / "photos/2026/09/IMG_22.MOV").write_bytes(b"C" * 10)
+(tmp / "photos/2026/09/IMG_22.HEIC").write_bytes(b"h")
 with open(tmp / "data/climb-verdicts-claude-2026-10.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["file", "seconds", "label", "local", "local_why", "active_seconds",
@@ -47,13 +58,16 @@ def post(body, **h):
 
 
 clips = json.load(get("/api/clips"))
-assert [c["name"][:5] for c in clips][:2] == ["IMG_3", "IMG_2"], clips  # none first, then low conf
+assert [c["name"][:5] for c in clips if c["kind"] == "climb"][:2] == ["IMG_3", "IMG_2"], clips  # none first, then low conf
+assert [c["name"] for c in clips if c["kind"] == "video"] == ["IMG_20 (1).MOV", "IMG_20.MOV", "IMG_21.MOV"], clips  # dupes first; the Live Photo half is not a video
+d20 = [c for c in clips if c["name"] == "IMG_20.MOV"][0]
+assert [d["file"] for d in d20["dupes"]] == ["2026/09/IMG_20 (1).MOV"] and d20["month"] == "2026-09", d20
 assert clips[-1]["label"] == "send" and clips[-1]["name"].startswith("IMG_1")  # hand label seen
 assert not [c for c in clips if "missing" in c["name"]][0]["present"]
 c3 = [c for c in clips if c["name"].startswith("IMG_3")][0]
 assert c3["present"] and c3["month"] == "2026-10" and c3["file"] == "2026/10/IMG_3_ccccccc.MOV", c3
 
-by = {c["name"][:5]: c for c in clips}
+by = {c["name"][:5]: c for c in clips if c["kind"] == "climb"}
 post({"id": by["IMG_2"]["id"], "label": "fall"})
 post({"id": by["IMG_3"]["id"], "label": "unsure"})
 rows = list(csv.DictReader(open(tmp / "data/labels.csv")))
@@ -75,6 +89,50 @@ for bad in (lambda: post({"id": "../../etc/passwd", "label": "fall"}),
         raise SystemExit("expected an error")
     except urllib.error.HTTPError as e:
         assert e.code in (400, 403, 404), e.code
+
+# --- "not climbing": a verdict clip that leaves the climbing flow -------------
+nc = by["IMG_3"]
+post({"id": nc["id"], "label": "notclimb"})
+assert "IMG_3" not in open(tmp / "data/labels.csv").read()           # --labels would reject it
+assert "notclimb" in open(tmp / "data/review-log.csv").read()
+c3 = [c for c in json.load(get("/api/clips")) if c["name"].startswith("IMG_3")][0]
+assert c3["kind"] == "video" and c3["notclimb"] and c3["label"] == "" and c3["claude"] == "none", c3
+assert "IMG_3" not in get("/export.csv?include=claude").read().decode()
+post({"id": c3["id"], "label": "cold"})                              # now takes the video labels
+c3 = [c for c in json.load(get("/api/clips")) if c["name"].startswith("IMG_3")][0]
+assert c3["label"] == "cold" and "IMG_3" in get("/export.csv?set=cold").read().decode()
+try:
+    post({"id": c3["id"], "label": "send"})
+    raise SystemExit("expected an error")
+except urllib.error.HTTPError as e:
+    assert e.code == 400
+# Claude's "none" alone is never a removal candidate; a confident "fall" is
+# --- other videos: keep in iCloud / cold storage ------------------------------
+vid = [c for c in clips if c["name"] == "IMG_21.MOV"][0]
+post({"id": vid["id"], "label": "cold"})
+post({"id": d20["id"], "label": "keep"})
+rows = list(csv.DictReader(open(tmp / "data/video-review.csv")))
+assert [(r["file"], r["decision"]) for r in rows[1:]] == [("2026/09/IMG_21.MOV", "cold"), ("2026/09/IMG_20.MOV", "keep")], rows
+assert get("/export.txt").read().decode() == "IMG_2_bbbbbbb.MOV\n"  # climb export untouched by video picks
+assert get("/export.csv?set=cold").read().decode().count("IMG_21.MOV") == 2  # name + mirror_path
+assert "IMG_20" not in get("/export.csv?set=cold").read().decode()
+after = {c["name"]: c["label"] for c in json.load(get("/api/clips"))}
+assert after["IMG_21.MOV"] == "cold" and after["IMG_20.MOV"] == "keep"
+for bad in (lambda: post({"id": vid["id"], "label": "send"}),       # climb labels do not apply
+            lambda: post({"id": by["IMG_1"]["id"], "label": "cold"})):
+    try:
+        bad()
+        raise SystemExit("expected an error")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400, e.code
+assert get("/assets/design-tokens.css").read() == b":root{--bg:#fff}"
+assert get("/assets/fonts/geist.woff2").read() == b"wOF2"
+for bad in ("/assets/../server.py", "/assets/fonts/..%2f..%2fdesign-tokens.css", "/assets/fonts/x.txt"):
+    try:
+        get(bad)
+        raise SystemExit("expected an error")
+    except urllib.error.HTTPError as e:
+        assert e.code == 404, (bad, e.code)
 
 # --- duplicate photos --------------------------------------------------------
 (tmp / "photos/2026/10").mkdir(parents=True, exist_ok=True)
