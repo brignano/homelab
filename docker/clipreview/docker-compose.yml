@@ -22,6 +22,11 @@ services:
     restart: unless-stopped
     cpus: 0.5
     mem_limit: 256m
+    # Root, on purpose: /root/climb-judge is root:root 755 and climb-judge.sh
+    # (which writes labels.csv and the verdicts) runs as root, so an unprivileged
+    # uid cannot save a label. Contained by what it can reach: the mirror is
+    # read-only, the only writable mount is /data, there are no published ports.
+    user: "0:0"
     environment:
       TZ: ${TZ:-America/New_York}
     volumes:
