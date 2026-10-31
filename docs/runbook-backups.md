@@ -8,7 +8,7 @@ behind it are in
 |---|---|---|---|
 | Postgres dump | `pg_dumpall`, 02:00 nightly | CT 100 (`scripts/pg-backup.sh`) | Healthchecks + `hl-backup-stale` |
 | Restore test B | the newest dump replayed into a scratch Postgres, Sun 03:00 | CT 100 (`scripts/pg-restore-test.sh`) | Healthchecks + `hl-restore-test-failed` |
-| **Image** (Phase 1) | `vzdump` of all of CT 100 to the 2 TB drive, 02:30 nightly, verified with `zstd -t` | Proxmox host (`scripts/host/hl-vzdump-hook`) | Healthchecks + `hl-backup-drive-full` |
+| **Image** (Phase 1) | `vzdump` of all of CT 100 to the 2 TB drive, 02:30 nightly, verified with `zstd -t` | Proxmox host (`scripts/host/hl-vzdump-hook`) | Healthchecks + `hl-backup-drive-full` + `hl-backup-drive-offline` |
 | **Offsite** (Phase 2) | restic to Backblaze B2, 03:30 nightly; `restic check` 5% on Sundays | CT 100 (`scripts/offsite-backup.sh`) | Healthchecks + `hl-offsite-failed` |
 
 Order: the offsite copy needs no hardware, so it can be set up **now**. The
@@ -307,6 +307,38 @@ Then Jellyfin: [`docker/jellyfin/README.md`](../docker/jellyfin/README.md)
 | How big are the archives? | Host: `ls -lh /mnt/hl-backup/dump/` |
 | What is offsite? | CT 100: `set -a; . /root/.config/homelab/restic.env; set +a; restic snapshots` |
 | Logs | CT 100: `/var/log/offsite-backup.log`. Host: `journalctl -u pvescheduler` and the task log in the Proxmox UI |
+
+### Backup drive not mounted
+
+`hl-backup-drive-offline` fires when Proxmox reports the `hl-backup` storage
+offline, which with `is_mountpoint 1` means `/mnt/hl-backup` is not a mount.
+No image is written until it is. First seen 2026-10-30, after a reboot for a
+kernel upgrade: both mounts are `nofail`, so a drive that does not unlock at
+boot leaves the host up and quietly without backups. On m5:
+
+```bash
+systemctl status 'systemd-cryptsetup@hl\x2dbackup.service' --no-pager   # unlocked at boot?
+journalctl -b --no-pager | grep -i -e hl-backup -e crypt | tail -20   # why not
+lsblk -o NAME,SIZE,TYPE,MOUNTPOINT                                    # is the 2 TB disk there at all?
+systemctl start 'mnt-hl\x2dbackup.mount'    # unlocks with the keyfile, then mounts
+findmnt /mnt/hl-backup && pvesm status | grep hl-backup              # "active"
+```
+
+No disk in `lsblk`: the USB drive is unplugged or asleep in its enclosure;
+reseat it and run the `start` again. The disk is there but the unlock fails:
+check `/root/.hl-backup.key` exists (`ls -l`) and that the UUID in
+`/etc/crypttab` matches `blkid` for the partition. Once it is active, replace
+the missed night's image with the job's own settings:
+
+```bash
+vzdump 100 --storage hl-backup --mode snapshot --compress zstd \
+  --script /usr/local/bin/hl-vzdump-hook
+```
+
+`hl-backup-drive-offline` clears within minutes. If `hl-exporter-mount-blind`
+is still firing 15 minutes later, the exporter has not picked up the new mount
+(it missed one this way on 2026-10-11): `systemctl restart
+prometheus-node-exporter`.
 
 ## 5. Restoring
 

@@ -1026,6 +1026,45 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [80] }
 
+      # The backup drive is not mounted, so there is no nightly image.
+      #
+      # The storage is defined with is_mountpoint 1 (ansible backup.yml), so
+      # Proxmox reports it offline (pve_up 0) whenever /mnt/hl-backup is not a
+      # mount, and vzdump refuses to write rather than filling the root disk.
+      # Healthchecks pages for the missed job, but only at 02:30 plus its grace,
+      # hours after the cause. On 2026-10-30 m5 rebooted for a kernel upgrade
+      # and the LUKS drive did not come back; the only alert was
+      # hl-exporter-mount-blind, which said "restart node-exporter", which
+      # could not help. This names the real problem the moment it starts.
+      - uid: hl-backup-drive-offline
+        title: Backup drive not mounted
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "The backup drive is not mounted on m5 (Proxmox storage hl-backup is offline), so tonight's CT 100 image will not run; unlock and mount it on m5 (docs/runbook-backups.md → \"Backup drive not mounted\")"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                pve_up{id=~"storage/.+/hl-backup"}
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- A host drive is going bad ---
       #
       # The hook's `smartctl -H` verdict (hl-vzdump-hook) is the last thing to
@@ -1219,6 +1258,13 @@ groups:
       # mounted, at /mnt/<drive>, so readable=1 means "mounted at 02:30". If
       # the exporter has no filesystem at that path, either it has gone blind
       # or the drive was unmounted since; both leave the disk alerts deaf.
+      #
+      # readable=1 survives a reboot (the .prom file is on disk), so after one
+      # this also fires for a drive that simply did not come back, and its
+      # old advice to restart the exporter sent you the wrong way (2026-10-30).
+      # The backup drive's "not mounted" case now belongs to
+      # hl-backup-drive-offline and is left out here; the summary says to check
+      # the mount first for the media drive.
       - uid: hl-exporter-mount-blind
         title: Host exporter cannot see a drive
         condition: C
@@ -1228,7 +1274,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "node-exporter on m5 reports no filesystem at {{ $labels.mountpoint }}, so its disk alerts cannot fire; if the drive is mounted, run `systemctl restart prometheus-node-exporter` on m5"
+          summary: "node-exporter on m5 reports no filesystem at {{ $labels.mountpoint }}, so its disk alerts cannot fire. On m5, run `findmnt {{ $labels.mountpoint }}` first: if it prints nothing the drive is not mounted (mount it); if it is mounted, run `systemctl restart prometheus-node-exporter`"
         data:
           - refId: A
             relativeTimeRange: { from: 3600, to: 0 }
@@ -1239,6 +1285,7 @@ groups:
               expr: >-
                 label_replace(homelab_smart_readable == 1, "mountpoint", "/mnt/$1", "drive", "(.+)")
                 unless on (mountpoint) node_filesystem_size_bytes{host="proxmox"}
+                unless on (drive) label_replace(pve_up{id=~"storage/.+/hl-backup"} == 0, "drive", "hl-backup", "", "")
           - refId: C
             relativeTimeRange: { from: 3600, to: 0 }
             datasourceUid: __expr__
