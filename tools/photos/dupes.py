@@ -8,11 +8,12 @@ from typing import Callable, Iterable
 
 
 def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 20.0):
-    """Return (extras, keep_of).
+    """Return (extras, keep_of, keeper_of).
 
     extras:  {uuid: (photo, ["duplicates" | "similar", ...])} for every photo
              that is an extra copy or an all-but-the-best shot and is not protected.
     keep_of: {uuid: filename of the photo kept instead}
+    keeper_of: {uuid: the kept photo itself}, to group extras into sets
 
     Exact duplicates keep the largest copy. Similar shots: photos within
     `similar_seconds` of a group's FIRST shot join it (chaining would turn a
@@ -23,10 +24,12 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
     photos = list(photos)
     extras: dict[str, tuple] = {}
     keep_of: dict[str, str] = {}
+    keeper_of: dict[str, object] = {}
 
     def add(p, reason, keeper):
         extras.setdefault(p.uuid, (p, []))[1].append(reason)
         keep_of.setdefault(p.uuid, keeper.original_filename)
+        keeper_of.setdefault(p.uuid, keeper)
 
     seen: set[frozenset] = set()
     for p in photos:
@@ -68,4 +71,4 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
             for p in g:
                 if p is not best and not protected(p):
                     add(p, "similar", best)
-    return extras, keep_of
+    return extras, keep_of, keeper_of

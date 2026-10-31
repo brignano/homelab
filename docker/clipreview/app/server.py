@@ -21,6 +21,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from . import dupes
+from .dupes_page import PAGE as DUPES_PAGE
+
 PHOTOS = Path(os.environ.get("PHOTOS_DIR", "/photos"))
 DATA = Path(os.environ.get("DATA_DIR", "/data"))
 VERDICT_GLOB = os.environ.get("VERDICT_GLOB", "climb-verdicts-claude-*.csv")
@@ -224,6 +227,19 @@ class Handler(BaseHTTPRequestHandler):
             with _lock:
                 clips = build()
             return self._send(200, json.dumps(clips), "application/json")
+        if u.path == "/dupes":
+            return self._send(200, DUPES_PAGE, "text/html; charset=utf-8")
+        if u.path == "/api/dupes":
+            with _lock:
+                return self._send(200, json.dumps(dupes.view()), "application/json")
+        if u.path == "/api/dupes/accepted.json":
+            with _lock:
+                return self._send(200, json.dumps(dupes.accepted()), "application/json")
+        if u.path.startswith("/dupes/thumb/"):
+            p = dupes.thumb_path(u.path[len("/dupes/thumb/"):])
+            if not p:
+                return self._send(404, "no thumbnail")
+            return self._send(200, p.read_bytes(), "image/jpeg")
         if u.path.startswith("/video/"):
             return self._video(u.path[len("/video/"):])
         if u.path in ("/export.csv", "/export.txt"):
@@ -244,21 +260,54 @@ class Handler(BaseHTTPRequestHandler):
                               [("Content-Disposition", "inline; filename=%s" % u.path[1:])])
         self._send(404, "not found")
 
-    def do_POST(self):
-        if urlparse(self.path).path != "/api/label":
-            return self._send(404, "not found")
-        # A page on another site must not be able to label clips from the
-        # browser on the LAN: same-origin JSON only.
+    def _same_origin_json(self, limit):
+        """A page on another site must not be able to write from a browser on
+        the LAN: same-origin only. The Mac script sends no Origin header."""
         origin = self.headers.get("Origin")
         if origin and urlparse(origin).netloc != self.headers.get("Host"):
-            return self._send(403, "cross-origin")
+            self._send(403, "cross-origin")
+            return None
+        n = int(self.headers.get("Content-Length") or 0)
+        if n > limit:
+            self._send(413, "too large")
+            return None
+        return self.rfile.read(n)
+
+    def do_PUT(self):
+        path = urlparse(self.path).path
+        if not path.startswith("/api/dupes/thumb/"):
+            return self._send(404, "not found")
+        body = self._same_origin_json(dupes.MAX_THUMB_BYTES)
+        if body is None:
+            return
+        try:
+            dupes.save_thumb(path[len("/api/dupes/thumb/"):], body)
+        except ValueError:
+            return self._send(400, "bad thumbnail")
+        self._send(200, "ok")
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide"):
+            return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
+        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path == "/api/dupes/sets" else 4096)
+        if raw is None:
+            return
         try:
-            n = int(self.headers.get("Content-Length") or 0)
-            body = json.loads(self.rfile.read(min(n, 4096)))
+            body = json.loads(raw)
+            if path == "/api/dupes/sets":
+                with _lock:
+                    return self._send(200, json.dumps(dupes.save_sets(body)), "application/json")
+            if path == "/api/dupes/decide":
+                with _lock:
+                    dupes.decide(str(body["set"]), str(body["keep"]))
+                return self._send(200, json.dumps({"ok": True}), "application/json")
             cid, label = str(body["id"]), str(body["label"])
-        except (ValueError, KeyError, TypeError):
+        except KeyError:
+            return self._send(404, "no such set")
+        except (ValueError, TypeError):
             return self._send(400, "bad request")
         if label not in ALL_LABELS:
             return self._send(400, "bad label")
@@ -342,6 +391,7 @@ small{opacity:.7}
  <label><input type="checkbox" id="hide" checked> hide reviewed</label>
  <span id="count"></span>
  <span style="flex:1"></span>
+ <a href="/dupes">Duplicate photos</a>
  <a href="/export.txt" target="_blank">candidates (names)</a>
  <a href="/export.csv" target="_blank">csv</a>
  <a href="/export.csv?include=claude" target="_blank">csv + unreviewed Claude calls</a>
