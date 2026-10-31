@@ -1271,7 +1271,7 @@ def _():
         os.environ.pop("GOOGLE_CLIENT_ID")
         os.environ.pop("GOOGLE_CLIENT_SECRET")
         cfg = Config.from_env()
-        assert cfg.model == "claude-opus-5-5" and not cfg.google_enabled and not cfg.home_enabled
+        assert cfg.model == "claude-haiku-5-5" and not cfg.google_enabled and not cfg.home_enabled
         assert cfg.scheduled_model == "claude-haiku-5-5"
     finally:
         os.environ.clear()

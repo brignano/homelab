@@ -71,9 +71,9 @@ flowchart LR
 ## What it costs
 
 Nothing here keeps its own schedule. Each question is one agent run on
-`claude-opus-5-5` ($4 / $20 per MTok), capped at 12 turns and $0.50, and so
+`claude-haiku-5-5` (set `CONCIERGE_MODEL=claude-sonnet-5-5` or `claude-opus-5-5` if it makes bad calls), capped at 12 turns and $0.50, and so
 is each follow-up set to **check** when it comes due (a **remind** costs
-nothing). The bot's scheduled runs use `claude-haiku-5-5`: the morning brief
+nothing). The bot's scheduled runs also use `claude-haiku-5-5`: the morning brief
 (8 turns, $0.30) and the evening review (6 turns, $0.15), each at most once a
 day and only when turned on; the review is skipped on a day with nothing in
 it. Typical
