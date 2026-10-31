@@ -27,6 +27,31 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-31 — Backup drive did not come back after a reboot
+
+**Goal:** Find out why `hl-exporter-mount-blind` kept firing for `/mnt/hl-backup` on m5.
+
+**Steps:**
+1. Read from CT 100: m5 booted 2026-10-30 22:33 UTC (kernel upgrade);
+   `/mnt/hl-backup` was last seen 22:31, and Proxmox has reported storage
+   `hl-backup` offline (`pve_up` 0) since. The exporter started after the
+   boot, so it was not blind: the drive was not mounted. The 2026-10-31 02:30
+   image did not run.
+2. New alert `hl-backup-drive-offline` (critical) on `pve_up` for the storage,
+   and `hl-exporter-mount-blind` leaves that case to it.
+3. `hl-exporter-mount-blind`'s summary now says to check `findmnt` before
+   restarting the exporter, and the runbook has "Backup drive not mounted".
+
+**Issues encountered:**
+- `homelab_smart_readable` comes from a file on disk, so it still read 1 for a
+  drive that had not been mounted since the reboot. The old summary's advice
+  (restart node-exporter) could not have helped.
+
+**Notes / next steps:**
+- The unlock/mount on m5 has to be done on the host; CT 100 has no route there.
+
+---
+
 ## 2026-10-26 — The host as code: an Ansible playbook and a rebuild runbook
 
 **Goal:** Losing m5 would have meant rebuilding it from this log. The Docker
