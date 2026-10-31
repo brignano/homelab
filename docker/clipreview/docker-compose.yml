@@ -1,7 +1,8 @@
 services:
-  # Review page for climb-judge verdicts (tools/photos/). Plays each clip from
-  # the iCloud mirror next to Claude's verdict, takes a send / fall / none /
-  # unsure label with one key, and exports a list of removal candidates.
+  # Review page for videos in the iCloud mirror (tools/photos/). Plays each one;
+  # climb-judge clips show Claude's verdict beside it and take send / fall /
+  # none, any other video takes keep in iCloud / cold storage. Exact duplicates
+  # are grouped. Exports lists of removal candidates for the Mac.
   # See README.md and docs/design/tsd-photo-library.md.
   #
   # What keeps it safe:
@@ -9,7 +10,7 @@ services:
   #   1. The mirror is mounted READ-ONLY. The page cannot change, move or delete
   #      a photo; deleting stays manual, in Photos on the Mac.
   #   2. The only writable mount is /root/climb-judge (the verdicts + labels
-  #      folder). The app writes two files there: labels.csv and review-log.csv.
+  #      folder). The app writes three files there: labels.csv, review-log.csv and video-review.csv.
   #   3. No ports published. Caddy reaches it over proxy_proxy at
   #      review.$HOMELAB_DOMAIN, LAN + tailnet only, never the tunnel: these
   #      are family videos.
@@ -39,6 +40,12 @@ services:
       - type: bind
         source: ${CLIMB_JUDGE_DIR:-/root/climb-judge}
         target: /data
+      # Design tokens and Geist, shared with the dashboard (brignano/design);
+      # scripts/update-design-tokens.sh is the only thing that edits them.
+      - type: bind
+        source: ../dashboard/assets
+        target: /srv/assets
+        read_only: true
     networks:
       - proxy
 

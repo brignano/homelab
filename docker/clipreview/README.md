@@ -1,34 +1,52 @@
-# Clip review page
+# Video review page
 
-A web page for judging climb-judge verdicts without hunting for each clip in
-Photos. `https://review.$HOMELAB_DOMAIN` (LAN + tailnet, via Caddy).
+A web page for reviewing the videos in the iCloud mirror without hunting for each
+one in Photos. `https://review.home.brignano.io` (LAN + tailnet, via Caddy).
 
-For each clip in `/root/climb-judge/climb-verdicts-claude-*.csv` it plays the
-video from the iCloud mirror (read-only) beside Claude's verdict, confidence and
-reason. Phone clips are often sideways: the browser honours the rotation
-metadata (Safari on the Mac does; `.MOV`/HEVC may not play elsewhere), and **R**
-rotates by hand if one still lands wrong.
+**Every video in the mirror is listed**, with filters for *Climbing clips*,
+*Other videos* and *Duplicates*, plus month. Two kinds:
+
+- **Climbing clips**: videos with a verdict in
+  `/root/climb-judge/climb-verdicts-claude-*.csv`. Claude's verdict, confidence and
+  reason sit beside the video and you label it send / fall / none (or unsure).
+- **Other videos**: no climb verdict, so you decide where they live: **keep in
+  iCloud** (hot) or **cold storage** (the 5 TB mirror stays as the copy; the
+  video leaves iCloud). Byte-identical copies (same size, same first and last
+  MiB) are grouped and linked to each other, and queued first, then the biggest.
+  The `.MOV` half of a Live Photo (a photo of the same name beside it) is part of
+  the photo and is not listed.
+
+The stage is sized to each clip's own shape, so portrait phone video fills its box
+with no black bars. Phone clips are sometimes sideways: the browser honours the
+rotation metadata (Safari on the Mac does; `.MOV`/HEVC may not play elsewhere),
+and **R** rotates by hand if one still lands wrong. The look is
+[brignano/design](https://github.com/brignano/design): the tokens and Geist are
+the dashboard's own files (`docker/dashboard/assets/`, mounted read-only), so
+`scripts/update-design-tokens.sh` updates both.
 
 | Key | Does |
 |-----|------|
-| S / F / N | label send / fall / none: appended to `/root/climb-judge/labels.csv`, the format `climb-judge.sh --labels` reads |
-| U | unsure: recorded in `review-log.csv` only (`--labels` would reject it) |
-| ← → (or K / J) | previous / next |
+| S / F / N | climbing clip: send / fall / none, appended to `/root/climb-judge/labels.csv`, the format `climb-judge.sh --labels` reads |
+| X | climbing clip: **not climbing** (the cat, a pet, a trip video). Recorded in `review-log.csv` only, never in `labels.csv`; the clip then joins *Other videos* and takes keep / cold storage |
+| K / C | other video: keep in iCloud / cold storage, appended to `video-review.csv` |
+| U | unsure: recorded only (`review-log.csv` for clips, `video-review.csv` for videos) |
+| ← → (or J / K on a climbing clip) | next / previous |
 | Space | play / pause |
 
 The verdicts CSV may carry a bare file name; the page finds it under `YYYY/MM/` in the mirror.
 
-Only clips already on the drive are shown; the header says how many verdicts are still waiting for the sync to download them.
+Only videos already on the drive are shown; the header says how many verdicts are still waiting for the sync to download them.
 
 The queue shows clips still to decide first, `none` and low confidence at the
 top; unsure clips come back. Month filter and "hide reviewed" are in the header.
 
 ## Removal
 
-The page never deletes anything. The header links export the **candidates**:
+The page never deletes anything. The header links export the **candidates**. For climbing clips:
 clips you labelled fall or none that are confirmed present in the mirror
-(`+ unreviewed Claude calls` adds fall/none at confidence ≥ 0.8 you did not
-review). To act on them, on the Mac:
+(`+ unreviewed Claude calls` adds Claude's **fall** calls at confidence ≥ 0.8 you
+did not review; Claude's `none` is never a candidate on its own, since it also
+means "not climbing"). To act on them, on the Mac:
 
 ```bash
 uv run tools/photos/to-album.py --url https://review.$HOMELAB_DOMAIN
@@ -36,7 +54,9 @@ uv run tools/photos/to-album.py --url https://review.$HOMELAB_DOMAIN
 
 It finds those clips in Photos by file name and adds them to one album, "Climb
 clips to delete" (favourites skipped, `--dry-run` to preview). Then in Photos:
-open the album, Cmd-A, Delete. Photos is where deletion has to happen
+open the album, Cmd-A, Delete. For the other list, `to-album.py --set cold` builds the album "Videos to move to
+cold storage" from the videos you marked cold (`/export.csv?set=cold`).
+Photos is where deletion has to happen
 (`docs/design/tsd-photo-library.md`).
 
 ## Deploy

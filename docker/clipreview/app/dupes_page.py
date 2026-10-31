@@ -1,36 +1,33 @@
+from . import ui
+
 PAGE = r"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Duplicate photos</title>
+<html lang="en"><head><title>Duplicate photos</title>
+__HEAD__
 <style>
-:root{color-scheme:light dark;font-family:system-ui,sans-serif}
-body{margin:0;display:flex;flex-direction:column;height:100vh}
-header,footer{padding:.5rem 1rem;display:flex;gap:.75rem;align-items:center;flex-wrap:wrap}
-header{border-bottom:1px solid #8884}
-main{flex:1;display:flex;gap:1rem;padding:1rem;min-height:0;overflow:auto;align-items:flex-start;justify-content:center}
-.card{width:22rem;border:3px solid #8884;border-radius:10px;overflow:hidden;cursor:pointer}
-.card.keep{border-color:#2a7}.card.remove{border-color:#c33}.card.all{border-color:#8888}
-.card img{width:100%;height:20rem;object-fit:contain;background:#000;display:block}
-.card .nothumb{height:20rem;display:flex;align-items:center;justify-content:center;background:#000;color:#999}
-.card div.info{padding:.5rem .75rem;font-size:.9rem}
-.badge{font-weight:700;padding:.1rem .5rem;border-radius:999px;margin-right:.4rem}
-.keep .badge{background:#2a74}.remove .badge{background:#c224}
-button{font:inherit;padding:.4rem .8rem;border-radius:6px;border:1px solid #8886;background:#8881;cursor:pointer}
-button b{opacity:.6;margin-left:.3rem}
-small{opacity:.7}.warn{color:#c33}
+main{overflow:auto;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.card{width:22rem;max-width:100%;background:var(--card);border:2px solid var(--line);border-radius:var(--radius);
+  overflow:hidden;cursor:pointer;box-shadow:var(--shadow-1)}
+.card.keep{border-color:var(--success)}.card.remove{border-color:var(--danger)}.card.all{border-color:var(--line-strong)}
+.card img,.card .nothumb{width:100%;height:20rem;object-fit:contain;background:var(--n-100);display:block}
+.card .nothumb{display:flex;align-items:center;justify-content:center;color:var(--slate)}
+.card div.info{padding:var(--s3) var(--s4);font-size:var(--text-sm)}
+.badge{font-weight:650;padding:0 var(--s3);border-radius:999px;margin-right:var(--s2);font-size:var(--text-xs);
+  border:1px solid var(--line);display:inline-block}
+.keep .badge{background:var(--success-surface);border-color:var(--success-line);color:var(--success-ink)}
+.remove .badge{background:var(--danger-surface);border-color:var(--danger-line);color:var(--danger-ink)}
 </style></head><body>
 <header>
- <b>Duplicate photos</b> <a href="/">clips</a>
+ <h1>Duplicate photos</h1>__NAV__
  <label><input type="checkbox" id="hide" checked> hide decided</label>
- <span id="count"></span><span style="flex:1"></span>
+ <span id="count" class="muted"></span><span class="grow"></span>
  <button id="bulk">Accept all exact copies</button>
 </header>
 <main id="main"></main>
 <footer>
- <button id="accept">Remove the red ones<b>Enter</b></button>
- <button id="all">Keep them all<b>K</b></button>
- <button id="prev">Prev<b>←</b></button><button id="next">Next<b>→</b></button>
- <small id="hint">Click a photo (or press 1-9) to make it the one you keep. Nothing is deleted here: accepted removals go into a Photos album from the Mac.</small>
+ <button id="accept" class="primary">Remove the red ones<kbd>Enter</kbd></button>
+ <button id="all">Keep them all<kbd>K</kbd></button>
+ <button id="prev">Prev<kbd>←</kbd></button><button id="next">Next<kbd>→</kbd></button>
+ <small id="hint" class="grow">Click a photo (or press 1-9) to make it the one you keep. Nothing is deleted here: accepted removals go into a Photos album from the Mac.</small>
 </footer>
 <script>
 let all=[],list=[],i=0,pick=null;
@@ -92,4 +89,4 @@ addEventListener('keydown',e=>{
 });
 load();
 </script></body></html>
-"""
+""".replace("__HEAD__", ui.HEAD).replace("__NAV__", ui.nav("dupes"))

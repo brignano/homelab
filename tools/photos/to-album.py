@@ -18,6 +18,8 @@ album or touches iCloud, so the worst a wrong match costs is a clip you remove
 from the album. Re-running adds only what is not there yet. Favourites are
 skipped, and a candidate Photos does not have is listed, not guessed at.
 
+    --set cold         the other list: videos you marked "cold storage" (they stay
+                       on the 5 TB mirror; delete them from iCloud via the album)
     --include-claude   also add unreviewed clips Claude called fall/none with
                        high confidence (the review page's "+ unreviewed" csv)
     --dry-run          print what would be added; change nothing
@@ -33,12 +35,17 @@ from pathlib import Path
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", required=True, help="base URL of the review page")
-    ap.add_argument("--album", default="Climb clips to delete")
+    ap.add_argument("--set", choices=("climb", "cold"), default="climb",
+                    help="climb: clips labelled fall/none; cold: other videos you marked cold storage")
+    ap.add_argument("--album", help="default: 'Climb clips to delete' or 'Videos to move to cold storage'")
     ap.add_argument("--include-claude", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
 
-    url = args.url.rstrip("/") + "/export.csv" + ("?include=claude" if args.include_claude else "")
+    if not args.album:
+        args.album = "Videos to move to cold storage" if args.set == "cold" else "Climb clips to delete"
+    query = "?set=cold" if args.set == "cold" else ("?include=claude" if args.include_claude else "")
+    url = args.url.rstrip("/") + "/export.csv" + query
     with urllib.request.urlopen(url, timeout=30) as r:
         rows = list(csv.DictReader(io.StringIO(r.read().decode())))
     stems = {Path(r["file"]).stem: r["file"] for r in rows}
