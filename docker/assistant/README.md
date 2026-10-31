@@ -385,6 +385,14 @@ Setup, costs and the audit trail are in
 
 ### The morning brief
 
+**Mail line.** The concierge also adds one line to **Needs you**, with no model
+involved: unread `Leads/Driftwood`, `Leads/Sites` and `Leads/Guidebook` mail,
+counted per product, and starred mail, e.g. `📬 2 new Driftwood leads, 1 starred
+waiting`. It is left out when both counts are zero, so reading, archiving or
+unstarring a message makes it disappear. Counts and product names only: no
+sender, subject or body reaches the digest or a log, and nothing is ever
+labelled, archived, marked read or sent.
+
 With `#ask` set up, each **scheduled** digest gets one more section at the
 bottom, **Needs you**: Claude's read of the mail and dated things that need
 you. It is part of the same message, not a second post. The bot calls the

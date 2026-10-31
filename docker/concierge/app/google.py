@@ -317,6 +317,12 @@ class Google:
         ) for i in ids))
         return [summarize_message(m) for m in metas]
 
+    async def count(self, query: str, cap: int = 100) -> int:
+        """How many messages match a Gmail search, up to `cap`. Read-only, and
+        reads nothing but ids: no sender, subject or body leaves Gmail."""
+        payload = await self._get(f"{GMAIL_API}/messages", {"q": query, "maxResults": str(cap)})
+        return sum(1 for m in payload.get("messages", []) if m.get("id"))
+
     async def read(self, message_id: str) -> dict:
         payload = await self._get(f"{GMAIL_API}/messages/{quote(message_id, safe='')}", {"format": "full"})
         return {**summarize_message(payload), "body": extract_text(payload)}

@@ -1448,6 +1448,23 @@ def _():
     assert draft.render() == render(draft.facts, None, note="narration unavailable")
 
 
+@check("brief: the mail line is added when present, absent when empty")
+def _():
+    from app.concierge import brief_section, parse_reply
+    line = "📬 2 new Driftwood leads, 1 starred waiting"
+    on = brief_section(parse_reply({"ok": True, "answer": "- Pay rent", "mail_line": line}))
+    assert on.lines[-1] == line and "- Pay rent" in on.lines, on.lines
+    off = brief_section(parse_reply({"ok": True, "answer": "- Pay rent", "mail_line": ""}))
+    assert not any("📬" in ln for ln in off.lines), off.lines
+    none = brief_section(parse_reply({"ok": True, "answer": "- Pay rent"}))
+    assert none.lines == off.lines
+    # "Nothing needs you" would contradict the line, so it goes.
+    quiet = brief_section(parse_reply({"ok": True, "answer": "Nothing needs you today.", "mail_line": line}))
+    assert quiet.lines[-1] == line and not any("Nothing needs" in ln for ln in quiet.lines), quiet.lines
+    # Not a string: ignored.
+    assert parse_reply({"ok": True, "answer": "a", "mail_line": ["x"]}).mail_line == ""
+
+
 @check("concierge: reads_ok is parsed only when it is literally true")
 def _():
     from app.concierge import parse_reply

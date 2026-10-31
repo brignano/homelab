@@ -348,6 +348,40 @@ def _():
     assert tools.GOOGLE_READS == {"calendar_events", "mail_search", "mail_read"}
 
 
+@check("mail line: left out at zero, counts and product names only when not")
+def _():
+    from app import maildigest
+    assert maildigest.mail_line({}, 0) == ""
+    assert maildigest.mail_line({"Driftwood": 0, "Sites": 0, "Guidebook": 0}, 0) == ""
+    assert maildigest.mail_line({"Driftwood": 2}, 1) == "📬 2 new Driftwood leads, 1 starred waiting"
+    assert maildigest.mail_line({"Guidebook": 1}, 0) == "📬 1 new Guidebook lead"
+    assert maildigest.mail_line({}, 3) == "📬 3 starred waiting"
+    assert maildigest.mail_line({"Driftwood": 1, "Sites": 4}, 0) == "📬 1 new Driftwood lead, 4 new Sites leads"
+
+
+@check("mail line: read-only searches, a failure gives no line, nothing but counts logged")
+def _():
+    from app import maildigest
+
+    class Fake:
+        def __init__(self, counts, boom=False):
+            self.counts, self.boom, self.queries = counts, boom, []
+        async def count(self, query, cap=100):
+            self.queries.append(query)
+            if self.boom:
+                raise RuntimeError("secret subject")
+            return self.counts.get(query, 0)
+
+    f = Fake({"label:Leads/Driftwood is:unread": 2, "is:starred": 1})
+    assert asyncio.run(maildigest.digest_line(f)) == "📬 2 new Driftwood leads, 1 starred waiting"
+    assert f.queries == ["label:Leads/Driftwood is:unread", "label:Leads/Sites is:unread",
+                         "label:Leads/Guidebook is:unread", "is:starred"], f.queries
+    assert asyncio.run(maildigest.digest_line(Fake({}))) == ""
+    assert asyncio.run(maildigest.digest_line(Fake({}, boom=True))) == ""
+    src = inspect.getsource(maildigest)
+    assert "gmail.modify" not in src and "label_message" not in src and "trash" not in src
+
+
 @check("brief: request body carries memories only")
 def _():
     assert validate_brief({}) == []
