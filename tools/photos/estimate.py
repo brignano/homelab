@@ -34,6 +34,8 @@ import csv
 import sys
 from collections import defaultdict
 
+from dupes import find_dupes
+
 # Photos' own labels, lower-cased, matched exactly. These are the "random"
 # photos: pictures of paper, receipts and screens, taken to remember something
 # once. Exact rather than substring, so "text" does not catch "textile".
@@ -131,7 +133,6 @@ def main(argv: list[str]) -> int:
         cut = scored[idx]
 
     reasons: dict[str, list[str]] = defaultdict(list)
-    seen_dupe_groups: set[frozenset] = set()
 
     for p in photos:
         if protected(p):
@@ -141,16 +142,6 @@ def main(argv: list[str]) -> int:
             reasons[p.uuid].append("screenshots")
         if p.burst and not p.burst_selected and not p.burst_key:
             reasons[p.uuid].append("bursts")
-        dupes = p.duplicates
-        if dupes:
-            group = frozenset([p.uuid] + [d.uuid for d in dupes])
-            if group not in seen_dupe_groups:
-                seen_dupe_groups.add(group)
-                # Keep the largest copy; count the rest.
-                members = sorted([p] + list(dupes), key=lambda x: x.original_filesize or 0, reverse=True)
-                for extra in members[1:]:
-                    if not protected(extra):
-                        reasons[extra.uuid].append("duplicates")
         labels = [l.lower() for l in (p.labels or [])]
         if not p.ismovie and DOC_LABELS.intersection(labels):
             reasons[p.uuid].append("documents")
@@ -160,41 +151,11 @@ def main(argv: list[str]) -> int:
         if args.video_years and p.ismovie and age_days(p) > args.video_years * 365:
             reasons[p.uuid].append("old_videos")
 
-    # Several shots of the same thing: photos taken within --similar-seconds of
-    # the FIRST shot of a group join it, and every one but the best is a
-    # candidate. Measured from the first shot, not the previous one: chaining
-    # let a camera fired every few seconds through an afternoon (a DSLR at an
-    # event) become one 100-photo group that kept a single frame.
-    # Best = a favourite if there is one, else Photos' highest overall score.
-    # Bursts and screenshots are left to their own rules. Time alone can put
-    # two different subjects in one group, which is why this proposes and the
-    # CSV says which shot it would keep.
-    keep_of: dict[str, str] = {}
-    if args.similar_seconds > 0:
-        stills = sorted((p for p in photos
-                         if not p.ismovie and not p.burst and not p.screenshot),
-                        key=lambda p: p.date.timestamp())
-        groups, cur = [], []
-        for p in stills:
-            if cur and p.date.timestamp() - cur[0].date.timestamp() > args.similar_seconds:
-                groups.append(cur)
-                cur = []
-            cur.append(p)
-        if cur:
-            groups.append(cur)
-
-        def rank(p):
-            sc = p.score.overall if p.score and p.score.overall is not None else -1e9
-            return (bool(p.favorite), sc, p.original_filesize or 0)
-
-        for g in groups:
-            if len(g) < 2:
-                continue
-            best = max(g, key=rank)
-            for p in g:
-                if p is not best and not protected(p):
-                    reasons[p.uuid].append("similar")
-                    keep_of[p.uuid] = best.original_filename
+    # Exact copies and same-moment shots: see dupes.py (shared with
+    # duplicates-to-album.py). Proposes only; the CSV says which shot it keeps.
+    extras, keep_of = find_dupes(photos, protected, args.similar_seconds)
+    for u, (_p, rs) in extras.items():
+        reasons[u].extend(rs)
 
     by_uuid = {p.uuid: p for p in photos}
     total = sum(p.original_filesize or 0 for p in photos)

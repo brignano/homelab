@@ -55,6 +55,25 @@ its reasons (and, for a similar shot, which one it would keep), so you can spot-
 Tune it with `--similar-seconds`, `--low-quality-percent`, `--screenshot-months`, `--video-years`,
 `--include-albums` and `--include-people`. `--help` lists them all.
 
+## `duplicates-to-album.py`: review and remove duplicates in Photos
+
+Uses the same detection as `estimate.py` (`dupes.py`): exact extra copies
+(keeps the largest) and shots within 20 seconds of each other (keeps your
+favourite, else Photos' best score). It puts every photo that is *not* the
+keeper into one album, "Duplicates to delete". Removal is then: open the
+album, look it over, Cmd-A, Delete. Nothing is deleted by the script.
+
+```bash
+uv run tools/photos/duplicates-to-album.py --dry-run --csv ~/Desktop/dupes.csv   # look first
+uv run tools/photos/duplicates-to-album.py                                         # fill the album
+```
+
+The CSV lists each candidate and the filename it keeps instead. Favourites,
+photos in your albums, photos with a named person and shared-album photos are
+never added. Re-running adds only what is missing. Duplicates are the same
+photo, so no homelab copy or offsite backup is needed first. Logic test:
+`python tools/photos/test_dupes.py`.
+
 ## `climb_judge.py`: did this climbing clip end in a send or a fall?
 
 Runs on CT 100 against the mirror, not on the Mac. Read-only: it writes one
