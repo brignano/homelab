@@ -86,6 +86,36 @@ def read_log():
     return labels
 
 
+_index = {"at": 0.0, "by_name": {}}
+VIDEO_EXT = {".mov", ".mp4", ".m4v"}
+
+
+def mirror_index():
+    """basename -> mirror-relative path. climb-judge's CSV records only the file
+    name for some runs, while the mirror keeps clips under YYYY/MM/. Rebuilt at
+    most once a minute; sidecars and non-video files are ignored."""
+    if time.time() - _index["at"] > 60:
+        by_name = {}
+        for root, _dirs, files in os.walk(PHOTOS):
+            for n in files:
+                if os.path.splitext(n)[1].lower() in VIDEO_EXT:
+                    full = os.path.join(root, n)
+                    rel = os.path.relpath(full, PHOTOS)
+                    # prefer a YYYY/MM location if a name appears twice
+                    if n not in by_name or MONTH_RE.search(rel):
+                        by_name[n] = rel
+        _index.update(at=time.time(), by_name=by_name)
+    return _index["by_name"]
+
+
+def locate(rel: str) -> str:
+    """The mirror-relative path for a CSV `file` value, or "" if absent."""
+    p = PHOTOS / rel
+    if p.is_file() and PHOTOS.resolve() in p.resolve().parents:
+        return rel
+    return mirror_index().get(Path(rel).name, "")
+
+
 def clip_id(rel: str) -> str:
     return hashlib.sha1(rel.encode()).hexdigest()[:12]
 
@@ -95,16 +125,17 @@ def build():
     labels = read_log()
     clips = []
     for rel, v in verdicts.items():
-        path = PHOTOS / rel
-        present = path.is_file() and PHOTOS.resolve() in path.resolve().parents
+        actual = locate(rel)
+        present = bool(actual)
+        path = PHOTOS / (actual or rel)
         stem = Path(rel).stem
         label = ""
         for key, lab in labels.items():
             if stem_matches(key, stem):
                 label = lab
-        m = MONTH_RE.search(rel)
+        m = MONTH_RE.search(actual or rel)
         clips.append({
-            "id": clip_id(rel), "file": rel, "name": path.name, "stem": stem,
+            "id": clip_id(rel), "file": actual or rel, "name": path.name, "stem": stem,
             "month": "%s-%s" % m.groups() if m else "",
             "claude": v["claude"], "conf": v["conf"], "why": v["why"],
             "label": label, "present": present,

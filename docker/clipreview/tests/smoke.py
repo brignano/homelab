@@ -25,7 +25,7 @@ with open(tmp / "data/climb-verdicts-claude-2026-10.csv", "w", newline="") as f:
                 "claude", "claude_confidence", "claude_why", "errors"])
     w.writerow(["2026/10/IMG_1_aaaaaaa.MOV", "9", "", "", "", "0", "send", "0.95", "topped", ""])
     w.writerow(["2026/10/IMG_2_bbbbbbb.MOV", "9", "", "", "", "0", "fall", "0.90", "dropped", ""])
-    w.writerow(["2026/10/IMG_3_ccccccc.MOV", "9", "", "", "", "0", "none", "0.50", "empty", ""])
+    w.writerow(["IMG_3_ccccccc.MOV", "9", "", "", "", "0", "none", "0.50", "empty", ""])
     w.writerow(["2026/10/IMG_9_missing.MOV", "9", "", "", "", "0", "fall", "0.99", "gone", ""])
 (tmp / "data/labels.csv").write_text("file,label\nIMG_1,send")  # no trailing newline
 
@@ -50,6 +50,8 @@ clips = json.load(get("/api/clips"))
 assert [c["name"][:5] for c in clips][:2] == ["IMG_3", "IMG_2"], clips  # none first, then low conf
 assert clips[-1]["label"] == "send" and clips[-1]["name"].startswith("IMG_1")  # hand label seen
 assert not [c for c in clips if "missing" in c["name"]][0]["present"]
+c3 = [c for c in clips if c["name"].startswith("IMG_3")][0]
+assert c3["present"] and c3["month"] == "2026-10" and c3["file"] == "2026/10/IMG_3_ccccccc.MOV", c3
 
 by = {c["name"][:5]: c for c in clips}
 post({"id": by["IMG_2"]["id"], "label": "fall"})

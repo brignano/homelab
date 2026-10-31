@@ -16,6 +16,8 @@ rotates by hand if one still lands wrong.
 | ← → (or K / J) | previous / next |
 | Space | play / pause |
 
+The verdicts CSV may carry a bare file name; the page finds it under `YYYY/MM/` in the mirror.
+
 Only clips already on the drive are shown; the header says how many verdicts are still waiting for the sync to download them.
 
 The queue shows clips still to decide first, `none` and low confidence at the
