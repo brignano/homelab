@@ -127,6 +127,11 @@ scrape_configs:
           - http://prowlarr:9696/ping
         labels:
           service: prowlarr
+      # Cleanuparr's /health is its liveness check: 200 without a login.
+      - targets:
+          - http://cleanuparr:11011/health
+        labels:
+          service: cleanuparr
       # FlareSolverr's /health answers {"status":"ok"} 200 without starting a
       # browser, so the probe costs nothing.
       - targets:

@@ -34,6 +34,12 @@ so far were already in one.
   *Blocklist release* so another release is searched.
 - **Size caps are MB per minute of runtime** and apply to the next grab only.
   Radarr's HD-1080p profile ships with Remux ticked, which bypasses the caps.
+- **Fake and stuck downloads are Cleanuparr's job** (`cleanuparr.`): it
+  removes them through the apps' APIs, blocklists and re-searches. Its Malware
+  Blocker whitelists video and subtitle files
+  (`docker/downloads/cleanuparr/whitelist.txt`); qBittorrent's excluded file
+  names are the backstop. Check its *Events* page before removing anything by
+  hand. Nyaa is for anime only (tagged); showRSS outranks the public trackers.
 - **Indexers are Anthony's choice.** This repo ships none; only add the
   `flaresolverr` tag to an indexer Cloudflare actually blocks.
 

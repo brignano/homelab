@@ -63,6 +63,7 @@ downloads_sonarr MediaCover,logs,Backups
 downloads_radarr MediaCover,logs,Backups
 downloads_prowlarr logs,Backups
 downloads_qbittorrent qBittorrent/logs
+downloads_cleanuparr logs
 matterbridge_data .npm,.cache}"
 
 # shellcheck source=scripts/metrics.sh

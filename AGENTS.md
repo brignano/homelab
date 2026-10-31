@@ -144,6 +144,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | Sonarr / Radarr / Prowlarr | `docker/downloads/` | LAN + tailnet (via Caddy, `sonarr.` / `radarr.` / `prowlarr.`); join `proxy_proxy`; hardlink downloads into Jellyfin's library |
 | icloudpd (iCloud Photos mirror) | `docker/photos/` (built 2026-10-25) | **outbound only**: no ports, no route; never `up`, run nightly by `scripts/photos-sync.sh` with `docker compose run`; writes `/media/photos/icloud` on the media drive (`backup=0`) |
 | FlareSolverr | `docker/downloads/` | internal (`flaresolverr:8191` on `proxy_proxy`, no route); Prowlarr's Cloudflare-challenge solver, outside the VPN |
+| Cleanuparr | `docker/downloads/` | LAN + tailnet (via Caddy, `cleanuparr.`); join `proxy_proxy`; removes fake/stalled/failed downloads via the *arr and qBittorrent APIs, whitelist in `docker/downloads/cleanuparr/whitelist.txt`; no media mount |
 
 ## Networking rules
 - **Remote access:** the Proxmox host runs Tailscale as a subnet router advertising `10.0.0.0/24`, so tailnet devices reach the LXC and its services at `10.0.0.201`. (Tailscale runs on the host, not in the LXC. `/dev/net/tun` is passed in as `dev1` only for gluetun, `docker/downloads/`; Tailscale stays on the host.)

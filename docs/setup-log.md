@@ -27,6 +27,52 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-31 — Fake .exe release, and keeping malware out of downloads
+
+**Goal:** Close #245 (media downloads stack) and stop fake releases reaching
+the drive or getting stuck in the queue.
+
+**Steps:**
+1. Read-only check on CT 100 for #245: stack up, qBittorrent's public IP is
+   Proton's (port forwarding on), it lives in gluetun's namespace (`lo`,
+   `eth0`, `tun0` only) with gluetun's firewall on; 606 show and 55 movie
+   files in the library, latest import 10-30. #245 closed.
+2. qBittorrent *Excluded file names*: executables, scripts, shortcuts, disk
+   images and odd archives (README step 4).
+3. Cleanuparr added to `docker/downloads/` (README step 6): Malware Blocker in
+   whitelist mode (video and subtitles only), Queue Cleaner for failed imports
+   and stalled torrents, removal = blocklist + new search. Caddy route,
+   blackbox probe, dashboard tile, offsite backup of its config volume.
+4. Sonarr: Nyaa tagged for anime only, showRSS ranked above the public
+   trackers.
+
+**Issues encountered:**
+- A Survivor S51E06 grab from 10-27, from Nyaa, was an 809 MB `.exe`.
+  Sonarr refused it ("Found executable file with extension: '.exe'") and left
+  it *import pending*; the file stayed in `/media/jellyfin/downloads`.
+- qBittorrent's excluded file names were off and empty; qBittorrent has no
+  allowlist mode, which is why the allowlist lives in Cleanuparr.
+- Six indexers all at priority 25, so an anime tracker answered a US TV search.
+
+**Resolution:**
+- The release was removed from Sonarr's queue with *Remove from client* and
+  *Blocklist release*; Sonarr's new search grabbed a 2.25 GB WEB-DL from
+  Knaben. `/media/jellyfin/downloads` held nothing else.
+- Exclusions applied through qBittorrent's API, showRSS set to priority 10 in
+  Prowlarr (others 25), and Nyaa tagged `anime` in Sonarr (a Prowlarr tag
+  would also cut it from Radarr, which found the Ghibli films there). No
+  series is tagged `anime` yet, so Sonarr does not use Nyaa; tag an anime show
+  when one is added.
+
+**Notes / next steps:**
+- qBittorrent's exclusions and Cleanuparr's settings live in their config
+  volumes, not the repo: a fresh install needs README steps 4 and 6.
+- Sonarr/Radarr already import only video and subtitles, so nothing else ever
+  reached Jellyfin. A virus scanner (ClamAV) was considered and skipped: it
+  costs ~1 GB of RAM and video files are not where this malware hides.
+
+---
+
 ## 2026-10-31 — Why the backup drive did not unlock, and a watchdog
 
 **Goal:** Find why the LUKS drive did not come back after the 2026-10-30
