@@ -1,0 +1,50 @@
+# Puts the USB drives back after a boot or a drop, when software alone can
+# (scripts/host/hl-drive-watchdog). A systemd timer, not cron, so it also runs
+# shortly after boot, when a late or failed drive matters most.
+
+- name: The drive watchdog
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/host/hl-drive-watchdog"
+    dest: /usr/local/bin/hl-drive-watchdog
+    mode: "0755"
+
+- name: Its service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hl-drive-watchdog.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Remount the host's USB drives and keep node-exporter seeing them
+      After=local-fs.target prometheus-node-exporter.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/hl-drive-watchdog
+  notify: Reload systemd
+
+- name: Its timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hl-drive-watchdog.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run hl-drive-watchdog at boot and every 5 minutes
+
+      [Timer]
+      OnBootSec=3min
+      OnUnitActiveSec=5min
+
+      [Install]
+      WantedBy=timers.target
+  notify: Reload systemd
+
+- name: Flush the reload before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Timer on
+  ansible.builtin.systemd_service:
+    name: hl-drive-watchdog.timer
+    enabled: true
+    state: started
+  # In --check the unit files were not written, so there is nothing to find yet.
+  ignore_errors: "{{ ansible_check_mode }}"
