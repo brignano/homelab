@@ -52,6 +52,10 @@ import cv2
 import numpy as np
 
 VIDEO_EXT = {".mov", ".mp4", ".m4v"}
+# icloudpd saves the 1-3 s motion half of a Live Photo as IMG_1234_HEVC.MOV (or
+# IMG_1234_HEVC_<id>.MOV with name-id7). They are never climbs, and in a month
+# of the mirror they outnumber real videos about four to one.
+LIVE_PHOTO_MARK = "_HEVC"
 VERDICTS = ("send", "fall", "none", "unsure")
 
 
@@ -237,8 +241,14 @@ def judge_claude(path: Path, seconds: float, client, model: str, frames: int) ->
 
 # --- running and scoring -----------------------------------------------------
 
+def is_live_photo(path: Path) -> bool:
+    stem = path.stem.upper()
+    return stem.endswith(LIVE_PHOTO_MARK) or LIVE_PHOTO_MARK + "_" in stem
+
+
 def find_clips(root: Path, labels: dict[str, str]) -> list[Clip]:
-    files = [p for p in root.rglob("*") if p.suffix.lower() in VIDEO_EXT and p.is_file()]
+    files = [p for p in root.rglob("*")
+             if p.suffix.lower() in VIDEO_EXT and p.is_file() and not is_live_photo(p)]
     if not labels:
         return [Clip(p) for p in sorted(files)]
     clips = []
