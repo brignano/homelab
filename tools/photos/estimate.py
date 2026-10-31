@@ -153,7 +153,7 @@ def main(argv: list[str]) -> int:
 
     # Exact copies and same-moment shots: see dupes.py (shared with
     # duplicates-to-album.py). Proposes only; the CSV says which shot it keeps.
-    extras, keep_of = find_dupes(photos, protected, args.similar_seconds)
+    extras, keep_of, _ = find_dupes(photos, protected, args.similar_seconds)
     for u, (_p, rs) in extras.items():
         reasons[u].extend(rs)
 

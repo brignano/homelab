@@ -59,20 +59,28 @@ Tune it with `--similar-seconds`, `--low-quality-percent`, `--screenshot-months`
 
 Uses the same detection as `estimate.py` (`dupes.py`): exact extra copies
 (keeps the largest) and shots within 20 seconds of each other (keeps your
-favourite, else Photos' best score). It puts every photo that is *not* the
-keeper into one album, "Duplicates to delete". Removal is then: open the
-album, look it over, Cmd-A, Delete. Nothing is deleted by the script.
+favourite, else Photos' best score). Reviewed on the homelab review page, so
+you are not hunting through Photos:
 
 ```bash
-uv run tools/photos/duplicates-to-album.py --dry-run --csv ~/Desktop/dupes.csv   # look first
-uv run tools/photos/duplicates-to-album.py                                         # fill the album
+uv run tools/photos/duplicates-to-album.py --export https://review.YOUR_DOMAIN       # 1. send sets + thumbnails
+# 2. https://review.YOUR_DOMAIN/dupes : Enter accepts, 1-9 picks another keeper, K keeps all
+uv run tools/photos/duplicates-to-album.py --from-review https://review.YOUR_DOMAIN  # 3. fill the album
 ```
 
-The CSV lists each candidate and the filename it keeps instead. Favourites,
-photos in your albums, photos with a named person and shared-album photos are
-never added. Re-running adds only what is missing. Duplicates are the same
-photo, so no homelab copy or offsite backup is needed first. Logic test:
-`python tools/photos/test_dupes.py`.
+Then open the "Duplicates to delete" album in Photos, Cmd-A, Delete. Nothing
+here deletes. Exact copies are the same picture as the keeper, so they need no
+backup. A same-moment shot is a *different file*, so the review page only lets
+you accept it when its original is confirmed in the iCloud mirror (matched by
+file name, month and exact size). That mirror is the 5 TB drive and is not
+backed up offsite (decided 2026-10-31), so it is the only second copy:
+photos deleted from Photos stay recoverable for 30 days in Recently Deleted.
+
+Without the page: `--exact-only [--dry-run --csv FILE]` adds only exact copies
+straight to the album. Favourites, photos in your albums, photos with a named
+person and shared-album photos are never included. Logic test:
+`python tools/photos/test_dupes.py`; the page and its API are covered by
+`docker/clipreview/tests/smoke.py`.
 
 ## `climb_judge.py`: did this climbing clip end in a send or a fall?
 

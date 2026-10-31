@@ -42,3 +42,14 @@ open the album, Cmd-A, Delete. Photos is where deletion has to happen
 `cd docker/clipreview && docker compose up -d --build`. The mirror mount refuses
 to start without `/media/photos/icloud`. The proxy stack needs a Caddy reload
 for the new route (`/deploy` covers it; a Caddy *recreate* stays confirm-first).
+
+## Duplicate photos (`/dupes`)
+
+A second tab for `tools/photos/duplicates-to-album.py`. The Mac exports sets
+(a keeper plus its extras) and a thumbnail per photo to `/data/dupes/`; the page
+adds whether each original is in the read-only mirror (same file name in the
+photo's month, same byte size), records your decision per set in
+`/data/dupes/decisions.csv`, and serves the accepted removals at
+`/api/dupes/accepted.json` for `--from-review` on the Mac. A same-moment shot
+(a different file) is only accepted if its original is confirmed in the mirror;
+exact copies are not held back. Nothing here deletes or writes to the mirror.

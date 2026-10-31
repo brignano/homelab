@@ -73,4 +73,54 @@ for bad in (lambda: post({"id": "../../etc/passwd", "label": "fall"}),
         raise SystemExit("expected an error")
     except urllib.error.HTTPError as e:
         assert e.code in (400, 403, 404), e.code
+
+# --- duplicate photos --------------------------------------------------------
+(tmp / "photos/2026/10").mkdir(parents=True, exist_ok=True)
+(tmp / "photos/2026/10/IMG_5_zzzzzzz.HEIC").write_bytes(b"x" * 100)
+(tmp / "photos/2026/10/IMG_5_zzzzzzz.HEIC.xmp").write_bytes(b"<x/>")
+(tmp / "photos/2026/10/IMG_6_yyyyyyy.HEIC").write_bytes(b"x" * 50)  # size differs from Photos
+UA, UB, UC, UD, UE, UF = ("%08d-0000" % n for n in range(1, 7))
+def mem(u, fn, size, keep=False):
+    return {"uuid": u, "filename": fn, "date": "2026-10-15T12:00:00", "bytes": size,
+            "score": 0.5, "keep": keep}
+payload = {"sets": [
+    {"id": "abc00001", "kind": "similar", "members": [mem(UA, "IMG_5.HEIC", 100, True), mem(UB, "IMG_6.HEIC", 60),
+                                                     mem(UC, "IMG_7.HEIC", 60)]},
+    {"id": "abc00002", "kind": "exact", "members": [mem(UD, "IMG_8.HEIC", 80, True), mem(UE, "IMG_9.HEIC", 80)]}]}
+def jpost(path, body, **h):
+    h.setdefault("Content-Type", "application/json")
+    return urllib.request.urlopen(urllib.request.Request(base + path, json.dumps(body).encode(), h))
+r = json.load(jpost("/api/dupes/sets", payload))
+assert r["need_thumbs"] and UA in r["need_thumbs"], r
+urllib.request.urlopen(urllib.request.Request(base + "/api/dupes/thumb/" + UA, b"\xff\xd8jpeg", method="PUT"))
+assert get("/dupes/thumb/" + UA).read() == b"\xff\xd8jpeg"
+v = json.load(get("/api/dupes"))["sets"]
+assert [s["id"] for s in v] == ["abc00002", "abc00001"]  # exact first
+states = {m["uuid"]: m["mirror"] for s in v for m in s["members"]}
+assert states[UA] == "ok" and states[UB] == "size" and states[UC] == "missing", states
+# nothing accepted yet
+assert json.load(get("/api/dupes/accepted.json"))["uuids"] == []
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": UA})
+jpost("/api/dupes/decide", {"set": "abc00002", "keep": UD})
+acc = json.load(get("/api/dupes/accepted.json"))
+# exact extra is accepted without a mirror copy; similar extras are held back (not confirmed)
+assert acc["uuids"] == [UE] and sorted(x["uuid"] for x in acc["skipped"]) == [UB, UC], acc
+# choosing the mirror-confirmed shot as the extra: keep UB means UA (ok) and UC (missing) removed
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": UB})
+acc = json.load(get("/api/dupes/accepted.json"))
+assert UA in acc["uuids"] and UC not in acc["uuids"], acc
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": "all"})
+assert json.load(get("/api/dupes/accepted.json"))["uuids"] == [UE]
+for bad in (lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "not-a-member"}),
+            lambda: jpost("/api/dupes/decide", {"set": "nope", "keep": "all"}),
+            lambda: jpost("/api/dupes/sets", {"sets": [{"id": "x", "kind": "exact", "members": []}]}),
+            lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "all"}, Origin="http://evil.example"),
+            lambda: urllib.request.urlopen(urllib.request.Request(base + "/api/dupes/thumb/..%2f..%2fetc", b"\xff\xd8", method="PUT")),
+            lambda: get("/dupes/thumb/..%2f..%2fetc%2fpasswd")):
+    try:
+        bad()
+        raise SystemExit("expected an error")
+    except urllib.error.HTTPError as e:
+        assert e.code in (400, 403, 404), e.code
+assert b"Duplicate photos" in get("/dupes").read()
 print("ok")
