@@ -1045,7 +1045,7 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "The backup drive is not mounted on m5 (Proxmox storage hl-backup is offline), so tonight's CT 100 image will not run; unlock and mount it on m5 (docs/runbook-backups.md → \"Backup drive not mounted\")"
+          summary: "The backup drive is not mounted on m5 (Proxmox storage hl-backup is offline), so tonight's CT 100 image will not run. hl-drive-watchdog on m5 retries every 5 minutes, so still offline means the disk is missing or will not unlock: docs/runbook-backups.md → \"Backup drive not mounted\""
         data:
           - refId: A
             relativeTimeRange: { from: 600, to: 0 }
@@ -1064,6 +1064,72 @@ groups:
               expression: A
               conditions:
                 - evaluator: { type: lt, params: [1] }
+
+      # hl-drive-watchdog (scripts/host/) put a drive back by itself: it
+      # unlocked and mounted one that was missing, or restarted node-exporter
+      # because it could not see one. Worth hearing about: a drive that keeps
+      # needing it is failing, loose, or has a bad cable. Fires for the hour
+      # after the repair, then resolves.
+      - uid: hl-drive-self-healed
+        title: Host drive repaired itself
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "m5 fixed {{ $labels.drive }} on its own ({{ $labels.action }}, {{ printf \"%.0f\" $values.A.Value }} min ago); nothing to do unless it keeps happening (journalctl -t hl-drive-watchdog on m5)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (time() - homelab_drive_watchdog_repair_timestamp_seconds) / 60
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [60] }
+
+      # The watchdog's own dead man's switch. It runs every 5 minutes; 30
+      # minutes of silence means the timer stopped or the script is gone.
+      # Absent until it is first installed, and noDataState OK keeps that quiet.
+      - uid: hl-drive-watchdog-stale
+        title: Drive watchdog has stopped
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "hl-drive-watchdog on m5 last ran {{ printf \"%.0f\" $values.A.Value }} min ago; check `systemctl status hl-drive-watchdog.timer` on m5"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (time() - homelab_drive_watchdog_timestamp_seconds) / 60
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [30] }
 
       # --- A host drive is going bad ---
       #

@@ -324,6 +324,18 @@ systemctl start 'mnt-hl\x2dbackup.mount'    # unlocks with the keyfile, then mou
 findmnt /mnt/hl-backup && pvesm status | grep hl-backup              # "active"
 ```
 
+`hl-drive-watchdog` (a timer on m5, `scripts/host/hl-drive-watchdog`) does
+the unlock and mount by itself every 5 minutes, so this alert outliving it
+means software could not. `journalctl -t hl-drive-watchdog` says what it tried.
+
+No `systemd-cryptsetup@hl\x2dbackup.service` at all (the first command says
+"could not be found", and the journal shows only "Timed out waiting for device
+dev-mapper-hl\x2dbackup.device"): the `systemd-cryptsetup` package is missing,
+so crypttab is ignored at boot. That was the 2026-10-30 cause. `apt install
+systemd-cryptsetup && systemctl daemon-reload` (Ansible installs it now), and
+for today `cryptsetup open --key-file /root/.hl-backup.key
+/dev/disk/by-uuid/<uuid> hl-backup && mount /mnt/hl-backup`.
+
 No disk in `lsblk`: the USB drive is unplugged or asleep in its enclosure;
 reseat it and run the `start` again. The disk is there but the unlock fails:
 check `/root/.hl-backup.key` exists (`ls -l`) and that the UUID in

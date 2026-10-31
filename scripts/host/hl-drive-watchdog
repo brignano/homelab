@@ -1,0 +1,186 @@
+#!/usr/bin/env bash
+#
+# Puts the host's USB drives back when software alone can. Runs on the PROXMOX
+# HOST (m5) from a systemd timer: at boot and every 5 minutes. Installed by
+# ansible/roles/proxmox_host/tasks/watchdog.yml.
+#
+# Why this exists
+# ---------------
+# Both drives are `nofail` in fstab, so a drive that is late or does not
+# unlock at boot leaves the host up and quietly without it. On 2026-10-30 m5
+# rebooted for a kernel upgrade and the LUKS backup drive did not come back.
+# Nothing tried again, so the nightly image did not run and the alert waited
+# for a person. It also handles the 2026-10-11 case, where node-exporter did not
+# see a drive mounted after it started, so the disk alerts went deaf.
+#
+# For each drive in DRIVE_MOUNTS, in order:
+#   1. Mounted and node-exporter reports it: nothing to do.
+#   2. Not mounted, and its disk is present: unlock (crypttab) and mount
+#      through systemd, the same units boot uses.
+#   3. Not mounted and the disk is absent (unplugged, or asleep in its
+#      enclosure): nothing software can do. The alerts say so.
+#   4. Mounted but node-exporter does not report it: restart the exporter,
+#      at most once an hour.
+#
+# Each repair is left behind as a metric through node-exporter's textfile
+# collector, and `hl-drive-self-healed` posts it to #alerts. A repair that does
+# not hold shows up as the same alerts as before: hl-backup-drive-offline and
+# hl-exporter-mount-blind.
+#
+# Never touches a disk's contents: no fsck, no mkfs, no luksFormat. It only does
+# what `systemctl start` on the boot-time units would do.
+#
+# Always exits 0, so systemd never reports the timer as failed. A failure is
+# reported through the metrics and the journal (`journalctl -t hl-drive-watchdog`).
+#
+set -u
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+DRIVE_MOUNTS="${HL_DRIVE_MOUNTS:-/mnt/hl-backup /mnt/media}"
+TEXTFILE_DIR="${HL_TEXTFILE_DIR:-/var/lib/prometheus/node-exporter}"
+EXPORTER_URL="${HL_EXPORTER_URL:-http://localhost:9100/metrics}"
+EXPORTER_UNIT="prometheus-node-exporter.service"
+STATE_DIR="${HL_WATCHDOG_STATE:-/var/lib/hl-drive-watchdog}"
+# Give a just-mounted drive this long to appear in the exporter's output.
+EXPORTER_GRACE=10
+EXPORTER_RESTART_EVERY=3600
+
+log() { logger -t hl-drive-watchdog -- "$*" 2>/dev/null; echo "hl-drive-watchdog: $*" >&2; }
+
+mkdir -p "$STATE_DIR" 2>/dev/null
+
+# The fstab source for a mount point: /dev/mapper/hl-backup, LABEL=hl-media, ...
+fstab_source() {
+  awk -v m="$1" '$1 !~ /^#/ && $2 == m { print $1; exit }' /etc/fstab
+}
+
+# Is the disk behind an fstab source attached at all? For a LUKS mapping, look
+# up its crypttab line and check the encrypted partition instead.
+disk_present() {
+  _src=$1
+  case "$_src" in
+    /dev/mapper/*)
+      [ -e "$_src" ] && return 0
+      _name=${_src#/dev/mapper/}
+      _under=$(awk -v n="$_name" '$1 !~ /^#/ && $1 == n { print $2; exit }' /etc/crypttab 2>/dev/null)
+      [ -n "$_under" ] || return 1
+      disk_present "$_under" ;;
+    UUID=*)  [ -e "/dev/disk/by-uuid/${_src#UUID=}" ] ;;
+    LABEL=*) [ -e "/dev/disk/by-label/${_src#LABEL=}" ] ;;
+    PARTUUID=*) [ -e "/dev/disk/by-partuuid/${_src#PARTUUID=}" ] ;;
+    /dev/*)  [ -e "$_src" ] ;;
+    *) return 1 ;;
+  esac
+}
+
+# Unlock (if LUKS) and mount through the units systemd generated at boot.
+remount() {
+  _m=$1 _src=$2
+  case "$_src" in
+    /dev/mapper/*)
+      [ -e "$_src" ] || unlock "$_m" "${_src#/dev/mapper/}" || return 1 ;;
+  esac
+  _unit="$(systemd-escape -p --suffix=mount "$_m")"
+  log "$_m: mounting ($_unit)"
+  timeout 120 systemctl start "$_unit" || mount "$_m" || { log "$_m: mount failed"; return 1; }
+  mountpoint -q "$_m"
+}
+
+# The boot-time unit first. If it does not exist, use cryptsetup with the
+# crypttab line's own source and keyfile. That happened on 2026-10-30: with no
+# systemd-cryptsetup generator, systemd never even tried, and waited 90s for a
+# device nothing was going to create.
+unlock() {
+  _m=$1 _name=$2
+  _unit="systemd-cryptsetup@$(systemd-escape "$_name").service"
+  if systemctl cat "$_unit" >/dev/null 2>&1; then
+    log "$_m: unlocking ($_unit)"
+    timeout 120 systemctl start "$_unit" && return 0
+    log "$_m: $_unit failed, trying cryptsetup directly"
+  fi
+  read -r _dev _key <<EOT
+$(awk -v n="$_name" '$1 !~ /^#/ && $1 == n { print $2, $3; exit }' /etc/crypttab 2>/dev/null)
+EOT
+  case "$_dev" in
+    UUID=*) _dev="/dev/disk/by-uuid/${_dev#UUID=}" ;;
+  esac
+  case "$_key" in
+    /*) ;;
+    *) log "$_m: crypttab has no keyfile for $_name, so it needs a person"; return 1 ;;
+  esac
+  log "$_m: unlocking $_dev with cryptsetup"
+  timeout 120 cryptsetup open --key-file "$_key" "$_dev" "$_name" \
+    || { log "$_m: cryptsetup open failed"; return 1; }
+}
+
+exporter_sees() {
+  curl -fsS -m 10 "$EXPORTER_URL" 2>/dev/null | grep -q "^node_filesystem_size_bytes{.*mountpoint=\"$1\""
+}
+
+restart_exporter() {
+  _stamp="$STATE_DIR/exporter-restart"
+  _last=$(cat "$_stamp" 2>/dev/null || echo 0)
+  if [ $(( $(date +%s) - _last )) -lt "$EXPORTER_RESTART_EVERY" ]; then
+    log "node-exporter still cannot see $1; restarted it under an hour ago, leaving it"
+    return 1
+  fi
+  log "node-exporter cannot see $1; restarting it"
+  date +%s > "$_stamp"
+  systemctl restart "$EXPORTER_UNIT"
+}
+
+# Last repair per drive survives between runs, so the metric keeps its value
+# (and Grafana sees it change once) rather than appearing only on the run that
+# did the work.
+repair_stamp() {  # repair_stamp <drive> <action>  -> records now
+  date +%s > "$STATE_DIR/repair.$1.$2"
+}
+
+prom=""
+add() { prom="${prom}$1
+"; }
+
+for m in $DRIVE_MOUNTS; do
+  drive=$(basename "$m")
+  src=$(fstab_source "$m")
+  [ -n "$src" ] || { log "$m is not in /etc/fstab; skipping"; continue; }
+
+  mounted=0 present=0
+  if mountpoint -q "$m"; then
+    mounted=1 present=1
+  elif disk_present "$src"; then
+    present=1
+    if remount "$m" "$src"; then
+      mounted=1
+      repair_stamp "$drive" mount
+      log "$m: mounted again"
+    fi
+  fi
+
+  if [ "$mounted" = 1 ] && ! exporter_sees "$m"; then
+    sleep "$EXPORTER_GRACE"
+    if ! exporter_sees "$m" && restart_exporter "$m"; then
+      repair_stamp "$drive" exporter_restart
+    fi
+  fi
+
+  add "homelab_drive_watchdog_disk_present{drive=\"$drive\"} $present"
+  add "homelab_drive_watchdog_mounted{drive=\"$drive\"} $mounted"
+  for action in mount exporter_restart; do
+    f="$STATE_DIR/repair.$drive.$action"
+    [ -f "$f" ] && add "homelab_drive_watchdog_repair_timestamp_seconds{drive=\"$drive\",action=\"$action\"} $(cat "$f")"
+  done
+done
+
+# Same rules as scripts/metrics.sh: write beside the target and rename, never fail.
+if [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ]; then
+  tmp="$TEXTFILE_DIR/.hl_drive_watchdog.prom.$$"
+  {
+    echo "# HELP homelab_drive_watchdog_timestamp_seconds When hl-drive-watchdog last ran."
+    echo "# TYPE homelab_drive_watchdog_timestamp_seconds gauge"
+    echo "homelab_drive_watchdog_timestamp_seconds $(date +%s)"
+    printf '%s' "$prom" | sort
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$TEXTFILE_DIR/hl_drive_watchdog.prom" 2>/dev/null \
+    || rm -f "$tmp" 2>/dev/null
+fi
+exit 0

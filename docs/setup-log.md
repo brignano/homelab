@@ -27,6 +27,32 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-31 — Why the backup drive did not unlock, and a watchdog
+
+**Goal:** Find why the LUKS drive did not come back after the 2026-10-30
+reboot, and make the host put drives back by itself where it can.
+
+**Steps:**
+1. On m5: the disk (`sda1`, crypto_LUKS) and `/root/.hl-backup.key` were
+   fine, but no `systemd-cryptsetup@` unit existed. `systemd-cryptsetup` was
+   not installed (`dpkg -l`: `un`), so systemd ignored `/etc/crypttab`, waited
+   90s for `/dev/mapper/hl-backup` and gave up. Unlocked and mounted by hand at
+   08:41 UTC; storage active, 17% used.
+2. `systemd-cryptsetup` added to the host packages in Ansible.
+3. `scripts/host/hl-drive-watchdog`, a systemd timer on m5 (3 min after boot,
+   then every 5 min): mounts a drive whose disk is present but not mounted
+   (falling back to `cryptsetup open` with crypttab's keyfile if the unit is
+   missing), and restarts node-exporter (at most hourly) if it cannot see a
+   mounted drive. Alerts: `hl-drive-self-healed` when it repairs something,
+   `hl-drive-watchdog-stale` if it stops.
+
+**Notes / next steps:**
+- Self-healing stays on m5 by design: Grafana or CT 100 running fixes on the
+  host would need root SSH from CT 100 to the hypervisor.
+- Needs one `ansible-playbook` run from the Mac to install.
+
+---
+
 ## 2026-10-31 — Backup drive did not come back after a reboot
 
 **Goal:** Find out why `hl-exporter-mount-blind` kept firing for `/mnt/hl-backup` on m5.

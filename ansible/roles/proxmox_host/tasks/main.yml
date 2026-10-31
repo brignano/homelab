@@ -8,6 +8,7 @@
   ansible.builtin.apt:
     name:
       - cryptsetup                # backup drive (Proxmox does not ship it)
+      - systemd-cryptsetup        # reads /etc/crypttab at boot; without it the drive never unlocks (2026-10-30)
       - gdisk                     # sgdisk, for the drive runbook
       - smartmontools             # hl-vzdump-hook's SMART and temperature reads
       - prometheus-node-exporter  # host metrics, scraped as node-proxmox
@@ -40,6 +41,9 @@
 
 - name: The nightly image and its hook
   ansible.builtin.import_tasks: backup.yml
+
+- name: Drives come back on their own when they can
+  ansible.builtin.import_tasks: watchdog.yml
 
 - name: Weekly trim of CT 100 (the thin pool does not reclaim on its own)
   # AGENTS.md → Disk. 05:00 Sunday, an hour after repo-sync's image prune.
