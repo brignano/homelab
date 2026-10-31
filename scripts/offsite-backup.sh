@@ -36,6 +36,24 @@
 # file exists the job is real: it needs HEALTHCHECKS_OFFSITE_BACKUP_URL, and a
 # failure alerts as hl-offsite-failed.
 #
+# The iCloud photo mirror
+# -----------------------
+# /media/photos/icloud (docker/photos/) is on the 5 TB drive, which is not in
+# the vzdump (backup=0). Once anything is deleted from iCloud, the mirror holds
+# the only copy, so it goes to B2 too, as its own restic step (tag "photos")
+# AFTER the lab's data above is safely in. It can be slow (~1.5 TB, on a capped
+# ISP), so it must never be able to fail or delay the part that matters:
+#   - it stops at HL_OFFSITE_PHOTOS_STOP_HOUR (default 07:00) and carries on
+#     the next night; restic skips what is already stored;
+#   - it stops for the month once the NIC has sent HL_OFFSITE_PHOTOS_MONTHLY_BUDGET_GB
+#     (default 300), counted on the default-route interface (so conservative:
+#     it counts everything the box sent), tracked in $STATE_DIR;
+#   - hitting the window or the budget is "not finished yet", not a failure;
+#     a real restic error still fails the run and alerts as hl-offsite-failed.
+# HL_OFFSITE_PHOTOS_VIDEOS_ONLY=1 backs up only videos (and their .xmp), the
+# cheaper option if the whole mirror is too much. HL_OFFSITE_PHOTOS=0 turns the
+# step off. Cost: about $6/TB/month on B2.
+#
 # Sundays it also runs `restic check --read-data-subset=5%` (restore-test tier
 # B′): every stored byte is downloaded and verified about once every five
 # months.
@@ -49,6 +67,11 @@ RESTIC_ENV="${HL_RESTIC_ENV:-/root/.config/homelab/restic.env}"
 STAGING="${HL_OFFSITE_STAGING:-/var/lib/homelab/offsite-staging}"
 STATE_DIR="${HL_OFFSITE_STATE_DIR:-/var/lib/homelab/offsite}"
 DUMPS="${HL_BACKUP_DIR:-/opt/backups/postgres}"
+PHOTOS_DIR="${HL_OFFSITE_PHOTOS_DIR:-/media/photos/icloud}"
+PHOTOS_ON="${HL_OFFSITE_PHOTOS:-1}"
+PHOTOS_VIDEOS_ONLY="${HL_OFFSITE_PHOTOS_VIDEOS_ONLY:-0}"
+PHOTOS_STOP_HOUR="${HL_OFFSITE_PHOTOS_STOP_HOUR:-7}"
+PHOTOS_BUDGET_GB="${HL_OFFSITE_PHOTOS_MONTHLY_BUDGET_GB:-300}"
 
 # <docker volume> <comma-separated excludes, relative to the volume root>.
 # Volumes that do not exist on this box (yet) are skipped, not failed.
@@ -92,6 +115,8 @@ ADDED=""
 SNAPSHOTS=""
 CHECKED=""
 CHECK_OK=""
+PHOTOS_BYTES=""
+PHOTOS_DONE=""
 
 finish() {
   _code=$?
@@ -145,6 +170,17 @@ finish() {
     metric_help homelab_offsite_check_success gauge \
       "1 if the last weekly restic check (5% of data read back) passed"
     metric homelab_offsite_check_success "$CHECK_OK"
+  fi
+
+  if [ -n "$PHOTOS_DONE" ]; then
+    metric_help homelab_offsite_photos_complete gauge \
+      "1 if the last photo-mirror backup finished, 0 if it stopped at its window or monthly budget"
+    metric homelab_offsite_photos_complete "$PHOTOS_DONE"
+  fi
+  if [ -n "$PHOTOS_BYTES" ]; then
+    metric_help homelab_offsite_photos_month_sent_bytes gauge \
+      "Bytes this box sent this month during photo-mirror backups (counts the whole NIC)"
+    metric homelab_offsite_photos_month_sent_bytes "$PHOTOS_BYTES"
   fi
 
   metrics_close
@@ -254,7 +290,68 @@ _summary=$(nice -n 19 ionice -c3 restic backup --quiet --json \
   || fail "restic backup failed (exit $?)"
 ADDED=$(printf '%s' "$_summary" | sed -n 's/.*"data_added":\([0-9]*\).*/\1/p')
 
-# 5. Retention, as the TSD sets it.
+# 4b. The photo mirror. Its own snapshot (tag "photos"), after the lab's data.
+# A snapshot only exists once a run completes, so a first upload that spans
+# several nights shows homelab_offsite_photos_complete 0 until the last one.
+photos_backup() {
+  [ "$PHOTOS_ON" = 1 ] || return 0
+  if [ ! -d "$PHOTOS_DIR" ] || ! mountpoint -q /media 2>/dev/null; then
+    echo "offsite-backup: $PHOTOS_DIR not available (media drive not mounted?) — photos skipped" >&2
+    return 0
+  fi
+
+  _month=$(date +%Y%m)
+  _nic=$(ip route show default 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)
+  _tx() { cat "/sys/class/net/$_nic/statistics/tx_bytes" 2>/dev/null || echo 0; }
+  _sent=$(cat "$STATE_DIR/photos-sent-$_month" 2>/dev/null || echo 0)
+  PHOTOS_BYTES=$_sent
+  if [ "$_sent" -ge $(( PHOTOS_BUDGET_GB * 1000000000 )) ]; then
+    echo "offsite-backup: photos budget for $_month spent (${PHOTOS_BUDGET_GB} GB) — resumes on the 1st"
+    PHOTOS_DONE=0
+    return 0
+  fi
+
+  # Seconds until the stop hour (today's if still ahead, else tomorrow's).
+  _now=$(date +%s)
+  _stop=$(date -d "today $(printf '%02d' "$PHOTOS_STOP_HOUR"):00" +%s)
+  [ "$_stop" -gt "$_now" ] || _stop=$(( _stop + 86400 ))
+  _window=$(( _stop - _now ))
+
+  _paths="$STAGING/.photo-paths"
+  if [ "$PHOTOS_VIDEOS_ONLY" = 1 ]; then
+    find "$PHOTOS_DIR" -type f \( -iname '*.mov' -o -iname '*.mp4' -o -iname '*.m4v' \
+      -o -iname '*.mov.xmp' -o -iname '*.mp4.xmp' -o -iname '*.m4v.xmp' \) > "$_paths"
+  else
+    echo "$PHOTOS_DIR" > "$_paths"
+  fi
+
+  _before=$(_tx)
+  _rc=0
+  mkdir -p "$STAGING/photos-out"
+  # SIGINT lets restic flush the packs and index it has already uploaded, so
+  # the next night resumes instead of starting over.
+  timeout -s INT -k 120 "$_window" nice -n 19 ionice -c3 restic backup --quiet --json \
+    --host homelab --tag photos --files-from "$_paths" \
+    > "$STAGING/photos-out/summary" || _rc=$?
+  _after=$(_tx)
+  if [ "$_after" -ge "$_before" ]; then
+    PHOTOS_BYTES=$(( _sent + _after - _before ))
+    mkdir -p "$STATE_DIR" && echo "$PHOTOS_BYTES" > "$STATE_DIR/photos-sent-$_month"
+  fi
+
+  case "$_rc" in
+    0)   PHOTOS_DONE=1 ;;
+    124|130|137)
+      echo "offsite-backup: photos stopped at the $(printf '%02d' "$PHOTOS_STOP_HOUR"):00 window — carries on tomorrow"
+      PHOTOS_DONE=0 ;;
+    3)   fail "restic backup of the photo mirror made a snapshot with unreadable files" ;;
+    *)   fail "restic backup of the photo mirror failed (exit $_rc)" ;;
+  esac
+}
+photos_backup
+
+# 5. Retention, as the TSD sets it. Grouped by host and paths (restic default),
+# so the photo snapshots are pruned on their own and never crowd out the lab's.
 nice -n 19 restic forget --quiet --host homelab \
   --keep-daily 7 --keep-weekly 4 --keep-monthly 6 --prune \
   || fail "restic forget/prune failed"
