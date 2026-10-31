@@ -6,6 +6,7 @@ services:
   #   Caddy → https://sonarr.$HOMELAB_DOMAIN     shows
   #   Caddy → https://radarr.$HOMELAB_DOMAIN     movies
   #   Caddy → https://prowlarr.$HOMELAB_DOMAIN   indexers, shared by both
+  #   Caddy → https://cleanuparr.$HOMELAB_DOMAIN fake, stalled and failed downloads
   #   (no route)                                 FlareSolverr, Prowlarr's helper
   #
   # LAN + tailnet only, like everything else behind Caddy. No ports published,
@@ -201,11 +202,44 @@ services:
     networks:
       - proxy
 
+  # Cleanuparr: watches qBittorrent and the Sonarr/Radarr queues and removes
+  # what would otherwise sit there forever: fake releases (an .exe posing as an
+  # episode), torrents stalled with no peers, and imports that failed. Each
+  # removal is blocklisted in the app that grabbed it and searched again, which
+  # is the manual "Remove from client + Blocklist release" from the README.
+  #
+  # Its Malware Blocker runs in WHITELIST mode against cleanuparr/whitelist.txt
+  # (mounted read-only): inside a torrent, files that are not video or
+  # subtitles are marked "do not download" in qBittorrent, and a torrent left
+  # with nothing to download is removed and blocklisted. qBittorrent's own
+  # excluded file names (README, step 4) stay on as the backstop.
+  #
+  # Outside the tunnel, like the *arr apps: it only talks to their APIs and to
+  # qBittorrent's at gluetun:8080. No access to the media drive: every action
+  # goes through those APIs, so it never deletes a file itself.
+  cleanuparr:
+    image: ghcr.io/cleanuparr/cleanuparr:2.10.2@sha256:98463b1116142887767cf90dde3375e7e43718aa623fe737677372023ffb7ebe
+    container_name: cleanuparr
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 256m
+    environment:
+      TZ: ${TZ:-UTC}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      PORT: "11011"
+    volumes:
+      - cleanuparr:/config
+      - ./cleanuparr/whitelist.txt:/blocklists/whitelist.txt:ro
+    networks:
+      - proxy
+
 volumes:
   qbittorrent:
   sonarr:
   radarr:
   prowlarr:
+  cleanuparr:
 
 # Joins proxy_proxy rather than giving Caddy a network to join, as Jellyfin
 # does: an external network that does not exist would stop the proxy stack,

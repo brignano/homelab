@@ -85,7 +85,7 @@ Then the dead man's switch and the first run:
 
 What goes up: every `docker/*/.env`, the newest Postgres dump, and the volumes
 for Open WebUI, Grafana, AdGuard, Home Assistant, Kali, Portainer, Jellyfin's
-config, Matterbridge, and the Sonarr, Radarr, Prowlarr and qBittorrent configs,
+config, Matterbridge, and the Sonarr, Radarr, Prowlarr, qBittorrent and Cleanuparr configs,
 without caches. SQLite databases are copied with
 `sqlite3 .backup` first, so they restore consistent. The list is `VOLUMES` at
 the top of the script.

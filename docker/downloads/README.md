@@ -11,6 +11,7 @@ Design and reasoning: `docs/design/tsd-media-downloads.md`.
 | Prowlarr | `https://prowlarr.$HOMELAB_DOMAIN` | the indexers (search sources), shared by both |
 | FlareSolverr | none (API at `flaresolverr:8191`) | gets Prowlarr past Cloudflare's browser check on indexers that have one |
 | qBittorrent | `https://torrent.$HOMELAB_DOMAIN` | the downloads themselves, inside the VPN |
+| Cleanuparr | `https://cleanuparr.$HOMELAB_DOMAIN` | removes fake, stalled and failed downloads, blocklists them and searches again |
 | gluetun | none | the Proton VPN tunnel; qBittorrent has no other network |
 
 LAN and tailnet only, like everything behind Caddy. Nothing is forwarded on the
@@ -96,16 +97,17 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   hardlink), but a file deleted from the library still fills the drive until
   its torrent goes.
 - **Downloads → Excluded file names:** tick it and enter, one per line:
-  `*.exe`, `*.scr`, `*.com`, `*.pif`, `*.bat`, `*.cmd`, `*.lnk`, `*.msi`,
-  `*.vbs`, `*.js`, `*.jar`, `*.ps1`, `*.hta`, `*.wsf`, `*.apk`, `*.dmg`,
-  `*.zip`, `*.rar`, `*.7z`. A show or film is never an executable, and
-  nothing here unpacks archives, so a release that is either is fake (usually
-  malware) or useless. On 2026-10-27 an 809 MB `.exe` posing as an episode
-  sat in downloads. qBittorrent has no allowlist mode; the allowlist is
-  Sonarr/Radarr's import, which only takes video and subtitle files, so
-  nothing else reaches Jellyfin. This list keeps the rest off the disk: a
-  torrent made only of excluded files never starts, and the queue in
-  Sonarr/Radarr shows it to blocklist.
+  programs and installers `*.exe *.scr *.com *.pif *.msi *.msp *.cpl *.dll
+  *.sys *.jar *.apk`, scripts `*.bat *.cmd *.ps1 *.psm1 *.vbs *.vbe *.js *.jse
+  *.wsf *.wsh *.hta *.reg`, shortcuts and disk images `*.lnk *.url *.iso *.img
+  *.vhd`, Mac/Linux `*.sh *.app *.dmg *.pkg`, and archives real releases on
+  these indexers do not use `*.zipx *.7z *.arj *.ace`. A show or film is never
+  any of these; a release that is one is fake and usually malware. On
+  2026-10-27 an 809 MB `.exe` posing as an episode sat in downloads.
+  qBittorrent has no allowlist mode: the allowlist is Cleanuparr's (step 6),
+  and Sonarr/Radarr's import, which only takes video and subtitle files, so
+  nothing else reaches Jellyfin. This list is the backstop that keeps the rest
+  off the disk.
 - **Advanced:** Network interface **tun0**. Belt and braces: the namespace
   already has no other way out.
 
@@ -193,12 +195,43 @@ Discord's #ask (`docker/concierge/README.md` → "Movies and shows"). A finished
 download is hardlinked into the library, Jellyfin is told to scan, and it
 appears there.
 
+## 6. Cleanuparr
+
+Fake releases (an `.exe` posing as an episode), torrents with no peers and
+failed imports otherwise sit in Sonarr/Radarr's queue until someone removes
+them by hand. Cleanuparr does that removal, blocklists the release in the app
+that grabbed it, and searches again. It reaches everything through the apps'
+APIs and has no access to the media drive.
+
+Create a login on first visit to `cleanuparr.` and save it in Google Password
+Manager. Then:
+
+- *Settings → Download Clients → +*: qBittorrent, host
+  **`http://gluetun:8080`**, your qBittorrent login.
+- *Settings → Sonarr → +*: **`http://sonarr:8989`**, Sonarr's API key. The
+  same for **Radarr** at `http://radarr:7878`.
+- *Malware Blocker*: enable, every 5 minutes. For both Sonarr and Radarr,
+  enable the blocklist with path **`/blocklists/whitelist.txt`** and type
+  **Whitelist**. The file is `cleanuparr/whitelist.txt` here, mounted read-only:
+  video and subtitle extensions only, so anything else in a torrent is never
+  downloaded, and a torrent with nothing left (a fake) is removed and searched
+  again. Leave *Delete if any file is blocked* off: real releases carry `.nfo`
+  and sample files, which are skipped, not a reason to drop the release.
+- *Queue Cleaner*: enable, every 5 minutes. **Failed import**: 3 strikes.
+  **Stalled**: 6 strikes (30 minutes with no progress). **Downloading
+  metadata**: 6 strikes. Leave slow-speed rules off: a slow torrent still
+  finishes.
+- Leave *Download Cleaner* off: qBittorrent's seeding limit and *Remove
+  Completed* (steps 4 and 5) already handle finished torrents.
+
+Its *Events* page lists every strike and removal with the reason.
+
 ## Monitoring
 
 | Signal | Where |
 |---|---|
 | **VPN down** | blackbox probe of gluetun's health server `http://gluetun:9999/`, `service=gluetun` (`hl-probe-down`). qBittorrent is offline while it is, by design |
-| App not answering | probes of `/ping` on sonarr, radarr, prowlarr, `/health` on flaresolverr, and qBittorrent's web UI at `gluetun:8080` (`hl-probe-down`) |
+| App not answering | probes of `/ping` on sonarr, radarr, prowlarr, `/health` on flaresolverr and cleanuparr, and qBittorrent's web UI at `gluetun:8080` (`hl-probe-down`) |
 | Container stopped | `homelab_container_running`. **Required only once `docker/downloads/.env` exists** (`SETUP_GATED_STACKS` in `heartbeat.sh`); until then nothing pages, probes included |
 
 ## Troubleshooting
@@ -212,7 +245,7 @@ appears there.
 | Most of the queue says *queued* at 0 B/s while one or two download, even with peers listed | qBittorrent's queue limits, not the network: see *Torrent Queueing* in step 4. Entries that still show 0 (0) seeds and peers once they get a slot are dead; remove them from Sonarr/Radarr's *Activity → Queue* with *Blocklist release* so a different release is searched for. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
 | A search finds releases but grabs none; *Interactive Search* says "size too large" | The size caps in step 5. Raise **Max** on that quality a step, or accept it has no small release. |
-| A release in *downloads* is an `.exe` (or `.scr`, `.lnk`, ...) | A fake release. In Sonarr/Radarr *Activity → Queue* (or *History*), remove it with *Remove from client* and *Blocklist release*, then search the episode again. Check *Excluded file names* in step 4 is set. |
+| A release in *downloads* is an `.exe` (or `.scr`, `.lnk`, ...) | A fake release. In Sonarr/Radarr *Activity → Queue* (or *History*), remove it with *Remove from client* and *Blocklist release*, then search the episode again. Check *Excluded file names* in step 4 is set. Cleanuparr (step 6) does this by itself within minutes; if it did not, check its *Events* page and that its Malware Blocker is on. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |
 | Indexer: "blocked by CloudFlare Protection" | It is not tagged `flaresolverr`, or the FlareSolverr proxy in Prowlarr has no tag (then it applies to nothing). |
 | FlareSolverr: "Captcha detected but no automatic solver is configured" | That site shows a real captcha, not just the browser check. FlareSolverr cannot solve those; use another indexer. |

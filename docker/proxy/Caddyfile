@@ -103,6 +103,10 @@ prowlarr.{$HOMELAB_DOMAIN} {
 	reverse_proxy prowlarr:9696
 }
 
+cleanuparr.{$HOMELAB_DOMAIN} {
+	reverse_proxy cleanuparr:11011
+}
+
 # Open WebUI — AI chat (container listens on 8080)
 chat.{$HOMELAB_DOMAIN} {
 	reverse_proxy open-webui:8080
