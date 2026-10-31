@@ -26,7 +26,7 @@ services:
       # refused, and so is anything else that ever lands on this network.
       CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:?required}
 
-      CONCIERGE_MODEL: ${CONCIERGE_MODEL:-claude-opus-5-5}
+      CONCIERGE_MODEL: ${CONCIERGE_MODEL:-claude-haiku-5-5}
       # Per-request ceilings. The workspace limit is the monthly backstop; these
       # stop one runaway question from spending a meaningful part of it.
       CONCIERGE_MAX_TURNS: ${CONCIERGE_MAX_TURNS:-12}

@@ -242,7 +242,7 @@ class Config:
         g_id, g_secret, g_refresh = _google(signing_in)
         return cls(
             token=token,
-            model=os.environ.get("CONCIERGE_MODEL", "").strip() or "claude-opus-5-5",
+            model=os.environ.get("CONCIERGE_MODEL", "").strip() or "claude-haiku-5-5",
             max_turns=_int("CONCIERGE_MAX_TURNS", 12),
             max_budget_usd=_float("CONCIERGE_MAX_BUDGET_USD", 0.50),
             brief_max_turns=_int("CONCIERGE_BRIEF_MAX_TURNS", 8),
