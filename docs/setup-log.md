@@ -27,6 +27,19 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-31 — Clip review page for climb videos (#258)
+
+**Goal:** Audit climb-judge verdicts without finding each clip in Photos by hand, and make removal one step.
+
+**Steps:**
+1. `docker/clipreview/`: stdlib web page, mirror read-only, labels appended to `/root/climb-judge/labels.csv`, candidates export, Caddy route `review.`.
+2. `tools/photos/to-album.py` (Mac): adds the exported clips to one Photos album, so removal is select-all, Delete.
+
+**Notes / next steps:**
+- Nothing deletes: Photos is where deletion has to happen. Deploy: `up -d --build` plus a Caddy reload.
+
+---
+
 ## 2026-10-31 — Fake .exe release, and keeping malware out of downloads
 
 **Goal:** Close #245 (media downloads stack) and stop fake releases reaching

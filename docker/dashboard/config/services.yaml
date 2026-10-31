@@ -65,6 +65,11 @@
         siteMonitor: https://torrent.{{HOMEPAGE_VAR_DOMAIN}}
         description: Downloads — only through the VPN (gluetun)
         icon: /icons/qbittorrent.svg
+    - Clip review:
+        href: https://review.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://review.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Climb clips — play, label send or fall, export removal list
+        icon: /icons/jellyfin.svg
     - Cleanuparr:
         href: https://cleanuparr.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://cleanuparr.{{HOMEPAGE_VAR_DOMAIN}}

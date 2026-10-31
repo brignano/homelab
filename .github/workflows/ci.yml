@@ -101,6 +101,25 @@ jobs:
       - name: Every module compiles
         run: python -m compileall -q app tests
 
+  clipreview:
+    name: clipreview (labels, export, read-only serving)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docker/clipreview
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Offline smoke tests
+        run: python tests/smoke.py
+
+      - name: Every module compiles
+        run: python -m compileall -q app tests
+
   compose:
     name: compose files parse
     runs-on: ubuntu-latest

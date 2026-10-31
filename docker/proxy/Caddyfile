@@ -107,6 +107,12 @@ cleanuparr.{$HOMELAB_DOMAIN} {
 	reverse_proxy cleanuparr:11011
 }
 
+# Climb clip review page (docker/clipreview/). Joins the proxy network like
+# Jellyfin. Family videos: LAN + tailnet only, never the tunnel.
+review.{$HOMELAB_DOMAIN} {
+	reverse_proxy clipreview:8000
+}
+
 # Open WebUI — AI chat (container listens on 8080)
 chat.{$HOMELAB_DOMAIN} {
 	reverse_proxy open-webui:8080

@@ -1,0 +1,43 @@
+services:
+  # Review page for climb-judge verdicts (tools/photos/). Plays each clip from
+  # the iCloud mirror next to Claude's verdict, takes a send / fall / none /
+  # unsure label with one key, and exports a list of removal candidates.
+  # See README.md and docs/design/tsd-photo-library.md.
+  #
+  # What keeps it safe:
+  #
+  #   1. The mirror is mounted READ-ONLY. The page cannot change, move or delete
+  #      a photo; deleting stays manual, in Photos on the Mac.
+  #   2. The only writable mount is /root/climb-judge (the verdicts + labels
+  #      folder). The app writes two files there: labels.csv and review-log.csv.
+  #   3. No ports published. Caddy reaches it over proxy_proxy at
+  #      review.$HOMELAB_DOMAIN, LAN + tailnet only, never the tunnel: these
+  #      are family videos.
+  #   4. Like Jellyfin's mounts, the mirror refuses to create its own source
+  #      directory, so a missing media drive can never fill CT 100's rootfs.
+  clipreview:
+    build: .
+    image: clipreview:local
+    container_name: clipreview
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 256m
+    environment:
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - type: bind
+        source: /media/photos/icloud
+        target: /photos
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${CLIMB_JUDGE_DIR:-/root/climb-judge}
+        target: /data
+    networks:
+      - proxy
+
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy
