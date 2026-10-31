@@ -166,8 +166,8 @@ def main(argv=None) -> int:
     ap.add_argument("--csv")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args(argv)
-    if not (args.export or args.from_review or args.exact_only):
-        ap.error("choose one of --export URL, --from-review URL or --exact-only")
+    if not (args.export or args.from_review or args.exact_only or args.sweep):
+        ap.error("choose one of --export URL, --from-review URL, --exact-only or --sweep")
 
     import osxphotos
     print("Reading the Photos library (a few minutes for a big one)...", file=sys.stderr)
