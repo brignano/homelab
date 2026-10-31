@@ -28,7 +28,7 @@ import logging
 import aiohttp
 from aiohttp import web
 
-from . import actions, agent, audit
+from . import actions, agent, audit, maildigest
 from .config import Config
 from .google import Google
 from .home import Home
@@ -261,7 +261,8 @@ class Concierge:
             return outcome
         # Nothing from a brief is ever made executable: it has no proposal
         # tools, and this does not consult outcome.proposals at all.
-        return self._reply(outcome)
+        line = await maildigest.digest_line(self.google) if self.google is not None else ""
+        return self._reply(outcome, mail_line=line)
 
     async def review(self, request: web.Request) -> web.Response:
         if not self._authorised(request):
@@ -312,8 +313,9 @@ class Concierge:
         return outcome
 
     @staticmethod
-    def _reply(outcome: agent.Outcome) -> web.Response:
+    def _reply(outcome: agent.Outcome, mail_line: str = "") -> web.Response:
         return web.json_response({
+            "mail_line": mail_line,
             "ok": outcome.ok,
             "task": outcome.task_id,
             "answer": outcome.answer,

@@ -92,6 +92,9 @@ class Reply:
     stop: str = ""
     # The brief's "mail was really read" (concierge tools.google_reads_ok).
     reads_ok: bool = False
+    # The brief's counts-only line about unread leads and starred mail, built
+    # by the concierge without a model. "" when there is nothing to show.
+    mail_line: str = ""
 
 
 def parse_reply(body: dict) -> Reply:
@@ -111,7 +114,15 @@ def parse_reply(body: dict) -> Reply:
         model=str(body.get("model") or ""),
         stop=str(body.get("stop") or ""),
         reads_ok=body.get("reads_ok") is True,
+        mail_line=_mail_line(body.get("mail_line")),
     )
+
+
+def _mail_line(raw: object) -> str:
+    """The concierge's mail line, one line only, or "" for anything else."""
+    if not isinstance(raw, str):
+        return ""
+    return " ".join(raw.split())[:200]
 
 
 def footer(reply: Reply) -> str:
@@ -199,8 +210,13 @@ def brief_section(reply: Reply) -> Brief:
         # The concierge closes a cut-off answer with its own "(Stopped at …)"
         # line; the warning above already says it.
         answer = _STOPPED_NOTE.sub("", answer).rstrip()
+    if reply.mail_line and answer.strip() == "Nothing needs you today.":
+        answer = ""  # the mail line is something that does need them
     for ln in defang(answer).split("\n"):
-        lines.append(_UNHEAD.sub(r"\1\\", ln))
+        if ln or answer:
+            lines.append(_UNHEAD.sub(r"\1\\", ln))
+    if reply.mail_line:
+        lines.append(_UNHEAD.sub(r"\1\\", defang(reply.mail_line)))
     return Brief(tuple(lines), owns_mail=reply.ok and reply.reads_ok,
                  note=footer(reply).removeprefix("-# "))
 
