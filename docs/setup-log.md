@@ -27,6 +27,35 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-10-31 — Fake .exe release, and qBittorrent skips executables
+
+**Goal:** Close #245 (media downloads stack) and stop fake releases filling the drive.
+
+**Steps:**
+1. Read-only check on CT 100 for #245: stack up, qBittorrent's public IP is
+   Proton's (port forwarding on), it lives in gluetun's namespace (`lo`,
+   `eth0`, `tun0` only) with gluetun's firewall on; 606 show and 55 movie
+   files in the library, latest import 10-30. #245 closed.
+2. `docker/downloads/README.md` step 4: *Excluded file names* `*.exe`,
+   `*.scr`, `*.bat`, `*.cmd`, `*.lnk`, `*.msi`; a troubleshooting row for
+   fake releases.
+
+**Issues encountered:**
+- A Survivor S51E06 grab from 10-27 was an 809 MB `.exe`. Sonarr refused it
+  ("Found executable file with extension: '.exe'") and left it *import
+  pending*; the file stayed in `/media/jellyfin/downloads`.
+- qBittorrent's excluded file names were off and empty.
+
+**Resolution:**
+- Remove the release from Sonarr's queue with *Remove from client* and
+  *Blocklist release*, search the episode again, and turn on the exclusions.
+
+**Notes / next steps:**
+- The exclusions live in qBittorrent's config volume, not the repo: a fresh
+  qBittorrent needs step 4 again.
+
+---
+
 ## 2026-10-31 — Why the backup drive did not unlock, and a watchdog
 
 **Goal:** Find why the LUKS drive did not come back after the 2026-10-30

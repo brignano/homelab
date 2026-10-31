@@ -95,6 +95,12 @@ Sign in at `torrent.` as `admin` with that password, then in *Tools → Options*
   While a torrent seeds it costs no extra space (the library copy is a
   hardlink), but a file deleted from the library still fills the drive until
   its torrent goes.
+- **Downloads → Excluded file names:** tick it and enter `*.exe`, `*.scr`,
+  `*.bat`, `*.cmd`, `*.lnk`, `*.msi`, one per line. A show or film is never an
+  executable; a release that is one is fake and usually malware. On
+  2026-10-27 an 809 MB `.exe` posing as an episode sat in downloads (Sonarr
+  refused to import it). With this set, qBittorrent skips such files and the
+  torrent stalls instead, so Sonarr/Radarr's queue shows it to blocklist.
 - **Advanced:** Network interface **tun0**. Belt and braces: the namespace
   already has no other way out.
 
@@ -201,6 +207,7 @@ appears there.
 | Most of the queue says *queued* at 0 B/s while one or two download, even with peers listed | qBittorrent's queue limits, not the network: see *Torrent Queueing* in step 4. Entries that still show 0 (0) seeds and peers once they get a slot are dead; remove them from Sonarr/Radarr's *Activity → Queue* with *Blocklist release* so a different release is searched for. |
 | Sonarr/Radarr: "Import failed, path does not exist" | qBittorrent and the app disagree on the path. Both must see downloads at `/data/downloads`. |
 | A search finds releases but grabs none; *Interactive Search* says "size too large" | The size caps in step 5. Raise **Max** on that quality a step, or accept it has no small release. |
+| A release in *downloads* is an `.exe` (or `.scr`, `.lnk`, ...) | A fake release. In Sonarr/Radarr *Activity → Queue* (or *History*), remove it with *Remove from client* and *Blocklist release*, then search the episode again. Check *Excluded file names* in step 4 is set. |
 | Files copied, not hardlinked (the drive fills twice as fast) | The root folder is not under `/data/library`, or *Use Hardlinks* is off. |
 | Indexer: "blocked by CloudFlare Protection" | It is not tagged `flaresolverr`, or the FlareSolverr proxy in Prowlarr has no tag (then it applies to nothing). |
 | FlareSolverr: "Captcha detected but no automatic solver is configured" | That site shows a real captcha, not just the browser check. FlareSolverr cannot solve those; use another indexer. |
