@@ -143,6 +143,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | qBittorrent | `docker/downloads/` | LAN + tailnet (via Caddy, `torrent.$HOMELAB_DOMAIN` → `gluetun:8080`); inside gluetun's namespace, so offline whenever the VPN is |
 | Sonarr / Radarr / Prowlarr | `docker/downloads/` | LAN + tailnet (via Caddy, `sonarr.` / `radarr.` / `prowlarr.`); join `proxy_proxy`; hardlink downloads into Jellyfin's library |
 | icloudpd (iCloud Photos mirror) | `docker/photos/` (built 2026-10-25) | **outbound only**: no ports, no route; never `up`, run nightly by `scripts/photos-sync.sh` with `docker compose run`; writes `/media/photos/icloud` on the media drive (`backup=0`) |
+| clipreview | `docker/clipreview/` | LAN + tailnet (via Caddy, `review.`); joins `proxy_proxy`; no ports. Review page for climb-judge clips: mirror mounted read-only, writes only `labels.csv` and `review-log.csv` in `/root/climb-judge`; never deletes. `tools/photos/to-album.py` (Mac) turns its export into a Photos album |
 | FlareSolverr | `docker/downloads/` | internal (`flaresolverr:8191` on `proxy_proxy`, no route); Prowlarr's Cloudflare-challenge solver, outside the VPN |
 | Cleanuparr | `docker/downloads/` | LAN + tailnet (via Caddy, `cleanuparr.`); join `proxy_proxy`; removes fake/stalled/failed downloads via the *arr and qBittorrent APIs, whitelist in `docker/downloads/cleanuparr/whitelist.txt`; no media mount |
 
