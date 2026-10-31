@@ -33,11 +33,18 @@ shared-album photos (--include-albums / --include-people loosen the middle two).
 A photo that became a favourite after the export is skipped at step 3.
 
     --similar-seconds N   window for "same moment" shots (default 20)
+    --look-distance N     a same-moment shot must also LOOK like the keeper:
+                          picture fingerprints at most N of 64 bits apart
+                          (default 10; --look-distance -1 turns the check off)
+    --sweep               print how many sets/photos each window gives, with
+                          and without the look-alike check; change nothing
+    --max-sets N          export only the N sets with the most extras
     --album NAME          album to fill (default "Duplicates to delete")
 """
 import argparse
 import csv
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -45,13 +52,72 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from dupes import find_dupes  # noqa: E402
+from dupes import dhash_from_bmp, find_dupes, hamming  # noqa: E402
 
 
 def http(url, data=None, method=None, ctype="application/json"):
+    """curl when there is one: on macOS it runs under the terminal's Local Network
+    permission, which a uv-managed Python may not have ("No route to host")."""
+    if shutil.which("curl"):
+        cmd = ["curl", "-fsS", "--max-time", "120", "-X", method or ("POST" if data else "GET")]
+        if data is not None:
+            cmd += ["-H", "Content-Type: " + ctype, "--data-binary", "@-"]
+        r = subprocess.run(cmd + [url], input=data, capture_output=True)
+        if r.returncode != 0:
+            raise SystemExit("request to %s failed: %s" % (url, r.stderr.decode().strip()))
+        return r.stdout
     req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": ctype} if data else {})
     with urllib.request.urlopen(req, timeout=60) as r:
         return r.read()
+
+
+CACHE = Path.home() / ".cache" / "homelab-photos-dhash.json"
+
+
+class Looks:
+    """Picture fingerprints (64-bit difference hash) of a photo's preview, made
+    with macOS' sips and cached by uuid, so a re-run is fast."""
+
+    def __init__(self, max_distance):
+        self.max = max_distance
+        try:
+            self.cache = {k: int(v, 16) for k, v in json.loads(CACHE.read_text()).items()}
+        except (OSError, ValueError):
+            self.cache = {}
+        self.new = 0
+
+    def hash(self, photo):
+        if photo.uuid in self.cache:
+            return self.cache[photo.uuid]
+        h = None
+        srcs = [Path(p) for p in (getattr(photo, "path_derivatives", None) or [])]
+        if photo.path:
+            srcs.append(Path(photo.path))
+        with tempfile.TemporaryDirectory() as td:
+            out = Path(td) / "h.bmp"
+            for src in srcs:
+                if src.exists():
+                    r = subprocess.run(["sips", "-s", "format", "bmp", "-z", "8", "9", str(src), "--out", str(out)],
+                                       capture_output=True)
+                    if r.returncode == 0 and out.exists():
+                        try:
+                            h = dhash_from_bmp(out.read_bytes())
+                            break
+                        except ValueError:
+                            pass
+        self.cache[photo.uuid] = h
+        self.new += 1
+        return h
+
+    def same(self, a, b):
+        ha, hb = self.hash(a), self.hash(b)
+        if ha is None or hb is None:  # no preview to compare: do not guess
+            return False
+        return hamming(ha, hb) <= self.max
+
+    def save(self):
+        CACHE.parent.mkdir(parents=True, exist_ok=True)
+        CACHE.write_text(json.dumps({k: format(v, "x") for k, v in self.cache.items() if v is not None}))
 
 
 def thumbnail(photo, out: Path) -> bool:
@@ -92,6 +158,9 @@ def main(argv=None) -> int:
     ap.add_argument("--exact-only", action="store_true", help="no review page: add exact extra copies only")
     ap.add_argument("--album", default="Duplicates to delete")
     ap.add_argument("--similar-seconds", type=float, default=20.0)
+    ap.add_argument("--look-distance", type=int, default=10)
+    ap.add_argument("--sweep", action="store_true")
+    ap.add_argument("--max-sets", type=int, default=0)
     ap.add_argument("--include-albums", action="store_true")
     ap.add_argument("--include-people", action="store_true")
     ap.add_argument("--csv")
@@ -132,8 +201,24 @@ def main(argv=None) -> int:
             return "has a named person"
         return None
 
+    looks = Looks(args.look_distance) if args.look_distance >= 0 else None
+    if args.sweep:
+        lk = looks or Looks(10)
+        print("%-9s %-8s %8s %8s" % ("window", "look", "sets", "photos"))
+        for secs in (2, 5, 10, 20):
+            for use in (False, True):
+                ex, _, kp = find_dupes(photos, protected, secs, lk.same if use else None)
+                print("%-9s %-8s %8d %8d" % ("%ds" % secs, "yes" if use else "no", len(build_sets(ex, kp)), len(ex)),
+                      flush=True)
+        lk.save()
+        print("Nothing was sent or changed.")
+        return 0
     seconds = 0 if args.exact_only else args.similar_seconds
-    extras, keep_of, keeper_of = find_dupes(photos, protected, seconds)
+    if looks and seconds:
+        print("Comparing pictures of same-moment shots (first run takes a while)...", file=sys.stderr)
+    extras, keep_of, keeper_of = find_dupes(photos, protected, seconds, looks.same if looks and seconds else None)
+    if looks:
+        looks.save()
     size = sum(p.original_filesize or 0 for p, _ in extras.values())
     print("%d photos to remove, %.1f GB by osxphotos' count" % (len(extras), size / 1e9))
 
@@ -149,10 +234,14 @@ def main(argv=None) -> int:
     if args.export:
         base = args.export.rstrip("/")
         sets = build_sets(extras, keeper_of)
+        if args.max_sets and len(sets) > args.max_sets:
+            keep = sorted(sets, key=lambda i: len(sets[i]["photos"]), reverse=True)[:args.max_sets]
+            print("%d sets found; sending the %d with the most photos" % (len(sets), args.max_sets))
+            sets = {i: sets[i] for i in keep}
         doc = {"sets": [{"id": s["id"], "kind": s["kind"],
                          "members": [member(p, k) for p, k in s["photos"].values()]}
                         for s in sets.values()]}
-        print("%d sets" % len(sets))
+        print("%d sets, %d photos to review" % (len(sets), sum(len(v["photos"]) - 1 for v in sets.values())))
         if args.dry_run:
             print("Dry run: nothing sent.")
             return 0

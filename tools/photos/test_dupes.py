@@ -40,6 +40,32 @@ def main():
     chain = [ph("c%d" % i, i * 15) for i in range(5)]
     ex, _, _ = find_dupes(chain, none, 20)
     assert len(ex) == 2, ex  # groups {0,15} {30,45} {60}
+    # same_look gates same-moment shots
+    ex, _, _ = find_dupes(chain, none, 20, same_look=lambda best, p: p.uuid != "c1")
+    assert "c1" not in ex and len(ex) == 1, ex
+    # picture fingerprint
+    import struct
+    from dupes import dhash_from_bmp, hamming
+
+    def bmp(rows, bpp=24):  # rows top-first, each 9 grey values
+        n = bpp // 8
+        w, h = 9, len(rows)
+        stride = (w * n + 3) // 4 * 4
+        body = b""
+        for r in reversed(rows):  # bottom-up
+            line = b"".join(bytes([v] * 3 + ([255] if n == 4 else [])) for v in r)
+            body += line + b"\0" * (stride - len(line))
+        hdr = b"BM" + struct.pack("<IHHI", 54 + len(body), 0, 0, 54)
+        dib = struct.pack("<IiiHHIIiiII", 40, w, h, 1, bpp, 0, len(body), 0, 0, 0, 0)
+        return hdr + dib + body
+    up = [[10 + 20 * x for x in range(9)]] * 8      # brightening left to right
+    down = [[200 - 20 * x for x in range(9)]] * 8   # darkening
+    assert dhash_from_bmp(bmp(up)) == 0
+    assert dhash_from_bmp(bmp(down)) == (1 << 64) - 1
+    assert hamming(dhash_from_bmp(bmp(up)), dhash_from_bmp(bmp(down))) == 64
+    assert dhash_from_bmp(bmp(down, 32)) == (1 << 64) - 1
+    near = [[v + 3 for v in r] for r in down]
+    assert hamming(dhash_from_bmp(bmp(down)), dhash_from_bmp(bmp(near))) == 0
     print("ok")
 
 

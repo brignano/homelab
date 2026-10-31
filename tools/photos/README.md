@@ -76,6 +76,16 @@ file name, month and exact size). That mirror is the 5 TB drive and is not
 backed up offsite (decided 2026-10-31), so it is the only second copy:
 photos deleted from Photos stay recoverable for 30 days in Recently Deleted.
 
+Same-moment shots must also *look alike*: each preview is reduced to a 64-bit
+picture fingerprint (made with macOS' `sips`, cached in
+`~/.cache/homelab-photos-dhash.json`), and a shot only joins a set if it is within
+`--look-distance` (default 10) bits of the keeper. Photos has no exact duplicates
+in most libraries, so time alone produced thousands of sets (a different pose seconds
+later looked the same to it). Before a real run, `--sweep` prints how many sets each
+window gives with and without the look check, and `--max-sets N` sends only the N sets
+with the most photos. Requests go through `curl` when present, which uses the terminal's
+Local Network permission (a uv Python can be blocked on macOS).
+
 Without the page: `--exact-only [--dry-run --csv FILE]` adds only exact copies
 straight to the album. Favourites, photos in your albums, photos with a named
 person and shared-album photos are never included. Logic test:

@@ -7,7 +7,8 @@ from __future__ import annotations
 from typing import Callable, Iterable
 
 
-def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 20.0):
+def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 20.0,
+               same_look: Callable | None = None):
     """Return (extras, keep_of, keeper_of).
 
     extras:  {uuid: (photo, ["duplicates" | "similar", ...])} for every photo
@@ -20,6 +21,9 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
     camera fired all afternoon into one giant group), and the best is a
     favourite if there is one, else Photos' highest overall score.
     Bursts, screenshots and videos are left to their own rules.
+
+    same_look(best, p), if given, must also be true for a same-moment shot to
+    count: time alone cannot tell a retake from a different pose seconds later.
     """
     photos = list(photos)
     extras: dict[str, tuple] = {}
@@ -69,6 +73,42 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
                 continue
             best = max(g, key=rank)
             for p in g:
-                if p is not best and not protected(p):
+                if p is not best and not protected(p) and (same_look is None or same_look(best, p)):
                     add(p, "similar", best)
     return extras, keep_of, keeper_of
+
+
+# --- picture fingerprint (no image library needed) ---------------------------
+
+def bmp_gray_rows(data: bytes):
+    """Grey values of an uncompressed 24/32-bit BMP (what `sips -s format bmp`
+    writes), top row first."""
+    off = int.from_bytes(data[10:14], "little")
+    w = int.from_bytes(data[18:22], "little")
+    h = int.from_bytes(data[22:26], "little", signed=True)
+    bpp = int.from_bytes(data[28:30], "little")
+    if bpp not in (24, 32):
+        raise ValueError("unsupported BMP depth %d" % bpp)
+    n = bpp // 8
+    stride = (w * n + 3) // 4 * 4
+    rows = []
+    for y in range(abs(h)):
+        r = data[off + y * stride: off + y * stride + w * n]
+        rows.append([(r[x * n] + r[x * n + 1] + r[x * n + 2]) // 3 for x in range(w)])
+    if h > 0:  # stored bottom-up
+        rows.reverse()
+    return rows
+
+
+def dhash_from_bmp(data: bytes) -> int:
+    """64-bit difference hash of a BMP already scaled to 9 wide x 8 high: one
+    bit per neighbouring pair, brighter-than-right."""
+    bits = 0
+    for row in bmp_gray_rows(data)[:8]:
+        for x in range(8):
+            bits = (bits << 1) | (1 if row[x] > row[x + 1] else 0)
+    return bits
+
+
+def hamming(a: int, b: int) -> int:
+    return bin(a ^ b).count("1")
