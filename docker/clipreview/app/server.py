@@ -588,7 +588,8 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  <label><input type="checkbox" id="hide" checked> hide decided</label>
  <span id="count" class="muted"></span>
  <span class="grow"></span>
->>>>>>> origin/main
+ <small class="exports">Export <a href="/export.txt" target="_blank">climb</a> <a href="/export.csv?include=claude" target="_blank">climb + Claude calls</a> <a href="/export.csv?set=cold" target="_blank">cold storage</a> <a href="/export.txt?set=judge" target="_blank">looks like climbing</a></small>
+</header>
 <main>
  <div id="stagebox"><div id="stage"><video id="v" controls autoplay muted playsinline></video></div><p id="empty" hidden></p></div>
  <aside id="side" class="panel">
