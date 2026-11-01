@@ -418,7 +418,6 @@ if [ "$code" -ne 0 ]; then
 fi
 
 echo "$(date -Is) photos-sync: ok, $((run_rx / 1000000)) MB this run, $((month_used / 1000000000)) GB this month, stopped=$stopped"
-exit 0
 
 # Second pass: the Hidden album. icloudpd's default listing is the main library
 # only, so a photo hidden in Photos never reached the mirror (2026-11-01: the
