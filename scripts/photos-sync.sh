@@ -49,6 +49,10 @@ COMPOSE="$STACK_DIR/docker-compose.yml"
 PHOTOS_ENV="$STACK_DIR/.env"
 # The bind-mount source in docker/photos/docker-compose.yml; keep them equal.
 LIBRARY="${HL_PHOTOS_DIR:-/media/photos/icloud}"
+# The Hidden album goes to its own folder, never into $LIBRARY: Jellyfin's
+# "Photo Archive" library reads the mirror, and a photo hidden on purpose must
+# not turn up there. The folder is created by hand once (README.md).
+HIDDEN_LIBRARY="${HL_PHOTOS_HIDDEN_DIR:-/media/photos/icloud-hidden}"
 STATE_DIR="${HL_PHOTOS_STATE_DIR:-/var/lib/homelab/photos}"
 NAME="${HL_PHOTOS_CONTAINER:-photos-icloudpd}"
 POLL_SECONDS="${HL_PHOTOS_POLL_SECONDS:-30}"
@@ -106,11 +110,13 @@ set_args() {
     $PW_PROVIDERS \
     --mfa-provider console \
     --username "$USERNAME" \
-    --directory /data \
+    --directory "${PASS_DIR:-/data}" \
     --cookie-directory /config \
     --folder-structure '{:%Y/%m}' \
     --file-match-policy name-id7 \
     --xmp-sidecar
+  # The second pass sets PASS_ALBUM=Hidden (see the end of this script).
+  if [ -n "${PASS_ALBUM:-}" ]; then set -- "$@" --album "$PASS_ALBUM"; fi
   for _a in "$@"; do printf '%s\n' "$_a"; done
 }
 
@@ -198,6 +204,7 @@ run_rx=0
 stopped=none
 auth_needed=0
 files_before=""
+hidden_code=-1   # -1 = the Hidden pass did not run; 0 = ok; other = failed
 
 count_files() {
   find "$LIBRARY" -type f ! -name '*.xmp' ! -name '*.part' 2>/dev/null | wc -l | tr -d ' '
@@ -231,6 +238,17 @@ finish() {
       if [ "$_r" = "$stopped" ]; then _v=1; else _v=0; fi
       metric homelab_photos_stopped "$_v" "$(metric_kv reason "$_r")"
     done
+
+    if [ "$hidden_code" -ge 0 ]; then
+      metric_help homelab_photos_hidden_success gauge \
+        "1 if the last Hidden-album pass succeeded, 0 if it failed (not reported when it did not run)"
+      if [ "$hidden_code" -eq 0 ]; then metric homelab_photos_hidden_success 1; else metric homelab_photos_hidden_success 0; fi
+    fi
+    if [ -d "$HIDDEN_LIBRARY" ]; then
+      metric_help homelab_photos_hidden_files gauge "Files in the Hidden-album mirror"
+      metric homelab_photos_hidden_files \
+        "$(find "$HIDDEN_LIBRARY" -type f ! -name '*.xmp' ! -name '*.part' 2>/dev/null | wc -l | tr -d ' ')"
+    fi
 
     metric_help homelab_photos_month_received_bytes gauge \
       "Bytes the sync has downloaded so far this calendar month"
@@ -400,4 +418,35 @@ if [ "$code" -ne 0 ]; then
 fi
 
 echo "$(date -Is) photos-sync: ok, $((run_rx / 1000000)) MB this run, $((month_used / 1000000000)) GB this month, stopped=$stopped"
+exit 0
+
+# Second pass: the Hidden album. icloudpd's default listing is the main library
+# only, so a photo hidden in Photos never reached the mirror (2026-11-01: the
+# duplicate review held back ~170 hidden photos as "not in the mirror"). Only
+# after a clean, unstopped main pass, and never fatal: the main mirror is the
+# job; this pass is reported as homelab_photos_hidden_success. It is skipped
+# until the folder exists (README.md, "Hidden photos"), so nothing is created
+# on the rootfs if the media drive is missing.
+if [ "$stopped" = none ] && [ -d "$HIDDEN_LIBRARY" ]; then
+  PASS_DIR=/data-hidden
+  PASS_ALBUM=Hidden
+  IFS='
+'
+  # shellcheck disable=SC2046,SC2086
+  hlogs=$(timeout "${HL_PHOTOS_HIDDEN_MAX_SECONDS:-3600}" docker compose -f "$COMPOSE" run --rm -T \
+    --name "$NAME-hidden" -v "$HIDDEN_LIBRARY:/data-hidden" icloudpd $(set_args) $extra </dev/null 2>&1)
+  hidden_code=$?
+  unset IFS
+  PASS_DIR=""
+  PASS_ALBUM=""
+  # Same reading of icloudpd as above: it can exit 0 after an error.
+  if [ "$hidden_code" -eq 0 ] && ! printf '%s' "$hlogs" | grep -q 'have been downloaded'; then
+    hidden_code=1
+  fi
+  if [ "$hidden_code" -ne 0 ]; then
+    printf '%s\n' "$hlogs" | tail -n 10 >&2
+    echo "$(date -Is) photos-sync: the Hidden-album pass failed (exit $hidden_code); the main mirror is unaffected" >&2
+  fi
+  docker rm -f "$NAME-hidden" >/dev/null 2>&1 || true
+fi
 exit 0
