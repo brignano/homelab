@@ -48,9 +48,20 @@ nav a{padding:var(--s1) var(--s3);border-radius:var(--radius-sm);color:var(--ink
 nav a[aria-current]{background:var(--surface-active);color:var(--ink)}
 nav a:hover{background:var(--surface-hover);text-decoration:none}
 .grow{flex:1}
+footer small.grow{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.exports{display:inline-flex;gap:var(--s2);align-items:center}
+.exports a{padding:var(--s1) var(--s3);border:1px solid var(--line);border-radius:var(--radius-sm);color:var(--ink-soft);white-space:nowrap}
+.exports a:hover{background:var(--surface-hover);text-decoration:none}
 .muted,small{color:var(--slate);font-size:var(--text-sm)}
-select,input[type=search]{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line-control);
-  border-radius:var(--radius-sm);padding:var(--s1) var(--s3);min-height:2.25rem}
+select,input[type=search]{font:inherit;font-weight:500;color:var(--ink);background-color:var(--card);border:1px solid var(--line-control);
+  border-radius:var(--radius-sm);padding:var(--s1) var(--s3);min-height:2.5rem}
+/* one chevron for every select, in the same colour as the muted text, instead of the OS widget */
+select{appearance:none;-webkit-appearance:none;padding-right:2.25rem;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--slate) 50%),linear-gradient(135deg,var(--slate) 50%,transparent 50%);
+  background-position:calc(100% - 1.15rem) 52%,calc(100% - .8rem) 52%;background-size:.35rem .35rem;background-repeat:no-repeat}
+select:hover,input[type=search]:hover{background-color:var(--surface-hover)}
+select:focus-visible,input:focus-visible,button:focus-visible,nav a:focus-visible{outline:2px solid var(--i-ink);outline-offset:2px}
+input[type=checkbox]{accent-color:var(--i);width:1.1rem;height:1.1rem;margin:0}
 label{display:inline-flex;gap:var(--s2);align-items:center;color:var(--ink-soft);font-size:var(--text-sm)}
 main{flex:1;min-height:0;display:flex;gap:var(--s4);padding:var(--s4)}
 .panel{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:var(--s4)}

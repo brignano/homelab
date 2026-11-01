@@ -17,17 +17,24 @@ main{overflow:auto;align-items:flex-start;justify-content:center;flex-wrap:wrap}
   border:1px solid var(--line);display:inline-block}
 .keep .badge{background:var(--success-surface);border-color:var(--success-line);color:var(--success-ink)}
 .remove .badge{background:var(--danger-surface);border-color:var(--danger-line);color:var(--danger-ink)}
+#here{display:none}
 #kind{margin:0;padding:var(--s2) var(--s4);background:var(--bg);border-bottom:1px solid var(--line)}
 footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter:blur(8px)}
 @media (max-width:760px){
   /* swipe sideways between the candidates, one big card at a time */
   main{flex-direction:row;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;
-    align-items:stretch;gap:var(--s3);-webkit-overflow-scrolling:touch}
-  .card{flex:0 0 84vw;width:84vw;scroll-snap-align:center;display:flex;flex-direction:column}
-  .card img,.card .nothumb{height:auto;flex:1;min-height:0;max-height:62dvh}
+    align-items:center;justify-content:flex-start;gap:var(--s3);-webkit-overflow-scrolling:touch}
+  .card{flex:0 0 calc(100vw - 2*var(--s3));width:calc(100vw - 2*var(--s3));scroll-snap-align:center;scroll-snap-stop:always;
+    display:flex;flex-direction:column}
+  #here{display:inline-flex}
+  /* the photo sets the card height: no dark bands above and below it */
+  .card img{height:auto;max-height:58dvh;background:var(--card)}
+  .card .nothumb{height:40dvh}
   .card div.info{padding:var(--s2) var(--s3)}
+  header label{display:none}            /* "hide decided" stays on; desktop can switch it */
+  header #bulk{flex:1 1 100%;order:9;min-height:40px}
+  #kind{font-size:var(--text-xs)}
   footer button{flex:1 1 40%;min-height:48px}
-  #bulk{flex:1 1 100%;order:9}
 }
 </style></head><body>
 <header>
@@ -40,6 +47,7 @@ footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter
 <p id="report" class="muted"></p>
 <main id="main"></main>
 <footer>
+ <button id="here">Keep this one</button>
  <button id="accept" class="primary">Remove red<kbd>Enter</kbd></button>
  <button id="all">Keep them all<kbd>K</kbd></button>
  <button id="prev">Prev<kbd>←</kbd></button><button id="next">Next<kbd>→</kbd></button>
@@ -67,7 +75,7 @@ function showReport(){
   $('report').textContent=`You agreed with the proposed keeper on ${pct(t.agreed,t.decided)} of ${t.decided} decided sets (${tiers}).`;
 }
 function show(){
-  showReport();
+  showReport();vis=0;
   const done=all.filter(s=>s.decision).length;
   $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} decided`;
   const s=cur(), main=$('main'); main.innerHTML='';
@@ -78,7 +86,7 @@ function show(){
     const role=keepAll?'all':(m.uuid===k?'keep':'remove');
     c.className='card '+role; c.onclick=()=>{pick=m.uuid;show()};
     c.innerHTML=(m.thumb?`<img src="/dupes/thumb/${m.uuid}">`:'<div class="nothumb">no thumbnail</div>')+
-     `<div class="info"><span class="badge">${role==='keep'?'KEEP':role==='all'?'KEEP':'REMOVE'}</span>${n+1}. ${m.filename}<br>`+
+     `<div class="info"><span class="badge">${role==='keep'?'KEEP':role==='all'?'KEEP':'REMOVE'}</span>${n+1}/${s.members.length} · ${m.filename}<br>`+
      `<small>${m.date.replace('T',' ').slice(0,19)} · ${(m.bytes/1e6).toFixed(1)} MB`+(m.score==null?'':` · score ${m.score.toFixed(2)}`)+`</small><br>`+
      (m.mirror==='ok'?'<small>✓ original in the mirror</small>':
       `<small class="${s.kind==='similar'?'warn':''}">✗ ${m.mirror==='size'?'in the mirror, but a different size':'not in the mirror'}`+(s.kind==='similar'?' (will not be accepted)':'')+`</small>`)+`</div>`;
@@ -102,6 +110,10 @@ $('bulk').onclick=async()=>{
   for(const s of ex) await decide(s,s.members.find(m=>m.keep).uuid);
   await load();
 };
+let vis=0;
+const colW=()=>{const c=$('main').firstElementChild;return c?c.getBoundingClientRect().width+parseFloat(getComputedStyle($('main')).columnGap||0):1};
+$('main').addEventListener('scroll',()=>{vis=Math.round($('main').scrollLeft/colW())},{passive:true});
+$('here').onclick=()=>{const s=cur();if(!s)return;const at=vis;pick=s.members[at].uuid;show();$('main').scrollLeft=at*colW();vis=at};
 $('accept').onclick=accept;$('all').onclick=keepAll;
 $('prev').onclick=()=>{i=Math.max(i-1,0);pick=null;show()};$('next').onclick=()=>{i=Math.min(i+1,list.length-1);pick=null;show()};
 $('hide').onchange=()=>refilter();
