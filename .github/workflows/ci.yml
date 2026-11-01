@@ -120,6 +120,9 @@ jobs:
       - name: Every module compiles
         run: python -m compileall -q app tests
 
+      - name: Triage script (parsing, resume, Live Photo skip)
+        run: python ../../tools/photos/test_triage.py
+
   compose:
     name: compose files parse
     runs-on: ubuntu-latest
