@@ -40,6 +40,7 @@ footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter
 </style></head><body>
 <header>
  __BRAND____NAV__
+ __MF__
  <label><input type="checkbox" id="hide" checked> hide decided</label>
  <span id="count" class="muted"></span><span class="grow"></span>
  <button id="bulk" class="primary">Accept high confidence</button>
@@ -57,15 +58,18 @@ footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter
  <small id="hint" class="grow hint">Click a photo (or press 1-9) to keep only that one; "Also keep" (or Shift+1-9) keeps more. Keep none and it says Remove all. Nothing is deleted here: accepted removals go into a Photos album from the Mac.</small>
 </footer>
 <script>
+__MFJS__
 let all=[],list=[],i=0,pick=null,rep=null,undo=null;
 const $=id=>document.getElementById(id);
 async function load(keepId){
   const d=await (await fetch('/api/dupes')).json();
-  all=d.sets; rep=d.report; refilter(keepId);
+  all=d.sets; rep=d.report;
+  for(const s of all)s.month=(s.members.map(m=>m.date||'').filter(Boolean).sort()[0]||'').slice(0,7);
+  MF.set(all.map(s=>s.month)); refilter(keepId);
 }
 function refilter(keepId){
   const hide=$('hide').checked;
-  list=all.filter(s=>!hide||!s.decision||s.id===keepId);
+  list=all.filter(s=>MF.match(s.month)&&(!hide||!s.decision||s.id===keepId));
   i=Math.max(0,list.findIndex(s=>s.id===keepId)); pick=null; show();
 }
 const cur=()=>list[i];
@@ -153,13 +157,13 @@ $('main').addEventListener('scroll',()=>{vis=Math.round($('main').scrollLeft/col
 $('here').onclick=()=>{const s=cur();if(!s)return;const at=vis;pick=[s.members[at].uuid];show();$('main').scrollLeft=at*colW();vis=at};
 $('accept').onclick=accept;$('all').onclick=keepAll;$('undo').onclick=doUndo;$('clear').onclick=clearDecision;
 $('prev').onclick=()=>{i=Math.max(i-1,0);pick=null;show()};$('next').onclick=()=>{i=Math.min(i+1,list.length-1);pick=null;show()};
-$('hide').onchange=()=>refilter();
+$('hide').onchange=()=>refilter();MF.cb=()=>refilter();
 addEventListener('keydown',e=>{
-  if(e.metaKey||e.ctrlKey)return; const k=e.key.toLowerCase(), s=cur();
+  if(e.metaKey||e.ctrlKey||e.target.closest('#mf'))return; const k=e.key.toLowerCase(), s=cur();
   if(k==='enter')accept();else if(k==='k')keepAll();else if(k==='z')doUndo();
   else if(k==='arrowright')$('next').click();else if(k==='arrowleft')$('prev').click();
   else if(s&&/^Digit[1-9]$/.test(e.code)&&s.members[+e.code.slice(5)-1]){const u=s.members[+e.code.slice(5)-1].uuid;if(e.shiftKey)toggle(u);else{pick=[u];show()}}
 });
 load();
 </script></body></html>
-""".replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("dupes"))
+""".replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("dupes")).replace("__MF__", ui.MF_HTML).replace("__MFJS__", ui.MF_JS)

@@ -271,6 +271,7 @@ for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
     page = get(path).read().decode()
     assert "&gt;&gt;&gt;&gt;&gt;&gt;&gt;" not in page and ">>>>>>>" not in page and "<<<<<<<" not in page, path  # merge-conflict leftovers
     assert page.count("<header>") == page.count("</header>") == 1, path
+    assert "id=\"mfy\"" in page and "const MF=" in page and "__MF" not in page and "id=\"month\"" not in page, path  # shared date filter
     assert "<title>%s \u00b7 Review</title>" % title in page, path
     assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page and 'name="theme-color"' in page, path
     assert 'class="logo"' in page and "viewport-fit=cover" in page, path

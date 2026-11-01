@@ -96,6 +96,15 @@ button.on{box-shadow:inset 0 0 0 2px var(--i-ink)}
   button{flex:1 1 auto;justify-content:center}
   button kbd,footer .hint,footer small.grow{display:none}
 }
+/* date filter: year dropdown, month chips, previous / next */
+.mf{display:flex;gap:var(--s2);align-items:center;flex-wrap:wrap}
+.mf .step{padding:0;min-width:2.25rem;justify-content:center}
+.mf .months{display:flex;gap:var(--s1);flex-basis:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.mf .months[hidden]{display:none}
+.mf .months button{flex:0 0 auto;min-width:3rem;justify-content:center}
+.mf .months button[aria-pressed=true]{background:var(--i);border-color:transparent;color:var(--on-i)}
+.mf .months button:disabled{opacity:.35;cursor:default}
+@media (max-width:760px){.mf{width:100%}.mf select{flex:1}.mf .step{flex:0 0 3rem}.mf .months button{flex:1 0 auto}}
 @supports (padding:max(0px)){footer{padding-bottom:max(var(--s3),env(safe-area-inset-bottom))}}
 """
 
@@ -119,3 +128,55 @@ def nav(active: str) -> str:
     def a(href, label, key):
         return '<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if key == active else "", label)
     return "<nav>" + a("/", "Videos", "videos") + a("/dupes", "Duplicate photos", "dupes") + "</nav>"
+
+
+MF_HTML = ('<div class="mf" id="mf"><select id="mfy" aria-label="Year"></select>'
+           '<button type="button" class="step" id="mfp" aria-label="Previous month">&#8249;</button>'
+           '<button type="button" class="step" id="mfn" aria-label="Next month">&#8250;</button>'
+           '<div class="months" id="mfm" role="group" aria-label="Month" hidden></div></div>')
+
+# Shared by both pages. MF.set(['2017-08', ...]) lists one entry per item, MF.match(month)
+# says whether an item passes the filter, MF.cb runs after every change. MF.val is
+# '' (everything), 'YYYY', or 'YYYY-MM'.
+MF_JS = r"""
+const MF=(()=>{
+  const $=id=>document.getElementById(id), N=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const o={val:'',cb:()=>{},counts:{},total:0};
+  const yearOf=()=>o.val.slice(0,4), sorted=()=>Object.keys(o.counts).sort();
+  o.match=m=>!o.val||m===o.val||(m||'').startsWith(o.val+'-');
+  o.label=()=>o.val.length===7?N[+o.val.slice(5)-1]+' '+o.val.slice(0,4):o.val||'All dates';
+  o.set=months=>{
+    o.counts={};o.total=0;
+    for(const m of months)if(m){o.counts[m]=(o.counts[m]||0)+1;o.total++}
+    const ys=[...new Set(sorted().map(m=>m.slice(0,4)))].reverse();
+    const yc=y=>sorted().filter(m=>m.startsWith(y)).reduce((a,m)=>a+o.counts[m],0);
+    if(o.val&&!ys.includes(yearOf()))o.val='';
+    $('mfy').innerHTML='<option value="">All dates ('+o.total+')</option>'+ys.map(y=>`<option value="${y}">${y} (${yc(y)})</option>`).join('');
+    draw();
+  };
+  function draw(){
+    const y=yearOf(), box=$('mfm'), ms=sorted();
+    $('mfy').value=y;
+    box.hidden=!y;
+    box.innerHTML=y?N.map((n,k)=>{
+      const m=y+'-'+String(k+1).padStart(2,'0'), c=o.counts[m]||0;
+      return `<button type="button" data-m="${m}" aria-pressed="${o.val===m}" ${c?'':'disabled'} title="${c} in ${n} ${y}">${n}</button>`}).join(''):'';
+    const at=ms.indexOf(o.val.length===7?o.val:'');
+    $('mfp').disabled=!ms.length||(o.val.length===7&&at<=0);
+    $('mfn').disabled=!ms.length||(o.val.length===7&&at>=ms.length-1);
+  }
+  function put(v){o.val=v;draw();o.cb()}
+  o.clear=()=>{if(o.val)put('')};
+  function step(d){
+    const ms=sorted(); if(!ms.length)return;
+    if(o.val.length===7){const k=ms.indexOf(o.val)+d; if(k>=0&&k<ms.length)put(ms[k]);return}
+    const pool=o.val?ms.filter(m=>m.startsWith(yearOf())):ms;
+    put(pool[d>0?0:pool.length-1]);
+  }
+  $('mfy').onchange=e=>put(e.target.value);
+  $('mfm').onclick=e=>{const b=e.target.closest('button[data-m]'); if(b&&!b.disabled)put(o.val===b.dataset.m?yearOf():b.dataset.m)};
+  $('mfp').onclick=()=>step(-1);$('mfn').onclick=()=>step(1);
+  addEventListener('keydown',e=>{if(e.key==='Escape'&&o.val&&!e.target.closest('input,textarea'))o.clear()});
+  return o;
+})();
+"""
