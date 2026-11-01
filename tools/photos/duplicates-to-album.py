@@ -304,10 +304,22 @@ def to_album(uuids, args) -> int:
     album = lib.album(args.album) or lib.create_album(args.album)
     have = {p.uuid for p in album.photos()}
     new = [u for u in uuids if u not in have]
+    refused = 0
     for i in range(0, len(new), 200):
-        album.add(lib.photos(uuid=new[i:i + 200]))
+        batch = new[i:i + 200]
+        try:
+            album.add(lib.photos(uuid=batch))
+        except Exception:
+            # Photos refuses the whole batch if one id is gone (already deleted). Go one by one.
+            for u in batch:
+                try:
+                    album.add(lib.photos(uuid=[u]))
+                except Exception:
+                    refused += 1
     print("album '%s': added %d, already there %d. Open it in Photos, look it over, Cmd-A, Delete."
-          % (args.album, len(new), len(uuids) - len(new)))
+          % (args.album, len(new) - refused, len(uuids) - len(new)))
+    if refused:
+        print("%d photos were refused by Photos (most likely already deleted); skipped." % refused)
     return 0
 
 
