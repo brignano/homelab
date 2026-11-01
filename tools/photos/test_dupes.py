@@ -66,6 +66,17 @@ def main():
     assert dhash_from_bmp(bmp(down, 32)) == (1 << 64) - 1
     near = [[v + 3 for v in r] for r in down]
     assert hamming(dhash_from_bmp(bmp(down)), dhash_from_bmp(bmp(near))) == 0
+    # RAW + JPEG of one shot are not duplicates; RAW files are never removed
+    def named(u, fn, secs, score):
+        x = ph(u, secs, score=score)
+        x.original_filename = fn
+        return x
+    nef, jpg = named("nef", "DSC_0033.NEF", 0, 0.9), named("jpg", "DSC_0033.JPG", 1, 0.2)
+    ex, _, _ = find_dupes([nef, jpg], none, 20)
+    assert not ex, ex                      # jpg is not an "extra" of its own RAW
+    other = named("o", "DSC_0034.JPG", 2, 0.95)
+    ex, _, _ = find_dupes([nef, jpg, other], none, 20)
+    assert "nef" not in ex and "o" not in ex  # the RAW is never removed
     print("ok")
 
 
