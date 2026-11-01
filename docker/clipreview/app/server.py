@@ -310,7 +310,7 @@ def accept_triage(suggest: str, min_conf: float, month: str = "", dry: bool = Tr
     rows = [c for c in build()
             if c["kind"] == "video" and c["present"] and not c["label"] and c["tri"]
             and c["tri"]["suggest"] == suggest and c["tri"]["conf"] >= min_conf
-            and (not month or c["month"] == month)]
+            and (not month or c["month"] == month or c["month"].startswith(month + "-"))]
     if not dry and rows:
         now = time.strftime("%Y-%m-%dT%H:%M:%S")
         _append_rows(DATA / "video-review.csv", ["ts", "file", "decision"],
@@ -584,7 +584,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
   <option value="">Any suggestion</option><option value="keep">Suggested: keep</option>
   <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
   <option value="look">Needs a look</option><option value="none">Not triaged</option></select>
- <select id="month" aria-label="Month"><option value="">All months</option></select>
+ __MF__
  <label><input type="checkbox" id="hide" checked> hide decided</label>
  <span id="count" class="muted"></span>
  <span class="grow"></span>
@@ -624,6 +624,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  <small class="grow">Space plays. Nothing is deleted here: cold-storage picks go to a Photos album from the Mac, and the mirror stays as the cold copy.</small>
 </footer>
 <script>
+__MFJS__
 const LOW=0.7;  // below this a suggestion goes to "Needs a look"
 let all=[],list=[],i=0,rot=0,ratio=16/9;const seen={};
 const DONE=['send','fall','none','keep','cold'];
@@ -631,14 +632,11 @@ const $=id=>document.getElementById(id), v=$('v'), stage=$('stage'), box=$('stag
 const mb=n=>(n/1e6).toFixed(n>1e8?0:1)+' MB';
 async function load(keepId){
   all=await (await fetch('/api/clips')).json();
-  const months=[...new Set(all.map(c=>c.month).filter(Boolean))].sort().reverse();
-  const sel=$('month'), cur=sel.value;
-  sel.innerHTML='<option value="">All months</option>'+months.map(m=>`<option>${m}</option>`).join('');
-  sel.value=cur; refilter(keepId);
+  MF.set(all.filter(c=>c.present).map(c=>c.month)); refilter(keepId);
 }
 function refilter(keepId){
-  const m=$('month').value, hide=$('hide').checked, view=$('view').value, sug=$('sug').value;
-  list=all.filter(c=>c.present&&(!m||c.month===m)&&sugOk(c,sug)
+  const hide=$('hide').checked, view=$('view').value, sug=$('sug').value;
+  list=all.filter(c=>c.present&&MF.match(c.month)&&sugOk(c,sug)
     &&(view==='all'||view===c.kind||(view==='dupes'&&c.dupes.length))
     &&(!hide||!DONE.includes(c.label)||c.id===keepId));
   i=Math.max(0,list.findIndex(c=>c.id===keepId)); show();
@@ -653,11 +651,11 @@ function sugOk(c,s){
   return !!t&&t.suggest===s&&t.conf>=LOW;
 }
 function bulkInfo(){
-  const m=$('month').value;
-  const pool=all.filter(c=>c.present&&c.kind==='video'&&!c.label&&c.tri&&(!m||c.month===m));
+  const m=MF.val;
+  const pool=all.filter(c=>c.present&&c.kind==='video'&&!c.label&&c.tri&&MF.match(c.month));
   const n=s=>pool.filter(c=>c.tri.suggest===s&&c.tri.conf>=LOW).length;
   $('bulk').hidden=!pool.length;
-  $('bulktxt').textContent=`${n('keep')} keep and ${n('cold')} cold suggestions at confidence ${LOW}+ are undecided`+(m?` in ${m}`:'')+'. Accepting writes the same decision as the buttons; nothing is deleted.';
+  $('bulktxt').textContent=`${n('keep')} keep and ${n('cold')} cold suggestions at confidence ${LOW}+ are undecided`+(m?` in ${MF.label()}`:'')+'. Accepting writes the same decision as the buttons; nothing is deleted.';
   $('bkeep').textContent=`Accept ${n('keep')} keep`;$('bcold').textContent=`Accept ${n('cold')} cold`;
 }
 async function accept(s){
@@ -709,7 +707,7 @@ function show(){
 v.onloadedmetadata=()=>{if(v.videoWidth&&v.videoHeight){ratio=v.videoWidth/v.videoHeight;const c=list[i];if(c)seen[c.id]=ratio;fit()}};
 new ResizeObserver(fit).observe(box);
 $('dupes').onclick=e=>{const a=e.target.closest('a[data-id]'); if(!a)return; e.preventDefault();
-  $('view').value='all';$('hide').checked=false;$('month').value='';refilter(a.dataset.id)};
+  $('view').value='all';$('hide').checked=false;MF.val='';MF.set(all.filter(c=>c.present).map(c=>c.month));refilter(a.dataset.id)};
 async function label(l){
   const c=list[i]; if(!c)return;
   const ok=c.kind==='climb'?['send','fall','none','unsure','notclimb']:['keep','cold','unsure'];
@@ -727,9 +725,10 @@ document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>label(b.dataset.l
 $('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);
 $('rot').onclick=()=>{rot=(rot+90)%360;fit()};
 $('bkeep').onclick=()=>accept('keep');$('bcold').onclick=()=>accept('cold');
-for(const id of ['month','hide','view','sug'])$(id).onchange=()=>refilter();
+for(const id of ['hide','view','sug'])$(id).onchange=()=>refilter();
+MF.cb=()=>refilter();
 addEventListener('keydown',e=>{
-  if(e.target.tagName==='SELECT'||e.metaKey||e.ctrlKey)return;
+  if(e.target.tagName==='SELECT'||e.target.closest('#mf')||e.metaKey||e.ctrlKey)return;
   const k=e.key.toLowerCase(), c=list[i];
   const m={s:'send',f:'fall',n:'none',u:'unsure',c:'cold'}; if(c&&c.kind==='climb')m.x='notclimb'; if(c&&c.kind==='video')m.k='keep';
   if(m[k])label(m[k]);
@@ -739,4 +738,4 @@ addEventListener('keydown',e=>{
 });
 load();
 </script></body></html>
-""".replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("videos"))
+""".replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("videos")).replace("__MF__", ui.MF_HTML).replace("__MFJS__", ui.MF_JS)
