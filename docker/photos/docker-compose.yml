@@ -64,5 +64,34 @@ services:
         bind:
           create_host_path: false
 
+  # JPEG previews of the HEIC originals, because Jellyfin does not index HEIC.
+  # Run nightly by scripts/photos-previews.sh after the mirror sync; like
+  # icloudpd it is never `up`. Reads the mirror read-only and writes only
+  # /media/photos/icloud-previews, never icloud-hidden. One core, nice 19
+  # (previews/Dockerfile), so a conversion night stays off Ollama's four cores.
+  heicpreview:
+    build: ./previews
+    image: homelab/heic-preview:local
+    profiles: ["job"]
+    restart: "no"
+    init: true
+    cpus: 1
+    mem_limit: 1g
+    environment:
+      PREVIEW_WORKERS: ${PREVIEW_WORKERS:-1}
+      PREVIEW_MAX_MINUTES: ${PREVIEW_MAX_MINUTES:-240}
+    volumes:
+      - type: bind
+        source: /media/photos/icloud
+        target: /src
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /media/photos/icloud-previews
+        target: /dst
+        bind:
+          create_host_path: false
+
 volumes:
   session:

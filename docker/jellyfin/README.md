@@ -115,6 +115,42 @@ itself (`jellyfin` is not on `HL_NO_AUTOHEAL`). Without the folder that heal
 fails every night and the drift metric climbs, so do the `mkdir` before the
 first 04:00 after this change lands.
 
+## Photo Archive and the HEIC previews
+
+The **Photo Archive** library reads the iCloud mirror (`/photos/icloud`, from
+`/media/photos`, mounted read-only). Jellyfin 12.2 does not index `.HEIC`, so
+the mirror's HEIC photos (about 6,500 on 2026-11-01, most of the iPhone shots)
+were missing from it. It does index JPG, NEF, PNG and MOV/MP4.
+
+`scripts/photos-previews.sh` fills the gap. Nightly at 07:15, after the mirror
+sync, it writes a JPEG of every HEIC to `/media/photos/icloud-previews/<YYYY>/<MM>/`
+(2048 px long edge, quality 85, EXIF kept, file date = capture date).
+
+- **Previews are derived copies, not originals.** The HEIC in the mirror (and
+  iCloud) is the photo; a preview is a smaller JPEG for browsing. Deleting
+  `icloud-previews` loses nothing, and the next run rebuilds it.
+- **Incremental, and gentle.** Existing previews are skipped; one core at
+  `nice 19`, stopped after 240 minutes (`PREVIEW_MAX_MINUTES`), so the first run
+  of ~6,500 photos may take a few nights.
+- **`icloud-hidden` is never read or written.**
+- **Failure** pages `#alerts` as `hl-photos-previews-failed`; the Healthchecks
+  ping is `HEALTHCHECKS_PHOTOS_PREVIEWS_URL` (optional until a check exists).
+
+Setup, once, on CT 100:
+
+```bash
+mkdir -p /media/photos/icloud-previews     # the job is a no-op until this exists
+cd /root/homelab && ./scripts/install-cron.sh
+./scripts/photos-previews.sh               # first run now (counts: see below)
+```
+
+Then add the library in Jellyfin: *Dashboard → Libraries → Add Media Library →
+Home Videos and Photos*, name **Photo Archive (HEIC previews)**, folder
+`/photos/icloud-previews`, and untick the image fetchers and Screen Grabber.
+
+Check: `find /media/photos/icloud -iname '*.heic' | wc -l` should match
+`find /media/photos/icloud-previews -name '*.jpg' | wc -l`.
+
 ## Monitoring
 
 | Signal | Where |

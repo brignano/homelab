@@ -85,7 +85,7 @@ EPG_PLAYLIST="${HL_EPG_PLAYLIST:-/var/lib/homelab/epg/playlist.m3u}"
 # Kept identical to the job list in install-cron.sh; CI fails if they drift
 # (scripts/check-observability.sh). Two lists of the same thing is exactly how
 # the 2026-09-19 gap stayed invisible, so they get checked rather than trusted.
-CRON_JOBS="${HL_CRON_JOBS:-heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh blink-clips.sh photos-sync.sh}"
+CRON_JOBS="${HL_CRON_JOBS:-heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh blink-clips.sh photos-sync.sh photos-previews.sh}"
 
 running() {
   docker ps --filter "name=^${1}$" --filter "status=running" --format '{{.Names}}' 2>/dev/null \
