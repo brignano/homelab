@@ -97,8 +97,11 @@ class Looks:
             out = Path(td) / "h.bmp"
             for src in srcs:
                 if src.exists():
-                    r = subprocess.run(["sips", "-s", "format", "bmp", "-z", "8", "9", str(src), "--out", str(out)],
-                                       capture_output=True)
+                    try:
+                        r = subprocess.run(["sips", "-s", "format", "bmp", "-z", "8", "9", str(src), "--out", str(out)],
+                                           capture_output=True, timeout=30)
+                    except subprocess.TimeoutExpired:
+                        continue
                     if r.returncode == 0 and out.exists():
                         try:
                             h = dhash_from_bmp(out.read_bytes())
@@ -127,8 +130,11 @@ def thumbnail(photo, out: Path) -> bool:
         srcs.append(Path(photo.path))
     for src in srcs:
         if src.exists():
-            r = subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "800", str(src), "--out", str(out)],
-                               capture_output=True)
+            try:
+                r = subprocess.run(["sips", "-s", "format", "jpeg", "-Z", "800", str(src), "--out", str(out)],
+                                   capture_output=True, timeout=30)
+            except subprocess.TimeoutExpired:
+                continue  # a preview that will not convert must not stall the whole export
             if r.returncode == 0 and out.exists():
                 return True
     return False
@@ -249,15 +255,21 @@ def main(argv=None) -> int:
         by_uuid = {p.uuid: p for s in sets.values() for p, _ in s["photos"].values()}
         need = res["need_thumbs"]
         print("sending %d thumbnails..." % len(need))
+        failed = 0
         with tempfile.TemporaryDirectory() as td:
             for n, u in enumerate(need, 1):
                 out = Path(td) / (u + ".jpg")
+                print("  %d/%d %s" % (n, len(need), by_uuid[u].original_filename), flush=True)
                 if thumbnail(by_uuid[u], out):
-                    http(base + "/api/dupes/thumb/" + u, out.read_bytes(), "PUT", "image/jpeg")
+                    try:
+                        http(base + "/api/dupes/thumb/" + u, out.read_bytes(), "PUT", "image/jpeg")
+                    except SystemExit as e:  # one bad upload must not end the run
+                        failed += 1
+                        print("    upload failed (%s)" % e)
                 else:
-                    print("no local preview for %s (shows as 'no thumbnail')" % by_uuid[u].original_filename)
-                if n % 200 == 0:
-                    print("  %d/%d" % (n, len(need)))
+                    print("    no local preview (shows as 'no thumbnail')")
+        if failed:
+            print("%d uploads failed: run the same command again to send just those." % failed)
         print("Done. Review at %s/dupes, then run --from-review %s" % (base, base))
         return 0
 
