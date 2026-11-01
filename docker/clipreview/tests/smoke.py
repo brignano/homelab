@@ -30,6 +30,21 @@ os.environ["ASSETS_DIR"] = str(tmp / "assets")
 (tmp / "photos/2026/09/IMG_21.MOV").write_bytes(b"B" * 5000)
 (tmp / "photos/2026/09/IMG_22.MOV").write_bytes(b"C" * 10)
 (tmp / "photos/2026/09/IMG_22.HEIC").write_bytes(b"h")
+# triage: suggestions per video, a Live Photo half named _HEVC that must stay hidden
+(tmp / "photos/2026/08").mkdir(parents=True)
+for n, size in (("IMG_40.MOV", 4000), ("IMG_41.MOV", 2000), ("IMG_43.MOV", 1500), ("IMG_44.MOV", 1000)):
+    (tmp / "photos/2026/08" / n).write_bytes(n[5:6].encode() * size)
+(tmp / "photos/2026/08/IMG_42_HEVC.MOV").write_bytes(b"live")
+(tmp / "photos/2026/08/IMG_46_HEVC_abc1234.MOV").write_bytes(b"live2")
+with open(tmp / "data/video-triage.csv", "w", newline="") as f:
+    w = csv.writer(f)
+    w.writerow(["file", "category", "significance", "suggest", "confidence", "reason", "seconds",
+                "model", "in_tokens", "out_tokens", "error"])
+    w.writerow(["2026/08/IMG_40.MOV", "pet", "1", "cold", "0.90", "cat <b>asleep</b>", "5", "m", "1", "1", ""])
+    w.writerow(["2026/08/IMG_41.MOV", "people", "4", "keep", "0.90", "family", "5", "m", "1", "1", ""])
+    w.writerow(["2026/08/IMG_43.MOV", "climbing", "3", "judge", "0.80", "wall", "5", "m", "1", "1", ""])
+    w.writerow(["2026/08/IMG_44.MOV", "pet", "2", "cold", "0.40", "dark", "5", "m", "1", "1", ""])
+    w.writerow(["2026/09/IMG_21.MOV", "other", "", "", "", "", "", "m", "", "", "boom"])
 with open(tmp / "data/climb-verdicts-claude-2026-10.csv", "w", newline="") as f:
     w = csv.writer(f)
     w.writerow(["file", "seconds", "label", "local", "local_why", "active_seconds",
@@ -59,7 +74,7 @@ def post(body, **h):
 
 clips = json.load(get("/api/clips"))
 assert [c["name"][:5] for c in clips if c["kind"] == "climb"][:2] == ["IMG_3", "IMG_2"], clips  # none first, then low conf
-assert [c["name"] for c in clips if c["kind"] == "video"] == ["IMG_20 (1).MOV", "IMG_20.MOV", "IMG_21.MOV"], clips  # dupes first; the Live Photo half is not a video
+assert [c["name"] for c in clips if c["kind"] == "video"] == ["IMG_20 (1).MOV", "IMG_20.MOV", "IMG_21.MOV", "IMG_40.MOV", "IMG_41.MOV", "IMG_43.MOV", "IMG_44.MOV"], clips  # dupes first; the Live Photo half is not a video
 d20 = [c for c in clips if c["name"] == "IMG_20.MOV"][0]
 assert [d["file"] for d in d20["dupes"]] == ["2026/09/IMG_20 (1).MOV"] and d20["month"] == "2026-09", d20
 assert clips[-1]["label"] == "send" and clips[-1]["name"].startswith("IMG_1")  # hand label seen
@@ -133,6 +148,39 @@ for bad in ("/assets/../server.py", "/assets/fonts/..%2f..%2fdesign-tokens.css",
         raise SystemExit("expected an error")
     except urllib.error.HTTPError as e:
         assert e.code == 404, (bad, e.code)
+
+# --- triage ---------------------------------------------------------------------
+tri = {c["name"]: c["tri"] for c in json.load(get("/api/clips")) if c["kind"] == "video"}
+assert tri["IMG_40.MOV"]["suggest"] == "cold" and tri["IMG_43.MOV"]["category"] == "climbing", tri
+assert tri["IMG_21.MOV"] is None and tri["IMG_20.MOV"] is None, tri          # error rows are ignored
+assert not [n for n in tri if "HEVC" in n]                                    # Live Photo halves are not videos
+assert get("/export.txt?set=judge").read().decode() == "IMG_43.MOV\n"
+def jpost(path, body, **h):
+    h.setdefault("Content-Type", "application/json")
+    return urllib.request.urlopen(urllib.request.Request(base + path, json.dumps(body).encode(), h))
+def accept(**b):
+    b.setdefault("min_conf", 0.7)
+    return json.load(jpost("/api/triage/accept", b))["count"]
+assert accept(suggest="cold") == 1 and accept(suggest="keep") == 1             # IMG_44 is under 0.7; IMG_43 is not keep/cold
+assert accept(suggest="cold", min_conf=0.3) == 2 and accept(suggest="cold", month="2026-09") == 0
+assert not [c for c in json.load(get("/api/clips")) if c["name"] == "IMG_40.MOV"][0]["label"]   # dry run writes nothing
+assert accept(suggest="cold", dry=False) == 1 and accept(suggest="keep", dry=False) == 1
+dec = {c["name"]: c["label"] for c in json.load(get("/api/clips"))}
+assert dec["IMG_40.MOV"] == "cold" and dec["IMG_41.MOV"] == "keep" and dec["IMG_44.MOV"] == "" and dec["IMG_43.MOV"] == "", dec
+assert accept(suggest="cold", dry=False) == 0                                  # decided ones are never overwritten
+for bad in ({"suggest": "judge"}, {"suggest": "delete"}, {"suggest": "cold", "min_conf": "x"}):
+    try:
+        accept(**bad)
+        raise SystemExit("expected an error")
+    except urllib.error.HTTPError as e:
+        assert e.code == 400, e.code
+try:
+    jpost("/api/triage/accept", {"suggest": "cold", "min_conf": 0.1, "dry": False},
+                                                          Origin="http://evil.example")
+    raise SystemExit("expected an error")
+except urllib.error.HTTPError as e:
+    assert e.code == 403
+assert "IMG_44" not in get("/export.csv?set=cold").read().decode()
 
 # --- duplicate photos --------------------------------------------------------
 (tmp / "photos/2026/10").mkdir(parents=True, exist_ok=True)

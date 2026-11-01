@@ -40,6 +40,17 @@ Only videos already on the drive are shown; the header says how many verdicts ar
 The queue shows clips still to decide first, `none` and low confidence at the
 top; unsure clips come back. Month filter and "hide reviewed" are in the header.
 
+## Triage suggestions
+
+If `/root/climb-judge/video-triage.csv` exists (`tools/photos/triage.sh`), each
+other video shows the suggestion (category, keep / cold / looks like climbing,
+confidence). The "Suggested" filter narrows to one, "Needs a look" is the
+low-confidence ones, and "Accept N keep / N cold" records suggestions at
+confidence 0.7+ for videos you have not decided (the same rows the buttons
+write; it asks first, and any one can be changed afterwards). Clips triaged as
+climbing are listed at `/export.txt?set=judge` for `climb_judge.py --list`.
+Live Photo motion halves (`IMG_1234_HEVC.MOV`) are not shown.
+
 ## Removal
 
 The page never deletes anything. The header links export the **candidates**. For climbing clips:

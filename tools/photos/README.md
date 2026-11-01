@@ -134,3 +134,33 @@ in `/root/climb-judge/climb-verdicts.csv`.
 
 The first run downloads its Python packages (~300 MB, cached in
 `/root/climb-judge/cache`). The container is limited to two cores and 3 GB.
+
+## `triage.py`: sort every video before you review any
+
+Most videos in the mirror are not climbing, and reviewing thousands by hand
+does not work. `triage.py` looks at four frames of each video (plus its length)
+with a cheap model (`claude-haiku-5-5`, set with `--model`) and writes
+`/root/climb-judge/video-triage.csv`: a category (climbing, pet, people,
+travel, event, screen, other), how much the clip matters (1 to 5), a
+suggestion and a confidence.
+
+- **climbing** is suggested for the Opus send/fall pass (`climb_judge.py --list`
+  with the page's "looks like climbing" export); the triage never judges
+  send or fall itself.
+- everything else is suggested **keep** (stay in iCloud) or **cold** (the
+  mirror is the copy that stays).
+
+It only suggests. The review page shows each suggestion, can filter by it, and
+"Accept N keep / N cold" records the suggestions at confidence 0.7 and up as
+the same decisions the buttons write. Low-confidence ones are the "Needs a
+look" list, which is the only part to review by hand. Nothing is deleted.
+
+```bash
+export ANTHROPIC_API_KEY=...
+tools/photos/triage.sh --limit 50          # a trial; prints tokens and the real cost
+tools/photos/triage.sh                     # everything not triaged yet (resumable)
+```
+
+Live Photo motion halves (`IMG_1234_HEVC.MOV`) and clips that already have a
+climb-judge verdict are skipped. `python tools/photos/test_triage.py` runs the
+offline tests.

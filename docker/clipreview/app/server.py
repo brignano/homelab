@@ -95,6 +95,12 @@ _fp_cache = {}
 VIDEO_EXT = {".mov", ".mp4", ".m4v"}
 IMAGE_EXT = {".heic", ".jpg", ".jpeg", ".png", ".dng"}
 VIDEO_LABELS = ("keep", "cold", "unsure")  # keep in iCloud / move to cold storage
+LIVE_MARK = "_HEVC"  # icloudpd names a Live Photo's motion half IMG_1234_HEVC[_id].MOV
+
+
+def is_live_half(name: str, image_stems) -> bool:
+    stem = os.path.splitext(name)[0]
+    return stem in image_stems or stem.upper().endswith(LIVE_MARK) or LIVE_MARK + "_" in stem.upper()
 
 
 def _fingerprint(rel: str, size: int, mtime: float) -> str:
@@ -137,7 +143,7 @@ def mirror_index():
                 continue
             rel = os.path.relpath(full, PHOTOS)
             files[rel] = {"size": st.st_size, "mtime": st.st_mtime,
-                          "live": os.path.splitext(n)[0] in stems}
+                          "live": is_live_half(n, stems)}
             # prefer a YYYY/MM location if a name appears twice
             if n not in by_name or MONTH_RE.search(rel):
                 by_name[n] = rel
@@ -183,6 +189,27 @@ def read_decisions():
     return out
 
 
+def read_triage():
+    """mirror-relative path -> {category, suggest, conf, sig, why} from
+    tools/photos/triage.py (video-triage.csv); a later row for a file wins."""
+    out = {}
+    p = DATA / "video-triage.csv"
+    if p.exists():
+        with open(p, newline="") as f:
+            for row in csv.DictReader(f):
+                name = (row.get("file") or "").strip()
+                if not name or row.get("error") or row.get("suggest") not in ("judge", "keep", "cold"):
+                    continue
+                try:
+                    conf = float(row.get("confidence") or "")
+                    sig = int(row.get("significance") or 0)
+                except ValueError:
+                    continue
+                out[name] = {"category": row.get("category", ""), "suggest": row["suggest"],
+                             "conf": conf, "sig": sig, "why": row.get("reason", "")}
+    return out
+
+
 def build():
     """Every video in the mirror, plus verdicts whose clip has not synced yet.
 
@@ -193,6 +220,7 @@ def build():
     verdicts = read_verdicts()
     labels = read_log()
     decisions = read_decisions()
+    triage = read_triage()
     items = {}
     for key, v in verdicts.items():
         actual = locate(key)
@@ -225,6 +253,7 @@ def build():
             "claude": claude["claude"] if claude else "", "conf": claude["conf"] if claude else None,
             "why": claude["why"] if claude else "",
             "label": label, "present": present,
+            "tri": triage.get(rel) if v is None else None,
             "size": meta["size"] if present else 0,
             "dupes": [{"id": clip_id(o), "file": o, "size": idx["files"][o]["size"]}
                       for o in idx["dupes"].get(rel, [])],
@@ -272,6 +301,28 @@ def _append(path: Path, header, row):
         w.writerow(row)
 
 
+def accept_triage(suggest: str, min_conf: float, month: str = "", dry: bool = True) -> int:
+    """Record the triage suggestion as the decision for every video nobody has
+    decided yet (keep / cold; "judge" is not a decision). Returns how many.
+    Same rows the buttons write, so one undo path: pick the other button."""
+    if suggest not in ("keep", "cold"):
+        raise ValueError("suggest")
+    rows = [c for c in build()
+            if c["kind"] == "video" and c["present"] and not c["label"] and c["tri"]
+            and c["tri"]["suggest"] == suggest and c["tri"]["conf"] >= min_conf
+            and (not month or c["month"] == month)]
+    if not dry and rows:
+        now = time.strftime("%Y-%m-%dT%H:%M:%S")
+        _append_rows(DATA / "video-review.csv", ["ts", "file", "decision"],
+                     [[now, c["file"], suggest] for c in rows])
+    return len(rows)
+
+
+def _append_rows(path: Path, header, rows):
+    for r in rows:
+        _append(path, header, r)
+
+
 def export(include_claude: bool, which: str = "climb"):
     rows = []
     for c in build():
@@ -281,6 +332,9 @@ def export(include_claude: bool, which: str = "climb"):
         if which == "cold":
             if c["kind"] == "video" and c["label"] == "cold":
                 why = "cold storage"
+        elif which == "judge":  # for climb_judge.py --list: probably climbing, no verdict yet
+            if c["kind"] == "video" and not c["notclimb"] and c["tri"] and c["tri"]["category"] == "climbing":
+                why = "triage: climbing %.2f" % c["tri"]["conf"]
         elif c["kind"] != "climb":
             pass
         elif c["label"] in ("fall", "none"):
@@ -392,7 +446,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
@@ -404,6 +458,11 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/dupes/sets":
                 with _lock:
                     return self._send(200, json.dumps(dupes.save_sets(body)), "application/json")
+            if path == "/api/triage/accept":
+                with _lock:
+                    n = accept_triage(str(body["suggest"]), float(body["min_conf"]),
+                                      str(body.get("month") or ""), bool(body.get("dry", True)))
+                return self._send(200, json.dumps({"count": n}), "application/json")
             if path == "/api/dupes/decide":
                 with _lock:
                     dupes.decide(str(body["set"]), str(body["keep"]))
@@ -521,12 +580,15 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  <select id="view" aria-label="View">
   <option value="all">All videos</option><option value="climb">Climbing clips</option>
   <option value="video">Other videos</option><option value="dupes">Duplicates</option></select>
+ <select id="sug" aria-label="Suggestion">
+  <option value="">Any suggestion</option><option value="keep">Suggested: keep</option>
+  <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
+  <option value="look">Needs a look</option><option value="none">Not triaged</option></select>
  <select id="month" aria-label="Month"><option value="">All months</option></select>
  <label><input type="checkbox" id="hide" checked> hide decided</label>
  <span id="count" class="muted"></span>
  <span class="grow"></span>
- <small class="exports">Export <a href="/export.txt" target="_blank">climb</a> <a href="/export.csv?include=claude" target="_blank">climb + Claude calls</a> <a href="/export.csv?set=cold" target="_blank">cold storage</a></small>
-</header>
+>>>>>>> origin/main
 <main>
  <div id="stagebox"><div id="stage"><video id="v" controls autoplay muted playsinline></video></div><p id="empty" hidden></p></div>
  <aside id="side" class="panel">
@@ -535,6 +597,11 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
   <div class="row"><span id="kindchip" class="chip"></span> <span>Your call:</span> <span id="mine" class="chip"></span></div>
   <div class="g-climb group"><div class="row"><span>Claude:</span> <span id="verdict" class="chip"></span> <small id="conf"></small></div>
    <p id="why"></p></div>
+  <div id="tri" class="panel" style="padding:var(--s3)" hidden></div>
+  <div id="bulk" class="panel" style="padding:var(--s3)" hidden>
+   <b>Accept suggestions</b>
+   <p class="muted" id="bulktxt" style="margin:var(--s1) 0"></p>
+   <div class="row"><button id="bkeep">Accept keep</button><button id="bcold">Accept cold</button></div></div>
   <div id="dupes"></div>
   <p id="warn" class="warn" style="margin:0"></p>
  </aside>
@@ -556,6 +623,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  <small class="grow">Space plays. Nothing is deleted here: cold-storage picks go to a Photos album from the Mac, and the mirror stays as the cold copy.</small>
 </footer>
 <script>
+const LOW=0.7;  // below this a suggestion goes to "Needs a look"
 let all=[],list=[],i=0,rot=0,ratio=16/9;const seen={};
 const DONE=['send','fall','none','keep','cold'];
 const $=id=>document.getElementById(id), v=$('v'), stage=$('stage'), box=$('stagebox');
@@ -568,11 +636,38 @@ async function load(keepId){
   sel.value=cur; refilter(keepId);
 }
 function refilter(keepId){
-  const m=$('month').value, hide=$('hide').checked, view=$('view').value;
-  list=all.filter(c=>c.present&&(!m||c.month===m)
+  const m=$('month').value, hide=$('hide').checked, view=$('view').value, sug=$('sug').value;
+  list=all.filter(c=>c.present&&(!m||c.month===m)&&sugOk(c,sug)
     &&(view==='all'||view===c.kind||(view==='dupes'&&c.dupes.length))
     &&(!hide||!DONE.includes(c.label)||c.id===keepId));
   i=Math.max(0,list.findIndex(c=>c.id===keepId)); show();
+}
+function sugOk(c,s){
+  if(!s)return true;
+  if(c.kind!=='video')return false;
+  const t=c.tri;
+  if(s==='none')return !t;
+  if(s==='look')return !!t&&t.conf<LOW;
+  if(s==='judge')return !!t&&t.category==='climbing';
+  return !!t&&t.suggest===s&&t.conf>=LOW;
+}
+function bulkInfo(){
+  const m=$('month').value;
+  const pool=all.filter(c=>c.present&&c.kind==='video'&&!c.label&&c.tri&&(!m||c.month===m));
+  const n=s=>pool.filter(c=>c.tri.suggest===s&&c.tri.conf>=LOW).length;
+  $('bulk').hidden=!pool.length;
+  $('bulktxt').textContent=`${n('keep')} keep and ${n('cold')} cold suggestions at confidence ${LOW}+ are undecided`+(m?` in ${m}`:'')+'. Accepting writes the same decision as the buttons; nothing is deleted.';
+  $('bkeep').textContent=`Accept ${n('keep')} keep`;$('bcold').textContent=`Accept ${n('cold')} cold`;
+}
+async function accept(s){
+  const m=$('month').value, body={suggest:s,min_conf:LOW,month:m,dry:true};
+  const post=b=>fetch('/api/triage/accept',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)});
+  const r=await post(body); if(!r.ok){$('warn').textContent='Accept failed: '+r.status;return}
+  const n=(await r.json()).count; if(!n)return;
+  if(!confirm(`Record "${s==='keep'?'keep in iCloud':'cold storage'}" for ${n} undecided videos${m?' in '+m:''}? You can change any one afterwards.`))return;
+  body.dry=false; const r2=await post(body);
+  if(!r2.ok){$('warn').textContent='Accept failed: '+r2.status;return}
+  const id=(list[i]||{}).id; await load(id);
 }
 function fit(){
   const W=box.clientWidth,H=box.clientHeight; if(!W||!H)return;
@@ -597,6 +692,9 @@ function show(){
   $('verdict').textContent=c.claude||'–'; $('verdict').className='chip '+c.claude;
   $('conf').textContent=c.conf==null?'':`confidence ${c.conf.toFixed(2)}`;
   $('why').textContent=c.why;
+  const t=c.tri, tr=$('tri'); tr.hidden=!t;
+  if(t)tr.innerHTML=`<b>Triage: ${t.category}</b> <span class="chip ${t.suggest==='judge'?'':t.suggest}">${t.suggest==='judge'?'send to climb judge':'suggest '+t.suggest}</span> <small>confidence ${t.conf.toFixed(2)} · matters ${t.sig}/5</small><p style="margin:var(--s1) 0 0">${t.why.replace(/[<>&]/g,'')}</p>`;
+  bulkInfo();
   const names={keep:'keep in iCloud',cold:'cold storage'};
   $('mine').textContent=names[c.label]||c.label||'–'; $('mine').className='chip '+c.label;
   $('dupes').innerHTML=c.dupes.length
@@ -627,7 +725,8 @@ const go=d=>{i=Math.min(Math.max(i+d,0),list.length-1);show()};
 document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>label(b.dataset.l));
 $('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);
 $('rot').onclick=()=>{rot=(rot+90)%360;fit()};
-for(const id of ['month','hide','view'])$(id).onchange=()=>refilter();
+$('bkeep').onclick=()=>accept('keep');$('bcold').onclick=()=>accept('cold');
+for(const id of ['month','hide','view','sug'])$(id).onchange=()=>refilter();
 addEventListener('keydown',e=>{
   if(e.target.tagName==='SELECT'||e.metaKey||e.ctrlKey)return;
   const k=e.key.toLowerCase(), c=list[i];

@@ -290,6 +290,8 @@ def score(clips: list[Clip], attr: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--root", default="/photos", help="the iCloud mirror (default /photos in the container)")
+    ap.add_argument("--list", help="text file of mirror paths or names (the review page's /export.txt?set=judge); "
+                    "only those clips are judged")
     ap.add_argument("--labels", help="CSV of file,label to score against; only those clips are judged")
     ap.add_argument("--out", default="/out/climb-verdicts.csv", help="where to write the verdicts")
     ap.add_argument("--methods", default="local,claude", help="local, claude, or both (default)")
@@ -301,6 +303,9 @@ def main() -> int:
     methods = {m.strip() for m in args.methods.split(",") if m.strip()}
     labels = read_labels(args.labels) if args.labels else {}
     clips = find_clips(Path(args.root), labels)
+    if args.list:
+        wanted = {Path(l.strip()).name for l in open(args.list) if l.strip()}
+        clips = [c for c in (clips if labels else find_clips(Path(args.root), {})) if c.path.name in wanted]
     if args.limit:
         clips = clips[: args.limit]
     if not clips:
