@@ -75,3 +75,12 @@ photo's month, same byte size), records your decision per set in
 `/api/dupes/accepted.json` for `--from-review` on the Mac. A same-moment shot
 (a different file) is only accepted if its original is confirmed in the mirror;
 exact copies are not held back. Nothing here deletes or writes to the mirror.
+
+**Confidence and agreement.** Each set is rated high / fairly sure / check this one
+(`assess()` in `app/dupes.py`): exact copies and your favourites are high; for
+same-moment shots it is the gap between the keeper's Apple score and the runner-up's
+(>= 0.10 high, >= 0.03 fairly sure, else check). The card says why. *Accept high
+confidence* accepts every undecided high set (similar shots only if all originals are
+in the mirror). The line under the header reports how often you agreed with the
+proposed keeper, per tier, so the thresholds can be tuned from your own decisions
+instead of guessed. Nothing is deleted by any of this.

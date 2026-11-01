@@ -151,9 +151,15 @@ def build_sets(extras, keeper_of):
     return sets
 
 
+SUB_SCORES = ("sharply_focused_subject", "well_timed_shot", "noise", "failure",
+              "pleasant_composition", "well_framed_subject", "pleasant_lighting")
+
+
 def member(p, keep):
+    sub = {k: getattr(p.score, k) for k in SUB_SCORES
+           if p.score is not None and isinstance(getattr(p.score, k, None), (int, float))}
     return {"uuid": p.uuid, "filename": p.original_filename, "date": p.date.isoformat(),
-            "bytes": p.original_filesize or 0, "keep": keep,
+            "bytes": p.original_filesize or 0, "keep": keep, "favorite": bool(p.favorite), "sub": sub,
             "score": p.score.overall if p.score and p.score.overall is not None else None}
 
 
