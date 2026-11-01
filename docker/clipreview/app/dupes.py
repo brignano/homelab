@@ -103,6 +103,11 @@ def validate_sets(payload) -> list:
             ms.append({"uuid": str(m["uuid"]), "filename": str(m["filename"])[:200],
                        "date": str(m.get("date") or "")[:40], "bytes": int(m.get("bytes") or 0),
                        "score": m.get("score") if isinstance(m.get("score"), (int, float)) else None,
+                       "favorite": bool(m.get("favorite")),
+                       # Photos' sub-scores, kept only so the agreement report can
+                       # test whether a better blend than the overall score exists
+                       "sub": {str(k)[:40]: round(float(v), 3) for k, v in (m.get("sub") or {}).items()
+                               if isinstance(v, (int, float))} if isinstance(m.get("sub"), dict) else {},
                        "keep": bool(m.get("keep"))})
         if sum(1 for m in ms if m["keep"]) != 1:
             raise ValueError("a set needs exactly one default keeper")
@@ -169,6 +174,53 @@ def decide(set_id: str, keep: str):
         w.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), set_id, keep])
 
 
+# --- confidence ---------------------------------------------------------------
+# How sure are we that the proposed keeper really is the best of the set? The
+# thresholds are a first guess on Apple's overall score; report() below measures
+# how often Anthony agrees per tier, and that is what should move them.
+HIGH_MARGIN = 0.10
+MEDIUM_MARGIN = 0.03
+
+
+def assess(kind: str, members: list):
+    """(tier, why): tier is high, medium or low."""
+    keeper = next(m for m in members if m["keep"])
+    others = [m for m in members if not m["keep"]]
+    if kind == "exact":
+        return "high", "Byte-identical copies; kept the largest"
+    if keeper.get("favorite") and not any(o.get("favorite") for o in others):
+        return "high", "Your favourite"
+    if keeper["score"] is None or any(o["score"] is None for o in others):
+        return "low", "No Apple score for some of these shots, so the pick is a guess"
+    gap = keeper["score"] - max(o["score"] for o in others)
+    txt = "Apple score %.2f vs %.2f" % (keeper["score"], max(o["score"] for o in others))
+    if gap >= HIGH_MARGIN:
+        return "high", txt + ": clear winner"
+    if gap >= MEDIUM_MARGIN:
+        return "medium", txt + ": fairly close"
+    return "low", txt + ": too close to call, look at them"
+
+
+def report(sets: list, decisions: dict) -> dict:
+    """Agreement between the proposed keeper and what was actually decided, per tier."""
+    tiers = {t: {"decided": 0, "agreed": 0, "picked_other": 0, "kept_all": 0}
+             for t in ("high", "medium", "low")}
+    for s in sets:
+        d = decisions.get(s["id"], "")
+        if not d:
+            continue
+        t = tiers[s["confidence"]]
+        t["decided"] += 1
+        if d == "all":
+            t["kept_all"] += 1
+        elif next(m["uuid"] for m in s["members"] if m["keep"]) == d:
+            t["agreed"] += 1
+        else:
+            t["picked_other"] += 1
+    tot = {k: sum(t[k] for t in tiers.values()) for k in ("decided", "agreed", "picked_other", "kept_all")}
+    return {"tiers": tiers, "total": tot}
+
+
 # --- views --------------------------------------------------------------------
 
 def view() -> dict:
@@ -179,10 +231,15 @@ def view() -> dict:
         for m in s["members"]:
             ms.append(dict(m, mirror=mirror_state(m), thumb=thumb_path(m["uuid"]) is not None))
         d = decisions.get(s["id"], "")
-        out.append({"id": s["id"], "kind": s["kind"], "members": ms, "decision": d})
+        conf, why = assess(s["kind"], ms)
+        out.append({"id": s["id"], "kind": s["kind"], "members": ms, "decision": d,
+                    "confidence": conf, "why": why,
+                    # safe to accept without looking: high confidence and, for a
+                    # similar shot, every original confirmed in the mirror
+                    "auto_ok": conf == "high" and (s["kind"] == "exact" or all(m["mirror"] == "ok" for m in ms))})
     # exact copies first (safe), then similar by date of the first member.
     out.sort(key=lambda s: (s["kind"] != "exact", min(m["date"] for m in s["members"])))
-    return {"sets": out}
+    return {"sets": out, "report": report(out, decisions)}
 
 
 def accepted() -> dict:

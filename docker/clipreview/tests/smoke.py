@@ -158,6 +158,9 @@ v = json.load(get("/api/dupes"))["sets"]
 assert [s["id"] for s in v] == ["abc00002", "abc00001"]  # exact first
 states = {m["uuid"]: m["mirror"] for s in v for m in s["members"]}
 assert states[UA] == "ok" and states[UB] == "size" and states[UC] == "missing", states
+conf = {x["id"]: (x["confidence"], x["auto_ok"]) for x in v}
+assert conf == {"abc00002": ("high", True), "abc00001": ("low", False)}, conf  # tied scores: look at it
+assert "too close" in [x for x in v if x["id"] == "abc00001"][0]["why"]
 # nothing accepted yet
 assert json.load(get("/api/dupes/accepted.json"))["uuids"] == []
 jpost("/api/dupes/decide", {"set": "abc00001", "keep": UA})
@@ -171,6 +174,10 @@ acc = json.load(get("/api/dupes/accepted.json"))
 assert UA in acc["uuids"] and UC not in acc["uuids"], acc
 jpost("/api/dupes/decide", {"set": "abc00001", "keep": "all"})
 assert json.load(get("/api/dupes/accepted.json"))["uuids"] == [UE]
+rep = json.load(get("/api/dupes"))["report"]
+# abc00002 agreed with its proposal; abc00001 ended as "keep all"
+assert rep["tiers"]["high"] == {"decided": 1, "agreed": 1, "picked_other": 0, "kept_all": 1 - 1}, rep
+assert rep["tiers"]["low"]["kept_all"] == 1 and rep["total"]["decided"] == 2, rep
 for bad in (lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "not-a-member"}),
             lambda: jpost("/api/dupes/decide", {"set": "nope", "keep": "all"}),
             lambda: jpost("/api/dupes/sets", {"sets": [{"id": "x", "kind": "exact", "members": []}]}),

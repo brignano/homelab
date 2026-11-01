@@ -11,6 +11,8 @@ main{overflow:auto;align-items:flex-start;justify-content:center;flex-wrap:wrap}
 .card img,.card .nothumb{width:100%;height:20rem;object-fit:contain;background:var(--n-100);display:block}
 .card .nothumb{display:flex;align-items:center;justify-content:center;color:var(--slate)}
 .card div.info{padding:var(--s3) var(--s4);font-size:var(--text-sm)}
+.conf{font-weight:650}.conf.high{color:var(--success-ink)}.conf.medium{color:var(--warning-ink,var(--ink))}.conf.low{color:var(--danger-ink)}
+#report{margin:0;padding:var(--s2) var(--s4);font-size:var(--text-sm)}
 .badge{font-weight:650;padding:0 var(--s3);border-radius:999px;margin-right:var(--s2);font-size:var(--text-xs);
   border:1px solid var(--line);display:inline-block}
 .keep .badge{background:var(--success-surface);border-color:var(--success-line);color:var(--success-ink)}
@@ -32,9 +34,10 @@ footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter
  __BRAND____NAV__
  <label><input type="checkbox" id="hide" checked> hide decided</label>
  <span id="count" class="muted"></span><span class="grow"></span>
- <button id="bulk">Accept all exact copies</button>
+ <button id="bulk" class="primary">Accept high confidence</button>
 </header>
 <p id="kind" class="muted" aria-live="polite"></p>
+<p id="report" class="muted"></p>
 <main id="main"></main>
 <footer>
  <button id="accept" class="primary">Remove red<kbd>Enter</kbd></button>
@@ -43,11 +46,11 @@ footer{position:sticky;bottom:0;background:var(--surface-sticky);backdrop-filter
  <small id="hint" class="grow hint">Click a photo (or press 1-9) to make it the one you keep. Nothing is deleted here: accepted removals go into a Photos album from the Mac.</small>
 </footer>
 <script>
-let all=[],list=[],i=0,pick=null;
+let all=[],list=[],i=0,pick=null,rep=null;
 const $=id=>document.getElementById(id);
 async function load(keepId){
-  all=(await (await fetch('/api/dupes')).json()).sets;
-  refilter(keepId);
+  const d=await (await fetch('/api/dupes')).json();
+  all=d.sets; rep=d.report; refilter(keepId);
 }
 function refilter(keepId){
   const hide=$('hide').checked;
@@ -56,7 +59,15 @@ function refilter(keepId){
 }
 const cur=()=>list[i];
 function keeper(s){return pick||(s.decision&&s.decision!=='all'?s.decision:null)||s.members.find(m=>m.keep).uuid}
+const ICON={high:'✓',medium:'~',low:'!'}, WORD={high:'High confidence',medium:'Fairly sure',low:'Check this one'};
+function showReport(){
+  const t=rep&&rep.total; if(!t||!t.decided){$('report').textContent='';return}
+  const pct=(a,b)=>b?Math.round(100*a/b)+'%':'–';
+  const tiers=['high','medium','low'].map(k=>`${k} ${pct(rep.tiers[k].agreed,rep.tiers[k].decided)} of ${rep.tiers[k].decided}`).join(' · ');
+  $('report').textContent=`You agreed with the proposed keeper on ${pct(t.agreed,t.decided)} of ${t.decided} decided sets (${tiers}).`;
+}
 function show(){
+  showReport();
   const done=all.filter(s=>s.decision).length;
   $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} decided`;
   const s=cur(), main=$('main'); main.innerHTML='';
@@ -73,8 +84,8 @@ function show(){
       `<small class="${s.kind==='similar'?'warn':''}">✗ ${m.mirror==='size'?'in the mirror, but a different size':'not in the mirror'}`+(s.kind==='similar'?' (will not be accepted)':'')+`</small>`)+`</div>`;
     main.appendChild(c);
   });
-  $('kind').textContent=(s.kind==='exact'?'Exact copies of one photo':'Same moment, different shots')+
-    (s.decision?' · decided: '+(s.decision==='all'?'keep all':'remove the others'):'')+' · tap a photo to keep that one';
+  $('kind').innerHTML=`<span class="conf ${s.confidence}">${ICON[s.confidence]} ${WORD[s.confidence]}</span> · ${s.why} · `+(s.kind==='exact'?'Exact copies of one photo':'Same moment, different shots')+
+    (s.decision?' · decided: '+(s.decision==='all'?'keep all':'remove the others'):'');
 }
 async function decide(s,keep){
   const r=await fetch('/api/dupes/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({set:s.id,keep})});
@@ -85,10 +96,11 @@ async function accept(){const s=cur();if(!s)return;if(await decide(s,keeper(s)))
 async function keepAll(){const s=cur();if(!s)return;if(await decide(s,'all')){next(s.id)}}
 function next(id){ if($('hide').checked){list=list.filter(x=>x.id!==id);if(i>=list.length)i=Math.max(list.length-1,0)}else i=Math.min(i+1,list.length-1); pick=null; show() }
 $('bulk').onclick=async()=>{
-  const ex=all.filter(s=>s.kind==='exact'&&!s.decision);
-  if(!ex.length||!confirm(`Accept ${ex.length} exact-copy sets? Each keeps its default photo.`))return;
+  const ex=all.filter(s=>s.auto_ok&&!s.decision);
+  if(!ex.length){$('hint').textContent='No undecided high-confidence sets left.';return}
+  if(!confirm(`Accept ${ex.length} high-confidence sets? Each keeps its proposed photo. Nothing is deleted: removals go to a Photos album you check first.`))return;
   for(const s of ex) await decide(s,s.members.find(m=>m.keep).uuid);
-  refilter();
+  await load();
 };
 $('accept').onclick=accept;$('all').onclick=keepAll;
 $('prev').onclick=()=>{i=Math.max(i-1,0);pick=null;show()};$('next').onclick=()=>{i=Math.min(i+1,list.length-1);pick=null;show()};
