@@ -226,7 +226,24 @@ rep = json.load(get("/api/dupes"))["report"]
 # abc00002 agreed with its proposal; abc00001 ended as "keep all"
 assert rep["tiers"]["high"] == {"decided": 1, "agreed": 1, "picked_other": 0, "kept_all": 1 - 1}, rep
 assert rep["tiers"]["low"]["kept_all"] == 1 and rep["total"]["decided"] == 2, rep
+# keep several, keep none, clear
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": UA + "," + UB})   # keep two, remove UC
+acc = json.load(get("/api/dupes/accepted.json"))
+assert UC not in acc["uuids"] and any(x["uuid"] == UC for x in acc["skipped"]), acc  # similar + not in mirror: held back
+assert UA not in acc["uuids"] and UB not in acc["uuids"], acc
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": "none"})         # remove all three; only mirror-confirmed ones go
+acc = json.load(get("/api/dupes/accepted.json"))
+assert UA in acc["uuids"] and UB not in acc["uuids"] and UC not in acc["uuids"], acc
+jpost("/api/dupes/decide", {"set": "abc00002", "keep": "none"})         # exact, but nothing kept: needs the mirror too
+acc = json.load(get("/api/dupes/accepted.json"))
+assert UD not in acc["uuids"] and UE not in acc["uuids"], acc
+jpost("/api/dupes/decide", {"set": "abc00002", "keep": ""})
+assert [x for x in json.load(get("/api/dupes"))["sets"] if x["id"] == "abc00002"][0]["decision"] == ""
+jpost("/api/dupes/decide", {"set": "abc00002", "keep": UD})
+jpost("/api/dupes/decide", {"set": "abc00001", "keep": "all"})
 for bad in (lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "not-a-member"}),
+            lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": UA + "," + UB + "," + UC}),  # all kept = use "all"
+            lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": UA + "," + UA}),
             lambda: jpost("/api/dupes/decide", {"set": "nope", "keep": "all"}),
             lambda: jpost("/api/dupes/sets", {"sets": [{"id": "x", "kind": "exact", "members": []}]}),
             lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "all"}, Origin="http://evil.example"),
