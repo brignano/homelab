@@ -164,3 +164,15 @@ tools/photos/triage.sh                     # everything not triaged yet (resumab
 Live Photo motion halves (`IMG_1234_HEVC.MOV`) and clips that already have a
 climb-judge verdict are skipped. `python tools/photos/test_triage.py` runs the
 offline tests.
+
+## `cold-storage-report.py`: who is named, and what would go to cold storage
+
+Read-only dry run for moving photos of people/pets you no longer want in
+iCloud (exes, an ex's dog) to cold storage. Lists every name Photos knows
+(hidden included) with counts, how many photos have unnamed faces, and the
+cold / keep / mixed split. Mixed photos (a cold name next to anyone else) and
+favourites stay in iCloud.
+
+```bash
+uv run tools/photos/cold-storage-report.py --cold Lauren --cold Cora --csv cold-report.csv
+```
