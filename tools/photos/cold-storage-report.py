@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["osxphotos>=0.70"]
+# dependencies = ["osxphotos>=0.70", "photoscript"]
 # ///
 """Report who Photos has named, and how many photos would go to cold storage.
 
@@ -25,10 +25,21 @@ Prints:
      "Lauren <emoji>".
   4. the same for hidden photos and photos already in Recently Deleted
      (counted separately, never in cold).
+
+With --check URL it also asks the review server whether each cold photo's
+original is in the mirror (same name, same size; the Hidden mirror counts), and
+prints the counts. --save-manifest stores the confirmed photos' people, albums,
+dates and place on the drive. --album NAME then adds only the confirmed ones to
+that Photos album. You review the album and delete in Photos yourself; this
+script never deletes, never empties Recently Deleted, never touches iCloud.
 """
 import argparse
 import csv
+import json
+import shutil
+import subprocess
 from collections import Counter
+from datetime import date
 
 import osxphotos
 
@@ -57,6 +68,40 @@ def classify(photo, cold, ignore, unnamed_blocks):
     return "cold", named, unnamed
 
 
+def http_json(url, payload):
+    """POST JSON with curl when there is one (macOS Local Network permission)."""
+    data = json.dumps(payload).encode()
+    if shutil.which("curl"):
+        r = subprocess.run(["curl", "-fsS", "--max-time", "300", "-X", "POST", "-H",
+                            "Content-Type: application/json", "--data-binary", "@-", url],
+                           input=data, capture_output=True)
+        if r.returncode != 0:
+            raise SystemExit("request to %s failed: %s" % (url, r.stderr.decode().strip()))
+        return json.loads(r.stdout)
+    import urllib.request
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=300) as r:
+        return json.loads(r.read())
+
+
+def to_album(photos, album):
+    import photoscript
+    lib = photoscript.PhotosLibrary()
+    alb = lib.album(album) or lib.create_album(album)
+    have = {p.uuid for p in alb.photos()}
+    added = refused = 0
+    for u in photos:
+        if u in have:
+            continue
+        try:
+            alb.add(lib.photos(uuid=[u]))
+            added += 1
+        except Exception:
+            refused += 1
+    print("album %r: added %d, already there %d, refused by Photos %d (hidden photos are often refused)"
+          % (album, added, len(have & set(photos)), refused))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cold", action="append", default=[], help="name in Photos to move to cold storage (repeatable)")
@@ -64,6 +109,13 @@ def main():
                     help="name that never makes a photo 'mixed' (you; default Anthony Brignano)")
     ap.add_argument("--unnamed-blocks", action="store_true",
                     help="a photo with an unnamed face next to a cold name counts as mixed")
+    ap.add_argument("--check", metavar="URL",
+                    help="review server (https://review.home.brignano.io): confirm each cold photo's original "
+                         "is in the mirror (main or hidden) and report the counts")
+    ap.add_argument("--save-manifest", action="store_true",
+                    help="with --check: store the confirmed photos' people/albums/dates on the drive")
+    ap.add_argument("--album", metavar="NAME",
+                    help="with --check: add the confirmed photos to this Photos album (e.g. 'Cold storage')")
     ap.add_argument("--csv", help="write one row per cold/mixed photo to this file")
     args = ap.parse_args()
     db = osxphotos.PhotosDB()
@@ -105,6 +157,38 @@ def main():
     print("\nBy rule (cold names: %s):" % (", ".join(sorted(cold)) or "none given"))
     for (where, kind), c in sorted(result.items()):
         print("  %-17s %-22s %6d" % (where, kind, c))
+
+    if args.check:
+        cands = [p for p in photos if not p.intrash
+                 and classify(p, cold, ignore, args.unnamed_blocks)[0] == "cold"]
+        members = []
+        for p in cands:
+            loc = p.location if p.location and p.location[0] is not None else None
+            members.append({
+                "uuid": p.uuid, "filename": p.original_filename,
+                "date": p.date.isoformat() if p.date else "", "bytes": p.original_filesize or 0,
+                "hidden": bool(p.hidden), "favorite": bool(p.favorite),
+                "people": sorted(n for n in (p.persons or []) if n != "_UNKNOWN_"),
+                "albums": list(p.albums or []), "keywords": list(p.keywords or []),
+                "location": list(loc) if loc else None})
+        batch = date.today().isoformat()
+        res = http_json(args.check.rstrip("/") + "/api/cold/check",
+                        {"members": members, "save": args.save_manifest, "batch": batch})
+        st = Counter()
+        by = {(m["hidden"]): Counter() for m in members}
+        for m in members:
+            s_ = res["states"].get(m["uuid"], "missing")
+            by[m["hidden"]][s_] += 1
+        print("\nOriginal confirmed in the mirror (name + exact size):")
+        for hidden, c in sorted(by.items()):
+            print("  %-8s %s" % ("hidden" if hidden else "library", dict(c)))
+        if res.get("manifest"):
+            print("manifest saved on the drive: %s" % res["manifest"])
+        if args.album:
+            ok = [m["uuid"] for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
+            to_album(ok, args.album)
+        else:
+            print("(no --album given: nothing added to Photos)")
 
     if args.csv:
         with open(args.csv, "w", newline="") as f:

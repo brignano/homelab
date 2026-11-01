@@ -37,6 +37,12 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # Hidden-album mirror (scripts/photos-sync.sh), only read to confirm that a
+      # hidden photo has its original on the drive. Not part of Jellyfin.
+      - type: bind
+        source: /media/photos/icloud-hidden
+        target: /photos-hidden
+        read_only: true
       - type: bind
         source: ${CLIMB_JUDGE_DIR:-/root/climb-judge}
         target: /data
