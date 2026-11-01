@@ -31,6 +31,7 @@ VERDICT_GLOB = os.environ.get("VERDICT_GLOB", "climb-verdicts-claude-*.csv")
 HI_CONF = float(os.environ.get("EXPORT_CLAUDE_CONFIDENCE", "0.8"))
 
 HUMAN = ("send", "fall", "none")  # what labels.csv accepts
+CLEAR = "clear"  # a row that voids the clip's earlier decision (Undo, Clear decision)
 NOTCLIMB = "notclimb"  # review-log.csv only: labels.csv (climb-judge --labels) rejects it
 ALL_LABELS = HUMAN + ("unsure", NOTCLIMB)
 MONTH_RE = re.compile(r"(?:^|/)(\d{4})/(\d{2})/")
@@ -85,7 +86,9 @@ def read_log():
         with open(p, newline="") as f:
             for row in csv.DictReader(f):
                 lab = (row.get("label") or "").strip().lower()
-                if row.get("file") and lab in ALL_LABELS:
+                if row.get("file") and lab == CLEAR:   # Undo / Clear decision: back to undecided
+                    labels.pop(row["file"].strip(), None)
+                elif row.get("file") and lab in ALL_LABELS:
                     labels[row["file"].strip()] = lab
     return labels
 
@@ -184,7 +187,9 @@ def read_decisions():
         with open(p, newline="") as f:
             for row in csv.DictReader(f):
                 lab = (row.get("decision") or "").strip().lower()
-                if row.get("file") and lab in VIDEO_LABELS:
+                if row.get("file") and lab == CLEAR:
+                    out.pop(row["file"].strip(), None)
+                elif row.get("file") and lab in VIDEO_LABELS:
                     out[row["file"].strip()] = lab
     return out
 
@@ -271,15 +276,36 @@ def build():
     return clips
 
 
-def append_label(clip: dict, label: str):
+def append_label(clip: dict, label: str, as_climb: bool = False):
+    """as_climb: write to the climbing log even though the clip now reads as a
+    video (undoing "not climbing" voids that row in review-log.csv)."""
     DATA.mkdir(parents=True, exist_ok=True)
     now = time.strftime("%Y-%m-%dT%H:%M:%S")
-    if clip["kind"] == "video":
+    if clip["kind"] == "video" and not as_climb:
         _append(DATA / "video-review.csv", ["ts", "file", "decision"], [now, clip["file"], label])
         return
     _append(DATA / "review-log.csv", ["ts", "file", "label"], [now, clip["stem"], label])
     if label in HUMAN:  # not "unsure" or "notclimb": --labels rejects them
         _append(DATA / "labels.csv", ["file", "label"], [clip["stem"], label])
+
+
+def drop_last_human_label(stem: str):
+    """Undo for a climbing clip: remove the newest row for it from labels.csv,
+    which climb-judge --labels reads, so an undone label does not train it.
+    review-log.csv is never edited; the Undo is a new row there."""
+    p = DATA / "labels.csv"
+    if not p.exists():
+        return
+    with open(p, "r+", newline="") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        rows = list(csv.reader(f))
+        for k in range(len(rows) - 1, 0, -1):
+            if rows[k] and rows[k][0].strip() == stem:
+                del rows[k]
+                f.seek(0)
+                f.truncate()
+                csv.writer(f).writerows(rows)
+                return
 
 
 def _append(path: Path, header, row):
@@ -476,9 +502,12 @@ class Handler(BaseHTTPRequestHandler):
             clip = next((c for c in build() if c["id"] == cid), None)
             if not clip:
                 return self._send(404, "no such clip")
-            if label not in (ALL_LABELS if clip["kind"] == "climb" else VIDEO_LABELS):
+            climb_ctx = clip["kind"] == "climb" or bool(body.get("climb"))
+            if label not in ((ALL_LABELS if climb_ctx else VIDEO_LABELS) + (CLEAR,)):
                 return self._send(400, "bad label")
-            append_label(clip, label)
+            if body.get("undo") and climb_ctx and read_log().get(clip["stem"]) in HUMAN:
+                drop_last_human_label(clip["stem"])
+            append_label(clip, label, as_climb=bool(body.get("climb")))
         self._send(200, json.dumps({"ok": True, "label": label}), "application/json")
 
     def _icon(self, path):
@@ -618,6 +647,8 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
   <button data-l="cold">Cold storage <kbd>C</kbd></button></span>
  <button data-l="unsure">Unsure <kbd>U</kbd></button>
  <span class="sep"></span>
+ <button id="undo" disabled>Undo <kbd>Z</kbd></button>
+ <button id="clear" disabled>Clear decision</button>
  <button id="prev">Prev <kbd>←</kbd></button>
  <button id="next">Next <kbd>→</kbd></button>
  <button id="rot">Rotate <kbd>R</kbd></button>
@@ -626,7 +657,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
 <script>
 __MFJS__
 const LOW=0.7;  // below this a suggestion goes to "Needs a look"
-let all=[],list=[],i=0,rot=0,ratio=16/9;const seen={};
+let all=[],list=[],i=0,rot=0,ratio=16/9,undo=null;const seen={};
 const DONE=['send','fall','none','keep','cold'];
 const $=id=>document.getElementById(id), v=$('v'), stage=$('stage'), box=$('stagebox');
 const mb=n=>(n/1e6).toFixed(n>1e8?0:1)+' MB';
@@ -682,6 +713,7 @@ function show(){
   const waiting=all.filter(c=>!c.present&&c.kind==='climb').length;
   $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} decided`+(waiting?` · ${waiting} not on the drive yet`:'');
   const c=list[i];
+  $('undo').disabled=!undo; $('clear').disabled=!(c&&(c.label||c.notclimb));
   stage.hidden=!c; $('empty').hidden=!!c;
   if(!c){v.removeAttribute('src');$('name').textContent='';$('empty').textContent='Nothing left in this view.';return}
   document.body.dataset.kind=c.kind;
@@ -714,15 +746,34 @@ async function label(l){
   if(!ok.includes(l))return;
   const r=await fetch('/api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:c.id,label:l})});
   if(!r.ok){$('warn').textContent='Save failed: '+r.status;return}
+  undo={id:c.id,prev:c.label||'',was:l};
   if(l==='notclimb'){c.kind='video';c.notclimb=true;c.label='';show();return}   // now the keep / cold question
   c.label=l;
   if($('hide').checked&&DONE.includes(l)){list.splice(i,1)}else{i++}
   if(i>=list.length)i=Math.max(list.length-1,0);
   show();
 }
+// Undo puts the clip back as it was (its earlier label, or undecided) and returns to it.
+// Clear decision does the same for the clip on screen, without needing a previous action.
+async function post(c,l,extra){
+  const r=await fetch('/api/label',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({id:c.id,label:l},extra))});
+  if(!r.ok)$('warn').textContent='Save failed: '+r.status;
+  return r.ok;
+}
+async function doUndo(){
+  if(!undo)return; const u=undo, c=all.find(x=>x.id===u.id); if(!c)return;
+  const climb=u.was==='notclimb';   // that decision lives in the climbing log
+  if(!await post(c,u.prev||'clear',{undo:true,climb}))return;
+  undo=null; await load(c.id);
+}
+async function doClear(){
+  const c=list[i]; if(!c||!(c.label||c.notclimb))return;
+  if(!await post(c,'clear',{undo:c.kind==='climb',climb:c.notclimb}))return;
+  undo=null; await load(c.id);
+}
 const go=d=>{i=Math.min(Math.max(i+d,0),list.length-1);show()};
 document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>label(b.dataset.l));
-$('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);
+$('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);$('undo').onclick=doUndo;$('clear').onclick=doClear;
 $('rot').onclick=()=>{rot=(rot+90)%360;fit()};
 $('bkeep').onclick=()=>accept('keep');$('bcold').onclick=()=>accept('cold');
 for(const id of ['hide','view','sug'])$(id).onchange=()=>refilter();
@@ -734,6 +785,7 @@ addEventListener('keydown',e=>{
   if(m[k])label(m[k]);
   else if(k==='arrowright'||k==='j')go(1);else if(k==='arrowleft'||k==='k')go(-1);
   else if(k==='r')$('rot').click();
+  else if(k==='z')doUndo();
   else if(k===' '){e.preventDefault();v.paused?v.play():v.pause()}
 });
 load();

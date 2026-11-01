@@ -133,6 +133,32 @@ assert get("/export.csv?set=cold").read().decode().count("IMG_21.MOV") == 2  # n
 assert "IMG_20" not in get("/export.csv?set=cold").read().decode()
 after = {c["name"]: c["label"] for c in json.load(get("/api/clips"))}
 assert after["IMG_21.MOV"] == "cold" and after["IMG_20.MOV"] == "keep"
+
+# --- undo / clear -------------------------------------------------------------
+post({"id": vid["id"], "label": "clear", "undo": True})                # video: back to undecided
+assert {c["name"]: c["label"] for c in json.load(get("/api/clips"))}["IMG_21.MOV"] == ""
+post({"id": vid["id"], "label": "keep"})
+post({"id": vid["id"], "label": "cold", "undo": True})                 # undo restores the earlier label
+assert {c["name"]: c["label"] for c in json.load(get("/api/clips"))}["IMG_21.MOV"] == "cold"
+cl = by["IMG_2"]
+stem_rows = lambda: open(tmp / "data/labels.csv").read().count(cl["stem"])
+n0 = stem_rows()
+post({"id": cl["id"], "label": "fall"})
+assert stem_rows() == n0 + 1
+post({"id": cl["id"], "label": "clear", "undo": True})                 # climbing: the labels.csv row goes too
+assert stem_rows() == n0, (stem_rows(), n0)
+assert {c["name"]: c["label"] for c in json.load(get("/api/clips"))}[cl["name"]] == ""
+post({"id": cl["id"], "label": "send"})                                # put it back for the checks below
+c3 = [c for c in json.load(get("/api/clips")) if c["name"].startswith("IMG_3")][0]
+post({"id": c3["id"], "label": "clear"})                                # clear the cold decision
+post({"id": c3["id"], "label": "clear", "climb": True, "undo": True})  # and undo "not climbing"
+c3 = [c for c in json.load(get("/api/clips")) if c["name"].startswith("IMG_3")][0]
+assert c3["kind"] == "climb" and not c3["notclimb"] and c3["label"] == "", c3
+try:
+    post({"id": vid["id"], "label": "bogus"})
+    raise SystemExit("expected an error")
+except urllib.error.HTTPError as e:
+    assert e.code == 400
 for bad in (lambda: post({"id": vid["id"], "label": "send"}),       # climb labels do not apply
             lambda: post({"id": by["IMG_1"]["id"], "label": "cold"})):
     try:
