@@ -176,3 +176,9 @@ favourites stay in iCloud.
 ```bash
 uv run tools/photos/cold-storage-report.py --cold Lauren --cold Cora --csv cold-report.csv
 ```
+
+Add `--check https://review.home.brignano.io` to confirm each cold photo's
+original is in the mirror (the hidden mirror counts), `--save-manifest` to store
+the confirmed photos' people/albums/dates on the drive (`/root/climb-judge/cold/`),
+and `--album "Cold storage"` to add only the confirmed ones to a Photos album.
+It never deletes anything; you delete from the album in Photos.

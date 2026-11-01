@@ -472,11 +472,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
-        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path == "/api/dupes/sets" else 4096)
+        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check") else 4096)
         if raw is None:
             return
         try:
@@ -484,6 +484,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/dupes/sets":
                 with _lock:
                     return self._send(200, json.dumps(dupes.save_sets(body)), "application/json")
+            if path == "/api/cold/check":
+                with _lock:
+                    return self._send(200, json.dumps(dupes.cold_check(body)), "application/json")
             if path == "/api/triage/accept":
                 with _lock:
                     n = accept_triage(str(body["suggest"]), float(body["min_conf"]),

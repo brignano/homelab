@@ -17,6 +17,7 @@ from pathlib import Path
 
 PHOTOS = Path(os.environ.get("PHOTOS_DIR", "/photos"))
 DATA = Path(os.environ.get("DATA_DIR", "/data"))
+HIDDEN = Path(os.environ.get("HIDDEN_PHOTOS_DIR", "/photos-hidden"))
 DIR = DATA / "dupes"
 THUMBS = DIR / "thumbs"
 UUID_RE = re.compile(r"^[0-9A-Fa-f-]{8,64}$")
@@ -27,13 +28,15 @@ _listing = {}  # "YYYY/MM" -> (time, [(name, stem, size)])
 
 # --- mirror -------------------------------------------------------------------
 
-def _month_dir(ym: str):
+def _month_dir(ym: str, root: Path = None):
+    root = root or PHOTOS
     now = time.time()
-    hit = _listing.get(ym)
+    key = (str(root), ym)
+    hit = _listing.get(key)
     if hit and now - hit[0] < 60:
         return hit[1]
     out = []
-    d = PHOTOS / ym
+    d = root / ym
     try:
         with os.scandir(d) as it:
             for e in it:
@@ -42,7 +45,7 @@ def _month_dir(ym: str):
                 out.append((e.name, os.path.splitext(e.name)[0], e.stat().st_size))
     except OSError:
         pass
-    _listing[ym] = (now, out)
+    _listing[key] = (now, out)
     return out
 
 
@@ -61,7 +64,7 @@ def _months(date_iso: str):
     return res
 
 
-def mirror_state(member: dict) -> str:
+def mirror_state(member: dict, root: Path = None) -> str:
     """ok: a mirror file has this name and exactly this many bytes.
     size: the name matches but the size differs (not trusted).
     missing: no such file in the photo's month (+-1)."""
@@ -71,7 +74,7 @@ def mirror_state(member: dict) -> str:
         return "missing"
     named = False
     for ym in _months(member.get("date") or ""):
-        for _name, stem, sz in _month_dir(ym):
+        for _name, stem, sz in _month_dir(ym, root):
             if stem == key or stem.startswith(key + "_"):
                 if sz == size:
                     return "ok"
@@ -276,3 +279,54 @@ def accepted() -> dict:
             else:
                 uuids.append(m["uuid"])
     return {"uuids": uuids, "skipped": skipped, "kept_all_sets": kept_all}
+
+
+# --- cold storage ---------------------------------------------------------------
+
+COLD_DIR = DATA / "cold"
+MAX_COLD = 20000
+
+
+def cold_check(payload) -> dict:
+    """Mirror check for photos proposed for cold storage (tools/photos/
+    cold-storage-report.py). Each member needs its original in the mirror
+    (/photos) or in the hidden mirror (/photos-hidden) with exactly the same
+    name and size. With save=true the confirmed members (with their people,
+    albums and so on) are written to a manifest on the drive, so the context
+    Photos holds survives the photo leaving iCloud. Nothing is deleted."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("members"), list):
+        raise ValueError("expected {members: [...]}")
+    members = payload["members"]
+    if len(members) > MAX_COLD:
+        raise ValueError("too many")
+    states, ok = {}, []
+    for m in members:
+        uuid = str(m["uuid"])
+        if not UUID_RE.match(uuid):
+            raise ValueError("bad uuid")
+        st = mirror_state(m)
+        if st != "ok":
+            h = mirror_state(m, HIDDEN)
+            if h == "ok":
+                st = "ok-hidden"
+            elif st == "missing":
+                st = h
+        states[uuid] = st
+        if st in ("ok", "ok-hidden"):
+            ok.append(dict(m, mirror=st))
+    saved = None
+    if payload.get("save") and ok:
+        batch = re.sub(r"[^0-9A-Za-z_-]", "", str(payload.get("batch") or ""))[:40] or "batch"
+        COLD_DIR.mkdir(parents=True, exist_ok=True)
+        path = COLD_DIR / ("manifest-%s.json" % batch)
+        old = {}
+        try:
+            old = {x["uuid"]: x for x in json.loads(path.read_text())["photos"]}
+        except (OSError, ValueError, KeyError):
+            pass
+        old.update({x["uuid"]: x for x in ok})
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"batch": batch, "photos": list(old.values())}, indent=1))
+        tmp.replace(path)
+        saved = path.name
+    return {"states": states, "confirmed": len(ok), "manifest": saved}
