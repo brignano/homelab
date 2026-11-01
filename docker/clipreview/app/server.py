@@ -325,6 +325,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, PAGE, "text/html; charset=utf-8")
         if u.path.startswith("/assets/"):
             return self._asset(u.path[len("/assets/"):])
+        if u.path in ui.ICON_ROUTES or u.path.startswith("/icons/"):
+            return self._icon(u.path)
         if u.path == "/api/clips":
             with _lock:
                 clips = build()
@@ -420,6 +422,20 @@ class Handler(BaseHTTPRequestHandler):
             append_label(clip, label)
         self._send(200, json.dumps({"ok": True, "label": label}), "application/json")
 
+    def _icon(self, path):
+        """The site's own mark (app/static): tab icon, touch icon, manifest.
+        A fixed name list, so no path from the request is opened. Safari probes
+        /favicon.ico and /apple-touch-icon.png at the root without reading the
+        page, so those are answered here too."""
+        name = ui.ICON_ROUTES.get(path) or (path[len("/icons/"):] if path.startswith("/icons/") else "")
+        if name not in ui.ICON_FILES:
+            return self._send(404, "not found")
+        p = ui.STATIC / name
+        if not p.is_file():
+            return self._send(404, "not found")
+        return self._send(200, p.read_bytes(), ui.ICON_FILES[name],
+                          [("Cache-Control", "public, max-age=86400")])
+
     def _asset(self, name):
         """Design tokens and Geist, from the dashboard's assets (mounted read-only).
         Only these two shapes are served, so no path from the request is opened."""
@@ -483,7 +499,7 @@ def main():
 
 PAGE = r"""<!doctype html>
 <html lang="en"><head>
-<title>Video review</title>
+<title>Videos · Review</title>
 __HEAD__
 <style>
 #stagebox{flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center}
@@ -501,7 +517,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
 @media (max-width:760px){#stagebox{flex:none;height:56vh}#side{width:auto;overflow:visible}}
 </style></head><body data-kind="video">
 <header>
- <h1>Video review</h1>__NAV__
+ __BRAND____NAV__
  <select id="view" aria-label="View">
   <option value="all">All videos</option><option value="climb">Climbing clips</option>
   <option value="video">Other videos</option><option value="dupes">Duplicates</option></select>
@@ -623,4 +639,4 @@ addEventListener('keydown',e=>{
 });
 load();
 </script></body></html>
-""".replace("__HEAD__", ui.HEAD).replace("__NAV__", ui.nav("videos"))
+""".replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("videos"))
