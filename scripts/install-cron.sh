@@ -62,7 +62,8 @@ JOBS="*/5 * * * *|heartbeat.sh|dead man's switch -> Healthchecks
 0 3 * * 0|pg-restore-test.sh|weekly: restore the newest dump into a scratch Postgres
 30 3 * * *|offsite-backup.sh|nightly restic copy to B2 (no-op until restic.env exists)
 */5 * * * *|blink-clips.sh|move Blink clips HA saved into Jellyfin's library (no-op until HA saves any)
-0 1 * * *|photos-sync.sh|nightly iCloud Photos mirror to the media drive (no-op until docker/photos/.env exists)"
+0 1 * * *|photos-sync.sh|nightly iCloud Photos mirror to the media drive (no-op until docker/photos/.env exists)
+15 7 * * *|photos-previews.sh|JPEG previews of the mirror's HEIC photos for Jellyfin (no-op until /media/photos/icloud-previews exists)"
 
 check=""
 case "${1:-}" in
@@ -116,7 +117,7 @@ if [ -s "$tmp" ] && [ -n "$(tail -c1 "$tmp")" ]; then
   printf '\n' >> "$tmp"
 fi
 
-for script in heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh blink-clips.sh photos-sync.sh; do
+for script in heartbeat.sh repo-sync.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh blink-clips.sh photos-sync.sh photos-previews.sh; do
   line=$(echo "$JOBS" | grep "|$script|" | head -n1)
   schedule=${line%%|*}
   path="$REPO/scripts/$script"

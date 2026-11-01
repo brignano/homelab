@@ -251,6 +251,17 @@ injection) and the two rules for extending it are in
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — **🚧 first remediations shipped 2026-10-31**: verified nightly restarts in repo-sync, scheduled prune + fstrim, the backup-drive watchdog on m5. Hung-container restart (#252), threshold disk cleanup (#253) and deploy rollback (#254) are open.
 - [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–4 built** (calendar, mail metadata and Home Assistant states in the digest; the concierge answering in `#ask`, proposing calendar events, Gmail drafts, allowlisted scenes and movie/show downloads that run only on a ✅; see `docker/assistant/README.md` → "Today", `docker/homeassistant/README.md` and `docker/concierge/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot in `#ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
 
+## Where code changes happen
+
+**Never edit, commit or build in the repo checkout on CT 100.** The box has no
+git credentials, so a commit made there cannot be pushed and gets stranded.
+Make every change in a normal clone (branch, push, PR, merge), then on CT 100
+only `git pull` (fast-forward) and deploy. Work on the box is limited to
+diagnosing, running commands and jobs, and creating data folders. Leave no local
+commits, branches or stashes behind on the box; if one appears, export it to the
+clone and delete it. `git push` and `gh pr create` fail on the box (no
+credentials, and `gh` is not installed there).
+
 ## Custom commands
 These slash commands are available in `.claude/commands/`:
 

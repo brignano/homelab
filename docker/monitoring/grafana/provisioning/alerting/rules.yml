@@ -988,6 +988,40 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- The HEIC preview job failed ---
+      #
+      # scripts/photos-previews.sh, nightly at 07:15: JPEG previews of the
+      # mirror's HEIC photos, which Jellyfin cannot index itself. Warning only:
+      # the originals are untouched, so a failed night just delays previews.
+      # Re-run by hand: ./scripts/photos-previews.sh
+      - uid: hl-photos-previews-failed
+        title: HEIC preview job failed
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "The nightly HEIC preview job failed; see /var/log/photos-previews.log on CT 100, then run ./scripts/photos-previews.sh"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: homelab_photos_previews_success
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+
       # --- The backup drive is filling ---
       #
       # The nightly vzdump keeps a fixed number of archives (prune-backups on
