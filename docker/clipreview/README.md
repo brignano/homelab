@@ -87,6 +87,13 @@ photo's month, same byte size), records your decision per set in
 (a different file) is only accepted if its original is confirmed in the mirror;
 exact copies are not held back. Nothing here deletes or writes to the mirror.
 
+**Keep several, keep none, undo.** Tap a photo (or 1-9) to keep only that one; *Also keep*
+(or Shift+1-9) keeps more; keeping none says *Remove all* and asks to confirm. A set with
+nothing kept is only accepted for photos confirmed in the mirror, even for exact copies.
+*Undo* (Z) reverts the last decision, *Clear decision* makes a set undecided again. A
+decision is a line in `decisions.csv` (`all`, `none`, or the kept uuids, comma separated);
+the latest line wins.
+
 **Confidence and agreement.** Each set is rated high / fairly sure / check this one
 (`assess()` in `app/dupes.py`): exact copies and your favourites are high; for
 same-moment shots it is the gap between the keeper's Apple score and the runner-up's

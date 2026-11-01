@@ -155,13 +155,24 @@ def read_decisions() -> dict:
     return out
 
 
+def parse_keep(keep: str):
+    """The decision for a set: "" undecided, "all" keep everything, "none" keep nothing
+    (remove every photo in the set), or one or more member uuids to keep, comma
+    separated; every other member is removed."""
+    if keep in ("", "all", "none"):
+        return keep, []
+    return "some", [k for k in keep.split(",") if k]
+
+
 def decide(set_id: str, keep: str):
     sets = {s["id"]: s for s in load_sets()["sets"]}
     s = sets.get(set_id)
     if not s:
         raise KeyError("no such set")
-    if keep not in ("", "all") and keep not in {m["uuid"] for m in s["members"]}:
-        raise ValueError("keeper is not in the set")
+    kind, ids = parse_keep(keep)
+    uuids = {m["uuid"] for m in s["members"]}
+    if kind == "some" and (not ids or len(set(ids)) != len(ids) or not set(ids) <= uuids or set(ids) == uuids):
+        raise ValueError("keepers must be distinct members of the set, and not all of them (use all)")
     DIR.mkdir(parents=True, exist_ok=True)
     p = DIR / "decisions.csv"
     with open(p, "a+", newline="") as f:
@@ -213,7 +224,7 @@ def report(sets: list, decisions: dict) -> dict:
         t["decided"] += 1
         if d == "all":
             t["kept_all"] += 1
-        elif next(m["uuid"] for m in s["members"] if m["keep"]) == d:
+        elif next(m["uuid"] for m in s["members"] if m["keep"]) == d:  # exactly the proposed keeper
             t["agreed"] += 1
         else:
             t["picked_other"] += 1
@@ -244,20 +255,22 @@ def view() -> dict:
 
 def accepted() -> dict:
     """Removals the human accepted. A similar shot is a different file, so it is
-    only listed if its original is confirmed in the mirror; an exact copy has an
-    identical keeper in the library, so it is not held back."""
+    only listed if its original is confirmed in the mirror. An exact copy has an
+    identical keeper in the library, so it is not held back, unless nothing in the
+    set is kept: then there is no other copy and the mirror must have it."""
     uuids, skipped, kept_all = [], [], 0
     for s in view()["sets"]:
-        keep = s["decision"]
-        if not keep:
+        kind, keepers = parse_keep(s["decision"])
+        if not kind:
             continue
-        if keep == "all":
+        if kind == "all":
             kept_all += 1
             continue
         for m in s["members"]:
-            if m["uuid"] == keep:
+            if m["uuid"] in keepers:
                 continue
-            if s["kind"] == "similar" and m["mirror"] != "ok":
+            needs_mirror = s["kind"] == "similar" or kind == "none"
+            if needs_mirror and m["mirror"] != "ok":
                 skipped.append({"uuid": m["uuid"], "filename": m["filename"],
                                 "reason": "original not confirmed in the mirror (%s)" % m["mirror"]})
             else:
