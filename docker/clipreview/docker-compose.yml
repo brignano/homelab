@@ -43,6 +43,8 @@ services:
         source: /media/photos/icloud-hidden
         target: /photos-hidden
         read_only: true
+        bind:
+          create_host_path: false
       - type: bind
         source: ${CLIMB_JUDGE_DIR:-/root/climb-judge}
         target: /data

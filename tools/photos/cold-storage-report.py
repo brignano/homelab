@@ -89,15 +89,22 @@ def to_album(photos, album):
     lib = photoscript.PhotosLibrary()
     alb = lib.album(album) or lib.create_album(album)
     have = {p.uuid for p in alb.photos()}
+    new = [u for u in photos if u not in have]
     added = refused = 0
-    for u in photos:
-        if u in have:
-            continue
+    # Batches: adding one by one makes Photos jump to the front each time.
+    for i in range(0, len(new), 200):
+        batch = new[i:i + 200]
         try:
-            alb.add(lib.photos(uuid=[u]))
-            added += 1
+            alb.add(lib.photos(uuid=batch))
+            added += len(batch)
         except Exception:
-            refused += 1
+            # Photos refuses a whole batch if one id is gone or hidden; go one by one.
+            for u in batch:
+                try:
+                    alb.add(lib.photos(uuid=[u]))
+                    added += 1
+                except Exception:
+                    refused += 1
     print("album %r: added %d, already there %d, refused by Photos %d (hidden photos are often refused)"
           % (album, added, len(have & set(photos)), refused))
 
