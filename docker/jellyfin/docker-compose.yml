@@ -64,6 +64,17 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # The iCloud Photos mirror (docker/photos/): every photo and video, including
+      # the ones later removed from iCloud, since icloudpd never deletes locally.
+      # Read-only and a separate mount from the library so Jellyfin can neither
+      # change it nor mix it into movie scans. Add it as a "Home Videos and
+      # Photos" library with the path /icloud (Dashboard -> Libraries).
+      - type: bind
+        source: /media/photos/icloud
+        target: /icloud
+        read_only: true
+        bind:
+          create_host_path: false
       # Live TV DVR recordings: the one place Jellyfin writes media. A sibling of
       # the library rather than inside it, so the library mount stays read-only.
       # Same drive, same backup=0, same refusal to start if it is missing.
