@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Review">
+  <!-- Two frames, one picked: an outlined frame behind a solid one. The review
+       page's whole job is choosing which of several to keep. Inked in the design
+       system's identity amber (the `mark` token) in its one permitted use,
+       inking a graphic.
+
+       NO GROUND, like the homelab mark (docker/dashboard/icons/favicon.svg): an
+       open amber figure reads on a light tab strip and a dark one alike.
+       Rectilinear, with the solid frame lower right so it does not read as the
+       homelab's three bars at 16px; these sites sit in the same tab group. -->
+  <style>
+    .m { fill: #b4741f; stroke: #b4741f; }
+    @media (prefers-color-scheme: dark) { .m { fill: #e0a44f; stroke: #e0a44f; } }
+  </style>
+  <rect class="m" x="4.2" y="4.2" width="17.6" height="15.6" rx="1.8" fill="none" stroke-width="2.4"/>
+  <rect class="m" x="10" y="12" width="18" height="16" rx="1.8" stroke="none"/>
+</svg>
