@@ -123,7 +123,10 @@ async function decide(s,keep,remember=true){
   const r=await fetch('/api/dupes/decide',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({set:s.id,keep})});
   if(!r.ok){$('hint').textContent=$('kind').textContent='Save failed: '+r.status;return false}
   if(remember)undo={id:s.id,prev:s.decision||''};
-  s.decision=keep; return true;
+  s.decision=keep; refreshReport(); return true;
+}
+async function refreshReport(){
+  try{const d=await (await fetch('/api/dupes')).json(); rep=d.report; showReport()}catch(e){}
 }
 async function accept(){
   const s=cur();if(!s)return; const ks=keeps(s);
