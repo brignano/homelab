@@ -187,11 +187,13 @@ def main(argv=None) -> int:
 
     if args.from_review:
         res = json.loads(http(args.from_review.rstrip("/") + "/api/dupes/accepted.json"))
-        uuids, skipped = [], 0
+        uuids, skipped, gone = [], 0, 0
         for u in res["uuids"]:
             p = db.get_photo(u)
             if p is None:
                 print("not found in Photos: %s" % u)
+            elif p.intrash:
+                gone += 1   # already deleted (Recently Deleted): nothing to add, and Photos rejects its id
             elif p.favorite:
                 print("skipped (favourite now): %s" % p.original_filename)
             else:
@@ -200,6 +202,8 @@ def main(argv=None) -> int:
             skipped += 1
             print("held back: %s (%s)" % (s["filename"], s["reason"]))
         print("%d accepted, %d held back, %d sets kept whole" % (len(uuids), skipped, res["kept_all_sets"]))
+        if gone:
+            print("%d accepted photos are already in Recently Deleted; left alone" % gone)
         return to_album(uuids, args)
 
     photos = [p for p in db.photos() if not p.shared and not getattr(p, "syndicated", False)]
