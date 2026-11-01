@@ -72,6 +72,23 @@ inside CT 100.
    A run started by hand otherwise goes until the next `PHOTOS_STOP_HOUR`,
    or the month's budget.
 
+## Hidden photos
+
+icloudpd's default listing is the main library only, so a photo hidden in
+Photos never reached the mirror (found 2026-11-01: about 170 hidden duplicates
+held back by the review as "not in the mirror"). After a clean main run the
+script runs a second pass, `--album Hidden`, into its own folder:
+
+```bash
+mkdir -p /media/photos/icloud-hidden   # once, on CT 100, with the drive mounted
+```
+
+It is a separate folder on purpose. Jellyfin's "Photo Archive" library reads
+`/media/photos/icloud`, and a photo hidden on purpose must not show up there.
+The pass is skipped until the folder exists, is never fatal to the main run,
+and reports `homelab_photos_hidden_success` and `homelab_photos_hidden_files`.
+`HL_PHOTOS_HIDDEN_MAX_SECONDS` (default 3600) caps it.
+
 ## When Apple asks you to sign in again
 
 Apple ends the session every couple of months. That night's run fails,
