@@ -269,6 +269,8 @@ for bad in ("/icons/../server.py", "/icons/nope.png", "/icons/%2e%2e/dupes.py"):
         assert e.code == 404, (bad, e.code)
 for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
     page = get(path).read().decode()
+    assert "&gt;&gt;&gt;&gt;&gt;&gt;&gt;" not in page and ">>>>>>>" not in page and "<<<<<<<" not in page, path  # merge-conflict leftovers
+    assert page.count("<header>") == page.count("</header>") == 1, path
     assert "<title>%s \u00b7 Review</title>" % title in page, path
     assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page and 'name="theme-color"' in page, path
     assert 'class="logo"' in page and "viewport-fit=cover" in page, path
