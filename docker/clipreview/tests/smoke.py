@@ -183,4 +183,21 @@ for bad in (lambda: jpost("/api/dupes/decide", {"set": "abc00001", "keep": "not-
     except urllib.error.HTTPError as e:
         assert e.code in (400, 403, 404), e.code
 assert b"Duplicate photos" in get("/dupes").read()
+# --- branding ------------------------------------------------------------------
+for path, ctype in (("/icons/favicon.svg", "image/svg+xml"), ("/favicon.ico", "image/x-icon"),
+                    ("/apple-touch-icon.png", "image/png"), ("/site.webmanifest", "application/manifest+json")):
+    r = get(path)
+    assert r.status == 200 and r.headers["Content-Type"].startswith(ctype) and r.read(), path
+assert json.load(get("/site.webmanifest"))["short_name"] == "Review"
+for bad in ("/icons/../server.py", "/icons/nope.png", "/icons/%2e%2e/dupes.py"):
+    try:
+        get(bad)
+        raise SystemExit("expected 404 for " + bad)
+    except urllib.error.HTTPError as e:
+        assert e.code == 404, (bad, e.code)
+for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
+    page = get(path).read().decode()
+    assert "<title>%s \u00b7 Review</title>" % title in page, path
+    assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page and 'name="theme-color"' in page, path
+    assert 'class="logo"' in page and "viewport-fit=cover" in page, path
 print("ok")

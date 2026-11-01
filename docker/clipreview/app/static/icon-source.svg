@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Review">
+  <!-- App-icon source: the same figure as favicon.svg with no media query,
+       because scripts/gen-review-icons.py composites it onto an ink ground and
+       the dark-ground amber step is the right one there. -->
+  <g fill="#e0a44f" stroke="#e0a44f">
+    <rect x="4.2" y="4.2" width="17.6" height="15.6" rx="1.8" fill="none" stroke-width="2.4"/>
+    <rect x="10" y="12" width="18" height="16" rx="1.8" stroke="none"/>
+  </g>
+</svg>

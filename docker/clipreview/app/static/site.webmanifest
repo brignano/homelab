@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Review",
+  "short_name": "Review",
+  "description": "Review videos and duplicate photos from the iCloud mirror.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111114",
+  "theme_color": "#111114",
+  "icons": [
+    {"src": "/icons/icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any"},
+    {"src": "/icons/icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any"},
+    {"src": "/icons/icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable"}
+  ]
+}

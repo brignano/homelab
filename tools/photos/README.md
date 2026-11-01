@@ -86,6 +86,9 @@ window gives with and without the look check, and `--max-sets N` sends only the 
 with the most photos. Requests go through `curl` when present, which uses the terminal's
 Local Network permission (a uv Python can be blocked on macOS).
 
+RAW files (NEF, CR2, DNG and so on) are never proposed for removal, and a RAW and its
+same-name JPEG are not treated as duplicates of each other.
+
 Without the page: `--exact-only [--dry-run --csv FILE]` adds only exact copies
 straight to the album. Favourites, photos in your albums, photos with a named
 person and shared-album photos are never included. Logic test:

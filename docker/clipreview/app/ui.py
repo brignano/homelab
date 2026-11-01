@@ -7,6 +7,23 @@ meaning rule: cobalt = act, forest = settled, rust = gone wrong, larch = wants
 you. Nothing here picks a hex.
 """
 
+from pathlib import Path
+
+STATIC = Path(__file__).resolve().parent / "static"
+ICON_FILES = {
+    "favicon.svg": "image/svg+xml", "favicon.ico": "image/x-icon", "favicon-32.png": "image/png",
+    "apple-touch-icon.png": "image/png", "icon-192.png": "image/png", "icon-512.png": "image/png",
+    "icon-maskable-512.png": "image/png", "site.webmanifest": "application/manifest+json",
+}
+ICON_ROUTES = {"/favicon.ico": "favicon.ico", "/apple-touch-icon.png": "apple-touch-icon.png",
+               "/apple-touch-icon-precomposed.png": "apple-touch-icon.png",
+               "/site.webmanifest": "site.webmanifest"}
+
+# The mark, inked in the identity colour (--mark): a graphic, never a control.
+LOGO = ('<svg class="logo" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">'
+        '<rect x="4.2" y="4.2" width="17.6" height="15.6" rx="1.8" fill="none" stroke="currentColor" stroke-width="2.4"/>'
+        '<rect x="10" y="12" width="18" height="16" rx="1.8" fill="currentColor"/></svg>')
+
 ASSET_TYPES = {".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
                ".txt": "text/plain; charset=utf-8"}
 
@@ -23,6 +40,9 @@ a:hover{text-decoration:underline}
 header{display:flex;gap:var(--s3);align-items:center;flex-wrap:wrap;padding:var(--s3) var(--s4);
   background:var(--card);border-bottom:1px solid var(--line)}
 header h1{font-size:var(--text-lg);margin:0;font-weight:650;letter-spacing:-.01em}
+.brand{display:inline-flex;gap:var(--s2);align-items:center;color:var(--ink);text-decoration:none}
+.brand:hover{text-decoration:none}
+.logo{color:var(--mark);flex:none}
 nav{display:flex;gap:var(--s1)}
 nav a{padding:var(--s1) var(--s3);border-radius:var(--radius-sm);color:var(--ink-soft);font-weight:500}
 nav a[aria-current]{background:var(--surface-active);color:var(--ink)}
@@ -55,17 +75,33 @@ button.on{box-shadow:inset 0 0 0 2px var(--i-ink)}
 .chip.cold{background:var(--info-surface);border-color:var(--info-line);color:var(--info-ink)}
 .warn{color:var(--danger-ink)}
 .sep{width:1px;align-self:stretch;background:var(--line);margin:0 var(--s2)}
+@media (pointer:coarse){button,select,input[type=search],nav a{min-height:44px}
+  label{min-height:44px}input[type=checkbox]{width:1.25rem;height:1.25rem}}
 @media (max-width:760px){
   header,footer{padding:var(--s2) var(--s3)}
+  header{gap:var(--s2)}
+  nav{order:3;width:100%}nav a{flex:1;text-align:center}
   main{flex-direction:column;padding:var(--s3);overflow:auto}
   button{flex:1 1 auto;justify-content:center}
-  button kbd{display:none}
+  button kbd,footer .hint,footer small.grow{display:none}
 }
+@supports (padding:max(0px)){footer{padding-bottom:max(var(--s3),env(safe-area-inset-bottom))}}
 """
 
-HEAD = ('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+HEAD = ('<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">'
+        '<meta name="theme-color" content="#111114" media="(prefers-color-scheme: dark)">'
+        '<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)">'
+        '<meta name="color-scheme" content="light dark">'
+        '<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">'
+        '<link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32">'
+        '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
+        '<link rel="manifest" href="/site.webmanifest">'
         '<link rel="stylesheet" href="/assets/design-tokens.css">'
         '<style>' + CSS + '</style>')
+
+
+def brand() -> str:
+    return '<a class="brand" href="/" aria-label="Review, home">' + LOGO + "<h1>Review</h1></a>"
 
 
 def nav(active: str) -> str:

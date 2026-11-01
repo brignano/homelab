@@ -4,7 +4,22 @@ be tested with stand-ins (tools/photos/test_dupes.py).
 """
 from __future__ import annotations
 
+from pathlib import PurePath
 from typing import Callable, Iterable
+
+RAW_EXT = {".nef", ".nrw", ".cr2", ".cr3", ".arw", ".dng", ".raf", ".orf", ".rw2", ".pef", ".srw", ".raw"}
+
+
+def is_raw(p) -> bool:
+    return bool(getattr(p, "israw", False)) or \
+        PurePath(p.original_filename or "").suffix.lower() in RAW_EXT
+
+
+def is_raw_pair(a, b) -> bool:
+    """A RAW and its JPEG: the same shot saved twice, not a duplicate."""
+    fa, fb = PurePath(a.original_filename or ""), PurePath(b.original_filename or "")
+    return fa.stem.lower() == fb.stem.lower() and fa.suffix.lower() != fb.suffix.lower() \
+        and (is_raw(a) or is_raw(b))
 
 
 def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 20.0,
@@ -20,12 +35,19 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
     `similar_seconds` of a group's FIRST shot join it (chaining would turn a
     camera fired all afternoon into one giant group), and the best is a
     favourite if there is one, else Photos' highest overall score.
-    Bursts, screenshots and videos are left to their own rules.
+    Bursts, screenshots and videos are left to their own rules. RAW files are
+    never proposed for removal, and a RAW and its same-name JPEG are not
+    duplicates of each other.
 
     same_look(best, p), if given, must also be true for a same-moment shot to
     count: time alone cannot tell a retake from a different pose seconds later.
     """
     photos = list(photos)
+    inner = protected
+
+    def protected(p):  # noqa: F811  RAW files are never proposed for removal
+        return inner(p) or ("raw file" if is_raw(p) else None)
+
     extras: dict[str, tuple] = {}
     keep_of: dict[str, str] = {}
     keeper_of: dict[str, object] = {}
@@ -73,7 +95,7 @@ def find_dupes(photos: Iterable, protected: Callable, similar_seconds: float = 2
                 continue
             best = max(g, key=rank)
             for p in g:
-                if p is not best and not protected(p) and (same_look is None or same_look(best, p)):
+                if p is not best and not protected(p) and not is_raw_pair(best, p) and (same_look is None or same_look(best, p)):
                     add(p, "similar", best)
     return extras, keep_of, keeper_of
 
