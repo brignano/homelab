@@ -257,6 +257,9 @@ jobs:
         # regenerates it and diffs. Offline — nothing is fetched.
         run: ./scripts/update-design-tokens.sh --check
 
+      - name: Actual Budget theme matches the tokens
+        run: ./scripts/gen-actual-theme.py --check
+
       - name: Every Caddyfile site has a tile
         # The Caddyfile and services.yaml are two hand-maintained lists of the
         # same thing. A dashboard that falls behind does not break — it just

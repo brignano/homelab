@@ -1,33 +1,17 @@
 /*
-  Actual Budget, wearing the shared design system (#313).
+  Actual Budget colour mapping (#313): each Actual `--color-*` variable -> a
+  @brignano/design token. This is the hand-written source; it holds no colour.
 
-  Actual themes itself from ~190 `--color-*` variables. This file points each
-  at a design token and holds no colour value of its own, so a token change in
-  @brignano/design (vendored at docker/dashboard/assets/design-tokens.css)
-  reaches the budget with the next dashboard token update.
+  Actual only accepts a bare `:root { --var: value }` block (no @import, no
+  @font-face, no other selector), so this file is NOT pasted. The generator
+  resolves it against the vendored tokens into one block per mode:
 
-  Tool tier: no display face, no motion. Dark/light follow the OS, as the
-  tokens do; Actual's own light/dark switch is not needed.
+      scripts/gen-actual-theme.py          actual-light.css, actual-dark.css
 
-  Install once, in the app: Settings -> Themes -> Custom theme, paste
-
-      @import url("/_design/actual.css");
-
-  Caddy serves /_design/* (docker/proxy/Caddyfile). Nothing sensitive in here.
+  Paste one of those instead (docker/budget/README.md). Font and focus ring
+  cannot be themed this way and stay Actual's own.
 */
-@import url("/_design/tokens.css");
-
-@font-face {
-  font-family: "Geist";
-  src: url("/_design/fonts/geist-latin-wght-normal.woff2") format("woff2");
-  font-weight: 100 900;
-  font-display: swap;
-}
-
 :root {
-  font-family: var(--sans);
-  font-variant-numeric: tabular-nums;
-
   /* page */
   --color-pageBackground: var(--bg);
   --color-pageBackgroundModalActive: var(--n-50);
@@ -301,29 +285,4 @@
   --color-tooltipText: var(--ink);
   --color-tooltipBackground: var(--card);
   --color-tooltipBorder: var(--line);
-}
-
-body,
-button,
-input,
-select,
-textarea {
-  font-family: var(--sans);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Focus is always the 2px --i-ink ring, 2px off (DESIGN.md). */
-:focus-visible {
-  outline: 2px solid var(--i-ink);
-  outline-offset: 2px;
-}
-
-/* Reduced motion renders the final state. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.001ms !important;
-    transition-duration: 0.001ms !important;
-  }
 }
