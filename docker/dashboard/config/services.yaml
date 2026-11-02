@@ -43,8 +43,8 @@
         icon: /icons/open-webui.svg
 
     - Actual Budget:
-        href: https://actual.{{HOMEPAGE_VAR_DOMAIN}}
-        siteMonitor: https://actual.{{HOMEPAGE_VAR_DOMAIN}}
+        href: https://budget.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://budget.{{HOMEPAGE_VAR_DOMAIN}}
         description: Private budget for 2027 — tailnet only, no bank sync
         icon: /icons/actual-budget.svg
 

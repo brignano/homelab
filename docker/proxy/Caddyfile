@@ -124,7 +124,7 @@ review.{$HOMELAB_DOMAIN} {
 
 # Actual Budget (docker/actual/). Joins the proxy network. Financial data: LAN +
 # tailnet only, never the tunnel, and no bank sync is configured.
-actual.{$HOMELAB_DOMAIN} {
+budget.{$HOMELAB_DOMAIN} {
 	reverse_proxy actual:5006
 }
 

@@ -4,7 +4,7 @@ services:
   # Tailnet-only, on purpose, and why that holds:
   #
   #   1. No published ports. Nothing listens on CT 100's interfaces for it.
-  #   2. Caddy reaches it over proxy_proxy at actual.$HOMELAB_DOMAIN. That name
+  #   2. Caddy reaches it over proxy_proxy at budget.$HOMELAB_DOMAIN. That name
   #      resolves to 10.0.0.201, a private address, so only a LAN or tailnet
   #      device can connect. There is no Cloudflare Tunnel route and there must
   #      not be one: this is financial data.

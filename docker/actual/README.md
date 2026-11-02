@@ -1,7 +1,7 @@
 # Actual Budget
 
 Private envelope budgeting (<https://actualbudget.org>), self-hosted, for 2027.
-`https://actual.home.brignano.io`, **LAN + tailnet only**. Issue #310.
+`https://budget.home.brignano.io`, **LAN + tailnet only**. Issue #310.
 
 - **No public route.** No Cloudflare Tunnel, no port forward, no published port.
   Caddy reaches the container over `proxy_proxy`; the name resolves to the
@@ -19,9 +19,9 @@ Private envelope budgeting (<https://actualbudget.org>), self-hosted, for 2027.
 ## First open
 
 1. From a device on the tailnet (or the LAN), open
-   `https://actual.home.brignano.io`.
+   `https://budget.home.brignano.io`.
 2. Actual asks you to **set a server password**. Generate a long one in your
-   password manager, save it there first (as `https://actual.home.brignano.io`),
+   password manager, save it there first (as `https://budget.home.brignano.io`),
    then paste it. It is stored hashed in the data volume; it is never in git
    and not in any `.env`. Do this promptly: until it is set, anyone who can
    reach the page can set it.
@@ -67,7 +67,7 @@ restored `server-files/` and `user-files/` into the volume, start it again.
 
 ```bash
 docker compose -f docker/actual/docker-compose.yml ps                       # Up
-curl -sk https://actual.home.brignano.io/health                             # {"status":"UP"}
+curl -sk https://budget.home.brignano.io/health                             # {"status":"UP"}
 ss -tlnp | grep 5006                                                        # nothing: no published port
 ```
 

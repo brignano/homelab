@@ -33,7 +33,7 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 **Steps:**
 1. `docker/actual/`: `actualbudget/actual-server` 26.11.0 pinned by tag and digest, no published ports, volume `actual_data`.
-2. Caddy site `actual.`, dashboard tile and icon, Prometheus probe of `/health`, Renovate rule.
+2. Caddy site `budget.`, dashboard tile and icon, Prometheus probe of `/health`, Renovate rule.
 3. `actual_data` added to `VOLUMES` in `scripts/offsite-backup.sh`; runbook and AGENTS.md updated.
 
 **Notes / next steps:**
