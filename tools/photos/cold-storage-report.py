@@ -130,7 +130,10 @@ def tag_photos(uuids, keyword):
     errors = []
     for u in uuids:
         try:
-            ph = lib.photos(uuid=[u])[0]
+            # photoscript returns a generator, not a list
+            ph = next(iter(lib.photos(uuid=[u])), None)
+            if ph is None:
+                raise LookupError("Photos has no photo with this id")
             kws = list(ph.keywords or [])
             if keyword in kws:
                 already += 1
