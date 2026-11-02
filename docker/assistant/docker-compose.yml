@@ -97,6 +97,11 @@ services:
       REVIEW_ENABLED: ${REVIEW_ENABLED:-false}
       REVIEW_AT: ${REVIEW_AT:-21:00}
       REVIEW_HA_ENTITIES: ${REVIEW_HA_ENTITIES:-}
+      # Weekly nudge in #ask to download bank statements and import them into
+      # Actual Budget. A fixed message, no Claude spend. Day: 0=Mon .. 6=Sun.
+      IMPORT_REMINDER_ENABLED: ${IMPORT_REMINDER_ENABLED:-true}
+      IMPORT_REMINDER_DAY: ${IMPORT_REMINDER_DAY:-6}
+      IMPORT_REMINDER_AT: ${IMPORT_REMINDER_AT:-10:00}
 
       TZ: ${TZ:-UTC}
       DIGEST_AT: ${DIGEST_AT:-07:30}

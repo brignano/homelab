@@ -37,7 +37,7 @@ from .concierge import (
     brief_failed, brief_section, defang, fact_of, footer as concierge_footer, render_proposal,
     usable_memories,
 )
-from . import followups
+from . import followups, importreminder
 from .config import Config
 from .day import (
     BRIEF_SOURCE, FOLLOWUPS_SOURCE, REVIEW_SOURCE, SOURCES as DAY_SOURCES, DayCollector,
@@ -255,12 +255,19 @@ class Assistant(discord.Client):
                 time=dt.time(hour=self.cfg.review_at[0], minute=self.cfg.review_at[1], tzinfo=self.cfg.tz)
             )
             self.evening_review.start()
+        if self.cfg.import_reminder_active:
+            self.import_reminder.change_interval(
+                time=dt.time(hour=self.cfg.import_reminder_at[0],
+                             minute=self.cfg.import_reminder_at[1], tzinfo=self.cfg.tz)
+            )
+            self.import_reminder.start()
 
     async def close(self) -> None:
         self.heartbeat.cancel()
         self.scheduled_digest.cancel()
         self.follow_ups.cancel()
         self.evening_review.cancel()
+        self.import_reminder.cancel()
         await self.queue.stop()
         if self._session is not None:
             await self._session.close()
@@ -277,6 +284,9 @@ class Assistant(discord.Client):
             log.info("morning brief active: part of the %02d:%02d digest", *self.cfg.digest_at)
         if self.cfg.followups_active:
             log.info("follow-ups active in channel %s", self.cfg.followups_channel_id)
+        if self.cfg.import_reminder_active:
+            log.info("bank import reminder: weekday %d at %02d:%02d",
+                     self.cfg.import_reminder_day, *self.cfg.import_reminder_at)
         if self.cfg.review_active:
             log.info("evening review active at %02d:%02d (%d HA entities)",
                      *self.cfg.review_at, len(self.cfg.review_ha_entities))
@@ -759,6 +769,33 @@ class Assistant(discord.Client):
 
     @follow_ups.before_loop
     async def _before_follow_ups(self) -> None:
+        await self.wait_until_ready()
+
+    # --- the weekly bank-statement import reminder (app/importreminder.py) ---
+
+    @tasks.loop(time=dt.time(hour=10))  # replaced in setup_hook
+    async def import_reminder(self) -> None:
+        """Never raises (a raising loop stops for good). Runs daily, posts on
+        IMPORT_REMINDER_DAY only."""
+        try:
+            now = dt.datetime.now(tz=self.cfg.tz)
+            if now.weekday() != self.cfg.import_reminder_day:
+                return
+            channel = self.get_channel(self.cfg.ask_channel_id)
+            if channel is None:
+                log.error("import reminder: #ask channel %s not found", self.cfg.ask_channel_id)
+                return
+            user = min(self.cfg.allowed_user_ids) if self.cfg.allowed_user_ids else None
+            await channel.send(
+                importreminder.text(now, user),
+                allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+                suppress_embeds=True,
+            )
+        except Exception:  # noqa: BLE001
+            log.exception("import reminder failed")
+
+    @import_reminder.before_loop
+    async def _before_import_reminder(self) -> None:
         await self.wait_until_ready()
 
     # --- the evening review ---

@@ -1661,6 +1661,27 @@ def _():
     assert c.review_history_enabled and c.review_ha_entities == ("sensor.a", "sensor.b")
 
 
+@check("import reminder: weekly, needs #ask, names accounts and a dated range")
+def _():
+    import datetime as dt
+    from app import importreminder
+    from app.config import Config
+    with_env()
+    c = Config.from_env()
+    assert c.import_reminder_enabled and not c.import_reminder_active, "no #ask"
+    assert c.import_reminder_day == 6 and c.import_reminder_at == (10, 0)
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             IMPORT_REMINDER_DAY="0", IMPORT_REMINDER_AT="09:15")
+    c = Config.from_env()
+    assert c.import_reminder_active and c.import_reminder_day == 0 and c.import_reminder_at == (9, 15)
+    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
+             IMPORT_REMINDER_ENABLED="false")
+    assert not Config.from_env().import_reminder_active
+    msg = importreminder.text(dt.datetime(2026, 11, 8, 10, 0), 42)
+    assert msg.startswith("<@42> ") and "Thu Oct 29" in msg and "Sun Nov 8" in msg
+    assert "Discover" in msg and "budget.home.brignano.io" in msg
+
+
 @check("ask: a follow-up in a request's thread still sees the message that opened it")
 def _():
     from types import SimpleNamespace as NS

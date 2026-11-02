@@ -69,6 +69,13 @@ def _optional_id(name: str) -> int | None:
     return int(raw)
 
 
+def _weekday(name: str, default: str) -> int:
+    raw = os.environ.get(name, "").strip() or default
+    if not (raw.isdigit() and 0 <= int(raw) <= 6):
+        raise SystemExit(f"config error: {name}={raw!r} is not 0 (Monday) to 6 (Sunday)")
+    return int(raw)
+
+
 def _hhmm(name: str, default: str) -> tuple[int, int]:
     raw = os.environ.get(name, "").strip() or default
     try:
@@ -280,6 +287,13 @@ class Config:
     # (REVIEW_ENABLED=true), like the brief: Claude spend nobody asked for.
     review_enabled: bool = False
     review_at: tuple[int, int] = (21, 0)
+    # The weekly nudge to download bank statements and import them into Actual
+    # Budget (app/importreminder.py): a fixed message in #ask, no Claude spend.
+    # On by default whenever #ask is configured; IMPORT_REMINDER_ENABLED=false
+    # turns it off. IMPORT_REMINDER_DAY is 0=Monday .. 6=Sunday.
+    import_reminder_enabled: bool = True
+    import_reminder_day: int = 6
+    import_reminder_at: tuple[int, int] = (10, 0)
     # Home Assistant entities whose last 24h of history the review reads
     # (Tesla charging, a litter box), with the digest's HA_TOKEN. GET only.
     review_ha_entities: tuple[str, ...] = ()
@@ -362,6 +376,9 @@ class Config:
             brief_enabled=os.environ.get("BRIEF_ENABLED", "false").lower() == "true",
             review_enabled=os.environ.get("REVIEW_ENABLED", "false").lower() == "true",
             review_at=_hhmm("REVIEW_AT", "21:00"),
+            import_reminder_enabled=os.environ.get("IMPORT_REMINDER_ENABLED", "true").lower() != "false",
+            import_reminder_day=_weekday("IMPORT_REMINDER_DAY", "6"),
+            import_reminder_at=_hhmm("IMPORT_REMINDER_AT", "10:00"),
             review_ha_entities=_list("REVIEW_HA_ENTITIES", ""),
         )
 
@@ -372,6 +389,10 @@ class Config:
     @property
     def followups_active(self) -> bool:
         return self.ask_enabled and self.followups_channel_id is not None
+
+    @property
+    def import_reminder_active(self) -> bool:
+        return self.import_reminder_enabled and self.ask_enabled
 
     @property
     def review_active(self) -> bool:
