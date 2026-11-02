@@ -30,7 +30,8 @@ With --check URL it also asks the review server whether each cold photo's
 original is in the mirror (same name, same size; the Hidden mirror counts), and
 prints the counts. --save-manifest stores the confirmed photos' people, albums,
 dates and place on the drive. --album NAME then adds only the confirmed ones to
-that Photos album. You review the album and delete in Photos yourself; this
+that Photos album; Photos refuses Hidden-album photos, so --tag KEYWORD marks
+those with a keyword you can search in Photos > Hidden instead. You review the album and delete in Photos yourself; this
 script never deletes, never empties Recently Deleted, never touches iCloud.
 """
 import argparse
@@ -119,6 +120,32 @@ def to_album(photos, album):
     # hidden ones that are already there; Photos may report those as refused.
 
 
+def tag_photos(uuids, keyword):
+    """Photos will not add Hidden-album photos to an album from a script, so give
+    them a keyword instead: open Photos > Hidden, search the keyword, Cmd-A.
+    Keeps the keywords a photo already has. Never removes anything."""
+    import photoscript
+    lib = photoscript.PhotosLibrary()
+    done = already = failed = 0
+    errors = []
+    for u in uuids:
+        try:
+            ph = lib.photos(uuid=[u])[0]
+            kws = list(ph.keywords or [])
+            if keyword in kws:
+                already += 1
+                continue
+            ph.keywords = kws + [keyword]
+            done += 1
+        except Exception as e:
+            failed += 1
+            if len(errors) < 3:
+                errors.append("%s: %s" % (u, repr(e)[:300]))
+    print("keyword %r: tagged %d, already tagged %d, failed %d" % (keyword, done, already, failed))
+    for e in errors:
+        print("  " + e)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--cold", action="append", default=[], help="name in Photos to move to cold storage (repeatable)")
@@ -133,6 +160,9 @@ def main():
                     help="with --check: store the confirmed photos' people/albums/dates on the drive")
     ap.add_argument("--album", metavar="NAME",
                     help="with --check: add the confirmed photos to this Photos album (e.g. 'Cold storage')")
+    ap.add_argument("--tag", metavar="KEYWORD",
+                    help="with --check: also give the confirmed HIDDEN photos this keyword (Photos refuses to "
+                         "put them in an album); then search it in Photos > Hidden")
     ap.add_argument("--csv", help="write one row per cold/mixed photo to this file")
     args = ap.parse_args()
     db = osxphotos.PhotosDB()
@@ -202,8 +232,12 @@ def main():
         if res.get("manifest"):
             print("manifest saved on the drive: %s" % res["manifest"])
         if args.album:
-            ok = [m["uuid"] for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
-            to_album(ok, args.album)
+            ok = [m for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
+            to_album([m["uuid"] for m in ok if not m["hidden"]], args.album)
+            if args.tag:
+                tag_photos([m["uuid"] for m in ok if m["hidden"]], args.tag)
+            else:
+                print("(hidden photos are not added to the album; use --tag cold-storage to mark them)")
         else:
             print("(no --album given: nothing added to Photos)")
 
