@@ -82,6 +82,22 @@ def mirror_state(member: dict, root: Path = None) -> str:
     return "size" if named else "missing"
 
 
+def mirror_state_any(member: dict) -> str:
+    """mirror_state, then the hidden mirror (/photos-hidden). ok-hidden: the
+    original is in the hidden mirror with exactly this name and size."""
+    st = mirror_state(member)
+    if st == "ok":
+        return st
+    h = mirror_state(member, HIDDEN)
+    if h == "ok":
+        return "ok-hidden"
+    return h if st == "missing" else st
+
+
+def confirmed(state: str) -> bool:
+    return state in ("ok", "ok-hidden")
+
+
 # --- storage ------------------------------------------------------------------
 
 def load_sets():
@@ -243,14 +259,14 @@ def view() -> dict:
     for s in load_sets()["sets"]:
         ms = []
         for m in s["members"]:
-            ms.append(dict(m, mirror=mirror_state(m), thumb=thumb_path(m["uuid"]) is not None))
+            ms.append(dict(m, mirror=mirror_state_any(m), thumb=thumb_path(m["uuid"]) is not None))
         d = decisions.get(s["id"], "")
         conf, why = assess(s["kind"], ms)
         out.append({"id": s["id"], "kind": s["kind"], "members": ms, "decision": d,
                     "confidence": conf, "why": why,
                     # safe to accept without looking: high confidence and, for a
                     # similar shot, every original confirmed in the mirror
-                    "auto_ok": conf == "high" and (s["kind"] == "exact" or all(m["mirror"] == "ok" for m in ms))})
+                    "auto_ok": conf == "high" and (s["kind"] == "exact" or all(confirmed(m["mirror"]) for m in ms))})
     # exact copies first (safe), then similar by date of the first member.
     out.sort(key=lambda s: (s["kind"] != "exact", min(m["date"] for m in s["members"])))
     return {"sets": out, "report": report(out, decisions)}
@@ -273,7 +289,7 @@ def accepted() -> dict:
             if m["uuid"] in keepers:
                 continue
             needs_mirror = s["kind"] == "similar" or kind == "none"
-            if needs_mirror and m["mirror"] != "ok":
+            if needs_mirror and not confirmed(m["mirror"]):
                 skipped.append({"uuid": m["uuid"], "filename": m["filename"],
                                 "reason": "original not confirmed in the mirror (%s)" % m["mirror"]})
             else:

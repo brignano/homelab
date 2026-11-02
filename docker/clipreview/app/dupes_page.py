@@ -106,7 +106,7 @@ function show(){
     c.innerHTML=(m.thumb?`<img src="/dupes/thumb/${m.uuid}">`:'<div class="nothumb">no thumbnail</div>')+
      `<div class="info"><span class="badge">${role==='keep'?'KEEP':'REMOVE'}</span>${n+1}/${s.members.length} · ${m.filename}<br>`+
      `<small>${m.date.replace('T',' ').slice(0,19)} · ${(m.bytes/1e6).toFixed(1)} MB`+(m.score==null?'':` · score ${m.score.toFixed(2)}`)+`</small><br>`+
-     (m.mirror==='ok'?'<small>✓ original in the mirror</small>':
+     (m.mirror==='ok'?'<small>✓ original in the mirror</small>':m.mirror==='ok-hidden'?'<small>✓ original in the hidden mirror</small>':
       `<small class="${s.kind==='similar'?'warn':''}">✗ ${m.mirror==='size'?'in the mirror, but a different size':'not in the mirror'}`+(s.kind==='similar'?' (will not be accepted)':'')+`</small>`)+
      `<br><button class="also" data-u="${m.uuid}">${role==='keep'?'Kept · tap to remove':'Also keep'}</button></div>`;
     main.appendChild(c);
