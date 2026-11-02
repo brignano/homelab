@@ -1022,6 +1022,39 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- The HEIC preview job stopped running ---
+      #
+      # Stands in for a Healthchecks switch (see photos-previews.sh): no success
+      # for 3 days means the cron entry, the media drive or the job itself is
+      # broken. noDataState OK: the metric only exists once the previews folder does.
+      - uid: hl-photos-previews-stale
+        title: HEIC preview job not running
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "No successful HEIC preview run for over 3 days; see /var/log/photos-previews.log on CT 100, then run ./scripts/photos-previews.sh"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_photos_previews_timestamp_seconds) / 86400
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [3] }
+
       # --- The backup drive is filling ---
       #
       # The nightly vzdump keeps a fixed number of archives (prune-backups on
