@@ -30,7 +30,8 @@ With --check URL it also asks the review server whether each cold photo's
 original is in the mirror (same name, same size; the Hidden mirror counts), and
 prints the counts. --save-manifest stores the confirmed photos' people, albums,
 dates and place on the drive. --album NAME then adds only the confirmed ones to
-that Photos album. You review the album and delete in Photos yourself; this
+that Photos album; Photos refuses Hidden-album photos, so --tag KEYWORD marks
+those with a keyword you can search in Photos > Hidden instead. You review the album and delete in Photos yourself; this
 script never deletes, never empties Recently Deleted, never touches iCloud.
 """
 import argparse
@@ -91,22 +92,58 @@ def to_album(photos, album):
     have = {p.uuid for p in alb.photos()}
     new = [u for u in photos if u not in have]
     added = refused = 0
+    first_error = []
     # Batches: adding one by one makes Photos jump to the front each time.
     for i in range(0, len(new), 200):
         batch = new[i:i + 200]
         try:
             alb.add(lib.photos(uuid=batch))
             added += len(batch)
-        except Exception:
+        except Exception as e:
             # Photos refuses a whole batch if one id is gone or hidden; go one by one.
+            first_error.append(repr(e)[:300])
             for u in batch:
                 try:
                     alb.add(lib.photos(uuid=[u]))
                     added += 1
-                except Exception:
+                except Exception as e2:
                     refused += 1
+                    if len(first_error) < 3:
+                        first_error.append("%s: %s" % (u, repr(e2)[:300]))
     print("album %r: added %d, already there %d, refused by Photos %d (hidden photos are often refused)"
           % (album, added, len(have & set(photos)), refused))
+    if first_error:
+        print("first errors from Photos:")
+        for e in first_error:
+            print("  " + e)
+    # photoscript cannot list hidden photos in an album, so a re-run re-adds
+    # hidden ones that are already there; Photos may report those as refused.
+
+
+def tag_photos(uuids, keyword):
+    """Photos will not add Hidden-album photos to an album from a script, so give
+    them a keyword instead: open Photos > Hidden, search the keyword, Cmd-A.
+    Keeps the keywords a photo already has. Never removes anything."""
+    import photoscript
+    lib = photoscript.PhotosLibrary()
+    done = already = failed = 0
+    errors = []
+    for u in uuids:
+        try:
+            ph = lib.photos(uuid=[u])[0]
+            kws = list(ph.keywords or [])
+            if keyword in kws:
+                already += 1
+                continue
+            ph.keywords = kws + [keyword]
+            done += 1
+        except Exception as e:
+            failed += 1
+            if len(errors) < 3:
+                errors.append("%s: %s" % (u, repr(e)[:300]))
+    print("keyword %r: tagged %d, already tagged %d, failed %d" % (keyword, done, already, failed))
+    for e in errors:
+        print("  " + e)
 
 
 def main():
@@ -123,6 +160,9 @@ def main():
                     help="with --check: store the confirmed photos' people/albums/dates on the drive")
     ap.add_argument("--album", metavar="NAME",
                     help="with --check: add the confirmed photos to this Photos album (e.g. 'Cold storage')")
+    ap.add_argument("--tag", metavar="KEYWORD",
+                    help="with --check: also give the confirmed HIDDEN photos this keyword (Photos refuses to "
+                         "put them in an album); then search it in Photos > Hidden")
     ap.add_argument("--csv", help="write one row per cold/mixed photo to this file")
     args = ap.parse_args()
     db = osxphotos.PhotosDB()
@@ -192,8 +232,12 @@ def main():
         if res.get("manifest"):
             print("manifest saved on the drive: %s" % res["manifest"])
         if args.album:
-            ok = [m["uuid"] for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
-            to_album(ok, args.album)
+            ok = [m for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
+            to_album([m["uuid"] for m in ok if not m["hidden"]], args.album)
+            if args.tag:
+                tag_photos([m["uuid"] for m in ok if m["hidden"]], args.tag)
+            else:
+                print("(hidden photos are not added to the album; use --tag cold-storage to mark them)")
         else:
             print("(no --album given: nothing added to Photos)")
 
