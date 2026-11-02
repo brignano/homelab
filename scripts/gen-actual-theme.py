@@ -70,6 +70,17 @@ def resolve(value, toks, mode):
         if len(args) != 2:
             sys.exit(f"gen-actual-theme: bad light-dark() in {value}")
         value = value[:i] + args[0 if mode == "light" else 1] + value[j:]
+    # color-mix(in srgb, #hex P%, transparent) -> #rrggbbaa. Actual's validator
+    # allows only simple values (colours, lengths, keywords, var()), no functions.
+    def flatten(m):
+        alpha = round(int(m.group(2)) * 255 / 100)
+        return f"{m.group(1)}{alpha:02x}"
+
+    value = re.sub(
+        r"color-mix\(in srgb,\s*(#[0-9a-fA-F]{6})\s+(\d+)%,\s*transparent\)", flatten, value
+    )
+    if "(" in value:
+        sys.exit(f"gen-actual-theme: function left in {value!r}; Actual allows only simple values")
     return value
 
 
