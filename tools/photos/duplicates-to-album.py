@@ -19,6 +19,9 @@ Run on the Mac whose Photos app holds the library. Three steps:
   3. uv run tools/photos/duplicates-to-album.py --from-review https://review.YOUR_DOMAIN
        Adds what you accepted to the album "Duplicates to delete". Then in
        Photos: open the album, Cmd-A, Delete.
+       Photos refuses to album HIDDEN photos. Add --tag dup-remove to give the
+       accepted hidden ones a keyword instead: in Photos > Hidden, search
+       "dup-remove", review, Cmd-A, Delete. Nothing is unhidden.
 
 Without the review page:
 
@@ -172,6 +175,10 @@ def main(argv=None) -> int:
     ap.add_argument("--from-review", metavar="URL", help="add what you accepted on the review page to the album")
     ap.add_argument("--exact-only", action="store_true", help="no review page: add exact extra copies only")
     ap.add_argument("--album", default="Duplicates to delete")
+    ap.add_argument("--tag", metavar="KEYWORD",
+                    help="with --from-review: Photos refuses to album HIDDEN photos, so give the accepted "
+                         "hidden ones this keyword instead (e.g. dup-remove). Then open Photos > Hidden, "
+                         "search the keyword, review, Cmd-A, Delete. Nothing is unhidden or removed.")
     ap.add_argument("--similar-seconds", type=float, default=20.0)
     ap.add_argument("--look-distance", type=int, default=10)
     ap.add_argument("--sweep", action="store_true")
@@ -190,7 +197,7 @@ def main(argv=None) -> int:
 
     if args.from_review:
         res = json.loads(http(args.from_review.rstrip("/") + "/api/dupes/accepted.json"))
-        uuids, skipped, gone = [], 0, 0
+        uuids, hidden, skipped, gone = [], [], 0, 0
         for u in res["uuids"]:
             p = db.get_photo(u)
             if p is None:
@@ -199,6 +206,8 @@ def main(argv=None) -> int:
                 gone += 1   # already deleted (Recently Deleted): nothing to add, and Photos rejects its id
             elif p.favorite:
                 print("skipped (favourite now): %s" % p.original_filename)
+            elif p.hidden and args.tag:
+                hidden.append(u)
             else:
                 uuids.append(u)
         for s in res["skipped"]:
@@ -207,6 +216,12 @@ def main(argv=None) -> int:
         print("%d accepted, %d held back, %d sets kept whole" % (len(uuids), skipped, res["kept_all_sets"]))
         if gone:
             print("%d accepted photos are already in Recently Deleted; left alone" % gone)
+        if hidden:
+            print("%d accepted photos are hidden; tagging them %r instead of adding them to the album" % (len(hidden), args.tag))
+            if args.dry_run:
+                print("Dry run: nothing changed.")
+            else:
+                tag_photos(hidden, args.tag)
         return to_album(uuids, args)
 
     photos = [p for p in db.photos() if not p.shared and not getattr(p, "syndicated", False)]
@@ -293,6 +308,36 @@ def main(argv=None) -> int:
         print("Dry run: nothing changed.")
         return 0
     return to_album(exact, args)
+
+
+def tag_photos(uuids, keyword) -> None:
+    """Give hidden photos a keyword (Photos refuses to album them). Keeps the
+    keywords a photo already has; a re-run skips the ones already tagged."""
+    print("tagging %d hidden photos one at a time; Photos is slow here (Ctrl-C is safe)" % len(uuids), flush=True)
+    import photoscript
+    lib = photoscript.PhotosLibrary()
+    done = already = failed = 0
+    errors = []
+    for i, u in enumerate(uuids, 1):
+        if i % 50 == 0:
+            print("  %d/%d (tagged %d, already %d, failed %d)" % (i, len(uuids), done, already, failed), flush=True)
+        try:
+            ph = next(iter(lib.photos(uuid=[u])), None)  # photoscript returns a generator
+            if ph is None:
+                raise LookupError("Photos has no photo with this id")
+            kws = list(ph.keywords or [])
+            if keyword in kws:
+                already += 1
+                continue
+            ph.keywords = kws + [keyword]
+            done += 1
+        except Exception as e:
+            failed += 1
+            if len(errors) < 3:
+                errors.append("%s: %s" % (u, repr(e)[:300]))
+    print("keyword %r: tagged %d, already tagged %d, failed %d" % (keyword, done, already, failed))
+    for e in errors:
+        print("  " + e)
 
 
 def to_album(uuids, args) -> int:
