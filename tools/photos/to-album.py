@@ -78,6 +78,8 @@ def main() -> int:
     if args.dry_run or not found:
         return 0
 
+    import photos_bg
+    photos_bg.launch_hidden()  # start Photos without taking focus
     import photoscript
     lib = photoscript.PhotosLibrary()
     album = lib.album(args.album) or lib.create_album(args.album)
@@ -87,6 +89,7 @@ def main() -> int:
         album.add(lib.photos(uuid=new))
     print("album '%s': added %d, already there %d. Open it in Photos, Cmd-A, Delete."
           % (args.album, len(new), len(found) - len(new)))
+    photos_bg.hide()
     return 0
 
 
