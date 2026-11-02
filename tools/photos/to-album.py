@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["osxphotos>=0.70"]
+# dependencies = ["osxphotos>=0.70", "certifi"]
 # ///
 """Put the clip review page's removal candidates into one Photos album.
 
@@ -28,6 +28,7 @@ import argparse
 import csv
 import io
 import sys
+import ssl
 import urllib.request
 from pathlib import Path
 
@@ -46,7 +47,11 @@ def main() -> int:
         args.album = "Videos to move to cold storage" if args.set == "cold" else "Climb clips to delete"
     query = "?set=cold" if args.set == "cold" else ("?include=claude" if args.include_claude else "")
     url = args.url.rstrip("/") + "/export.csv" + query
-    with urllib.request.urlopen(url, timeout=30) as r:
+    # python.org's macOS Python ships no CA bundle ("unable to get local issuer
+    # certificate"), so use certifi's rather than ask for Install Certificates.
+    import certifi
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    with urllib.request.urlopen(url, timeout=30, context=ctx) as r:
         rows = list(csv.DictReader(io.StringIO(r.read().decode())))
     stems = {Path(r["file"]).stem: r["file"] for r in rows}
     print("%d candidates from %s" % (len(stems), url))
