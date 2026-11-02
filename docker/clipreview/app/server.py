@@ -714,7 +714,10 @@ function fit(){
 function show(){
   const done=all.filter(c=>DONE.includes(c.label)).length;
   const waiting=all.filter(c=>!c.present&&c.kind==='climb').length;
-  $('count').textContent=`${list.length?i+1:0}/${list.length} · ${done}/${all.length} decided`+(waiting?` · ${waiting} not on the drive yet`:'');
+  // "left" is what still needs a decision on the drive; "decided" includes videos already
+  // moved to cold storage, which stay in the mirror, so the total never shrinks.
+  const left=all.filter(c=>c.present&&!DONE.includes(c.label)).length;
+  $('count').textContent=`${list.length?i+1:0} of ${list.length} in view · ${left} left · ${done} decided`+(waiting?` · ${waiting} not on the drive yet`:'');
   const c=list[i];
   $('undo').disabled=!undo; $('clear').disabled=!(c&&(c.label||c.notclimb));
   stage.hidden=!c; $('empty').hidden=!!c;
