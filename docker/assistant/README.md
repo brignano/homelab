@@ -459,6 +459,16 @@ it: a second scheduled digest goes inside it, the review opens it if the
 digest hasn't, and `/digest` run in `#digest` posts into it too. `#digest`
 itself stays bot-only; only its threads are answered.
 
+### The bank-statement import reminder
+
+Actual Budget has no bank sync, by design, so transactions arrive only when you
+download and import them. Every **Sunday at 10:00** (`IMPORT_REMINDER_DAY`,
+`IMPORT_REMINDER_AT`) the bot pings you in #ask with the accounts to download
+(Bank of America checking and savings, Discover; edit `ACCOUNTS` in
+`app/importreminder.py`) and the date range: ten days back, so a skipped week or
+a late-posting transaction is still covered. Fixed text, no Claude call, no
+spend. On whenever #ask is configured; `IMPORT_REMINDER_ENABLED=false` turns it off.
+
 ### The evening review
 
 Once a day at `REVIEW_AT` (21:00), the bot gathers the day: the `#ask`
