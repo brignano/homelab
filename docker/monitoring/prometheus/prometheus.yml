@@ -132,6 +132,11 @@ scrape_configs:
           - http://cleanuparr:11011/health
         labels:
           service: cleanuparr
+      # Actual Budget's /health answers {"status":"UP"} 200 without a login.
+      - targets:
+          - http://actual:5006/health
+        labels:
+          service: actual
       # FlareSolverr's /health answers {"status":"ok"} 200 without starting a
       # browser, so the probe costs nothing.
       - targets:

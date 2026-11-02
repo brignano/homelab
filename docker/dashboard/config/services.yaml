@@ -42,6 +42,12 @@
         description: Local model chat — slow by design, prefer Otto in Discord
         icon: /icons/open-webui.svg
 
+    - Actual Budget:
+        href: https://actual.{{HOMEPAGE_VAR_DOMAIN}}
+        siteMonitor: https://actual.{{HOMEPAGE_VAR_DOMAIN}}
+        description: Private budget for 2027 — tailnet only, no bank sync
+        icon: /icons/actual-budget.svg
+
 # Jellyfin is in Everyday because it is what gets watched; these are the
 # machinery that fills it.
 - Media:
