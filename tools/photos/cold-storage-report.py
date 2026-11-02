@@ -91,22 +91,32 @@ def to_album(photos, album):
     have = {p.uuid for p in alb.photos()}
     new = [u for u in photos if u not in have]
     added = refused = 0
+    first_error = []
     # Batches: adding one by one makes Photos jump to the front each time.
     for i in range(0, len(new), 200):
         batch = new[i:i + 200]
         try:
             alb.add(lib.photos(uuid=batch))
             added += len(batch)
-        except Exception:
+        except Exception as e:
             # Photos refuses a whole batch if one id is gone or hidden; go one by one.
+            first_error.append(repr(e)[:300])
             for u in batch:
                 try:
                     alb.add(lib.photos(uuid=[u]))
                     added += 1
-                except Exception:
+                except Exception as e2:
                     refused += 1
+                    if len(first_error) < 3:
+                        first_error.append("%s: %s" % (u, repr(e2)[:300]))
     print("album %r: added %d, already there %d, refused by Photos %d (hidden photos are often refused)"
           % (album, added, len(have & set(photos)), refused))
+    if first_error:
+        print("first errors from Photos:")
+        for e in first_error:
+            print("  " + e)
+    # photoscript cannot list hidden photos in an album, so a re-run re-adds
+    # hidden ones that are already there; Photos may report those as refused.
 
 
 def main():
