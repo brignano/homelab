@@ -238,15 +238,13 @@ def main():
             print("  %-8s %s" % ("hidden" if hidden else "library", dict(c)))
         if res.get("manifest"):
             print("manifest saved on the drive: %s" % res["manifest"])
+        ok = [m for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
         if args.album:
-            ok = [m for m in members if res["states"].get(m["uuid"]) in ("ok", "ok-hidden")]
             to_album([m["uuid"] for m in ok if not m["hidden"]], args.album)
-            if args.tag:
-                tag_photos([m["uuid"] for m in ok if m["hidden"]], args.tag)
-            else:
-                print("(hidden photos are not added to the album; use --tag cold-storage to mark them)")
-        else:
-            print("(no --album given: nothing added to Photos)")
+        if args.tag:
+            tag_photos([m["uuid"] for m in ok if m["hidden"]], args.tag)
+        if not args.album and not args.tag:
+            print("(no --album or --tag given: nothing changed in Photos)")
 
     if args.csv:
         with open(args.csv, "w", newline="") as f:
