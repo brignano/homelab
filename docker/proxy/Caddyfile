@@ -16,6 +16,15 @@
 	# Solve DNS-01 with the Cloudflare API. The token needs exactly one
 	# permission: Zone → DNS → Edit, scoped to this zone. See docker/proxy/.env.
 	acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}
+
+	# HTTP/1.1 and HTTP/2 only. Caddy advertises h3 via `alt-svc` by default,
+	# but compose publishes 443/tcp only, so UDP 443 never reaches it. A phone
+	# that has cached the advert tries QUIC first and waits for it to time out
+	# on later visits, which looked like Cleanuparr going dark for ~20s after
+	# a good first load (2026-11-02). Nothing here needs h3.
+	servers {
+		protocols h1 h2
+	}
 }
 
 # ── Services ────────────────────────────────────────────────────────────────
