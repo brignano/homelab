@@ -618,6 +618,10 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
   <option value="">Any suggestion</option><option value="keep">Suggested: keep</option>
   <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
   <option value="look">Needs a look</option><option value="none">Not triaged</option></select>
+ <select id="cat" aria-label="What it shows">
+  <option value="">Any category</option><option value="climbing">Climbing</option><option value="people">People</option>
+  <option value="pet">Pets</option><option value="travel">Travel</option><option value="event">Events</option>
+  <option value="screen">Screen recordings</option><option value="other">Other</option></select>
  __MF__
  <label><input type="checkbox" id="hide" checked> hide decided <small id="hidemode" class="muted"></small></label>
  <span id="count"></span>
@@ -671,8 +675,9 @@ async function load(keepId){
   MF.set(all.filter(c=>c.present).map(c=>c.month)); refilter(keepId);
 }
 function refilter(keepId){
-  const hide=$('hide').checked, view=$('view').value, sug=$('sug').value;
+  const hide=$('hide').checked, view=$('view').value, sug=$('sug').value, cat=$('cat').value;
   list=all.filter(c=>c.present&&MF.match(c.month)&&sugOk(c,sug)
+    &&(!cat||(c.kind==='video'&&c.tri&&c.tri.category===cat))
     &&(view==='all'||view===c.kind||(view==='dupes'&&c.dupes.length))
     &&(!hide||!DONE.includes(c.label)||c.id===keepId));
   i=Math.max(0,list.findIndex(c=>c.id===keepId)); show();
@@ -728,7 +733,7 @@ function show(){
   document.body.dataset.kind=c.kind;
   $('name').textContent=c.name;
   $('meta').textContent=`${c.file} · ${mb(c.size)}`;
-  $('kindchip').textContent=c.kind==='climb'?'Climbing clip':c.notclimb?'Video (not climbing)':'Video';
+  $('kindchip').textContent=c.kind==='climb'?'Climbing clip':(c.tri?c.tri.category[0].toUpperCase()+c.tri.category.slice(1):'')+(c.notclimb?' (you said not climbing)':'')||'Video';
   $('verdict').textContent=c.claude||'–'; $('verdict').className='chip '+c.claude;
   $('conf').textContent=c.conf==null?'':`confidence ${c.conf.toFixed(2)}`;
   $('why').textContent=c.why;
@@ -785,7 +790,7 @@ document.querySelectorAll('[data-l]').forEach(b=>b.onclick=()=>label(b.dataset.l
 $('prev').onclick=()=>go(-1);$('next').onclick=()=>go(1);$('undo').onclick=doUndo;$('clear').onclick=doClear;
 $('rot').onclick=()=>{rot=(rot+90)%360;fit()};
 $('bkeep').onclick=()=>accept('keep');$('bcold').onclick=()=>accept('cold');
-for(const id of ['hide','view','sug'])$(id).onchange=()=>refilter();
+for(const id of ['hide','view','sug','cat'])$(id).onchange=()=>refilter();
 MF.cb=()=>refilter();
 addEventListener('keydown',e=>{
   if(e.target.tagName==='SELECT'||e.target.closest('#mf')||e.metaKey||e.ctrlKey)return;
