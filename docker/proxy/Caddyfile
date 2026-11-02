@@ -125,7 +125,28 @@ review.{$HOMELAB_DOMAIN} {
 # Actual Budget (docker/budget/). Joins the proxy network. Financial data: LAN +
 # tailnet only, never the tunnel, and no bank sync is configured.
 budget.{$HOMELAB_DOMAIN} {
-	reverse_proxy budget:5006
+	# The design-system theme for Actual (docker/budget/theme/). Actual's custom
+	# theme box takes one pasted line, `@import url("/_design/actual.css");`, and
+	# this serves what it imports, so a repo change reaches the app on the next
+	# pull with nothing to re-paste. Tokens and font are the dashboard's own
+	# vendored copies (one source), mounted read-only in docker-compose.yml.
+	handle /_design/actual.css {
+		root * /srv/budget-theme
+		rewrite * /actual.css
+		file_server
+	}
+	handle /_design/tokens.css {
+		root * /srv/design
+		rewrite * /design-tokens.css
+		file_server
+	}
+	handle_path /_design/fonts/* {
+		root * /srv/design/fonts
+		file_server
+	}
+	handle {
+		reverse_proxy budget:5006
+	}
 }
 
 # Open WebUI — AI chat (container listens on 8080)

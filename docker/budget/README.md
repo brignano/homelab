@@ -39,6 +39,25 @@ Download CSV, OFX or QFX from your bank, then in the account's page choose
 column mapping and the preview, and confirm. Re-importing the same file is safe:
 Actual skips transactions it has already seen.
 
+## Look and feel
+
+Styled with [`@brignano/design`](https://github.com/brignano/design) (tool tier):
+`theme/actual.css` maps each of Actual's `--color-*` variables to a design token
+and holds no colour of its own, so light and dark follow the OS and a token
+update reaches the budget with the dashboard's (`docker/dashboard/assets/`).
+
+Caddy serves it at `https://budget.home.brignano.io/_design/actual.css`. Install
+it once per browser: *Settings → Themes → Custom theme*, paste
+
+```css
+@import url("/_design/actual.css");
+```
+
+and pick the custom theme. After that, repo changes show up on reload with
+nothing to re-paste. If the page ever looks like stock Actual, open
+`/_design/actual.css` directly: a 404 means the proxy stack was not recreated
+after the pull (`docker compose up -d caddy` in `docker/proxy/`).
+
 ## Backups and restore
 
 - **Local:** the nightly `vzdump` of CT 100 includes the volume.

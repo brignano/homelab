@@ -9,6 +9,10 @@ services:
       - "443:443"            # HTTPS for kali.home (Selkies desktop needs a secure context)
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Actual Budget's theme and the design tokens/font it imports, served by
+      # the budget site under /_design/ (see the Caddyfile). Read-only.
+      - ../budget/theme:/srv/budget-theme:ro
+      - ../dashboard/assets:/srv/design:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:

@@ -1,0 +1,329 @@
+/*
+  Actual Budget, wearing the shared design system (#313).
+
+  Actual themes itself from ~190 `--color-*` variables. This file points each
+  at a design token and holds no colour value of its own, so a token change in
+  @brignano/design (vendored at docker/dashboard/assets/design-tokens.css)
+  reaches the budget with the next dashboard token update.
+
+  Tool tier: no display face, no motion. Dark/light follow the OS, as the
+  tokens do; Actual's own light/dark switch is not needed.
+
+  Install once, in the app: Settings -> Themes -> Custom theme, paste
+
+      @import url("/_design/actual.css");
+
+  Caddy serves /_design/* (docker/proxy/Caddyfile). Nothing sensitive in here.
+*/
+@import url("/_design/tokens.css");
+
+@font-face {
+  font-family: "Geist";
+  src: url("/_design/fonts/geist-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+
+  /* page */
+  --color-pageBackground: var(--bg);
+  --color-pageBackgroundModalActive: var(--n-50);
+  --color-pageBackgroundTopLeft: var(--bg);
+  --color-pageBackgroundBottomRight: var(--bg);
+  --color-pageBackgroundLineTop: var(--line);
+  --color-pageBackgroundLineMid: var(--line);
+  --color-pageBackgroundLineBottom: var(--line);
+  --color-pageText: var(--ink);
+  --color-pageTextLight: var(--ink-soft);
+  --color-pageTextSubdued: var(--slate);
+  --color-pageTextDark: var(--ink);
+  --color-pageTextPositive: var(--success-ink);
+  --color-pageTextLink: var(--i-ink);
+  --color-pageTextLinkLight: var(--i-ink);
+
+  /* numbers: success = settled, danger = broke; zero is neutral */
+  --color-numberPositive: var(--success-ink);
+  --color-numberNegative: var(--danger-ink);
+  --color-numberNeutral: var(--slate);
+  --color-budgetNumberPositive: var(--success-ink);
+  --color-budgetNumberNegative: var(--danger-ink);
+  --color-budgetNumberNeutral: var(--ink-soft);
+  --color-budgetNumberZero: var(--slate);
+  --color-toBudgetPositive: var(--success-ink);
+  --color-toBudgetZero: var(--slate);
+  --color-toBudgetNegative: var(--danger-ink);
+  --color-templateNumberFunded: var(--success-ink);
+  --color-templateNumberUnderFunded: var(--attention-ink);
+  --color-reportsNumberPositive: var(--success-ink);
+  --color-reportsNumberNegative: var(--danger-ink);
+  --color-reportsNumberNeutral: var(--ink-soft);
+
+  /* cards */
+  --color-cardBackground: var(--card);
+  --color-cardBorder: var(--line);
+  --color-cardShadow: var(--line-strong);
+
+  /* tables */
+  --color-tableBackground: var(--card);
+  --color-tableRowBackgroundHover: var(--surface-hover);
+  --color-tableText: var(--ink);
+  --color-tableTextItemAdded: var(--success-ink);
+  --color-tableTextLight: var(--ink-soft);
+  --color-tableTextSubdued: var(--slate);
+  --color-tableTextSelected: var(--on-i);
+  --color-tableTextHover: var(--ink);
+  --color-tableTextInactive: var(--n-500);
+  --color-tableHeaderText: var(--slate);
+  --color-tableHeaderBackground: var(--n-25);
+  --color-tableBorder: var(--line);
+  --color-tableBorderSelected: var(--i);
+  --color-tableBorderHover: var(--line-strong);
+  --color-tableBorderSeparator: var(--line-strong);
+  --color-tableRowBackgroundHighlight: var(--i);
+  --color-tableRowBackgroundHighlightText: var(--on-i);
+  --color-tableRowBackgroundAlternate: var(--n-25);
+  --color-tableRowHeaderBackground: var(--n-25);
+  --color-tableRowHeaderText: var(--ink-soft);
+
+  /* sidebar */
+  --color-sidebarBackground: var(--n-50);
+  --color-sidebarItemBackgroundPending: var(--attention-surface);
+  --color-sidebarItemBackgroundPositive: var(--success-surface);
+  --color-sidebarItemBackgroundFailed: var(--danger-surface);
+  --color-sidebarItemAccentSelected: var(--i);
+  --color-sidebarItemBackgroundHover: var(--surface-hover);
+  --color-sidebarItemText: var(--ink-soft);
+  --color-sidebarItemTextUpdated: var(--attention-ink);
+  --color-sidebarItemTextSelected: var(--ink);
+  --color-sidebarBudgetName: var(--ink);
+  --color-sidebarItemBackgroundSelected: var(--surface-active);
+  --color-sidebarHeaderText: var(--slate);
+  --color-sidebarTextSubdued: var(--slate);
+  --color-sidebarTextMuted: var(--slate);
+  --color-sidebarTextPositive: var(--success-ink);
+  --color-sidebarTextFailed: var(--danger-ink);
+  --color-sidebarBackgroundFailedSubtle: var(--danger-surface);
+  --color-sidebarBorder: var(--line);
+  --color-sidebarControlBackground: var(--card);
+  --color-sidebarBrand: var(--ink);
+
+  /* settings */
+  --color-settingsCardBackground: var(--card);
+  --color-settingsCardBorder: var(--line);
+  --color-settingsCardText: var(--ink);
+  --color-settingsCardTextSubdued: var(--slate);
+  --color-settingsNavItemText: var(--ink-soft);
+  --color-settingsNavItemBackgroundHover: var(--surface-hover);
+  --color-settingsNavItemAccentSelected: var(--i);
+  --color-settingsNavItemTextSelected: var(--ink);
+  --color-settingsNavItemBackgroundSelected: var(--surface-active);
+
+  /* menus */
+  --color-menuBackground: var(--card);
+  --color-menuItemBackground: var(--card);
+  --color-menuItemBackgroundHover: var(--surface-hover);
+  --color-menuItemText: var(--ink);
+  --color-menuItemTextHover: var(--ink);
+  --color-menuItemTextSelected: var(--i-ink);
+  --color-menuItemTextHeader: var(--slate);
+  --color-menuBorder: var(--line);
+  --color-menuBorderHover: var(--line-strong);
+  --color-menuKeybindingText: var(--slate);
+  --color-menuAutoCompleteBackground: var(--card);
+  --color-menuAutoCompleteBackgroundHover: var(--surface-hover);
+  --color-menuAutoCompleteText: var(--ink);
+  --color-menuAutoCompleteTextHover: var(--ink);
+  --color-menuAutoCompleteTextHeader: var(--slate);
+  --color-menuAutoCompleteItemTextHover: var(--ink);
+  --color-menuAutoCompleteItemText: var(--ink);
+
+  /* modals */
+  --color-modalBackground: var(--card);
+  --color-modalBorder: var(--line);
+  --color-overlayBackground: var(--n-900);
+
+  /* mobile */
+  --color-mobileHeaderBackground: var(--card);
+  --color-mobileHeaderText: var(--ink);
+  --color-mobileHeaderTextSubdued: var(--slate);
+  --color-mobileHeaderTextHover: var(--surface-hover);
+  --color-mobilePageBackground: var(--bg);
+  --color-mobileNavBackground: var(--card);
+  --color-mobileNavItem: var(--slate);
+  --color-mobileNavItemSelected: var(--i-ink);
+  --color-mobileAccountShadow: var(--line-strong);
+  --color-mobileAccountText: var(--i-ink);
+  --color-mobileTransactionSelected: var(--i);
+  --color-mobileViewTheme: var(--card);
+  --color-mobileConfigServerViewTheme: var(--card);
+
+  /* markdown (notes) */
+  --color-markdownNormal: var(--i-surface);
+  --color-markdownDark: var(--i-line);
+  --color-markdownLight: var(--n-50);
+
+  /* buttons: primary = the one cobalt action; normal = neutral with a
+     control edge (a boundary you can find); bare = ghost */
+  --color-buttonMenuText: var(--ink-soft);
+  --color-buttonMenuTextHover: var(--ink);
+  --color-buttonMenuBackground: transparent;
+  --color-buttonMenuBackgroundHover: var(--surface-hover);
+  --color-buttonMenuBorder: var(--line-control);
+  --color-buttonMenuSelectedText: var(--i-ink);
+  --color-buttonMenuSelectedTextHover: var(--i-hover);
+  --color-buttonMenuSelectedBackground: var(--i-surface);
+  --color-buttonMenuSelectedBackgroundHover: var(--i-surface);
+  --color-buttonMenuSelectedBorder: var(--i-line);
+  --color-buttonPrimaryText: var(--on-i);
+  --color-buttonPrimaryTextHover: var(--on-i);
+  --color-buttonPrimaryBackground: var(--i);
+  --color-buttonPrimaryBackgroundHover: var(--i-hover);
+  --color-buttonPrimaryBorder: var(--i);
+  --color-buttonPrimaryShadow: transparent;
+  --color-buttonPrimaryDisabledText: var(--i-disabled-ink);
+  --color-buttonPrimaryDisabledBackground: var(--i-disabled-bg);
+  --color-buttonPrimaryDisabledBorder: var(--i-disabled-bg);
+  --color-buttonNormalText: var(--ink);
+  --color-buttonNormalTextHover: var(--ink);
+  --color-buttonNormalBackground: var(--card);
+  --color-buttonNormalBackgroundHover: var(--surface-hover);
+  --color-buttonNormalBorder: var(--line-control);
+  --color-buttonNormalShadow: transparent;
+  --color-buttonNormalSelectedText: var(--on-i);
+  --color-buttonNormalSelectedBackground: var(--i);
+  --color-buttonNormalDisabledText: var(--i-disabled-ink);
+  --color-buttonNormalDisabledBackground: var(--i-disabled-bg);
+  --color-buttonNormalDisabledBorder: var(--i-disabled-bg);
+  --color-buttonBareText: var(--ink);
+  --color-buttonBareTextHover: var(--ink);
+  --color-buttonBareBackground: transparent;
+  --color-buttonBareBackgroundHover: var(--surface-hover);
+  --color-buttonBareBackgroundActive: var(--surface-active);
+  --color-buttonBareDisabledText: var(--i-disabled-ink);
+  --color-buttonBareDisabledBackground: transparent;
+
+  /* calendar / date picker */
+  --color-calendarText: var(--ink);
+  --color-calendarBackground: var(--card);
+  --color-calendarItemText: var(--ink);
+  --color-calendarItemBackground: var(--n-50);
+  --color-calendarSelectedBackground: var(--i);
+  --color-calendarCellBackground: var(--n-50);
+  --color-datePickerRangeBackground: var(--i-surface);
+
+  /* notices: neutral/info, attention, danger — each a wash behind ink */
+  --color-noticeBackground: var(--success-surface);
+  --color-noticeBackgroundLight: var(--success-surface);
+  --color-noticeBackgroundDark: var(--success-line);
+  --color-noticeText: var(--success-ink);
+  --color-noticeTextLight: var(--success);
+  --color-noticeTextDark: var(--success-ink);
+  --color-noticeTextMenu: var(--success-ink);
+  --color-noticeTextMenuHover: var(--success-ink);
+  --color-noticeBorder: var(--success-line);
+  --color-warningBackground: var(--attention-surface);
+  --color-warningText: var(--attention-ink);
+  --color-warningTextLight: var(--attention-ink);
+  --color-warningTextDark: var(--attention-ink);
+  --color-warningBorder: var(--attention-line);
+  --color-errorBackground: var(--danger-surface);
+  --color-errorText: var(--danger-ink);
+  --color-errorTextDark: var(--danger-ink);
+  --color-errorTextDarker: var(--danger-ink);
+  --color-errorTextMenu: var(--danger-ink);
+  --color-errorBorder: var(--danger-line);
+  --color-upcomingBackground: var(--attention-surface);
+  --color-upcomingText: var(--attention-ink);
+  --color-upcomingBorder: var(--attention-line);
+
+  /* forms: edge is --line-control, focus is the cobalt ring */
+  --color-formLabelText: var(--ink-soft);
+  --color-formLabelBackground: var(--i-surface);
+  --color-formInputBackground: var(--card);
+  --color-formInputBackgroundSelected: var(--card);
+  --color-formInputBackgroundSelection: var(--i-selection);
+  --color-formInputBorder: var(--line-control);
+  --color-formInputTextReadOnlySelection: var(--i-selection);
+  --color-formInputBorderSelected: var(--i-ink);
+  --color-formInputText: var(--ink);
+  --color-formInputTextSelected: var(--ink);
+  --color-formInputTextPlaceholder: var(--slate);
+  --color-formInputTextPlaceholderSelected: var(--slate);
+  --color-formInputTextSelection: var(--i-selection);
+  --color-formInputShadowSelected: var(--i-line);
+  --color-formInputTextHighlight: var(--i-selection);
+  --color-checkboxText: var(--ink);
+  --color-checkboxBackgroundSelected: var(--i);
+  --color-checkboxBorderSelected: var(--i);
+  --color-checkboxShadowSelected: var(--i-line);
+  --color-checkboxToggleBackground: var(--line-control);
+  --color-checkboxToggleBackgroundSelected: var(--i);
+  --color-checkboxToggleDisabled: var(--i-disabled-bg);
+
+  /* pills */
+  --color-pillBackground: var(--n-50);
+  --color-pillBackgroundLight: var(--n-25);
+  --color-pillText: var(--ink-soft);
+  --color-pillTextHighlighted: var(--i-ink);
+  --color-pillBorder: var(--line);
+  --color-pillBorderDark: var(--line-strong);
+  --color-pillBackgroundSelected: var(--i-surface);
+  --color-pillTextSelected: var(--i-ink);
+  --color-pillBorderSelected: var(--i-line);
+  --color-pillTextSubdued: var(--slate);
+
+  /* reports: charts are the one place restraint relaxes (--chart-*) */
+  --color-reportsRed: var(--danger);
+  --color-reportsBlue: var(--i);
+  --color-reportsGreen: var(--success);
+  --color-reportsGray: var(--n-500);
+  --color-reportsLabel: var(--ink);
+  --color-reportsInnerLabel: var(--on-i);
+  --color-reportsChartFill: var(--i);
+
+  /* note tags, budget month headers */
+  --color-noteTagBackground: var(--i-surface);
+  --color-noteTagBackgroundHover: var(--i-line);
+  --color-noteTagDefault: var(--i-surface);
+  --color-noteTagText: var(--i-ink);
+  --color-budgetOtherMonth: var(--n-50);
+  --color-budgetCurrentMonth: var(--card);
+  --color-budgetHeaderOtherMonth: var(--n-50);
+  --color-budgetHeaderCurrentMonth: var(--card);
+
+  /* misc */
+  --color-floatingActionBarBackground: var(--n-900);
+  --color-floatingActionBarBorder: var(--n-900);
+  --color-floatingActionBarText: var(--on-dark);
+  --color-tooltipText: var(--ink);
+  --color-tooltipBackground: var(--card);
+  --color-tooltipBorder: var(--line);
+}
+
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--sans);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus is always the 2px --i-ink ring, 2px off (DESIGN.md). */
+:focus-visible {
+  outline: 2px solid var(--i-ink);
+  outline-offset: 2px;
+}
+
+/* Reduced motion renders the final state. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
