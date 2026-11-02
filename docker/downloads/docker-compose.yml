@@ -221,8 +221,10 @@ services:
     image: ghcr.io/cleanuparr/cleanuparr:2.10.2@sha256:98463b1116142887767cf90dde3375e7e43718aa623fe737677372023ffb7ebe
     container_name: cleanuparr
     restart: unless-stopped
-    cpus: 0.25
-    mem_limit: 256m
+    # 0.5 cpu / 512m (was 0.25 / 256m): on 2026-11-02 the container had hit its
+    # memory limit 59 times and the UI went dark ~20s after a good first paint.
+    cpus: 0.5
+    mem_limit: 512m
     environment:
       TZ: ${TZ:-UTC}
       PUID: ${PUID:-1000}
