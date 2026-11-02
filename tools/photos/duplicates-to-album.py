@@ -1,6 +1,6 @@
 # /// script
 # requires-python = ">=3.10"
-# dependencies = ["osxphotos>=0.70", "photoscript"]
+# dependencies = ["osxphotos>=0.70", "photoscript", "certifi"]
 # ///
 """Find duplicate photos, review them on the homelab review page, and put the
 ones you accepted into one Photos album.
@@ -48,6 +48,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import ssl
 import urllib.request
 from pathlib import Path
 
@@ -67,7 +68,9 @@ def http(url, data=None, method=None, ctype="application/json"):
             raise SystemExit("request to %s failed: %s" % (url, r.stderr.decode().strip()))
         return r.stdout
     req = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": ctype} if data else {})
-    with urllib.request.urlopen(req, timeout=60) as r:
+    import certifi  # python.org's macOS Python has no CA bundle of its own
+    ctx = ssl.create_default_context(cafile=certifi.where())
+    with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
         return r.read()
 
 
