@@ -617,7 +617,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  <select id="sug" aria-label="Suggestion">
   <option value="">Any suggestion</option><option value="keep">Suggested: keep</option>
   <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
-  <option value="look">Needs a look</option><option value="none">Not triaged</option></select>
+  <option value="maybe">Maybe climbing (rocks, walls)</option><option value="look">Needs a look</option><option value="none">Not triaged</option></select>
  <select id="cat" aria-label="What it shows">
   <option value="">Any category</option><option value="climbing">Climbing</option><option value="people">People</option>
   <option value="pet">Pets</option><option value="travel">Travel</option><option value="event">Events</option>
@@ -665,6 +665,7 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
 </footer>
 <script>
 __MFJS__
+const ROCKY=/\b(boulder\w*|crash ?pad|climb\w*|rock|rocks|rocky|cliff|wall|holds?|crag|summit)\b/i;  // not-climbing clips whose reason mentions rock
 const LOW=0.7;  // below this a suggestion goes to "Needs a look"
 let all=[],list=[],i=0,rot=0,ratio=16/9,undo=null;const seen={};
 const DONE=['send','fall','none','keep','cold'];
@@ -689,6 +690,7 @@ function sugOk(c,s){
   if(s==='none')return !t;
   if(s==='look')return !!t&&t.conf<LOW;
   if(s==='judge')return !!t&&t.category==='climbing';
+  if(s==='maybe')return !!t&&t.category!=='climbing'&&ROCKY.test(t.why||'');
   return !!t&&t.suggest===s&&t.conf>=LOW;
 }
 function bulkInfo(){
