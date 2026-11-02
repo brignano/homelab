@@ -18,6 +18,11 @@
 # PREVIEW_MAX_MINUTES (default 240) so a first run of ~6,500 files carries over
 # to the next night instead of running into the day.
 #
+# No Healthchecks dead man's switch, on purpose: the previews are derived and
+# rebuildable, so a missed night costs nothing. Failure pages as
+# hl-photos-previews-failed and a job that stops running as
+# hl-photos-previews-stale (both in rules.yml), which needs no account setup.
+#
 # Not configured = not running: until the previews folder exists (README step
 # in docker/jellyfin/README.md) this exits 0 and creates nothing, so a missing
 # media drive cannot make it write onto CT 100's rootfs.
@@ -25,7 +30,6 @@
 set -uo pipefail
 
 REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
-ENV_FILE="$REPO/docker/monitoring/.env"
 COMPOSE="$REPO/docker/photos/docker-compose.yml"
 SRC="${HL_PHOTOS_DIR:-/media/photos/icloud}"
 DST="${HL_PHOTOS_PREVIEWS_DIR:-/media/photos/icloud-previews}"
@@ -34,19 +38,14 @@ LOCK="${HL_PHOTOS_PREVIEWS_LOCK:-/run/photos-previews.lock}"
 
 # shellcheck source=scripts/metrics.sh
 . "$(dirname "$0")/metrics.sh"
-# shellcheck source=scripts/healthchecks.sh
-. "$(dirname "$0")/healthchecks.sh"
 
 configured=0
 [ -d "$DST" ] && configured=1
-
-if hc_url HEALTHCHECKS_PHOTOS_PREVIEWS_URL "$ENV_FILE"; then HC_URL=$HC_VALUE; else HC_URL=""; fi
 
 count_heic() { find "$SRC" -type f -iname '*.heic' 2>/dev/null | wc -l | tr -d ' '; }
 count_previews() { find "$DST" -type f -name '*.jpg' 2>/dev/null | wc -l | tr -d ' '; }
 
 START=$(date +%s)
-summary=""
 
 finish() {
   _code=$?
@@ -83,28 +82,18 @@ finish() {
   fi
 
   metrics_close
-
-  if [ "$configured" -eq 1 ] && [ -n "$HC_URL" ]; then
-    hc_ping "$HC_URL/$_code" photos-previews "$summary" || true
-  fi
 }
 trap finish EXIT
 
 [ "$configured" -eq 1 ] || exit 0
 
-if [ -z "$HC_URL" ]; then
-  echo "photos-previews: $HC_REASON — nothing notices if this stops running" >&2
-  hc_unarmed photos-previews
-fi
-
 if [ ! -d "$SRC" ]; then
   echo "$(date -Is) photos-previews: $SRC is missing (media drive not mounted?)" >&2
-  summary="$SRC is missing"
   exit 1
 fi
 
 exec 9>"$LOCK"
-flock -n 9 || { echo "photos-previews: another run is still going" >&2; summary="another run still going"; exit 1; }
+flock -n 9 || { echo "photos-previews: another run is still going" >&2; exit 1; }
 
 out=$(docker compose -f "$COMPOSE" --profile job run --rm -T --build heicpreview 2>&1 </dev/null)
 code=$?

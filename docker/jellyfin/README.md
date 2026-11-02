@@ -133,8 +133,10 @@ sync, it writes a JPEG of every HEIC to `/media/photos/icloud-previews/<YYYY>/<M
   `nice 19`, stopped after 240 minutes (`PREVIEW_MAX_MINUTES`), so the first run
   of ~6,500 photos may take a few nights.
 - **`icloud-hidden` is never read or written.**
-- **Failure** pages `#alerts` as `hl-photos-previews-failed`; the Healthchecks
-  ping is `HEALTHCHECKS_PHOTOS_PREVIEWS_URL` (optional until a check exists).
+- **Failure** warns `#alerts` as `hl-photos-previews-failed`, and a job that
+  stops running (no success for 3 days) as `hl-photos-previews-stale`. There is
+  deliberately no Healthchecks dead man's switch: an unarmed one pages as
+  `hl-hc-ping-failing`, and these previews are rebuildable.
 
 Setup, once, on CT 100:
 
