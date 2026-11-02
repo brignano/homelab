@@ -593,6 +593,8 @@ PAGE = r"""<!doctype html>
 <title>Videos · Review</title>
 __HEAD__
 <style>
+#count{color:var(--ink);font-size:var(--text-base);font-weight:600}
+#count small{color:var(--ink-soft);font-weight:400}
 #stagebox{flex:1;min-width:0;min-height:0;display:flex;align-items:center;justify-content:center}
 #stage{position:relative;overflow:hidden;border-radius:var(--radius);background:var(--n-100);box-shadow:var(--shadow-2)}
 #v{position:absolute;top:50%;left:50%;transform-origin:center;object-fit:contain;background:transparent;
@@ -617,8 +619,8 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
   <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
   <option value="look">Needs a look</option><option value="none">Not triaged</option></select>
  __MF__
- <label><input type="checkbox" id="hide" checked> hide decided</label>
- <span id="count" class="muted"></span>
+ <label><input type="checkbox" id="hide" checked> hide decided <small id="hidemode" class="muted"></small></label>
+ <span id="count"></span>
  <span class="grow"></span>
  <small class="exports">Export <a href="/export.txt" target="_blank">climb</a> <a href="/export.csv?include=claude" target="_blank">climb + Claude calls</a> <a href="/export.csv?set=cold" target="_blank">cold storage</a> <a href="/export.txt?set=judge" target="_blank">looks like climbing</a></small>
 </header>
@@ -718,6 +720,7 @@ function show(){
   // moved to cold storage, which stay in the mirror, so the total never shrinks.
   const left=all.filter(c=>c.present&&!DONE.includes(c.label)).length;
   $('count').textContent=`${list.length?i+1:0} of ${list.length} in view · ${left} left · ${done} decided`+(waiting?` · ${waiting} not on the drive yet`:'');
+  $('hidemode').textContent=$('hide').checked?'(showing undecided only)':'(showing all)';
   const c=list[i];
   $('undo').disabled=!undo; $('clear').disabled=!(c&&(c.label||c.notclimb));
   stage.hidden=!c; $('empty').hidden=!!c;
