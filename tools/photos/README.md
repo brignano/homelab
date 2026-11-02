@@ -182,3 +182,15 @@ original is in the mirror (the hidden mirror counts), `--save-manifest` to store
 the confirmed photos' people/albums/dates on the drive (`/root/climb-judge/cold/`),
 and `--album "Cold storage"` to add only the confirmed ones to a Photos album.
 It never deletes anything; you delete from the album in Photos.
+
+## Building the Photos albums without Photos jumping to the front
+
+Adding to an album has to go through the Photos app, so it launches. The
+scripts now start Photos in the background (`open -g -j`) and hide it again
+when done (`photos_bg.py`); macOS may still raise a window, so this is best
+effort. To build every review-page album in one run, so Photos starts once:
+
+```bash
+tools/photos/albums.sh --dry-run    # preview, changes nothing
+tools/photos/albums.sh              # climb candidates + cold storage
+```

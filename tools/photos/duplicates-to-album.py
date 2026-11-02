@@ -302,6 +302,8 @@ def to_album(uuids, args) -> int:
     if args.dry_run:
         print("Dry run: nothing changed.")
         return 0
+    import photos_bg
+    photos_bg.launch_hidden()  # start Photos without taking focus
     import photoscript
     lib = photoscript.PhotosLibrary()
     album = lib.album(args.album) or lib.create_album(args.album)
@@ -323,6 +325,7 @@ def to_album(uuids, args) -> int:
           % (args.album, len(new) - refused, len(uuids) - len(new)))
     if refused:
         print("%d photos were refused by Photos (most likely already deleted); skipped." % refused)
+    photos_bg.hide()
     return 0
 
 
