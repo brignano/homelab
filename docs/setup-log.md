@@ -27,6 +27,21 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-02 — Actual Budget, tailnet only (#310)
+
+**Goal:** A private budgeting tool for 2027 with no bank sync.
+
+**Steps:**
+1. `docker/actual/`: `actualbudget/actual-server` 26.11.0 pinned by tag and digest, no published ports, volume `actual_data`.
+2. Caddy site `actual.`, dashboard tile and icon, Prometheus probe of `/health`, Renovate rule.
+3. `actual_data` added to `VOLUMES` in `scripts/offsite-backup.sh`; runbook and AGENTS.md updated.
+
+**Notes / next steps:**
+- No Tunnel route and no bank-sync secrets, by design. The server password is set by Anthony in the app on first open.
+- Anthony turns on end-to-end encryption for the budget file in the app (README).
+
+---
+
 ## 2026-10-31 — Clip review page for climb videos (#258)
 
 **Goal:** Audit climb-judge verdicts without finding each clip in Photos by hand, and make removal one step.

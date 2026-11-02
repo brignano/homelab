@@ -122,6 +122,12 @@ review.{$HOMELAB_DOMAIN} {
 	reverse_proxy clipreview:8000
 }
 
+# Actual Budget (docker/actual/). Joins the proxy network. Financial data: LAN +
+# tailnet only, never the tunnel, and no bank sync is configured.
+actual.{$HOMELAB_DOMAIN} {
+	reverse_proxy actual:5006
+}
+
 # Open WebUI — AI chat (container listens on 8080)
 chat.{$HOMELAB_DOMAIN} {
 	reverse_proxy open-webui:8080

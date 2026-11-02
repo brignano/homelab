@@ -124,6 +124,14 @@ so only real qBittorrent releases are proposed.",
       allowedVersions: "<14",
     },
     {
+      description: "Actual Budget (docker/actual/): pinned by tag and digest. \
+Its server migrates the budget database on upgrade, so each bump is a PR to \
+read, never a side effect.",
+      matchFileNames: ["docker/actual/**"],
+      enabled: true,
+      pinDigests: true,
+    },
+    {
       description: "Matterbridge (docker/matterbridge/): the base image, pinned \
 by tag and digest, and the matterbridge-hass plugin in the Dockerfile's ARG. One \
 group, because each plugin release names the Matterbridge it needs -- bumped \
