@@ -1,0 +1,47 @@
+services:
+  # MCP server over Actual Budget (docker/budget), so Claude Code, Otto and the
+  # other assistants can read the budget and, when switched on, add to it. Uses
+  # s-stefanov/actual-mcp (MIT), built on @actual-app/api. See README.md.
+  #
+  # READ-ONLY BY DEFAULT. Write tools only exist when --enable-write is passed,
+  # and that lives in docker-compose.write.yml, which is a deliberate extra file
+  # (README, "Turning writes on").
+  #
+  #   1. No published ports. Caddy reaches it over proxy_proxy at
+  #      budget-mcp.$HOMELAB_DOMAIN, a name that resolves to the private
+  #      10.0.0.201, so LAN + tailnet only. No Cloudflare Tunnel route.
+  #   2. Every request needs BEARER_TOKEN (--enable-bearer). Required, so an
+  #      unset token stops the container rather than leaving it open.
+  #   3. Secrets come from docker/mcp-budget/.env, never from git.
+  mcp-budget:
+    # Pinned by tag and digest; Renovate opens a PR for each bump.
+    image: sstefanov/actual-mcp:v1.15.1@sha256:9d6b216146fcd5f59303945d4f47ee6cbfbdc12a4f6a66f52029507e4ad0cb93
+    container_name: mcp-budget
+    restart: unless-stopped
+    cpus: 0.5
+    mem_limit: 512m
+    command: ["--sse", "--port", "3000", "--enable-bearer"]
+    environment:
+      TZ: ${TZ:-America/New_York}
+      ACTUAL_SERVER_URL: http://budget:5006
+      ACTUAL_PASSWORD: ${ACTUAL_PASSWORD:?required}
+      ACTUAL_BUDGET_SYNC_ID: ${ACTUAL_BUDGET_SYNC_ID:?required}
+      # Only the budget's end-to-end encryption password; blank if it has none.
+      ACTUAL_BUDGET_ENCRYPTION_PASSWORD: ${ACTUAL_BUDGET_ENCRYPTION_PASSWORD:-}
+      ACTUAL_DATA_DIR: /data
+      # Seconds-of-staleness trade: re-sync with the server at most this often.
+      ACTUAL_SYNC_TTL_MS: ${ACTUAL_SYNC_TTL_MS:-60000}
+      BEARER_TOKEN: ${MCP_BUDGET_TOKEN:?required}
+    volumes:
+      - data:/data
+    networks:
+      - proxy
+
+volumes:
+  data:
+
+# Same arrangement as budget: join proxy_proxy rather than give Caddy a network.
+networks:
+  proxy:
+    external: true
+    name: proxy_proxy
