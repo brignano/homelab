@@ -121,6 +121,8 @@ def to_album(photos, album):
 
 
 def tag_photos(uuids, keyword):
+    print("tagging %d hidden photos one at a time; Photos is slow here (Ctrl-C is safe: a re-run "
+          "skips the ones already tagged)" % len(uuids), flush=True)
     """Photos will not add Hidden-album photos to an album from a script, so give
     them a keyword instead: open Photos > Hidden, search the keyword, Cmd-A.
     Keeps the keywords a photo already has. Never removes anything."""
@@ -128,7 +130,9 @@ def tag_photos(uuids, keyword):
     lib = photoscript.PhotosLibrary()
     done = already = failed = 0
     errors = []
-    for u in uuids:
+    for i, u in enumerate(uuids, 1):
+        if i % 50 == 0:
+            print("  tagging %d/%d (tagged %d, already %d, failed %d) ..." % (i, len(uuids), done, already, failed), flush=True)
         try:
             # photoscript returns a generator, not a list
             ph = next(iter(lib.photos(uuid=[u])), None)
