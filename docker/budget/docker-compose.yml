@@ -15,9 +15,9 @@ services:
   # The server password is not in this file or in any .env. Actual asks for it
   # on first open and stores a hash in the data volume. Turn on the budget
   # file's end-to-end encryption in the app as well (README).
-  actual:
+  budget:
     image: actualbudget/actual-server:26.11.0@sha256:06cf186569cf58d93e12659ff1a517b65b5b0ebee7050a3991d4bd8a1d398da6
-    container_name: actual
+    container_name: budget
     restart: unless-stopped
     cpus: 0.5
     mem_limit: 512m

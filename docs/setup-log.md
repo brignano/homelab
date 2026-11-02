@@ -32,9 +32,9 @@ Chronological record of significant configuration steps, decisions, and issues.
 **Goal:** A private budgeting tool for 2027 with no bank sync.
 
 **Steps:**
-1. `docker/actual/`: `actualbudget/actual-server` 26.11.0 pinned by tag and digest, no published ports, volume `actual_data`.
+1. `docker/budget/`: `actualbudget/actual-server` 26.11.0 pinned by tag and digest, no published ports, volume `budget_data`.
 2. Caddy site `budget.`, dashboard tile and icon, Prometheus probe of `/health`, Renovate rule.
-3. `actual_data` added to `VOLUMES` in `scripts/offsite-backup.sh`; runbook and AGENTS.md updated.
+3. `budget_data` added to `VOLUMES` in `scripts/offsite-backup.sh`; runbook and AGENTS.md updated.
 
 **Notes / next steps:**
 - No Tunnel route and no bank-sync secrets, by design. The server password is set by Anthony in the app on first open.
