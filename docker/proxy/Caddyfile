@@ -135,6 +135,12 @@ budget.{$HOMELAB_DOMAIN} {
 		rewrite * /actual.css
 		file_server
 	}
+	# Long-press a Reports card on a phone to open its report (see above).
+	handle /_design/phone.js {
+		root * /srv/budget-theme
+		rewrite * /phone.js
+		file_server
+	}
 	handle /_design/tokens.css {
 		root * /srv/design
 		rewrite * /design-tokens.css
@@ -148,7 +154,8 @@ budget.{$HOMELAB_DOMAIN} {
 		# On a phone, every dashboard card on Actual's Reports page is one big
 		# button, so a tap meant for scrolling opens the full report. Below
 		# Actual's phone breakpoint (730px) this makes the cards look-only:
-		# taps pass through to the page, so it still scrolls. Desktop and
+		# taps pass through to the page, so it still scrolls, and a long-press
+		# opens the report (docker/budget/theme/phone.js). Desktop and
 		# tablet-width windows are unchanged. Actual's own custom-CSS box only
 		# takes `:root` variables, so the rule is added to its page here.
 		#
@@ -156,7 +163,7 @@ budget.{$HOMELAB_DOMAIN} {
 		# sw.js rewrite below changes that page's revision in the worker's
 		# precache list. The browser sees a new worker, re-fetches the page
 		# (through this rewrite) and Actual offers its usual "update" prompt.
-		# Bump the `phone1-` prefix whenever the style rule changes.
+		# Bump the `phone2-` prefix whenever the injected tags change.
 		# `replace` cannot edit compressed bodies, hence Accept-Encoding.
 		# Actual's ETags describe its own bytes, not the rewritten ones, so a
 		# browser revalidating with them gets a 304 and keeps the old copy:
@@ -172,10 +179,10 @@ budget.{$HOMELAB_DOMAIN} {
 			match {
 				header Content-Type text/html*
 			}
-			</head> `<style>@media (max-width: 729px) { [data-testid="reports-overview"] button { pointer-events: none; } }</style></head>`
+			</head> `<style>@media (max-width: 729px) { [data-testid="reports-overview"] button { pointer-events: none; } [data-testid="reports-overview"] { -webkit-touch-callout: none; } }</style><script src="/_design/phone.js" defer></script></head>`
 		}
 		replace /sw.js {
-			"url:\"index.html\",revision:\"" "url:\"index.html\",revision:\"phone1-"
+			"url:\"index.html\",revision:\"" "url:\"index.html\",revision:\"phone2-"
 		}
 	}
 }

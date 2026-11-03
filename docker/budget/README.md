@@ -64,13 +64,15 @@ Below 730px wide, Actual shows its mobile layout, where each card on the
 Reports page is one big button. Caddy adds a small style rule to Actual's page
 (see the budget block in `docker/proxy/Caddyfile`) that makes those cards
 look-only on a phone, so a stray tap while scrolling no longer opens the full
-report. To open a report from the phone, turn it sideways or use a computer.
+report. **Long-press** a card (hold it still for about half a second) to open
+its report; `theme/phone.js` does that. Turning the phone sideways also gives
+the desktop layout, where a tap opens it.
 
 Actual's service worker keeps a cached copy of its page. Caddy also rewrites
 that page's revision in `sw.js`, so a phone that already has the site sees a new
 version: Actual shows its "new version available" prompt (or applies it on the
 next open), and the reloaded page carries the rule. If the rule ever changes,
-bump the `phone1-` prefix in the Caddyfile so phones fetch it again.
+bump the `phone2-` prefix in the Caddyfile so phones fetch it again.
 
 ## Backups and restore
 
