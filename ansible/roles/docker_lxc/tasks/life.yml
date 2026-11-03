@@ -1,0 +1,151 @@
+# Sessions started from the Life project run as an unprivileged `life` user, not
+# root (issue #330). A folder .claude/settings.json did not hold: on 2026-11-03 a
+# session started in scripts/life ran `docker ps`, and Docker access is root.
+# So the limit is the operating system's, with a settings file as a second layer:
+#
+#   - `life` is in no group (not docker, not sudo) and has no password.
+#   - Its only way to anything is `sudo` for the two read-only scripts in
+#     scripts/life, via the wrappers below. Those scripts validate their own
+#     arguments and run inside the mcp-calendar / mcp-budget containers.
+#   - Its session folder and settings are root-owned, so it cannot edit them.
+
+- name: The life user (no groups, no password)
+  ansible.builtin.user:
+    name: life
+    shell: /bin/bash
+    create_home: true
+    password_lock: true
+
+- name: Wrappers life can run (root-owned, so it cannot change them)
+  ansible.builtin.copy:
+    dest: "/usr/local/bin/life-{{ item }}"
+    owner: root
+    group: root
+    mode: "0755"
+    content: |
+      #!/bin/sh
+      exec sudo -n {{ hl_repo_dir }}/scripts/life/{{ item }} "$@"
+  loop:
+    - calendar
+    - budget
+
+- name: The only thing life may sudo
+  ansible.builtin.copy:
+    dest: /etc/sudoers.d/life
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+    content: |
+      life ALL=(root) NOPASSWD: {{ hl_repo_dir }}/scripts/life/calendar, {{ hl_repo_dir }}/scripts/life/budget
+
+- name: Session folder, root-owned
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /srv/life-session
+    - /srv/life-session/.claude
+
+- name: Session settings (allow the two wrappers, refuse everything else)
+  ansible.builtin.copy:
+    dest: /srv/life-session/.claude/settings.json
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      {
+        "permissions": {
+          "defaultMode": "dontAsk",
+          "allow": [
+            "Bash(life-calendar)",
+            "Bash(life-calendar *)",
+            "Bash(life-budget)",
+            "Bash(life-budget *)"
+          ],
+          "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Bash(sudo *)"]
+        }
+      }
+
+- name: Session instructions
+  ansible.builtin.copy:
+    dest: /srv/life-session/CLAUDE.md
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      # Life sessions on CT 100
+
+      You were started from Anthony's Life project to read his calendar or budget.
+      Run one of these, answer from what it prints, and stop:
+
+      - `life-calendar [YYYY-MM-DD] [DAYS]` prints events (title, start, end, location).
+      - `life-budget [YYYY-MM]` prints account balances and category budgeted/spent/left.
+
+      Both are read-only. Do not look for other files or secrets, and do not try other
+      commands. If one fails, report its error line as it is.
+
+- name: Is Claude Code installed for life?
+  ansible.builtin.stat:
+    path: /home/life/.local/bin/claude
+  register: hl_life_claude
+
+- name: Install Claude Code for life
+  ansible.builtin.shell: set -o pipefail; curl -fsSL https://claude.ai/install.sh | bash
+  args:
+    executable: /bin/bash
+    creates: /home/life/.local/bin/claude
+  become: true
+  become_user: life
+  environment:
+    HOME: /home/life
+  when: not hl_life_claude.stat.exists
+
+- name: Is life signed in?
+  ansible.builtin.stat:
+    path: /home/life/.claude/.credentials.json
+  register: hl_life_signed_in
+
+- name: Claude Remote Control for life, as a service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/claude-rc-life.service
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Claude Remote Control (Life sessions, unprivileged)
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      User=life
+      WorkingDirectory=/srv/life-session
+      ExecStart=/home/life/.local/bin/claude remote-control
+      Restart=always
+      RestartSec=10
+      Environment=HOME=/home/life
+      Environment=PATH=/home/life/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+      [Install]
+      WantedBy=multi-user.target
+  register: hl_life_unit
+
+- name: Start it, and on every boot, once life is signed in
+  ansible.builtin.systemd:
+    name: claude-rc-life
+    enabled: true
+    state: started
+    daemon_reload: true
+  when: hl_life_signed_in.stat.exists
+
+- name: Say how to sign life in
+  ansible.builtin.debug:
+    msg: >-
+      life is not signed in to Claude yet. As root on CT 100: su - life, then
+      cd /srv/life-session && claude (sign in once, then /exit), then run this
+      playbook again. Details: scripts/life/README.md.
+  when: not hl_life_signed_in.stat.exists

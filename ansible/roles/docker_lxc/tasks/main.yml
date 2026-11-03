@@ -170,3 +170,6 @@
       it (curl -fsSL https://claude.ai/install.sh | bash), run `claude` once in
       {{ hl_repo_dir }} to sign in, then run this playbook again.
   when: not hl_claude.stat.exists
+
+- name: "Life sessions run as an unprivileged user (issue 330)"
+  ansible.builtin.import_tasks: life.yml
