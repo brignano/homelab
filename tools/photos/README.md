@@ -215,3 +215,9 @@ effort. To build every review-page album in one run, so Photos starts once:
 tools/photos/albums.sh --dry-run    # preview, changes nothing
 tools/photos/albums.sh              # climb candidates + cold storage
 ```
+
+Each real run (not `--dry-run`) also tells the review page which videos Photos still
+holds. Mirror videos Photos no longer has show as "out of iCloud": they leave the
+"left to review" and "decided" counts, are hidden from the default views (use the
+"Out of iCloud" view to see them), and drop out of the exports, so later passes only
+cover what is still in iCloud. The page only records names; it never touches Photos.

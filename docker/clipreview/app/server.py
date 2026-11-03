@@ -196,6 +196,34 @@ def read_decisions():
     return out
 
 
+def read_photos_report():
+    """Original-file-name stems of every video Photos still holds, as last
+    reported by the Mac (tools/photos/to-album.py). None until a report exists."""
+    p = DATA / "photos-stems.txt"
+    if not p.exists():
+        return None
+    return {ln.strip() for ln in p.read_text().splitlines() if ln.strip()}
+
+
+def save_photos_report(stems):
+    DATA.mkdir(parents=True, exist_ok=True)
+    clean = sorted({str(x).strip() for x in stems if str(x).strip() and "\n" not in str(x)})
+    tmp = DATA / "photos-stems.txt.tmp"
+    tmp.write_text("\n".join(clean) + "\n")
+    os.replace(tmp, DATA / "photos-stems.txt")
+    return len(clean)
+
+
+def in_photos(stem: str, report) -> bool:
+    """A mirror name is <original>_<id>; Photos knows the original. Matching any
+    underscore prefix errs towards "still in Photos", so a clip is never hidden
+    on a guess."""
+    if report is None:
+        return True
+    parts = stem.split("_")
+    return any("_".join(parts[:n]) in report for n in range(1, len(parts) + 1))
+
+
 def read_triage():
     """mirror-relative path -> {category, suggest, conf, sig, why} from
     tools/photos/triage.py (video-triage.csv); a later row for a file wins."""
@@ -228,6 +256,7 @@ def build():
     labels = read_log()
     decisions = read_decisions()
     triage = read_triage()
+    report = read_photos_report()
     items = {}
     for key, v in verdicts.items():
         actual = locate(key)
@@ -260,6 +289,7 @@ def build():
             "claude": claude["claude"] if claude else "", "conf": claude["conf"] if claude else None,
             "why": claude["why"] if claude else "",
             "label": label, "present": present,
+            "gone": present and not in_photos(stem, report),
             "tri": triage.get(rel) if v is None else None,
             "size": meta["size"] if present else 0,
             "dupes": [{"id": clip_id(o), "file": o, "size": idx["files"][o]["size"]}
@@ -336,7 +366,7 @@ def accept_triage(suggest: str, min_conf: float, month: str = "", dry: bool = Tr
     if suggest not in ("keep", "cold"):
         raise ValueError("suggest")
     rows = [c for c in build()
-            if c["kind"] == "video" and c["present"] and not c["label"] and c["tri"]
+            if c["kind"] == "video" and c["present"] and not c["gone"] and not c["label"] and c["tri"]
             and c["tri"]["suggest"] == suggest and c["tri"]["conf"] >= min_conf
             and (not month or c["month"] == month or c["month"].startswith(month + "-"))]
     if not dry and rows:
@@ -354,7 +384,7 @@ def _append_rows(path: Path, header, rows):
 def export(include_claude: bool, which: str = "climb"):
     rows = []
     for c in build():
-        if not c["present"]:
+        if not c["present"] or c["gone"]:
             continue
         why = ""
         if which == "cold":
@@ -492,11 +522,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/meta/import"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
-        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check") else metalib.MAX_BODY if path == "/api/meta/import" else 4096)
+        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check", "/api/photos/report")
+                                     else metalib.MAX_BODY if path == "/api/meta/import" else 4096)
         if raw is None:
             return
         try:
@@ -510,6 +541,12 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/meta/import":
                 with _lock:
                     return self._send(200, json.dumps(metalib.ingest(body)), "application/json")
+            if path == "/api/photos/report":
+                if not isinstance(body.get("stems"), list):
+                    raise ValueError("stems")
+                with _lock:
+                    n = save_photos_report(body["stems"])
+                return self._send(200, json.dumps({"stems": n}), "application/json")
             if path == "/api/triage/accept":
                 with _lock:
                     n = accept_triage(str(body["suggest"]), float(body["min_conf"]),
@@ -639,7 +676,8 @@ body[data-kind=climb] .g-climb,body[data-kind=video] .g-video{display:contents}
  __BRAND____NAV__
  <select id="view" aria-label="View">
   <option value="all">All videos</option><option value="climb">Climbing clips</option>
-  <option value="video">Other videos</option><option value="dupes">Duplicates</option></select>
+  <option value="video">Other videos</option><option value="dupes">Duplicates</option>
+  <option value="gone">Out of iCloud</option></select>
  <select id="sug" aria-label="Suggestion">
   <option value="">Any suggestion</option><option value="keep">Suggested: keep</option>
   <option value="cold">Suggested: cold</option><option value="judge">Looks like climbing</option>
@@ -705,7 +743,7 @@ function refilter(keepId){
   const hide=$('hide').checked, view=$('view').value, sug=$('sug').value, cat=$('cat').value;
   list=all.filter(c=>c.present&&MF.match(c.month)&&sugOk(c,sug)
     &&(!cat||(c.kind==='video'&&c.tri&&c.tri.category===cat))
-    &&(view==='all'||view===c.kind||(view==='dupes'&&c.dupes.length))
+    &&(view==='gone'?c.gone:!c.gone&&(view==='all'||view===c.kind||(view==='dupes'&&c.dupes.length)))
     &&(!hide||!DONE.includes(c.label)||c.id===keepId));
   i=Math.max(0,list.findIndex(c=>c.id===keepId)); show();
 }
@@ -721,7 +759,7 @@ function sugOk(c,s){
 }
 function bulkInfo(){
   const m=MF.val;
-  const pool=all.filter(c=>c.present&&c.kind==='video'&&!c.label&&c.tri&&MF.match(c.month));
+  const pool=all.filter(c=>c.present&&!c.gone&&c.kind==='video'&&!c.label&&c.tri&&MF.match(c.month));
   const n=s=>pool.filter(c=>c.tri.suggest===s&&c.tri.conf>=LOW).length;
   $('bulk').hidden=!pool.length;
   $('bulktxt').textContent=`${n('keep')} keep and ${n('cold')} cold suggestions at confidence ${LOW}+ are undecided`+(m?` in ${MF.label()}`:'')+'. Accepting writes the same decision as the buttons; nothing is deleted.';
@@ -747,12 +785,13 @@ function fit(){
   v.style.transform=`translate(-50%,-50%) rotate(${rot}deg)`;
 }
 function show(){
-  const done=all.filter(c=>DONE.includes(c.label)).length;
+  const done=all.filter(c=>!c.gone&&DONE.includes(c.label)).length;
+  const gone=all.filter(c=>c.present&&c.gone).length;
   const waiting=all.filter(c=>!c.present&&c.kind==='climb').length;
-  // "left" is what still needs a decision on the drive; "decided" includes videos already
-  // moved to cold storage, which stay in the mirror, so the total never shrinks.
-  const left=all.filter(c=>c.present&&!DONE.includes(c.label)).length;
-  $('count').textContent=`${list.length?i+1:0} of ${list.length} in view · ${left} left · ${done} decided`+(waiting?` · ${waiting} not on the drive yet`:'');
+  // "left" is what still needs a decision and is still in Photos; videos Photos no longer has
+  // (reported by the Mac script) count as "out of iCloud" and leave the other numbers.
+  const left=all.filter(c=>c.present&&!c.gone&&!DONE.includes(c.label)).length;
+  $('count').textContent=`${list.length?i+1:0} of ${list.length} in view · ${left} left to review · ${done} decided`+(gone?` · ${gone} out of iCloud`:'')+(waiting?` · ${waiting} not on the drive yet`:'');
   $('hidemode').textContent=$('hide').checked?'(showing undecided only)':'(showing all)';
   const c=list[i];
   $('undo').disabled=!undo; $('clear').disabled=!(c&&(c.label||c.notclimb));

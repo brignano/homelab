@@ -209,6 +209,20 @@ except urllib.error.HTTPError as e:
     assert e.code == 403
 assert "IMG_44" not in get("/export.csv?set=cold").read().decode()
 
+# --- out of iCloud: the Mac reports what Photos still holds -----------------------
+assert all(c["gone"] is False for c in json.load(get("/api/clips")))           # no report yet: nothing is hidden
+assert "IMG_40" in get("/export.csv?set=cold").read().decode()
+assert json.load(jpost("/api/photos/report", {"stems": ["IMG_41", "IMG_44", "IMG_43"]}))["stems"] == 3
+gone = {c["name"]: c["gone"] for c in json.load(get("/api/clips")) if c["kind"] == "video"}
+assert gone["IMG_40.MOV"] is True and gone["IMG_41.MOV"] is False and gone["IMG_44.MOV"] is False, gone
+assert "IMG_40" not in get("/export.csv?set=cold").read().decode()             # already out of Photos: not a candidate again
+try:
+    jpost("/api/photos/report", {"stems": "IMG_41"})
+    raise SystemExit("expected an error")
+except urllib.error.HTTPError as e:
+    assert e.code == 400
+os.remove(tmp / "data" / "photos-stems.txt")                                   # later tests expect no report
+
 # --- duplicate photos --------------------------------------------------------
 (tmp / "photos/2026/10").mkdir(parents=True, exist_ok=True)
 (tmp / "photos/2026/10/IMG_5_zzzzzzz.HEIC").write_bytes(b"x" * 100)
