@@ -58,6 +58,19 @@ again. Geist and the focus ring are not themeable this way and stay Actual's.
 Caddy still serves `/_design/` on the budget site (left from #316); Actual
 cannot load it, so it is unused.
 
+## On a phone
+
+Below 730px wide, Actual shows its mobile layout, where each card on the
+Reports page is one big button. Caddy adds a small style rule to Actual's page
+(see the budget block in `docker/proxy/Caddyfile`) that makes those cards
+look-only on a phone, so a stray tap while scrolling no longer opens the full
+report. To open a report from the phone, turn it sideways or use a computer.
+
+Actual's service worker keeps a cached copy of its page, so a phone that already
+has the site picks the rule up with the next Actual upgrade, or straight away
+after removing the site's data in Safari (you then sign in and enter the
+encryption key again).
+
 ## Backups and restore
 
 - **Local:** the nightly `vzdump` of CT 100 includes the volume.
