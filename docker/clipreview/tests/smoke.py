@@ -362,6 +362,41 @@ json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0003", "filename": "IMG_902.HEIC"
 assert q(text="IMG_902")["results"][0]["viewable"] is False        # no preview made yet
 (tmp / "previews/2019/07/IMG_902.jpg").write_bytes(b"P" * 7)
 assert q(text="IMG_902")["results"][0]["viewable"] is True and get("/meta/file/AAAAAAAA-0003").read() == b"P" * 7
+# staging for deletion: a mark only, hidden from normal results, files untouched
+assert q(person="Dakota")["total"] == 1 and json.load(get("/api/meta/facets"))["staged"] == 0
+def spost(body):
+    return json.load(urllib.request.urlopen(urllib.request.Request(
+        base + "/api/meta/staged", json.dumps(body).encode(), {"Content-Type": "application/json"})))
+assert spost({"add": ["AAAAAAAA-0001", "AAAAAAAA-9999"]})["staged"] == 1        # unknown ids are ignored
+assert q(person="Dakota")["total"] == 0 and q(staged="only")["total"] == 1 and q(staged="only")["results"][0]["staged"] is True
+fc = json.load(get("/api/meta/facets"))
+assert fc["staged"] == 1 and fc["staged_bytes"] == 50
+assert (tmp / "photos/2019/07/IMG_900.JPG").read_bytes() == b"J" * 50           # still on the drive
+assert spost({"remove": ["AAAAAAAA-0001"]})["staged"] == 0 and q(person="Dakota")["total"] == 1
+try:
+    spost({"add": ["not a uuid!"]})
+    raise SystemExit("expected 400")
+except urllib.error.HTTPError as e:
+    assert e.code == 400
+# media types (screenshot, selfie, RAW...) and downloading originals
+json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0004", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
+                             "types": ["selfie", "bogus", "live"]},
+                            {"uuid": "AAAAAAAA-0005", "filename": "DSC_1.NEF", "bytes": 1, "date": "2000-01-01T00:00:00"}]}))
+assert q(type="selfie")["total"] == 1 and q(type="selfie")["results"][0]["types"] == ["live", "selfie"]
+assert q(type="raw")["total"] == 1                              # RAW by file extension
+assert {t[0] for t in json.load(get("/api/meta/facets"))["types"]} == {"live", "raw", "selfie"}
+import io, zipfile
+z = zipfile.ZipFile(io.BytesIO(get("/api/meta/zip?id=AAAAAAAA-0001&id=AAAAAAAA-0004&id=AAAAAAAA-0002&id=bad").read()))
+names = z.namelist()
+assert "metadata.csv" in names and "IMG_900.JPG" in names and len(names) == 3, names   # two photos share a name; the missing ones are skipped
+assert z.read("IMG_900.JPG") == b"J" * 50 and b"IMG_900" in z.read("metadata.csv")
+try:
+    get("/api/meta/zip?id=AAAAAAAA-0002")
+    raise SystemExit("expected 404")
+except urllib.error.HTTPError as e:
+    assert e.code == 404
+r = get("/meta/original/AAAAAAAA-0003")
+assert r.read() == b"H" * 20 and "attachment" in r.headers["Content-Disposition"]
 assert b"AAAAAAAA-0001" in get("/api/meta/export.csv").read()
 page = get("/meta").read().decode()
 assert "<title>Cold storage \u00b7 Review</title>" in page and 'id="lb"' in page and "__" not in page.replace("__proto__", "")

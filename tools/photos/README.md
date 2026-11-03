@@ -113,7 +113,7 @@ place, album, year, favourites, deleted/hidden; "Dakota, Julia" means both in
 the same photo; the CSV link downloads everything). Each result is matched to its
 original in the mirror by file name and size, and shows it inline when the
 browser can (JPEG, PNG, MP4, MOV); HEIC is browsed in Jellyfin. `--out FILE`
-writes a local JSON copy too. Items already purged before the first export have
+writes a local JSON copy too. The export also records each item's media type (screenshot, selfie, RAW, Live Photo, portrait, panorama, HDR, burst, slo-mo, time-lapse, screen recording), which the Type filter uses; re-run it once to fill that in for earlier records. **Select** on the page ticks photos and downloads their originals as one zip (up to 300, with a `metadata.csv` of what Photos knew) to drag back into Photos; nothing is deleted from the drive. **Stage for deletion** marks photos (screenshots that never needed saving, say) and hides them from normal results; the *To delete* view lists the pile and lets you put items back. It is only a mark kept in `meta/staged-delete.json` on the drive. A later, separate step (asked for explicitly) moves the staged originals to a trash folder rather than erasing them; photos still in iCloud would simply be fetched again by the nightly sync, so delete those in Photos first. Items already purged before the first export have
 only the file name and date from the review page.
 
 ## `climb_judge.py`: did this climbing clip end in a send or a fall?

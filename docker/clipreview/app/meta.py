@@ -17,7 +17,13 @@ DIR = dupes.DATA / "meta"
 LIB = DIR / "library.json"
 MAX_BODY = 16 << 20
 MAX_RECORDS = 200000
+MAX_ZIP = 300
 LIST_FIELDS = ("persons", "labels", "albums", "keywords")
+# what the iPhone camera roll calls "Media Types": id -> label (the Mac export sends the ids)
+TYPES = {"screenshot": "Screenshots", "selfie": "Selfies", "raw": "RAW", "live": "Live Photos", "portrait": "Portraits",
+         "panorama": "Panoramas", "hdr": "HDR", "burst": "Bursts", "slowmo": "Slo-mo", "timelapse": "Time-lapse",
+         "screenrec": "Screen recordings", "cinematic": "Cinematic"}
+RAW_EXT = {".dng", ".nef", ".cr2", ".cr3", ".arw", ".raf", ".orf", ".rw2"}
 VIEWABLE = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
             ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4"}
 PREVIEWS = Path(os.environ.get("PREVIEWS_DIR", "/photos-previews"))  # JPEGs of the HEICs (scripts/photos-previews.sh)
@@ -51,6 +57,35 @@ def set_hidden_people(payload) -> list:
     return people
 
 
+STAGED = DIR / "staged-delete.json"
+
+
+def staged() -> set:
+    """Items marked for deletion from the drive. Only a mark: nothing here deletes a file."""
+    try:
+        return {str(x) for x in json.loads(STAGED.read_text())["uuids"]}
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()
+
+
+def stage(payload) -> dict:
+    if not isinstance(payload, dict):
+        raise ValueError("expected {add: [...], remove: [...]}")
+    cur = staged()
+    for key in ("add", "remove"):
+        v = payload.get(key) or []
+        if not isinstance(v, list) or len(v) > MAX_ZIP * 10 or any(not dupes.UUID_RE.match(str(u)) for u in v):
+            raise ValueError("bad " + key)
+    known = rows()
+    cur |= {str(u) for u in payload.get("add") or [] if str(u) in known}
+    cur -= {str(u) for u in payload.get("remove") or []}
+    DIR.mkdir(parents=True, exist_ok=True)
+    tmp = STAGED.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"uuids": sorted(cur)}))
+    tmp.replace(STAGED)
+    return {"staged": len(cur)}
+
+
 def _clean(r) -> dict:
     if not isinstance(r, dict) or not dupes.UUID_RE.match(str(r.get("uuid", ""))):
         raise ValueError("bad record")
@@ -61,6 +96,10 @@ def _clean(r) -> dict:
     for k in ("lat", "lon"):
         v = r.get(k)
         out[k] = round(float(v), 5) if isinstance(v, (int, float)) else None
+    types = {t for t in (r.get("types") or []) if t in TYPES}
+    if Path(out["filename"]).suffix.lower() in RAW_EXT:
+        types.add("raw")
+    out["types"] = sorted(types)
     for k in LIST_FIELDS:
         v = r.get(k) or []
         if not isinstance(v, list):
@@ -150,15 +189,19 @@ def _has(want: str, have) -> bool:
 
 def search(q: dict, limit: int = 60) -> dict:
     """q keys (all optional, all must match): person, label, album, keyword,
-    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), exclude (names to leave out),
+    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), type (see TYPES), staged (only = the deletion pile; otherwise it is left out), exclude (names to leave out),
     where (library|hidden|trashed)."""
     data = rows().values()
     f = lambda k: str(q.get(k) or "").strip()
     persons = [x for x in re.split(r"\s*,\s*", f("person")) if x]  # several = together
     skip = [x for x in re.split(r"\s*,\s*", f("exclude")) if x]  # hidden people: only when not searched for
     skip = [x for x in skip if not any(_norm(x) == _norm(p) for p in persons)]
+    pile = staged()
+    only = f("staged") == "only"
     hits = []
     for r in data:
+        if (r["uuid"] in pile) != only:
+            continue
         if skip and any(_match_name(x, r["persons"]) for x in skip):
             continue
         if any(not _match_name(p, r["persons"]) for p in persons):
@@ -180,6 +223,8 @@ def search(q: dict, limit: int = 60) -> dict:
             continue
         if f("fav") == "1" and not r["fav"]:
             continue
+        if f("type") and f("type") not in r.get("types", ()):
+            continue
         if f("kind") in ("photo", "video") and r["kind"] != f("kind"):
             continue
         w = f("where")
@@ -192,16 +237,19 @@ def search(q: dict, limit: int = 60) -> dict:
     page = []
     for r in hits[offset:offset + limit]:
         path, state = _find(r)
-        page.append(dict(r, mirror=state, viewable=_viewable(path) is not None))
+        page.append(dict(r, mirror=state, staged=r["uuid"] in pile, viewable=_viewable(path) is not None))
     return {"total": len(hits), "offset": offset, "results": page}
 
 
 def facets() -> dict:
     data = list(rows().values())
+    pile = staged()
     top = lambda key, n: Counter(x for r in data for x in r[key]).most_common(n)
     return {"total": len(data),
             "persons": top("persons", 60), "labels": top("labels", 80), "albums": top("albums", 60),
             "years": sorted(Counter(r["date"][:4] for r in data if r["date"]).items(), reverse=True),
+            "types": [(t, TYPES[t], n) for t, n in Counter(t for r in data for t in r.get("types", ())).most_common() if t in TYPES],
+            "staged": len(pile), "staged_bytes": sum(r["bytes"] for r in data if r["uuid"] in pile),
             "trashed": sum(1 for r in data if r["trashed"]), "hidden": sum(1 for r in data if r["hidden"])}
 
 
@@ -224,4 +272,33 @@ def export_csv() -> str:
         w.writerow([r["uuid"], r["filename"], r["date"], r["kind"], "; ".join(r["persons"]), "; ".join(r["labels"]),
                     "; ".join(r["albums"]), "; ".join(r["keywords"]), r["place"], r["lat"], r["lon"],
                     int(r["fav"]), int(r["hidden"]), int(r["trashed"]), r["title"]])
+    return buf.getvalue()
+
+
+def originals(uuids):
+    """[(arcname, path, record)] for the mirror originals of these ids (any file type), skipping
+    ones with no copy. Names are made unique so two photos with one name do not overwrite."""
+    out, seen = [], set()
+    for u in uuids:
+        r = rows().get(u) if dupes.UUID_RE.match(u) else None
+        path = _find(r)[0] if r else None
+        if not path:
+            continue
+        name = path.name
+        if name in seen:
+            name = "%s_%s%s" % (path.stem, u[:8], path.suffix)
+        seen.add(name)
+        out.append((name, path, r))
+    return out
+
+
+def csv_for(recs) -> str:
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["file", "date", "kind", "types", "persons", "labels", "albums", "keywords", "place", "lat", "lon", "favourite"])
+    for name, _path, r in recs:
+        w.writerow([name, r["date"], r["kind"], "; ".join(r.get("types", [])), "; ".join(r["persons"]), "; ".join(r["labels"]),
+                    "; ".join(r["albums"]), "; ".join(r["keywords"]), r["place"], r["lat"], r["lon"], int(r["fav"])])
     return buf.getvalue()

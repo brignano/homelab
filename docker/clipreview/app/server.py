@@ -471,6 +471,16 @@ class Handler(BaseHTTPRequestHandler):
             with _lock:
                 return self._send(200, metalib.export_csv(), "text/csv; charset=utf-8",
                                   [("Content-Disposition", "inline; filename=cold-storage-metadata.csv")])
+        if u.path == "/api/meta/zip":
+            return self._zip(q.get("id", []))
+        if u.path.startswith("/meta/original/"):
+            with _lock:
+                recs = metalib.originals([u.path[len("/meta/original/"):]])
+            if not recs:
+                return self._send(404, "no copy on the drive")
+            name, path, _r = recs[0]
+            return self._file(path, mimetypes.guess_type(name)[0] or "application/octet-stream",
+                              [("Content-Disposition", 'attachment; filename="%s"' % name.replace('"', ""))])
         if u.path.startswith("/meta/file/"):
             with _lock:
                 hit = metalib.file_for(u.path[len("/meta/file/"):])
@@ -525,12 +535,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import", "/api/meta/hidden"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import", "/api/meta/hidden", "/api/meta/staged"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
         raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check", "/api/photos/report")
-                                     else metalib.MAX_BODY if path == "/api/meta/import" else 4096)
+                                     else metalib.MAX_BODY if path in ("/api/meta/import", "/api/meta/staged") else 4096)
         if raw is None:
             return
         try:
@@ -541,6 +551,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cold/check":
                 with _lock:
                     return self._send(200, json.dumps(dupes.cold_check(body)), "application/json")
+            if path == "/api/meta/staged":
+                with _lock:
+                    return self._send(200, json.dumps(metalib.stage(body)), "application/json")
             if path == "/api/meta/hidden":
                 with _lock:
                     return self._send(200, json.dumps({"people": metalib.set_hidden_people(body)}), "application/json")
@@ -615,7 +628,26 @@ class Handler(BaseHTTPRequestHandler):
         path = PHOTOS / clip["file"]
         self._file(path, mimetypes.guess_type(path.name)[0] or "video/quicktime")
 
-    def _file(self, path, ctype):
+    def _zip(self, uuids):
+        """Stream the originals of up to MAX_ZIP items as one uncompressed zip, plus a metadata.csv
+        of what Photos knew about them. Read-only; nothing is changed or removed."""
+        recs = metalib.originals(uuids[:metalib.MAX_ZIP])
+        if not recs:
+            return self._send(404, "no copies on the drive for these")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", 'attachment; filename="cold-storage-%d-items.zip"' % len(recs))
+        self.end_headers()  # no Content-Length: the connection closes at the end (HTTP/1.0)
+        import zipfile
+        try:
+            with zipfile.ZipFile(self.wfile, "w", zipfile.ZIP_STORED, allowZip64=True) as z:
+                z.writestr("metadata.csv", metalib.csv_for(recs))
+                for name, path, _r in recs:
+                    z.write(path, name)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def _file(self, path, ctype, extra=()):
         """Serve one file read-only, with Range so a player can seek."""
         size = path.stat().st_size
         start, end, code = 0, size - 1, 200
@@ -633,6 +665,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Accept-Ranges", "bytes")
+        for k, v in extra:
+            self.send_header(k, v)
         self.send_header("Content-Length", str(end - start + 1))
         if code == 206:
             self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
