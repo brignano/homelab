@@ -25,7 +25,7 @@ TYPES = {"screenshot": "Screenshots", "selfie": "Selfies", "raw": "RAW", "live":
          "screenrec": "Screen recordings", "cinematic": "Cinematic"}
 RAW_EXT = {".dng", ".nef", ".cr2", ".cr3", ".arw", ".raf", ".orf", ".rw2"}
 VIEWABLE = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
-            ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4"}
+            ".mp4": "video/mp4", ".mov": "video/mp4", ".m4v": "video/mp4"}
 PREVIEWS = Path(os.environ.get("PREVIEWS_DIR", "/photos-previews"))  # JPEGs of the HEICs (scripts/photos-previews.sh)
 _cache = {"mtime": None, "rows": {}}
 
@@ -302,3 +302,39 @@ def csv_for(recs) -> str:
         w.writerow([name, r["date"], r["kind"], "; ".join(r.get("types", [])), "; ".join(r["persons"]), "; ".join(r["labels"]),
                     "; ".join(r["albums"]), "; ".join(r["keywords"]), r["place"], r["lat"], r["lon"], int(r["fav"])])
     return buf.getvalue()
+
+
+THUMBS = DIR / "thumbs"
+_ffmpeg_slots = __import__("threading").BoundedSemaphore(2)
+
+
+def thumb_for(uuid: str):
+    """Path of a small cached JPEG still of a photo or clip (first frames), made on first request with
+    ffmpeg from the mirror original or its HEIC preview; None when there is no copy or it will not decode.
+    The cache lives beside the metadata and can be deleted at any time."""
+    hit = file_for(uuid)
+    if not hit:
+        return None
+    src = hit[0]
+    out = THUMBS / (uuid + ".jpg")
+    if out.is_file():
+        return out
+    import subprocess
+    THUMBS.mkdir(parents=True, exist_ok=True)
+    tmp = THUMBS / (uuid + ".tmp.jpg")
+    cmd = ["ffmpeg", "-v", "error", "-y", "-nostdin"]
+    if src.suffix.lower() in (".mp4", ".mov", ".m4v"):
+        cmd += ["-ss", "0.5"]
+    cmd += ["-i", str(src), "-frames:v", "1", "-vf", "scale='min(480,iw)':-2", "-q:v", "4", str(tmp)]
+    with _ffmpeg_slots:
+        if out.is_file():
+            return out
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, timeout=30)
+            if not tmp.is_file() and src.suffix.lower() in (".mp4", ".mov", ".m4v"):  # clip shorter than 0.5 s
+                subprocess.run([c for c in cmd if c not in ("-ss", "0.5")], check=True, capture_output=True, timeout=30)
+            tmp.replace(out)
+        except (OSError, subprocess.SubprocessError):
+            tmp.unlink(missing_ok=True)
+            return None
+    return out

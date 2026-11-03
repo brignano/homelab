@@ -320,6 +320,10 @@ for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
 (tmp / "photos/2019/07").mkdir(parents=True)
 (tmp / "photos/2019/07/IMG_900.JPG").write_bytes(b"J" * 50)
 (tmp / "photos/2019/07/IMG_902.HEIC").write_bytes(b"H" * 20)
+import shutil, subprocess
+if shutil.which("ffmpeg"):  # a real picture for the thumbnail test (made before the month is first listed)
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "testsrc=size=1280x720", "-frames:v", "1",
+                    str(tmp / "photos/2019/07/IMG_903.PNG")], check=True)
 recs = [
     {"uuid": "AAAAAAAA-0001", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
      "persons": ["Dakota", "Julia", "_UNKNOWN_"], "labels": ["Beach", "Dog"], "albums": ["Summer"], "place": "Cape Cod, MA",
@@ -378,6 +382,29 @@ try:
     raise SystemExit("expected 400")
 except urllib.error.HTTPError as e:
     assert e.code == 400
+# thumbnails: a small cached JPEG made with ffmpeg; files that will not decode answer 404 (the page shows a placeholder)
+try:
+    get("/meta/thumb/AAAAAAAA-0001")
+    raise SystemExit("expected 404 for a file ffmpeg cannot decode")
+except urllib.error.HTTPError as e:
+    assert e.code == 404
+if shutil.which("ffmpeg"):
+    png = tmp / "photos/2019/07/IMG_903.PNG"
+    json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0006", "filename": "IMG_903.PNG", "bytes": png.stat().st_size,
+                                 "date": "2019-07-06T09:00:00-04:00"}]}))
+    th = get("/meta/thumb/AAAAAAAA-0006").read()
+    assert th[:2] == b"\xff\xd8" and len(th) < png.stat().st_size, len(th)
+    assert (tmp / "data/meta/thumbs/AAAAAAAA-0006.jpg").is_file() and get("/meta/thumb/AAAAAAAA-0006").read() == th  # cached
+try:
+    get("/meta/thumb/..%2f..%2fetc%2fpasswd")
+    raise SystemExit("expected 404")
+except urllib.error.HTTPError as e:
+    assert e.code == 404
+# a .MOV opens in a tab instead of downloading: labelled mp4, no attachment; /original stays a download
+json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0007", "filename": "IMG_1_aaaaaaa.MOV", "bytes": 10, "date": "2026-10-05T12:00:00-04:00", "kind": "video"}]}))
+r = get("/meta/file/AAAAAAAA-0007")
+assert r.headers["Content-Type"] == "video/mp4" and r.headers["Content-Disposition"] == "inline" and r.read() == b"0123456789"
+assert "attachment" in get("/meta/original/AAAAAAAA-0007").headers["Content-Disposition"]
 # media types (screenshot, selfie, RAW...) and downloading originals
 json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0004", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
                              "types": ["selfie", "bogus", "live"]},
