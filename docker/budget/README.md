@@ -66,10 +66,11 @@ Reports page is one big button. Caddy adds a small style rule to Actual's page
 look-only on a phone, so a stray tap while scrolling no longer opens the full
 report. To open a report from the phone, turn it sideways or use a computer.
 
-Actual's service worker keeps a cached copy of its page, so a phone that already
-has the site picks the rule up with the next Actual upgrade, or straight away
-after removing the site's data in Safari (you then sign in and enter the
-encryption key again).
+Actual's service worker keeps a cached copy of its page. Caddy also rewrites
+that page's revision in `sw.js`, so a phone that already has the site sees a new
+version: Actual shows its "new version available" prompt (or applies it on the
+next open), and the reloaded page carries the rule. If the rule ever changes,
+bump the `phone1-` prefix in the Caddyfile so phones fetch it again.
 
 ## Backups and restore
 

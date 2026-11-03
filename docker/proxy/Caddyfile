@@ -152,17 +152,30 @@ budget.{$HOMELAB_DOMAIN} {
 		# tablet-width windows are unchanged. Actual's own custom-CSS box only
 		# takes `:root` variables, so the rule is added to its page here.
 		#
-		# Actual's service worker caches the page, so a phone picks this up on
-		# the next Actual upgrade (or after removing the site's data).
+		# Actual's service worker serves its cached copy of the page, so the
+		# sw.js rewrite below changes that page's revision in the worker's
+		# precache list. The browser sees a new worker, re-fetches the page
+		# (through this rewrite) and Actual offers its usual "update" prompt.
+		# Bump the `phone1-` prefix whenever the style rule changes.
 		# `replace` cannot edit compressed bodies, hence Accept-Encoding.
+		# Actual's ETags describe its own bytes, not the rewritten ones, so a
+		# browser revalidating with them gets a 304 and keeps the old copy:
+		# conditional requests are stripped and the ETags dropped.
 		reverse_proxy budget:5006 {
 			header_up Accept-Encoding identity
+			header_up -If-None-Match
+			header_up -If-Modified-Since
+			header_down -ETag
+			header_down -Last-Modified
 		}
 		replace {
 			match {
 				header Content-Type text/html*
 			}
 			</head> `<style>@media (max-width: 729px) { [data-testid="reports-overview"] button { pointer-events: none; } }</style></head>`
+		}
+		replace /sw.js {
+			"url:\"index.html\",revision:\"" "url:\"index.html\",revision:\"phone1-"
 		}
 	}
 }
