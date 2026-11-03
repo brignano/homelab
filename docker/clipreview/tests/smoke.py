@@ -7,6 +7,7 @@ import sys
 import tempfile
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -315,4 +316,38 @@ for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
     assert "<title>%s \u00b7 Review</title>" % title in page, path
     assert 'rel="manifest"' in page and 'rel="apple-touch-icon"' in page and 'name="theme-color"' in page, path
     assert 'class="logo"' in page and "viewport-fit=cover" in page, path
+# --- cold-storage metadata -------------------------------------------------------
+(tmp / "photos/2019/07").mkdir(parents=True)
+(tmp / "photos/2019/07/IMG_900.JPG").write_bytes(b"J" * 50)
+recs = [
+    {"uuid": "AAAAAAAA-0001", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
+     "persons": ["Dakota", "Julia", "_UNKNOWN_"], "labels": ["Beach", "Dog"], "albums": ["Summer"], "place": "Cape Cod, MA",
+     "fav": True, "kind": "photo"},
+    {"uuid": "AAAAAAAA-0002", "filename": "IMG_901.MOV", "bytes": 9, "date": "2018-01-02T08:00:00-05:00",
+     "persons": ["Lauren \U0001f970"], "labels": ["Climbing"], "trashed": True, "kind": "video"},
+]
+def mpost(body):
+    return urllib.request.urlopen(urllib.request.Request(
+        base + "/api/meta/import", json.dumps(body).encode(), {"Content-Type": "application/json"}))
+r = json.load(mpost({"photos": recs}))
+assert r["total"] == 2 and r["added"] == 2, r
+assert json.load(mpost({"photos": recs[:1]}))["added"] == 0  # merge, no duplicates
+def q(**kw):
+    return json.load(get("/api/meta/search?" + urllib.parse.urlencode(kw)))
+assert q(person="Dakota,Julia")["total"] == 1 and q(person="Dakota,Lauren")["total"] == 0
+assert q(person="lauren")["total"] == 1                      # name + emoji, case-blind
+assert q(label="climb", where="trashed")["total"] == 1 and q(where="library")["total"] == 1
+assert q(place="cape cod", year="2019", fav="1")["results"][0]["mirror"] == "ok"
+assert q(person="Dakota")["results"][0]["viewable"] is True and q(kind="video")["results"][0]["mirror"] == "missing"
+assert "_UNKNOWN_" not in json.dumps(q())                    # unnamed faces are not a person
+assert json.load(get("/api/meta/facets"))["trashed"] == 1
+assert get("/meta/file/AAAAAAAA-0001").read() == b"J" * 50
+for bad in ("/meta/file/AAAAAAAA-0002", "/meta/file/..%2f..%2fetc%2fpasswd"):
+    try:
+        get(bad)
+        raise SystemExit("expected 404 for " + bad)
+    except urllib.error.HTTPError as e:
+        assert e.code == 404, (bad, e.code)
+assert b"AAAAAAAA-0001" in get("/api/meta/export.csv").read()
+assert "Cold storage search" in get("/meta").read().decode()
 print("ok")
