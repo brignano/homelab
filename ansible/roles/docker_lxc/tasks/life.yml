@@ -18,9 +18,20 @@
     update_cache: true
     cache_valid_time: 86400
 
-- name: The life user (no groups, no password)
+# A fixed UID/GID that no container uses. The default (1000) is the PUID of the
+# linuxserver containers (Radarr, Sonarr, qBittorrent...), so a process running
+# as life could read their /proc/<pid>/environ and signal them.
+# Changing the UID of a running user fails: stop claude-rc-life first.
+- name: The life group (fixed GID no container uses)
+  ansible.builtin.group:
+    name: life
+    gid: 2900
+
+- name: The life user (fixed UID, no extra groups, no password)
   ansible.builtin.user:
     name: life
+    uid: 2900
+    group: life
     shell: /bin/bash
     create_home: true
     password_lock: true
