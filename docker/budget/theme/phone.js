@@ -10,6 +10,7 @@
   const MOVE_PX = 10;
   const phone = window.matchMedia("(max-width: 729px)");
   let timer = null;
+  let fired = false;
   let startX = 0;
   let startY = 0;
 
@@ -22,6 +23,7 @@
     "touchstart",
     (e) => {
       cancel();
+      fired = false;
       if (!phone.matches || e.touches.length !== 1) return;
       const target = e.target instanceof Element ? e.target : null;
       const overview = target?.closest('[data-testid="reports-overview"]');
@@ -33,6 +35,7 @@
       startY = e.touches[0].clientY;
       timer = setTimeout(() => {
         timer = null;
+        fired = true;
         navigator.vibrate?.(10);
         button.click();
       }, HOLD_MS);
@@ -49,6 +52,18 @@
     },
     { passive: true },
   );
-  document.addEventListener("touchend", cancel, { passive: true });
+  // After a long-press has opened the report, the finger lifting must not
+  // also click whatever is now under it (iOS sends a click on release).
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      cancel();
+      if (fired) {
+        fired = false;
+        e.preventDefault();
+      }
+    },
+    { passive: false },
+  );
   document.addEventListener("touchcancel", cancel, { passive: true });
 })();
