@@ -37,6 +37,13 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # JPEG previews of the HEICs (scripts/photos-previews.sh), so /meta can show them.
+      - type: bind
+        source: /media/photos/icloud-previews
+        target: /photos-previews
+        read_only: true
+        bind:
+          create_host_path: false
       # Hidden-album mirror (scripts/photos-sync.sh), only read to confirm that a
       # hidden photo has its original on the drive. Not part of Jellyfin.
       - type: bind

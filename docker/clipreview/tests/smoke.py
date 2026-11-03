@@ -319,6 +319,7 @@ for path, title in (("/", "Videos"), ("/dupes", "Duplicate photos")):
 # --- cold-storage metadata -------------------------------------------------------
 (tmp / "photos/2019/07").mkdir(parents=True)
 (tmp / "photos/2019/07/IMG_900.JPG").write_bytes(b"J" * 50)
+(tmp / "photos/2019/07/IMG_902.HEIC").write_bytes(b"H" * 20)
 recs = [
     {"uuid": "AAAAAAAA-0001", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
      "persons": ["Dakota", "Julia", "_UNKNOWN_"], "labels": ["Beach", "Dog"], "albums": ["Summer"], "place": "Cape Cod, MA",
@@ -348,6 +349,13 @@ for bad in ("/meta/file/AAAAAAAA-0002", "/meta/file/..%2f..%2fetc%2fpasswd"):
         raise SystemExit("expected 404 for " + bad)
     except urllib.error.HTTPError as e:
         assert e.code == 404, (bad, e.code)
+os.environ["PREVIEWS_DIR"] = str(tmp / "previews")
+(tmp / "previews/2019/07").mkdir(parents=True)
+server.metalib.PREVIEWS = tmp / "previews"
+json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0003", "filename": "IMG_902.HEIC", "bytes": 20, "date": "2019-07-05T10:00:00-04:00"}]}))
+assert q(text="IMG_902")["results"][0]["viewable"] is False        # no preview made yet
+(tmp / "previews/2019/07/IMG_902.jpg").write_bytes(b"P" * 7)
+assert q(text="IMG_902")["results"][0]["viewable"] is True and get("/meta/file/AAAAAAAA-0003").read() == b"P" * 7
 assert b"AAAAAAAA-0001" in get("/api/meta/export.csv").read()
 assert "Cold storage search" in get("/meta").read().decode()
 print("ok")

@@ -59,7 +59,7 @@ function card(r){
     const u='/meta/file/'+r.uuid;
     if(r.kind==='video'){const v=el('video');v.src=u;v.controls=true;v.preload='none';v.style.cssText='width:100%;height:100%';m.textContent='';m.appendChild(v)}
     else{const i=el('img');i.loading='lazy';i.src=u;i.style.cssText='width:100%;height:100%;object-fit:contain';m.appendChild(i)}
-  }else m.textContent=r.mirror.startsWith('ok')?'in the mirror (browse in Jellyfin)':'not in the mirror';
+  }else m.textContent=r.mirror.startsWith('ok')?'in the mirror, no preview yet':'not in the mirror';
   c.appendChild(m);
   const t=el('div','t');
   t.appendChild(el('div','',(r.date||'').slice(0,10)+(r.fav?' ♥':'')+'  '+r.filename));
