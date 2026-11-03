@@ -174,7 +174,7 @@ function tile(r,i){
   const fl=el('div','fl');
   if(r.kind==='video')fl.appendChild(el('i','','Clip'));
   if(r.fav)fl.appendChild(el('i','','♥'));
-  if(r.trashed){const d=el('i','del','Deleted from iPhone');d.title='Deleted from your iPhone and iCloud (Photos keeps it about 30 days). It is still kept here in cold storage.';fl.appendChild(d)}
+  if(r.trashed){const d=el('i','del','Deleted from iPhone');d.title='Deleted from your iPhone and iCloud (Photos keeps it about 30 days). This archive has not deleted anything.';fl.appendChild(d)}
   if(r.hidden)fl.appendChild(el('i','','Hidden'));
   b.appendChild(fl);
   const cap=el('div','cap');cap.appendChild(el('div','d',fmt(r.date)));
@@ -262,7 +262,7 @@ function openLb(i){cur=i;const r=items[i];if(!r)return;
     dl.appendChild(dt);dl.appendChild(dd)};
   row('Type',(r.types||[]).map(t=>TL[t]||t),null);row('People',r.persons,'person');row('Things',r.labels,'label');row('Albums',r.albums,'album');
   row('Place',r.place?[r.place]:[],'place');row('Keywords',r.keywords,'text');
-  const fl=[r.fav&&'Favourite',r.trashed&&'Deleted from your iPhone and iCloud. Still kept here in cold storage.',r.hidden&&'Hidden album',r.mirror&&r.mirror.startsWith('ok')?'Original on the drive':'No copy on the drive'].filter(Boolean);
+  const fl=[r.fav&&'Favourite',r.trashed&&('Deleted from your iPhone and iCloud'+(r.mirror&&r.mirror.startsWith('ok')?'. The original is still kept on the drive.':'. No copy was kept on the drive.')),r.hidden&&'Hidden album',r.mirror&&r.mirror.startsWith('ok')?'Original on the drive':'No copy on the drive'].filter(Boolean);
   row('Status',fl,null);s.appendChild(dl);
   if(r.mirror&&r.mirror.startsWith('ok')){const a=el('div','acts');
     const d=el('a','','Download the original');d.href='/meta/original/'+r.uuid;a.appendChild(d);
