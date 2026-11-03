@@ -9,6 +9,13 @@ retired (#330). The one pattern for both: a Life session starts Remote Control o
 |--------|--------|---------------|
 | `./calendar [YYYY-MM-DD] [DAYS]` | events: title, start, end, location | `mcp-calendar` container, same code and Home Assistant read as the calendar MCP |
 | `./budget [YYYY-MM]` | account balances, category budgeted/spent/left | `mcp-budget` container, Actual API, read-only calls |
+| `./budget months [N]` | each category's spent/budgeted for the last N months (default 12, max 24) | same |
+| `./budget payees [YYYY-MM[:YYYY-MM]]` | top payees by total spent, with counts (default last 3 months) | same |
+
+`payees` prints names, totals and counts only: no dates, notes, accounts or
+individual amounts. Payees seen once in the range are folded into one "other
+one-off" line so a single purchase is never shown by itself; transfers, income and
+off-budget accounts are left out.
 
 Both run inside their container, so the Home Assistant token and the Actual
 password, sync ID and encryption key never reach the session or the output.
@@ -38,6 +45,10 @@ can't read `/root`, any `.env`, or Docker.
    playbook (`docker_lxc` role), then sign `life` in once:
    `su - life`, `cd /srv/life-session && claude`, sign in, `/exit`, and run the
    playbook again so the `claude-rc-life` service starts.
+   Also run `cd /srv/life-session && claude remote-control` once as `life` and
+   answer `y` to "Enable Remote Control?", then Ctrl+C: the service has no keyboard,
+   so without that answer it restarts in a loop. Needed again after a rebuild.
+   Run the playbook with `claude-rc-life` stopped if it changes `life`'s UID.
 2. In the Life project, start Remote Control on the box's `life` session and ask
    for the calendar or budget.
 3. A scheduled or unattended Life routine can't use this. That's the accepted

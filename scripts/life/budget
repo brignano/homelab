@@ -1,26 +1,47 @@
 #!/usr/bin/env bash
 # Anthony's budget as plain text, for a Life session running on this box.
-#   ./budget [YYYY-MM]            month to show (default: this month)
+#   ./budget [YYYY-MM]                 one month: balances, category budgeted/spent/left
+#   ./budget months [N]                last N months (default 12, max 24): category spent and budgeted
+#   ./budget payees [YYYY-MM[:YYYY-MM]]  top payees by total spent (default: last 3 months)
 #
-# Read-only: it downloads the budget through the Actual API and only reads
-# (account balances, category budgeted/spent/balance). It runs inside the
-# mcp-budget container, which already holds the server password, sync ID and
-# end-to-end key, so none of them reach this shell or the output. It uses its
-# own scratch data dir, so it never touches the one the MCP server has open.
-# Issue #330.
+# Read-only: it downloads the budget through the Actual API and only reads. It
+# runs inside the mcp-budget container, which already holds the server password,
+# sync ID and end-to-end key, so none of them reach this shell or the output. It
+# uses its own scratch data dir, so it never touches the one the MCP server has
+# open. Issue #330.
+#
+# `payees` prints names, totals and counts only: no dates, notes, accounts or
+# individual amounts. Payees seen once in the range are folded into one "other"
+# line, so a single one-off purchase is never shown by itself. Transfers and
+# income are left out.
 set -euo pipefail
 
-month="${1:-$(date +%Y-%m)}"
-case "$month" in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "budget: month must be YYYY-MM, got '$month'" >&2; exit 2 ;; esac
+mode=month
+arg=""
+case "${1:-}" in
+  months) mode=months; arg="${2:-12}"
+    case "$arg" in ''|*[!0-9]*) echo "budget: months takes a number, got '$arg'" >&2; exit 2 ;; esac
+    if [ "$arg" -lt 1 ] || [ "$arg" -gt 24 ]; then echo "budget: months must be 1 to 24" >&2; exit 2; fi ;;
+  payees) mode=payees; arg="${2:-}"
+    case "$arg" in
+      "") ;;
+      [0-9][0-9][0-9][0-9]-[0-1][0-9]|[0-9][0-9][0-9][0-9]-[0-1][0-9]:[0-9][0-9][0-9][0-9]-[0-1][0-9]) ;;
+      *) echo "budget: payees takes YYYY-MM or YYYY-MM:YYYY-MM, got '$arg'" >&2; exit 2 ;;
+    esac ;;
+  *) arg="${1:-$(date +%Y-%m)}"
+    case "$arg" in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "budget: month must be YYYY-MM, got '$arg'" >&2; exit 2 ;; esac ;;
+esac
 
 # The awk drops the Actual API's progress lines if any still reach stdout;
 # pipefail keeps docker's exit status.
-docker exec -i -e LIFE_MONTH="$month" mcp-budget node --input-type=module - <<'JS' |
+docker exec -i -e LIFE_MODE="$mode" -e LIFE_ARG="$arg" -e LIFE_NOW="$(date +%Y-%m)" mcp-budget node --input-type=module - <<'JS' |
 import * as api from '@actual-app/api';
 import { mkdirSync } from 'node:fs';
 
 const usd = (cents) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-const month = process.env.LIFE_MONTH;
+const mode = process.env.LIFE_MODE;
+const arg = process.env.LIFE_ARG;
+const now = process.env.LIFE_NOW;
 
 // The Actual API logs progress ("[Breadcrumb]", "Loading budget", "Syncing
 // since") with console.log. Keep that out of stdout so only the report is
@@ -28,18 +49,14 @@ const month = process.env.LIFE_MONTH;
 console.log = console.info = console.debug = () => {};
 const say = (line = '') => process.stdout.write(line + '\n');
 
-try {
-  // The Actual API needs its data folder to exist before init.
-  mkdirSync('/tmp/life-budget', { recursive: true });
-  await api.init({
-    dataDir: '/tmp/life-budget',
-    serverURL: process.env.ACTUAL_SERVER_URL,
-    password: process.env.ACTUAL_PASSWORD,
-  });
-  await api.downloadBudget(process.env.ACTUAL_BUDGET_SYNC_ID, {
-    password: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || undefined,
-  });
+// "YYYY-MM" shifted by n months.
+const shift = (ym, n) => {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(Date.UTC(y, m - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+};
 
+async function oneMonth(month) {
   say(`Budget ${month}`);
   say('\nAccounts');
   for (const account of await api.getAccounts()) {
@@ -56,6 +73,80 @@ try {
       say(`  ${c.name}: budgeted ${usd(c.budgeted)}, spent ${usd(c.spent)}, left ${usd(c.balance)}`);
     }
   }
+}
+
+// Category spent and budgeted for each of the last n months, oldest first.
+async function months(n) {
+  const list = [];
+  for (let i = n - 1; i >= 0; i--) list.push(shift(now, -i));
+  const data = [];
+  for (const m of list) data.push(await api.getBudgetMonth(m));
+  say(`Spent and budgeted per month, ${list[0]} to ${list[list.length - 1]} (the last month may be partial)`);
+  say(`\nMonths: ${list.join('  ')}`);
+  say(`\nTotal spent: ${data.map((d) => usd(d.totalSpent)).join('  ')}`);
+  const first = data[data.length - 1];
+  for (const group of first.categoryGroups) {
+    if (group.is_income) continue;
+    say(`\n${group.name}`);
+    for (const c of group.categories) {
+      const row = data.map((d) => {
+        const g = d.categoryGroups.find((x) => x.id === group.id);
+        const cat = g && g.categories.find((x) => x.id === c.id);
+        return cat ? `${usd(cat.spent)}/${usd(cat.budgeted)}` : '-';
+      });
+      say(`  ${c.name} (spent/budgeted): ${row.join('  ')}`);
+    }
+  }
+}
+
+// Top payees by total spent in a range. Names, totals and counts only.
+async function payees(range) {
+  const [from, to] = range
+    ? (range.includes(':') ? range.split(':') : [range, range])
+    : [shift(now, -2), now];
+  if (from > to) throw new Error('payees: the range must run from the earlier month to the later one');
+  const start = `${from}-01`;
+  const end = `${shift(to, 1)}-01`; // exclusive
+  const names = new Map((await api.getPayees()).map((p) => [p.id, p.name]));
+  const totals = new Map();
+  for (const account of await api.getAccounts()) {
+    if (account.closed || account.offbudget) continue;
+    for (const t of await api.getTransactions(account.id, start, end)) {
+      if (t.date >= end || t.date < start) continue;
+      if (t.transfer_id || t.is_parent || t.amount >= 0) continue; // spending only
+      const name = names.get(t.payee) || '(no payee)';
+      const cur = totals.get(name) || { total: 0, n: 0 };
+      cur.total += -t.amount;
+      cur.n += 1;
+      totals.set(name, cur);
+    }
+  }
+  const repeat = [...totals.entries()].filter(([, v]) => v.n >= 2).sort((a, b) => b[1].total - a[1].total);
+  const once = [...totals.values()].filter((v) => v.n < 2);
+  say(`Top payees by total spent, ${from} to ${to}`);
+  for (const [name, v] of repeat.slice(0, 40)) say(`  ${name}: ${usd(v.total)} (${v.n} transactions)`);
+  if (repeat.length > 40) {
+    const rest = repeat.slice(40);
+    say(`  Other repeat payees (${rest.length}): ${usd(rest.reduce((s, [, v]) => s + v.total, 0))}`);
+  }
+  if (once.length) say(`  Other one-off payees (${once.length}): ${usd(once.reduce((s, v) => s + v.total, 0))}`);
+}
+
+try {
+  // The Actual API needs its data folder to exist before init.
+  mkdirSync('/tmp/life-budget', { recursive: true });
+  await api.init({
+    dataDir: '/tmp/life-budget',
+    serverURL: process.env.ACTUAL_SERVER_URL,
+    password: process.env.ACTUAL_PASSWORD,
+  });
+  await api.downloadBudget(process.env.ACTUAL_BUDGET_SYNC_ID, {
+    password: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || undefined,
+  });
+
+  if (mode === 'months') await months(Number(arg));
+  else if (mode === 'payees') await payees(arg);
+  else await oneMonth(arg);
 } catch (err) {
   console.error(`budget: ${err && err.message ? err.message : err}`);
   process.exitCode = 1;

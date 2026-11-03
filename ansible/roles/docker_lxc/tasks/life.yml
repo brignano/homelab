@@ -104,6 +104,8 @@
 
       - `life-calendar [YYYY-MM-DD] [DAYS]` prints events (title, start, end, location).
       - `life-budget [YYYY-MM]` prints account balances and category budgeted/spent/left.
+      - `life-budget months [N]` prints each category's spent/budgeted for the last N months (default 12).
+      - `life-budget payees [YYYY-MM[:YYYY-MM]]` prints top payees with totals and counts (default last 3 months).
 
       Both are read-only. Do not look for other files or secrets, and do not try other
       commands. If one fails, report its error line as it is.
@@ -166,6 +168,7 @@
   ansible.builtin.debug:
     msg: >-
       life is not signed in to Claude yet. As root on CT 100: su - life, then
-      cd /srv/life-session && claude (sign in once, then /exit), then run this
+      cd /srv/life-session && claude (sign in once, then /exit), then
+      claude remote-control (answer y to Enable Remote Control, then Ctrl+C), then run this
       playbook again. Details: scripts/life/README.md.
   when: not hl_life_signed_in.stat.exists
