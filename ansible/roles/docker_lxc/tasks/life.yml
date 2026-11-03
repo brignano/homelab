@@ -9,6 +9,15 @@
 #     arguments and run inside the mcp-calendar / mcp-budget containers.
 #   - Its session folder and settings are root-owned, so it cannot edit them.
 
+- name: Install sudo (missing from the Debian CT 100 image) and acl (so Ansible can become the life user)
+  ansible.builtin.apt:
+    name:
+      - sudo
+      - acl
+    state: present
+    update_cache: true
+    cache_valid_time: 86400
+
 - name: The life user (no groups, no password)
   ansible.builtin.user:
     name: life
