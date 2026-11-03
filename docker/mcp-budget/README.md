@@ -8,7 +8,7 @@ and edit transactions, categories, payees and rules.
 
 ```
 client (Claude Code / Otto)  Authorization: Bearer <MCP_BUDGET_TOKEN>
-   │  https://budget-mcp.home.brignano.io<path>      LAN + tailnet only
+   │  https://budget-mcp.home.brignano.io/sse        LAN + tailnet only
    ▼
 Caddy ──▶ mcp-budget:3000 ──@actual-app/api──▶ budget:5006 (Actual server)
 ```
@@ -35,12 +35,11 @@ sync off on purpose.
 2. `docker compose -f docker/mcp-budget/docker-compose.yml up -d`
 3. Reload Caddy so `budget-mcp.home.brignano.io` is served (confirm-first, it is the
    proxy stack).
-4. Point a client at it. `<path>` is the server's endpoint (`/sse` or `/mcp`; confirm
-   against the container logs on first start and fix this line):
+4. Point a client at it (the endpoint is `/sse`, checked on the first deploy):
    ```json
    { "mcpServers": { "budget": {
        "type": "sse",
-       "url": "https://budget-mcp.home.brignano.io/<path>",
+       "url": "https://budget-mcp.home.brignano.io/sse",
        "headers": { "Authorization": "Bearer <MCP_BUDGET_TOKEN>" } } } }
    ```
 

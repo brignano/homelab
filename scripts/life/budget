@@ -15,11 +15,14 @@ case "$month" in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "budget: month must
 
 exec docker exec -i -e LIFE_MONTH="$month" mcp-budget node --input-type=module - <<'JS'
 import * as api from '@actual-app/api';
+import { mkdirSync } from 'node:fs';
 
 const usd = (cents) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const month = process.env.LIFE_MONTH;
 
 try {
+  // The Actual API needs its data folder to exist before init.
+  mkdirSync('/tmp/life-budget', { recursive: true });
   await api.init({
     dataDir: '/tmp/life-budget',
     serverURL: process.env.ACTUAL_SERVER_URL,
