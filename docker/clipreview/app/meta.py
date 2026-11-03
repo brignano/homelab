@@ -28,6 +28,29 @@ def _s(v, n=200):
     return str(v or "")[:n]
 
 
+HIDDEN = DIR / "hidden-people.json"
+
+
+def hidden_people() -> list:
+    """People left out of results unless asked for (the page's "show hidden"
+    switch). Kept on the drive so every device agrees."""
+    try:
+        return [str(x) for x in json.loads(HIDDEN.read_text())["people"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def set_hidden_people(payload) -> list:
+    if not isinstance(payload, dict) or not isinstance(payload.get("people"), list) or len(payload["people"]) > 500:
+        raise ValueError("expected {people: [...]}")
+    people = sorted({_s(x, 120).strip() for x in payload["people"] if str(x).strip()})
+    DIR.mkdir(parents=True, exist_ok=True)
+    tmp = HIDDEN.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"people": people}))
+    tmp.replace(HIDDEN)
+    return people
+
+
 def _clean(r) -> dict:
     if not isinstance(r, dict) or not dupes.UUID_RE.match(str(r.get("uuid", ""))):
         raise ValueError("bad record")

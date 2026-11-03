@@ -461,6 +461,9 @@ class Handler(BaseHTTPRequestHandler):
         if u.path == "/api/meta/search":
             with _lock:
                 return self._send(200, json.dumps(metalib.search({k: v[0] for k, v in q.items()})), "application/json")
+        if u.path == "/api/meta/hidden":
+            with _lock:
+                return self._send(200, json.dumps({"people": metalib.hidden_people()}), "application/json")
         if u.path == "/api/meta/facets":
             with _lock:
                 return self._send(200, json.dumps(metalib.facets()), "application/json")
@@ -522,7 +525,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import", "/api/meta/hidden"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
@@ -538,6 +541,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cold/check":
                 with _lock:
                     return self._send(200, json.dumps(dupes.cold_check(body)), "application/json")
+            if path == "/api/meta/hidden":
+                with _lock:
+                    return self._send(200, json.dumps({"people": metalib.set_hidden_people(body)}), "application/json")
             if path == "/api/meta/import":
                 with _lock:
                     return self._send(200, json.dumps(metalib.ingest(body)), "application/json")

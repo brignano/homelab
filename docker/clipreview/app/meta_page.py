@@ -44,10 +44,9 @@ form label.chk{flex-direction:row;align-items:center;gap:var(--s2);min-height:2.
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let offset=0,HID=[];
-try{HID=JSON.parse(localStorage.getItem('hiddenPeople')||'[]')}catch(e){}
-const saveHid=()=>{try{localStorage.setItem('hiddenPeople',JSON.stringify(HID))}catch(e){}};
-let showHid=false;
+let offset=0,HID=[],showHid=false;
+// hidden people live on the server, so every device agrees
+const saveHid=()=>fetch('/api/meta/hidden',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({people:HID})});
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 async function facets(){
   const d=await (await fetch('/api/meta/facets')).json();
@@ -64,15 +63,15 @@ function drawChips(){
     const lab=el('span','',n+' '+c);
     lab.onclick=()=>{document.querySelector('[name=person]').value=n;run(true)};
     b.appendChild(lab);
-    if(!HID.includes(n)){const x=el('span','x','\u00d7');x.title='Hide this person from results';
+    if(!HID.includes(n)){const x=el('span','x','\u00d7');x.title='Hide this person by default';
       x.onclick=e=>{e.stopPropagation();HID.push(n);saveHid();drawChips();run(true)};b.appendChild(x)}
     f.appendChild(b)}
   const h=$('hid');h.textContent='';h.hidden=!HID.length;
   if(HID.length){
-    h.appendChild(document.createTextNode(HID.length+' hidden from results and this list: '));
-    const t=el('a','',showHid?'stop showing':'show them');t.href='#';t.onclick=e=>{e.preventDefault();showHid=!showHid;drawChips();run(true)};h.appendChild(t);
+    h.appendChild(document.createTextNode(HID.length+' hidden by default: '));
+    const t=el('a','',showHid?'hide them again':'show hidden people');t.href='#';t.onclick=e=>{e.preventDefault();showHid=!showHid;drawChips();run(true)};h.appendChild(t);
     h.appendChild(document.createTextNode(' \u00b7 '));
-    const u=el('a','','unhide all');u.href='#';u.onclick=e=>{e.preventDefault();HID=[];saveHid();showHid=false;drawChips();run(true)};h.appendChild(u);
+    const u=el('a','','stop hiding anyone');u.href='#';u.onclick=e=>{e.preventDefault();HID=[];saveHid();showHid=false;drawChips();run(true)};h.appendChild(u);
   }
 }
 function card(r){
@@ -108,6 +107,6 @@ async function run(reset){
 $('f').onsubmit=e=>{e.preventDefault();run(true)};
 $('more').onclick=()=>run(false);
 $('reset').onclick=()=>{$('f').reset();run(true)};
-facets().then(()=>run(true));
+fetch('/api/meta/hidden').then(r=>r.json()).then(d=>{HID=d.people||[]}).catch(()=>{}).then(facets).then(()=>run(true));
 </script></body></html>
 """.replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("meta"))

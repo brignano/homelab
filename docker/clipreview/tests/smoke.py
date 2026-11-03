@@ -339,6 +339,10 @@ assert q(person="Dakota,Julia")["total"] == 1 and q(person="Dakota,Lauren")["tot
 assert q(person="lauren")["total"] == 1                      # name + emoji, case-blind
 assert q(exclude="Lauren \U0001f970")["total"] == 1 and q(exclude="Lauren", person="Lauren")["total"] == 1  # hidden people, unless searched
 assert q(exclude="Dakota")["total"] == 1
+assert json.load(get("/api/meta/hidden"))["people"] == []
+hp = urllib.request.Request(base + "/api/meta/hidden", json.dumps({"people": ["Lauren", " ", "Cora"]}).encode(), {"Content-Type": "application/json"})
+assert json.load(urllib.request.urlopen(hp))["people"] == ["Cora", "Lauren"]
+assert json.load(get("/api/meta/hidden"))["people"] == ["Cora", "Lauren"]
 assert q(label="climb", where="trashed")["total"] == 1 and q(where="library")["total"] == 1
 assert q(place="cape cod", year="2019", fav="1")["results"][0]["mirror"] == "ok"
 assert q(person="Dakota")["results"][0]["viewable"] is True and q(kind="video")["results"][0]["mirror"] == "missing"
