@@ -24,7 +24,7 @@ ask_secret() {   # ask_secret VAR "prompt" [optional]
     IFS= read -rs value
     printf '\n' >&2
     if [ -z "$value" ] && [ -z "$optional" ]; then echo "  Cannot be empty." >&2; continue; fi
-    case "$value" in *\'* | *$'\n'*) echo "  Contains a single quote or newline, which .env can't hold safely here. Change that password or edit the file by hand." >&2; continue ;; esac
+    case "$value" in *$'\n'*) echo "  A newline can't go in .env." >&2; continue ;; esac
     printf -v "$var" '%s' "$value"
     return
   done
@@ -40,15 +40,25 @@ ask_secret ACTUAL_PASSWORD "Actual server password (hidden)"
 printf 'Sync ID (not secret): ' >&2
 IFS= read -r ACTUAL_BUDGET_SYNC_ID
 [ -n "$ACTUAL_BUDGET_SYNC_ID" ] || { echo "Sync ID cannot be empty." >&2; exit 1; }
-case "$ACTUAL_BUDGET_SYNC_ID" in *\'* | *' '*) echo "Sync ID looks wrong." >&2; exit 1 ;; esac
+case "$ACTUAL_BUDGET_SYNC_ID" in *\"* | *\'* | *' '*) echo "Sync ID looks wrong." >&2; exit 1 ;; esac
 ask_secret ACTUAL_BUDGET_ENCRYPTION_PASSWORD "End-to-end encryption password (hidden, Enter if you never enabled it)" optional
 MCP_BUDGET_TOKEN=$(openssl rand -hex 32)
 
+# Double quotes, so a ' in a password is fine. Inside them Compose treats \, "
+# and $ specially, so each gets a backslash (checked against `docker compose config`).
+dq() {
+  local v=$1
+  v=${v//\\/\\\\}
+  v=${v//\"/\\\"}
+  v=${v//\$/\\\$}
+  printf '"%s"' "$v"
+}
+
 {
-  echo "ACTUAL_PASSWORD='$ACTUAL_PASSWORD'"
-  echo "ACTUAL_BUDGET_SYNC_ID='$ACTUAL_BUDGET_SYNC_ID'"
-  echo "ACTUAL_BUDGET_ENCRYPTION_PASSWORD='$ACTUAL_BUDGET_ENCRYPTION_PASSWORD'"
-  echo "MCP_BUDGET_TOKEN='$MCP_BUDGET_TOKEN'"
+  echo "ACTUAL_PASSWORD=$(dq "$ACTUAL_PASSWORD")"
+  echo "ACTUAL_BUDGET_SYNC_ID=$(dq "$ACTUAL_BUDGET_SYNC_ID")"
+  echo "ACTUAL_BUDGET_ENCRYPTION_PASSWORD=$(dq "$ACTUAL_BUDGET_ENCRYPTION_PASSWORD")"
+  echo "MCP_BUDGET_TOKEN=$(dq "$MCP_BUDGET_TOKEN")"
 } > "$env_file"
 chmod 600 "$env_file"
 
