@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Anthony's budget as plain text, for a Life session running on this box.
+#   ./budget [YYYY-MM]            month to show (default: this month)
+#
+# Read-only: it downloads the budget through the Actual API and only reads
+# (account balances, category budgeted/spent/balance). It runs inside the
+# mcp-budget container, which already holds the server password, sync ID and
+# end-to-end key, so none of them reach this shell or the output. It uses its
+# own scratch data dir, so it never touches the one the MCP server has open.
+# Issue #330.
+set -euo pipefail
+
+month="${1:-$(date +%Y-%m)}"
+case "$month" in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "budget: month must be YYYY-MM, got '$month'" >&2; exit 2 ;; esac
+
+exec docker exec -i -e LIFE_MONTH="$month" mcp-budget node --input-type=module - <<'JS'
+import * as api from '@actual-app/api';
+
+const usd = (cents) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const month = process.env.LIFE_MONTH;
+
+try {
+  await api.init({
+    dataDir: '/tmp/life-budget',
+    serverURL: process.env.ACTUAL_SERVER_URL,
+    password: process.env.ACTUAL_PASSWORD,
+  });
+  await api.downloadBudget(process.env.ACTUAL_BUDGET_SYNC_ID, {
+    password: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || undefined,
+  });
+
+  console.log(`Budget ${month}`);
+  console.log('\nAccounts');
+  for (const account of await api.getAccounts()) {
+    if (account.closed) continue;
+    console.log(`  ${account.name}: ${usd(await api.getAccountBalance(account.id))}`);
+  }
+
+  const data = await api.getBudgetMonth(month);
+  console.log(`\nTo budget: ${usd(data.toBudget)}   Total spent: ${usd(data.totalSpent)}`);
+  for (const group of data.categoryGroups) {
+    if (group.is_income) continue;
+    console.log(`\n${group.name}`);
+    for (const c of group.categories) {
+      console.log(`  ${c.name}: budgeted ${usd(c.budgeted)}, spent ${usd(c.spent)}, left ${usd(c.balance)}`);
+    }
+  }
+} catch (err) {
+  console.error(`budget: ${err && err.message ? err.message : err}`);
+  process.exitCode = 1;
+} finally {
+  await api.shutdown().catch(() => {});
+}
+JS
