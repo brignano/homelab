@@ -13,12 +13,20 @@ set -euo pipefail
 month="${1:-$(date +%Y-%m)}"
 case "$month" in [0-9][0-9][0-9][0-9]-[0-1][0-9]) ;; *) echo "budget: month must be YYYY-MM, got '$month'" >&2; exit 2 ;; esac
 
-exec docker exec -i -e LIFE_MONTH="$month" mcp-budget node --input-type=module - <<'JS'
+# The awk drops the Actual API's progress lines if any still reach stdout;
+# pipefail keeps docker's exit status.
+docker exec -i -e LIFE_MONTH="$month" mcp-budget node --input-type=module - <<'JS' |
 import * as api from '@actual-app/api';
 import { mkdirSync } from 'node:fs';
 
 const usd = (cents) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 const month = process.env.LIFE_MONTH;
+
+// The Actual API logs progress ("[Breadcrumb]", "Loading budget", "Syncing
+// since") with console.log. Keep that out of stdout so only the report is
+// printed: silence it, and write the report straight to stdout.
+console.log = console.info = console.debug = () => {};
+const say = (line = '') => process.stdout.write(line + '\n');
 
 try {
   // The Actual API needs its data folder to exist before init.
@@ -32,20 +40,20 @@ try {
     password: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || undefined,
   });
 
-  console.log(`Budget ${month}`);
-  console.log('\nAccounts');
+  say(`Budget ${month}`);
+  say('\nAccounts');
   for (const account of await api.getAccounts()) {
     if (account.closed) continue;
-    console.log(`  ${account.name}: ${usd(await api.getAccountBalance(account.id))}`);
+    say(`  ${account.name}: ${usd(await api.getAccountBalance(account.id))}`);
   }
 
   const data = await api.getBudgetMonth(month);
-  console.log(`\nTo budget: ${usd(data.toBudget)}   Total spent: ${usd(data.totalSpent)}`);
+  say(`\nTo budget: ${usd(data.toBudget)}   Total spent: ${usd(data.totalSpent)}`);
   for (const group of data.categoryGroups) {
     if (group.is_income) continue;
-    console.log(`\n${group.name}`);
+    say(`\n${group.name}`);
     for (const c of group.categories) {
-      console.log(`  ${c.name}: budgeted ${usd(c.budgeted)}, spent ${usd(c.spent)}, left ${usd(c.balance)}`);
+      say(`  ${c.name}: budgeted ${usd(c.budgeted)}, spent ${usd(c.spent)}, left ${usd(c.balance)}`);
     }
   }
 } catch (err) {
@@ -55,3 +63,4 @@ try {
   await api.shutdown().catch(() => {});
 }
 JS
+awk '!/^(\[Breadcrumb\]|Loading budget|Syncing since|Got messages from server)/'
