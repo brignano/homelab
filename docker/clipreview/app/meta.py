@@ -20,11 +20,35 @@ MAX_RECORDS = 200000
 LIST_FIELDS = ("persons", "labels", "albums", "keywords")
 VIEWABLE = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
             ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4"}
+PREVIEWS = Path(os.environ.get("PREVIEWS_DIR", "/photos-previews"))  # JPEGs of the HEICs (scripts/photos-previews.sh)
 _cache = {"mtime": None, "rows": {}}
 
 
 def _s(v, n=200):
     return str(v or "")[:n]
+
+
+HIDDEN = DIR / "hidden-people.json"
+
+
+def hidden_people() -> list:
+    """People left out of results unless asked for (the page's "show hidden"
+    switch). Kept on the drive so every device agrees."""
+    try:
+        return [str(x) for x in json.loads(HIDDEN.read_text())["people"]]
+    except (OSError, ValueError, KeyError, TypeError):
+        return []
+
+
+def set_hidden_people(payload) -> list:
+    if not isinstance(payload, dict) or not isinstance(payload.get("people"), list) or len(payload["people"]) > 500:
+        raise ValueError("expected {people: [...]}")
+    people = sorted({_s(x, 120).strip() for x in payload["people"] if str(x).strip()})
+    DIR.mkdir(parents=True, exist_ok=True)
+    tmp = HIDDEN.with_suffix(".tmp")
+    tmp.write_text(json.dumps({"people": people}))
+    tmp.replace(HIDDEN)
+    return people
 
 
 def _clean(r) -> dict:
@@ -91,6 +115,24 @@ def _find(rec: dict):
     return None, "size" if named else "missing"
 
 
+def _viewable(path):
+    """(file, content type) a browser can show for this mirror original, or None.
+    HEIC has no browser support, so its nightly JPEG preview stands in for it."""
+    if path is None:
+        return None
+    ext = path.suffix.lower()
+    if ext in VIEWABLE:
+        return path, VIEWABLE[ext]
+    if ext in (".heic", ".heif"):
+        try:
+            prev = PREVIEWS / path.relative_to(dupes.PHOTOS).with_suffix(".jpg")
+        except ValueError:
+            return None  # hidden mirror: no previews are made there
+        if prev.is_file():
+            return prev, "image/jpeg"
+    return None
+
+
 def _norm(s):
     return s.casefold()
 
@@ -108,13 +150,17 @@ def _has(want: str, have) -> bool:
 
 def search(q: dict, limit: int = 60) -> dict:
     """q keys (all optional, all must match): person, label, album, keyword,
-    place, text, year, month (YYYY-MM), fav (1), kind (photo|video),
+    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), exclude (names to leave out),
     where (library|hidden|trashed)."""
     data = rows().values()
     f = lambda k: str(q.get(k) or "").strip()
     persons = [x for x in re.split(r"\s*,\s*", f("person")) if x]  # several = together
+    skip = [x for x in re.split(r"\s*,\s*", f("exclude")) if x]  # hidden people: only when not searched for
+    skip = [x for x in skip if not any(_norm(x) == _norm(p) for p in persons)]
     hits = []
     for r in data:
+        if skip and any(_match_name(x, r["persons"]) for x in skip):
+            continue
         if any(not _match_name(p, r["persons"]) for p in persons):
             continue
         if f("label") and not _has(f("label"), r["labels"]):
@@ -146,7 +192,7 @@ def search(q: dict, limit: int = 60) -> dict:
     page = []
     for r in hits[offset:offset + limit]:
         path, state = _find(r)
-        page.append(dict(r, mirror=state, viewable=bool(path and path.suffix.lower() in VIEWABLE)))
+        page.append(dict(r, mirror=state, viewable=_viewable(path) is not None))
     return {"total": len(hits), "offset": offset, "results": page}
 
 
@@ -164,10 +210,7 @@ def file_for(uuid: str):
     r = rows().get(uuid) if dupes.UUID_RE.match(uuid) else None
     if not r:
         return None
-    path, _ = _find(r)
-    if not path or path.suffix.lower() not in VIEWABLE:
-        return None
-    return path, VIEWABLE[path.suffix.lower()]
+    return _viewable(_find(r)[0])
 
 
 def export_csv() -> str:
