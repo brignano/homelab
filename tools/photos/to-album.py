@@ -27,6 +27,7 @@ skipped, and a candidate Photos does not have is listed, not guessed at.
 import argparse
 import csv
 import io
+import json
 import sys
 import ssl
 import urllib.request
@@ -58,11 +59,12 @@ def main() -> int:
 
     import osxphotos
     db = osxphotos.PhotosDB()
-    found, taken = {}, set()
+    found, taken, in_photos = {}, set(), set()
     for p in db.photos(movies=True, images=False):
         orig = Path(p.original_filename or "").stem
         if not orig:
             continue
+        in_photos.add(orig)
         for stem in stems:
             if stem == orig or stem.startswith(orig + "_"):
                 if p.favorite:
@@ -75,6 +77,18 @@ def main() -> int:
         if stem not in taken:
             print("not found in Photos: %s" % stems[stem])
     print("%d matched in Photos" % len(found))
+    if not args.dry_run:
+        # Tell the review page which videos Photos still holds, so clips you have
+        # already removed leave its to-review counts (it only records the names).
+        req = urllib.request.Request(
+            args.url.rstrip("/") + "/api/photos/report",
+            data=json.dumps({"stems": sorted(in_photos)}).encode(),
+            headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as r:
+                print("review page told about %d videos in Photos" % json.load(r)["stems"])
+        except Exception as e:  # the album is the job; a failed report only means stale counts
+            print("could not update the review page counts: %s" % e)
     if args.dry_run or not found:
         return 0
 
