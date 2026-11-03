@@ -1,6 +1,5 @@
 # Read-only MCP server over the calendars Home Assistant can see (iCloud via
-# CalDAV). Reached through Caddy's bearer-gated mcp.$HOMELAB_DOMAIN site (8000)
-# and, when Cloudflare Access is configured, through the tunnel (8001, Access JWT).
+# CalDAV). Reached through Caddy's bearer-gated mcp.$HOMELAB_DOMAIN site (8000).
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 \
