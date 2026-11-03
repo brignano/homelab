@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(./calendar)",
+      "Bash(./calendar *)",
+      "Bash(./budget)",
+      "Bash(./budget *)"
+    ],
+    "deny": [
+      "Edit",
+      "Write",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "Bash(docker *)",
+      "Bash(git *)",
+      "Bash(curl *)",
+      "Bash(wget *)",
+      "Bash(ssh *)",
+      "Bash(sudo *)",
+      "Bash(cat *)",
+      "Bash(env*)",
+      "Bash(printenv*)"
+    ]
+  }
+}

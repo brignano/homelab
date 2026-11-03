@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Anthony's calendars as plain text, for a Life session running on this box.
+#   ./calendar [START] [DAYS]     START = YYYY-MM-DD (default today), DAYS 1-31 (default 7)
+#
+# Read-only, and it goes through the same code the calendar MCP server uses
+# (docker/mcp-calendar/app/calendars.py): one GET per calendar.* ID in
+# HA_CALENDARS, events cut to title, start, end and location. It runs inside the
+# mcp-calendar container, so the Home Assistant token never leaves it and
+# never appears in the output. Issue #330.
+set -euo pipefail
+
+start="${1:-}"
+days="${2:-7}"
+case "$days" in '' | *[!0-9]*) echo "calendar: DAYS must be a number, got '$days'" >&2; exit 2 ;; esac
+case "$start" in '' | [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;; *) echo "calendar: START must be YYYY-MM-DD, got '$start'" >&2; exit 2 ;; esac
+
+exec docker exec -i mcp-calendar python - "$start" "$days" <<'PY'
+import asyncio, datetime as dt, os, sys
+from zoneinfo import ZoneInfo
+
+import aiohttp
+
+from app.calendars import CalendarError, HaCalendars, parse_entities, window
+
+tz = ZoneInfo(os.environ.get("TZ") or "America/New_York")
+cals = HaCalendars(
+    os.environ.get("HA_URL") or "http://host.docker.internal:8123",
+    os.environ.get("HA_TOKEN", ""),
+    parse_entities(os.environ.get("HA_CALENDARS", "")),
+)
+
+
+async def main() -> int:
+    try:
+        begin, end = window(dt.datetime.now(tz).date(), sys.argv[1] or None, int(sys.argv[2]), tz)
+        async with aiohttp.ClientSession() as session:
+            found = await cals.events(session, cals.pick(None), begin, end)
+    except CalendarError as exc:
+        print(f"calendar: {exc}", file=sys.stderr)
+        return 1
+    print(f"Events {begin.date()} to {(end - dt.timedelta(days=1)).date()} ({tz.key})")
+    rows = []
+    for entity, events in found.items():
+        if isinstance(events, dict):
+            print(f"! {entity}: {events['error']}")
+            continue
+        for e in events:
+            rows.append((e["start"], e.get("end", ""), e["title"], e.get("location", ""), entity))
+    for start, stop, title, where, entity in sorted(rows):
+        line = f"{start}  {title}"
+        if stop:
+            line += f"  (until {stop})"
+        if where:
+            line += f"  @ {where}"
+        print(f"{line}  [{entity.removeprefix('calendar.')}]")
+    if not rows:
+        print("(no events)")
+    return 0
+
+
+sys.exit(asyncio.run(main()))
+PY
