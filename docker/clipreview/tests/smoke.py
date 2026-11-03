@@ -337,6 +337,8 @@ def q(**kw):
     return json.load(get("/api/meta/search?" + urllib.parse.urlencode(kw)))
 assert q(person="Dakota,Julia")["total"] == 1 and q(person="Dakota,Lauren")["total"] == 0
 assert q(person="lauren")["total"] == 1                      # name + emoji, case-blind
+assert q(exclude="Lauren \U0001f970")["total"] == 1 and q(exclude="Lauren", person="Lauren")["total"] == 1  # hidden people, unless searched
+assert q(exclude="Dakota")["total"] == 1
 assert q(label="climb", where="trashed")["total"] == 1 and q(where="library")["total"] == 1
 assert q(place="cape cod", year="2019", fav="1")["results"][0]["mirror"] == "ok"
 assert q(person="Dakota")["results"][0]["viewable"] is True and q(kind="video")["results"][0]["mirror"] == "missing"

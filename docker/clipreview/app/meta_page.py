@@ -5,16 +5,19 @@ PAGE = r"""<!doctype html>
 __HEAD__
 <style>
 main{overflow:auto;display:block;padding:var(--s3) var(--s4)}
-form{display:flex;flex-wrap:wrap;gap:var(--s2);align-items:end;margin-bottom:var(--s3)}
+form{display:grid;grid-template-columns:repeat(auto-fill,minmax(10rem,1fr));gap:var(--s3);align-items:end;margin-bottom:var(--s3)}
 form label{display:flex;flex-direction:column;font-size:var(--text-xs);gap:2px}
-form input,form select{min-width:9rem}
+form input:not([type=checkbox]),form select{width:100%;min-height:2.25rem}
+form label.chk{flex-direction:row;align-items:center;gap:var(--s2);min-height:2.25rem;font-size:var(--text-sm)}
+.actions{display:flex;gap:var(--s3);align-items:center;grid-column:1/-1}
 #facets{font-size:var(--text-sm);margin:var(--s2) 0}
-.chip{cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:0 var(--s3);margin:2px;background:none;font-size:var(--text-xs)}
+.chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:0 var(--s3);margin:2px;background:none;font-size:var(--text-xs)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:var(--s3)}
 .r{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;font-size:var(--text-sm)}
 .r .m{width:100%;height:11rem;object-fit:contain;background:var(--n-100);display:flex;align-items:center;justify-content:center;color:var(--slate)}
 .r .t{padding:var(--s2) var(--s3)}
 .r .k{color:var(--slate);font-size:var(--text-xs)}
+.x{opacity:.6;padding:0 2px}.x:hover{opacity:1}
 .gone{color:var(--danger-ink)}
 </style></head><body>
 <header>__BRAND____NAV__<span id="count" class="muted"></span></header>
@@ -30,27 +33,47 @@ form input,form select{min-width:9rem}
  <label>Text<input name="text" placeholder="anything"></label>
  <label>Kind<select name="kind"><option value="">all</option><option>photo</option><option>video</option></select></label>
  <label>Where<select name="where"><option value="">anywhere</option><option>library</option><option>hidden</option><option value="trashed">recently deleted</option></select></label>
- <label><span><input type="checkbox" name="fav" value="1"> favourites</span></label>
- <button class="primary">Search</button> <a href="/api/meta/export.csv">CSV of everything</a>
+ <label class="chk"><input type="checkbox" name="fav" value="1"> Favourites only</label>
+ <div class="actions"><button class="primary">Search</button> <button type="button" id="reset">Clear</button> <a href="/api/meta/export.csv">CSV of everything</a></div>
 </form>
 <datalist id="dl-person"></datalist><datalist id="dl-label"></datalist><datalist id="dl-album"></datalist>
 <div id="facets"></div>
+<p id="hid" class="muted" hidden></p>
 <div class="grid" id="out"></div>
 <p><button id="more" hidden>More</button></p>
 </main>
 <script>
 const $=id=>document.getElementById(id);
-let offset=0;
+let offset=0,HID=[];
+try{HID=JSON.parse(localStorage.getItem('hiddenPeople')||'[]')}catch(e){}
+const saveHid=()=>{try{localStorage.setItem('hiddenPeople',JSON.stringify(HID))}catch(e){}};
+let showHid=false;
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 async function facets(){
   const d=await (await fetch('/api/meta/facets')).json();
   $('count').textContent=d.total?d.total+' items · '+d.trashed+' in Recently Deleted · '+d.hidden+' hidden':'nothing imported yet: run tools/photos/metadata-export.py on the Mac';
   for(const [k,id] of [['persons','dl-person'],['labels','dl-label'],['albums','dl-album']]){
     const dl=$(id);for(const [n] of d[k]){const o=el('option');o.value=n;dl.appendChild(o)}}
+  FAC=d.persons;drawChips();
+}
+let FAC=[];
+function drawChips(){
   const f=$('facets');f.textContent='';
-  for(const [n,c] of d.persons.slice(0,24)){
-    const b=el('button','chip',n+' '+c);b.type='button';
-    b.onclick=()=>{document.querySelector('[name=person]').value=n;run(true)};f.appendChild(b)}
+  for(const [n,c] of FAC.filter(([n])=>showHid||!HID.includes(n)).slice(0,30)){
+    const b=el('span','chip');
+    const lab=el('span','',n+' '+c);
+    lab.onclick=()=>{document.querySelector('[name=person]').value=n;run(true)};
+    b.appendChild(lab);
+    if(!HID.includes(n)){const x=el('span','x','\u00d7');x.title='Hide this person from results';
+      x.onclick=e=>{e.stopPropagation();HID.push(n);saveHid();drawChips();run(true)};b.appendChild(x)}
+    f.appendChild(b)}
+  const h=$('hid');h.textContent='';h.hidden=!HID.length;
+  if(HID.length){
+    h.appendChild(document.createTextNode(HID.length+' hidden from results and this list: '));
+    const t=el('a','',showHid?'stop showing':'show them');t.href='#';t.onclick=e=>{e.preventDefault();showHid=!showHid;drawChips();run(true)};h.appendChild(t);
+    h.appendChild(document.createTextNode(' \u00b7 '));
+    const u=el('a','','unhide all');u.href='#';u.onclick=e=>{e.preventDefault();HID=[];saveHid();showHid=false;drawChips();run(true)};h.appendChild(u);
+  }
 }
 function card(r){
   const c=el('div','r');
@@ -73,6 +96,7 @@ async function run(reset){
   if(reset){offset=0;$('out').textContent=''}
   const p=new URLSearchParams(new FormData($('f')));
   for(const [k,v] of [...p])if(!v)p.delete(k);
+  if(HID.length&&!showHid)p.set('exclude',HID.join(','));
   p.set('offset',offset);
   const d=await (await fetch('/api/meta/search?'+p)).json();
   for(const r of d.results)$('out').appendChild(card(r));
@@ -83,6 +107,7 @@ async function run(reset){
 }
 $('f').onsubmit=e=>{e.preventDefault();run(true)};
 $('more').onclick=()=>run(false);
+$('reset').onclick=()=>{$('f').reset();run(true)};
 facets().then(()=>run(true));
 </script></body></html>
 """.replace("__HEAD__", ui.HEAD).replace("__BRAND__", ui.brand()).replace("__NAV__", ui.nav("meta"))

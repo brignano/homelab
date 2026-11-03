@@ -127,13 +127,17 @@ def _has(want: str, have) -> bool:
 
 def search(q: dict, limit: int = 60) -> dict:
     """q keys (all optional, all must match): person, label, album, keyword,
-    place, text, year, month (YYYY-MM), fav (1), kind (photo|video),
+    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), exclude (names to leave out),
     where (library|hidden|trashed)."""
     data = rows().values()
     f = lambda k: str(q.get(k) or "").strip()
     persons = [x for x in re.split(r"\s*,\s*", f("person")) if x]  # several = together
+    skip = [x for x in re.split(r"\s*,\s*", f("exclude")) if x]  # hidden people: only when not searched for
+    skip = [x for x in skip if not any(_norm(x) == _norm(p) for p in persons)]
     hits = []
     for r in data:
+        if skip and any(_match_name(x, r["persons"]) for x in skip):
+            continue
         if any(not _match_name(p, r["persons"]) for p in persons):
             continue
         if f("label") and not _has(f("label"), r["labels"]):
