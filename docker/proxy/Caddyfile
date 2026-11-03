@@ -145,7 +145,25 @@ budget.{$HOMELAB_DOMAIN} {
 		file_server
 	}
 	handle {
-		reverse_proxy budget:5006
+		# On a phone, every dashboard card on Actual's Reports page is one big
+		# button, so a tap meant for scrolling opens the full report. Below
+		# Actual's phone breakpoint (730px) this makes the cards look-only:
+		# taps pass through to the page, so it still scrolls. Desktop and
+		# tablet-width windows are unchanged. Actual's own custom-CSS box only
+		# takes `:root` variables, so the rule is added to its page here.
+		#
+		# Actual's service worker caches the page, so a phone picks this up on
+		# the next Actual upgrade (or after removing the site's data).
+		# `replace` cannot edit compressed bodies, hence Accept-Encoding.
+		reverse_proxy budget:5006 {
+			header_up Accept-Encoding identity
+		}
+		replace {
+			match {
+				header Content-Type text/html*
+			}
+			</head> `<style>@media (max-width: 729px) { [data-testid="reports-overview"] button { pointer-events: none; } }</style></head>`
+		}
 	}
 }
 
