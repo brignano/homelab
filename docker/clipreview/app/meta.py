@@ -319,6 +319,9 @@ def thumb_for(uuid: str):
     out = THUMBS / (uuid + ".jpg")
     if out.is_file():
         return out
+    fail = THUMBS / (uuid + ".fail")
+    if fail.is_file():  # decode failed before; delete the .fail file to retry
+        return None
     import subprocess
     THUMBS.mkdir(parents=True, exist_ok=True)
     tmp = THUMBS / (uuid + ".tmp.jpg")
@@ -336,5 +339,9 @@ def thumb_for(uuid: str):
             tmp.replace(out)
         except (OSError, subprocess.SubprocessError):
             tmp.unlink(missing_ok=True)
+            try:
+                fail.touch()
+            except OSError:
+                pass
             return None
     return out
