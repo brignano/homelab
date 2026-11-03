@@ -223,6 +223,15 @@ mcp.{$HOMELAB_DOMAIN} {
 	}
 }
 
+# Actual Budget MCP (docker/mcp-budget). LAN + tailnet only, like budget itself.
+# The server enforces its own bearer token (--enable-bearer), so Caddy only
+# proxies; flush_interval -1 keeps SSE events from being buffered.
+budget-mcp.{$HOMELAB_DOMAIN} {
+	reverse_proxy mcp-budget:3000 {
+		flush_interval -1
+	}
+}
+
 # Kali webtop — booted on-demand by Sablier, scaled to zero when idle.
 # Selkies requires a secure context; this now gets a genuine certificate rather
 # than Caddy's internal CA, so the browser no longer has to be told to trust it.

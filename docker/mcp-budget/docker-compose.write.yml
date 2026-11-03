@@ -1,0 +1,6 @@
+# Override that turns the write tools on (create/update transactions, categories,
+# payees, rules). Not loaded by default. See README.md, "Turning writes on".
+#   docker compose -f docker-compose.yml -f docker-compose.write.yml up -d
+services:
+  mcp-budget:
+    command: ["--sse", "--port", "3000", "--enable-bearer", "--enable-write"]

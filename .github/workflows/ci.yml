@@ -152,6 +152,9 @@ jobs:
       RENDER_GID: "993"
       WIREGUARD_PRIVATE_KEY: ci
       HA_TOKEN: ci
+      ACTUAL_PASSWORD: ci
+      ACTUAL_BUDGET_SYNC_ID: ci
+      MCP_BUDGET_TOKEN: ci
       EPG_PLAYLISTS: https://example.invalid/ci.m3u
     steps:
       - uses: actions/checkout@v4

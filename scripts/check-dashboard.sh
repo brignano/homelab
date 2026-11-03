@@ -28,7 +28,9 @@ SERVICES="$REPO/docker/dashboard/config/services.yaml"
 #   mcp   an API endpoint, not a page. It answers MCP over HTTP and returns 401
 #         to a browser without a bearer token, so a tile would be a link to an
 #         error.
-EXEMPT="mcp"
+#   budget-mcp   the same, for the Actual Budget MCP server (docker/mcp-budget).
+#         The tile for the budget itself is "budget".
+EXEMPT="mcp budget-mcp"
 
 [ -f "$CADDYFILE" ] || { echo "check-dashboard: $CADDYFILE not found" >&2; exit 1; }
 [ -f "$SERVICES" ]  || { echo "check-dashboard: $SERVICES not found" >&2; exit 1; }
