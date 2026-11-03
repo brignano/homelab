@@ -127,7 +127,7 @@ def brand() -> str:
 def nav(active: str) -> str:
     def a(href, label, key):
         return '<a href="%s"%s>%s</a>' % (href, ' aria-current="page"' if key == active else "", label)
-    return "<nav>" + a("/", "Videos", "videos") + a("/dupes", "Duplicate photos", "dupes") + "</nav>"
+    return "<nav>" + a("/", "Videos", "videos") + a("/dupes", "Duplicate photos", "dupes") + a("/meta", "Cold storage", "meta") + "</nav>"
 
 
 MF_HTML = ('<div class="mf" id="mf"><select id="mfy" aria-label="Year"></select>'

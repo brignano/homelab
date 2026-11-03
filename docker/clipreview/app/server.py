@@ -23,6 +23,8 @@ from urllib.parse import parse_qs, urlparse
 
 from . import dupes, ui
 from .dupes_page import PAGE as DUPES_PAGE
+from .meta_page import PAGE as META_PAGE
+from . import meta as metalib
 
 PHOTOS = Path(os.environ.get("PHOTOS_DIR", "/photos"))
 DATA = Path(os.environ.get("DATA_DIR", "/data"))
@@ -424,6 +426,24 @@ class Handler(BaseHTTPRequestHandler):
             if not p:
                 return self._send(404, "no thumbnail")
             return self._send(200, p.read_bytes(), "image/jpeg")
+        if u.path == "/meta":
+            return self._send(200, META_PAGE, "text/html; charset=utf-8")
+        if u.path == "/api/meta/search":
+            with _lock:
+                return self._send(200, json.dumps(metalib.search({k: v[0] for k, v in q.items()})), "application/json")
+        if u.path == "/api/meta/facets":
+            with _lock:
+                return self._send(200, json.dumps(metalib.facets()), "application/json")
+        if u.path == "/api/meta/export.csv":
+            with _lock:
+                return self._send(200, metalib.export_csv(), "text/csv; charset=utf-8",
+                                  [("Content-Disposition", "inline; filename=cold-storage-metadata.csv")])
+        if u.path.startswith("/meta/file/"):
+            with _lock:
+                hit = metalib.file_for(u.path[len("/meta/file/"):])
+            if not hit:
+                return self._send(404, "no viewable original")
+            return self._file(*hit)
         if u.path.startswith("/video/"):
             return self._video(u.path[len("/video/"):])
         if u.path in ("/export.csv", "/export.txt"):
@@ -472,11 +492,11 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/meta/import"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
-        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check") else 4096)
+        raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check") else metalib.MAX_BODY if path == "/api/meta/import" else 4096)
         if raw is None:
             return
         try:
@@ -487,6 +507,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cold/check":
                 with _lock:
                     return self._send(200, json.dumps(dupes.cold_check(body)), "application/json")
+            if path == "/api/meta/import":
+                with _lock:
+                    return self._send(200, json.dumps(metalib.ingest(body)), "application/json")
             if path == "/api/triage/accept":
                 with _lock:
                     n = accept_triage(str(body["suggest"]), float(body["min_conf"]),
@@ -547,8 +570,11 @@ class Handler(BaseHTTPRequestHandler):
         if not clip or not clip["present"]:
             return self._send(404, "not in the mirror")
         path = PHOTOS / clip["file"]
+        self._file(path, mimetypes.guess_type(path.name)[0] or "video/quicktime")
+
+    def _file(self, path, ctype):
+        """Serve one file read-only, with Range so a player can seek."""
         size = path.stat().st_size
-        ctype = mimetypes.guess_type(path.name)[0] or "video/quicktime"
         start, end, code = 0, size - 1, 200
         m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
         if m and (m.group(1) or m.group(2)):

@@ -95,6 +95,27 @@ person and shared-album photos are never included. Logic test:
 `python tools/photos/test_dupes.py`; the page and its API are covered by
 `docker/clipreview/tests/smoke.py`.
 
+## `metadata-export.py`: keep who/where/what for photos that leave iCloud
+
+Read-only. Photos knows who is in each photo and clip, where it was taken, what
+it shows ("beach", "dog", "climbing"), its albums and favourites. The mirror's
+files keep only date, GPS and (via XMP) favourite/keywords, so once an item is
+deleted from iCloud that context is gone. This saves it on the 5 TB drive first:
+
+```bash
+uv run tools/photos/metadata-export.py --url https://review.home.brignano.io
+```
+
+It includes Recently Deleted (Photos keeps the context there for ~30 days; never
+empty it by hand). Re-run any time: the server merges by photo id and never
+drops a record. Search at https://review.home.brignano.io/meta (person, thing,
+place, album, year, favourites, deleted/hidden; "Dakota, Julia" means both in
+the same photo; the CSV link downloads everything). Each result is matched to its
+original in the mirror by file name and size, and shows it inline when the
+browser can (JPEG, PNG, MP4, MOV); HEIC is browsed in Jellyfin. `--out FILE`
+writes a local JSON copy too. Items already purged before the first export have
+only the file name and date from the review page.
+
 ## `climb_judge.py`: did this climbing clip end in a send or a fall?
 
 Runs on CT 100 against the mirror, not on the Mac. Read-only: it writes one
