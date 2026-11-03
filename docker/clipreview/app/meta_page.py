@@ -121,14 +121,14 @@ body.lbopen main{visibility:hidden}
  <label>Month<select name="mon" disabled><option value="">Any month</option></select></label>
  <label>Type<select name="type"><option value="">Any type</option></select></label>
  <label>Kind<select name="kind"><option value="">All</option><option value="photo">Photos</option><option value="video">Clips</option></select></label>
- <label>Where<select name="where"><option value="">Everywhere</option><option value="library">In the library</option><option value="hidden">Hidden album</option><option value="trashed">Deleted from iPhone</option><option value="staged">To delete</option></select></label>
+ <label>Where<select name="where"><option value="">Everywhere</option><option value="library">In the library</option><option value="hidden">Hidden album</option><option value="trashed">Deleted from iPhone</option><option value="staged">Hidden as junk</option></select></label>
  <label class="tog"><input type="checkbox" name="fav" value="1"> Favourites only</label>
  <div class="actions"><button class="primary" type="submit">Search</button><button type="button" id="reset">Clear</button><a href="/api/meta/export.csv">Download everything as CSV</a></div>
 </form>
 <datalist id="dl-person"></datalist><datalist id="dl-label"></datalist><datalist id="dl-album"></datalist>
 <div id="rail" aria-label="People"></div>
 <div class="bar"><h2 id="res">Loading…</h2><span class="sp"></span><span id="hid" class="muted"></span><button type="button" id="tog" hidden></button><button type="button" id="sel">Select</button></div>
-<div class="bar sbar" id="sbar" hidden><b id="sn">0 selected</b><span class="sp"></span><button type="button" id="sall">Select all loaded</button><button type="button" class="primary" id="sdl">Download selected</button><button type="button" class="warnb" id="sstage">Stage for deletion</button><button type="button" id="sx">Cancel</button></div>
+<div class="bar sbar" id="sbar" hidden><b id="sn">0 selected</b><span class="sp"></span><button type="button" id="sall">Select all loaded</button><button type="button" class="primary" id="sdl">Download selected</button><button type="button" class="warnb" id="sstage">Hide as junk</button><button type="button" id="sx">Cancel</button></div>
 <p class="note" id="stnote" hidden></p>
 <div class="grid" id="out"></div>
 <div id="end"></div>
@@ -231,12 +231,12 @@ async function stage(add,remove){
   pickMode=false;picked.clear();pickUi();await facetsCount();run()}
 let STG={n:0,bytes:0};
 const gb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':(b/1e6).toFixed(0)+' MB';
-async function facetsCount(){const d=await (await fetch('/api/meta/facets')).json();STG={n:d.staged,bytes:d.staged_bytes};noteUi();$('count').textContent=d.total.toLocaleString()+' items \u00b7 '+d.trashed.toLocaleString()+' deleted from iPhone'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' staged for deletion':'')}
+async function facetsCount(){const d=await (await fetch('/api/meta/facets')).json();STG={n:d.staged,bytes:d.staged_bytes};noteUi();$('count').textContent=d.total.toLocaleString()+' items \u00b7 '+d.trashed.toLocaleString()+' deleted from iPhone'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' hidden as junk':'')}
 function noteUi(){const n=$('stnote');n.hidden=!inPile();
-  if(inPile())n.textContent=STG.n.toLocaleString()+' staged ('+gb(STG.bytes)+'). Staging only marks them: nothing has been deleted from the drive. Review them here, tick any you want to keep and use Put back, then tell Claude to go ahead and they are moved to a trash folder first.'}
+  if(inPile())n.textContent=STG.n.toLocaleString()+' hidden as junk ('+gb(STG.bytes)+'). They are only hidden from search and the lists: nothing is deleted from the drive, and nothing will be until the offsite backup is set up and you say so. Tick any and use Unhide to bring them back.'}
 // select mode: tick photos, download the originals (with a metadata.csv) to put back in Photos
 function pickUi(){document.body.classList.toggle('selmode',pickMode);$('sbar').hidden=!pickMode;$('sel').hidden=pickMode;
-  $('sn').textContent=picked.size+' selected'+(picked.size>300?' (the first 300 will download)':'');$('sdl').disabled=!picked.size;$('sstage').disabled=!picked.size;$('sstage').textContent=inPile()?'Put back (don\'t delete)':'Stage for deletion'}
+  $('sn').textContent=picked.size+' selected'+(picked.size>300?' (the first 300 will download)':'');$('sdl').disabled=!picked.size;$('sstage').disabled=!picked.size;$('sstage').textContent=inPile()?'Unhide':'Hide as junk'}
 function pick(u,b){if(picked.has(u)){picked.delete(u);b.classList.remove('picked')}else{picked.add(u);b.classList.add('picked')}pickUi()}
 $('sel').onclick=()=>{pickMode=true;pickUi()};
 $('sstage').onclick=()=>{const ids=[...picked];if(!ids.length)return;inPile()?stage([],ids):stage(ids,[])};
@@ -267,7 +267,7 @@ function openLb(i){cur=i;const r=items[i];if(!r)return;
   if(r.mirror&&r.mirror.startsWith('ok')){const a=el('div','acts');
     const d=el('a','','Download the original');d.href='/meta/original/'+r.uuid;a.appendChild(d);
     if(r.viewable){const l=el('a','','Open in a tab');l.href='/meta/file/'+r.uuid;l.target='_blank';l.rel='noopener';a.appendChild(l)}
-    const g=el('button',r.staged?'':'warnb',r.staged?'Put back (don\'t delete)':'Stage for deletion');g.type='button';g.onclick=async()=>{await stage(r.staged?[]:[r.uuid],r.staged?[r.uuid]:[]);$('lb').close()};a.appendChild(g);
+    const g=el('button',r.staged?'':'warnb',r.staged?'Unhide':'Hide as junk');g.type='button';g.onclick=async()=>{await stage(r.staged?[]:[r.uuid],r.staged?[r.uuid]:[]);$('lb').close()};a.appendChild(g);
     s.appendChild(a)}
   $('lbp').hidden=i<=0;$('lbn').hidden=false;
   if(!$('lb').open){document.body.classList.add('lbopen');$('lb').showModal()}
@@ -293,7 +293,7 @@ async function init(){
   try{HID=(await (await fetch('/api/meta/hidden')).json()).people||[]}catch(e){}
   const d=await (await fetch('/api/meta/facets')).json();
   STG={n:d.staged,bytes:d.staged_bytes};
-  $('count').textContent=d.total?d.total.toLocaleString()+' items · '+d.trashed.toLocaleString()+' deleted from iPhone'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' staged for deletion':''):'nothing imported yet: run tools/photos/metadata-export.py on the Mac';
+  $('count').textContent=d.total?d.total.toLocaleString()+' items · '+d.trashed.toLocaleString()+' deleted from iPhone'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' hidden as junk':''):'nothing imported yet: run tools/photos/metadata-export.py on the Mac';
   for(const [k,id] of [['persons','dl-person'],['labels','dl-label'],['albums','dl-album']])
     for(const [n] of d[k]){const o=el('option');o.value=n;$(id).appendChild(o)}
   for(const [y,c] of d.years){const o=el('option','',y+' ('+c.toLocaleString()+')');o.value=y;f.year.appendChild(o)}
