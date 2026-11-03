@@ -26,7 +26,8 @@ main{display:block;overflow:auto;padding:0;scroll-behavior:smooth}
 #f .actions a{margin-left:auto;font-size:var(--text-sm)}
 
 /* people rail */
-#rail{display:flex;gap:var(--s2);overflow-x:auto;padding:0 0 var(--s2);-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+#rail{display:flex;flex-wrap:wrap;gap:var(--s2);padding:0 0 var(--s2)}
+.more{min-height:2.25rem;font-size:var(--text-sm);border-style:dashed}
 .pp{flex:0 0 auto;display:inline-flex;align-items:center;gap:var(--s1);min-height:2.25rem;padding:0 var(--s1) 0 var(--s3);
   border:1px solid var(--line);border-radius:999px;background:var(--card);cursor:pointer;font-size:var(--text-sm);font-weight:550;
   transition:background var(--dur-fast) var(--ease),border-color var(--dur-fast) var(--ease)}
@@ -66,6 +67,9 @@ main{display:block;overflow:auto;padding:0;scroll-behavior:smooth}
 .t .fl{position:absolute;top:var(--s2);right:var(--s2);display:flex;gap:var(--s1);pointer-events:none}
 .fl i{font-style:normal;font-size:var(--text-xs);font-weight:650;padding:1px var(--s2);border-radius:999px;color:#fff;background:rgb(0 0 0/.62);backdrop-filter:blur(4px)}
 .fl i.del{background:rgb(160 30 30/.85)}
+.sbar{position:sticky;top:0;z-index:5;padding:var(--s2) var(--s3);background:var(--card);border:1px solid var(--line-control);border-radius:var(--radius);box-shadow:var(--shadow-1)}
+.t .ck{position:absolute;top:var(--s2);left:var(--s2);width:1.6rem;height:1.6rem;border-radius:999px;border:2px solid #fff;background:rgb(0 0 0/.45);color:#fff;display:none;align-items:center;justify-content:center;font-weight:700;pointer-events:none;z-index:3}
+.selmode .t .ck{display:flex}.t.picked::after{content:"";position:absolute;inset:0;border:4px solid var(--i-ink);border-radius:var(--radius);z-index:2;pointer-events:none}.t.picked .ck{background:var(--i);border-color:var(--i)}
 .empty{grid-column:1/-1;text-align:center;color:var(--slate);padding:var(--s6,3rem) 0}
 #end{height:1px}
 
@@ -111,6 +115,7 @@ dialog::backdrop{background:rgb(8 8 10/.9);backdrop-filter:blur(6px)}
  <label>Album<input name="album" list="dl-album"></label>
  <label>Year<select name="year"><option value="">Any year</option></select></label>
  <label>Month<select name="mon" disabled><option value="">Any month</option></select></label>
+ <label>Type<select name="type"><option value="">Any type</option></select></label>
  <label>Kind<select name="kind"><option value="">All</option><option value="photo">Photos</option><option value="video">Clips</option></select></label>
  <label>Where<select name="where"><option value="">Everywhere</option><option value="library">In the library</option><option value="hidden">Hidden album</option><option value="trashed">Recently Deleted</option></select></label>
  <label class="tog"><input type="checkbox" name="fav" value="1"> Favourites only</label>
@@ -118,7 +123,8 @@ dialog::backdrop{background:rgb(8 8 10/.9);backdrop-filter:blur(6px)}
 </form>
 <datalist id="dl-person"></datalist><datalist id="dl-label"></datalist><datalist id="dl-album"></datalist>
 <div id="rail" aria-label="People"></div>
-<div class="bar"><h2 id="res">Loading…</h2><span class="sp"></span><span id="hid" class="muted"></span><button type="button" id="tog" hidden></button></div>
+<div class="bar"><h2 id="res">Loading…</h2><span class="sp"></span><span id="hid" class="muted"></span><button type="button" id="tog" hidden></button><button type="button" id="sel">Select</button></div>
+<div class="bar sbar" id="sbar" hidden><b id="sn">0 selected</b><span class="sp"></span><button type="button" id="sall">Select all loaded</button><button type="button" class="primary" id="sdl">Download selected</button><button type="button" id="sx">Cancel</button></div>
 <div class="grid" id="out"></div>
 <div id="end"></div>
 </div></main>
@@ -130,7 +136,7 @@ dialog::backdrop{background:rgb(8 8 10/.9);backdrop-filter:blur(6px)}
 const $=id=>document.getElementById(id), f=$('f');
 const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!==undefined)e.textContent=x;return e};
 const MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-let offset=0,total=0,loading=false,items=[],HID=[],showHid=false,FAC=[],gen=0;
+let offset=0,total=0,loading=false,items=[],HID=[],showHid=false,FAC=[],gen=0,allPeople=false,pickMode=false,picked=new Set(),TL={};
 
 // hidden people live on the server so every device agrees; "Lauren" also hides "Lauren <emoji>" (same rule as the server)
 const low=x=>x.toLowerCase(), same=(h,n)=>low(h)===low(n)||low(n).startsWith(low(h)+' ');
@@ -147,7 +153,8 @@ function params(){
 }
 
 function tile(r,i){
-  const b=el('button','t');b.type='button';b.onclick=()=>openLb(i);
+  const b=el('button','t');b.type='button';b.dataset.u=r.uuid;b.onclick=()=>pickMode?pick(r.uuid,b):openLb(i);
+  b.appendChild(el('span','ck','\u2713'));if(picked.has(r.uuid))b.classList.add('picked');
   b.setAttribute('aria-label',fmt(r.date)+' '+r.filename);
   if(r.viewable){
     const u='/meta/file/'+r.uuid;
@@ -188,7 +195,8 @@ const run=()=>load(true);
 // rail of people: click to filter, red x hides, dashed ones are hidden (shown only when asked)
 function drawRail(){
   const r=$('rail');r.textContent='';
-  for(const [n,c] of FAC.filter(([n])=>showHid||!isHid(n)).slice(0,40)){
+  const list=FAC.filter(([n])=>showHid||!isHid(n));
+  for(const [n,c] of (allPeople?list:list.slice(0,16))){
     const hid=isHid(n),b=el('span','pp'+(hid?' off':'')),on=low(f.person.value)===low(n);if(on)b.classList.add('on');
     b.tabIndex=0;b.setAttribute('role','button');
     b.appendChild(el('span','',n));b.appendChild(el('small','',c));
@@ -201,6 +209,7 @@ function drawRail(){
       saveHid();drawRail();drawHid();run()};
     b.appendChild(x);r.appendChild(b);
   }
+  if(list.length>16){const m=el('button','more',allPeople?'Show fewer':'Show all '+list.length+' people');m.type='button';m.onclick=()=>{allPeople=!allPeople;drawRail()};r.appendChild(m)}
   drawHid();
 }
 function drawHid(){
@@ -208,6 +217,15 @@ function drawHid(){
   const t=$('tog');t.hidden=!HID.length;t.textContent=showHid?'Hide them again':'Show hidden people';
 }
 $('tog').onclick=()=>{showHid=!showHid;drawRail();run()};
+
+// select mode: tick photos, download the originals (with a metadata.csv) to put back in Photos
+function pickUi(){document.body.classList.toggle('selmode',pickMode);$('sbar').hidden=!pickMode;$('sel').hidden=pickMode;
+  $('sn').textContent=picked.size+' selected'+(picked.size>300?' (the first 300 will download)':'');$('sdl').disabled=!picked.size}
+function pick(u,b){if(picked.has(u)){picked.delete(u);b.classList.remove('picked')}else{picked.add(u);b.classList.add('picked')}pickUi()}
+$('sel').onclick=()=>{pickMode=true;pickUi()};
+$('sx').onclick=()=>{pickMode=false;picked.clear();for(const t of document.querySelectorAll('.t.picked'))t.classList.remove('picked');pickUi()};
+$('sall').onclick=()=>{for(const r of items)picked.add(r.uuid);for(const t of document.querySelectorAll('.t'))if(picked.has(t.dataset.u))t.classList.add('picked');pickUi()};
+$('sdl').onclick=()=>{const p=new URLSearchParams();for(const u of [...picked].slice(0,300))p.append('id',u);location.href='/api/meta/zip?'+p};
 
 // lightbox
 let cur=-1;
@@ -225,11 +243,14 @@ function openLb(i){cur=i;const r=items[i];if(!r)return;
     for(const v of vals){const c=el('button','c',v);c.type='button';
       c.onclick=()=>{if(key){f[key].value=v;drawRail();run();$('lb').close()}};dd.appendChild(c)}
     dl.appendChild(dt);dl.appendChild(dd)};
-  row('People',r.persons,'person');row('Things',r.labels,'label');row('Albums',r.albums,'album');
+  row('Type',(r.types||[]).map(t=>TL[t]||t),null);row('People',r.persons,'person');row('Things',r.labels,'label');row('Albums',r.albums,'album');
   row('Place',r.place?[r.place]:[],'place');row('Keywords',r.keywords,'text');
   const fl=[r.fav&&'Favourite',r.trashed&&'In Recently Deleted',r.hidden&&'Hidden album',r.mirror&&r.mirror.startsWith('ok')?'Original on the drive':'No copy on the drive'].filter(Boolean);
   row('Status',fl,null);s.appendChild(dl);
-  if(r.viewable){const a=el('div','acts'),l=el('a','',r.kind==='video'?'Open the clip':'Open the original');l.href='/meta/file/'+r.uuid;l.target='_blank';l.rel='noopener';a.appendChild(l);s.appendChild(a)}
+  if(r.mirror&&r.mirror.startsWith('ok')){const a=el('div','acts');
+    const d=el('a','','Download the original');d.href='/meta/original/'+r.uuid;a.appendChild(d);
+    if(r.viewable){const l=el('a','','Open in a tab');l.href='/meta/file/'+r.uuid;l.target='_blank';l.rel='noopener';a.appendChild(l)}
+    s.appendChild(a)}
   $('lbp').hidden=i<=0;$('lbn').hidden=false;
   if(!$('lb').open)$('lb').showModal();
   if(i>=items.length-6&&offset<total)load(false);
@@ -244,7 +265,7 @@ addEventListener('keydown',e=>{if(!$('lb').open)return;if(e.key==='ArrowLeft'&&c
 let t;const later=()=>{clearTimeout(t);t=setTimeout(run,350)};
 f.onsubmit=e=>{e.preventDefault();run()};
 for(const n of ['text','person','label','place','album'])f[n].addEventListener('input',()=>{later();if(n==='person')drawRail()});
-for(const n of ['year','kind','where','fav'])f[n].addEventListener('change',()=>{
+for(const n of ['year','type','kind','where','fav'])f[n].addEventListener('change',()=>{
   if(n==='year'){f.mon.disabled=!f.year.value;if(!f.year.value)f.mon.value=''}run()});
 f.mon.addEventListener('change',run);
 $('reset').onclick=()=>{f.reset();f.mon.disabled=true;drawRail();run()};
@@ -258,6 +279,8 @@ async function init(){
     for(const [n] of d[k]){const o=el('option');o.value=n;$(id).appendChild(o)}
   for(const [y,c] of d.years){const o=el('option','',y+' ('+c.toLocaleString()+')');o.value=y;f.year.appendChild(o)}
   MON.forEach((m,i)=>{const o=el('option','',m);o.value=String(i+1).padStart(2,'0');f.mon.appendChild(o)});
+  for(const [t,l,n] of d.types){TL[t]=l;const o=el('option','',l);o.title=n.toLocaleString()+' items';o.value=t;f.type.appendChild(o)}
+  if(!d.types.length){const o=el('option','','Re-run the Mac export to list types');o.disabled=true;f.type.appendChild(o)}
   FAC=d.persons;drawRail();run();
 }
 init();

@@ -34,6 +34,22 @@ import osxphotos
 CHUNK = 1500
 
 
+def media_types(p):
+    """The iPhone camera roll's media types. Missing attributes (older osxphotos) count as no."""
+    flags = (("screenshot", "screenshot"), ("selfie", "selfie"), ("raw", "israw"), ("live", "live_photo"),
+             ("portrait", "portrait"), ("panorama", "panorama"), ("hdr", "hdr"), ("burst", "burst"),
+             ("slowmo", "slow_mo"), ("timelapse", "time_lapse"), ("screenrec", "screen_recording"),
+             ("cinematic", "cinematic"))
+    out = []
+    for name, attr in flags:
+        try:
+            if getattr(p, attr, False):
+                out.append(name)
+        except Exception:
+            pass
+    return out
+
+
 def record(p, trashed):
     place = ""
     try:
@@ -47,6 +63,7 @@ def record(p, trashed):
         "bytes": p.original_filesize or 0,
         "date": p.date.isoformat() if p.date else "",
         "kind": "video" if p.ismovie else "photo",
+        "types": media_types(p),
         "persons": [n for n in (p.persons or []) if n and n != "_UNKNOWN_"],
         "labels": list(p.labels or []),
         "albums": list(p.albums or []),

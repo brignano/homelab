@@ -17,7 +17,13 @@ DIR = dupes.DATA / "meta"
 LIB = DIR / "library.json"
 MAX_BODY = 16 << 20
 MAX_RECORDS = 200000
+MAX_ZIP = 300
 LIST_FIELDS = ("persons", "labels", "albums", "keywords")
+# what the iPhone camera roll calls "Media Types": id -> label (the Mac export sends the ids)
+TYPES = {"screenshot": "Screenshots", "selfie": "Selfies", "raw": "RAW", "live": "Live Photos", "portrait": "Portraits",
+         "panorama": "Panoramas", "hdr": "HDR", "burst": "Bursts", "slowmo": "Slo-mo", "timelapse": "Time-lapse",
+         "screenrec": "Screen recordings", "cinematic": "Cinematic"}
+RAW_EXT = {".dng", ".nef", ".cr2", ".cr3", ".arw", ".raf", ".orf", ".rw2"}
 VIEWABLE = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
             ".mp4": "video/mp4", ".mov": "video/quicktime", ".m4v": "video/mp4"}
 PREVIEWS = Path(os.environ.get("PREVIEWS_DIR", "/photos-previews"))  # JPEGs of the HEICs (scripts/photos-previews.sh)
@@ -61,6 +67,10 @@ def _clean(r) -> dict:
     for k in ("lat", "lon"):
         v = r.get(k)
         out[k] = round(float(v), 5) if isinstance(v, (int, float)) else None
+    types = {t for t in (r.get("types") or []) if t in TYPES}
+    if Path(out["filename"]).suffix.lower() in RAW_EXT:
+        types.add("raw")
+    out["types"] = sorted(types)
     for k in LIST_FIELDS:
         v = r.get(k) or []
         if not isinstance(v, list):
@@ -150,7 +160,7 @@ def _has(want: str, have) -> bool:
 
 def search(q: dict, limit: int = 60) -> dict:
     """q keys (all optional, all must match): person, label, album, keyword,
-    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), exclude (names to leave out),
+    place, text, year, month (YYYY-MM), fav (1), kind (photo|video), type (see TYPES), exclude (names to leave out),
     where (library|hidden|trashed)."""
     data = rows().values()
     f = lambda k: str(q.get(k) or "").strip()
@@ -180,6 +190,8 @@ def search(q: dict, limit: int = 60) -> dict:
             continue
         if f("fav") == "1" and not r["fav"]:
             continue
+        if f("type") and f("type") not in r.get("types", ()):
+            continue
         if f("kind") in ("photo", "video") and r["kind"] != f("kind"):
             continue
         w = f("where")
@@ -202,6 +214,7 @@ def facets() -> dict:
     return {"total": len(data),
             "persons": top("persons", 60), "labels": top("labels", 80), "albums": top("albums", 60),
             "years": sorted(Counter(r["date"][:4] for r in data if r["date"]).items(), reverse=True),
+            "types": [(t, TYPES[t], n) for t, n in Counter(t for r in data for t in r.get("types", ())).most_common() if t in TYPES],
             "trashed": sum(1 for r in data if r["trashed"]), "hidden": sum(1 for r in data if r["hidden"])}
 
 
@@ -224,4 +237,33 @@ def export_csv() -> str:
         w.writerow([r["uuid"], r["filename"], r["date"], r["kind"], "; ".join(r["persons"]), "; ".join(r["labels"]),
                     "; ".join(r["albums"]), "; ".join(r["keywords"]), r["place"], r["lat"], r["lon"],
                     int(r["fav"]), int(r["hidden"]), int(r["trashed"]), r["title"]])
+    return buf.getvalue()
+
+
+def originals(uuids):
+    """[(arcname, path, record)] for the mirror originals of these ids (any file type), skipping
+    ones with no copy. Names are made unique so two photos with one name do not overwrite."""
+    out, seen = [], set()
+    for u in uuids:
+        r = rows().get(u) if dupes.UUID_RE.match(u) else None
+        path = _find(r)[0] if r else None
+        if not path:
+            continue
+        name = path.name
+        if name in seen:
+            name = "%s_%s%s" % (path.stem, u[:8], path.suffix)
+        seen.add(name)
+        out.append((name, path, r))
+    return out
+
+
+def csv_for(recs) -> str:
+    import csv
+    import io
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["file", "date", "kind", "types", "persons", "labels", "albums", "keywords", "place", "lat", "lon", "favourite"])
+    for name, _path, r in recs:
+        w.writerow([name, r["date"], r["kind"], "; ".join(r.get("types", [])), "; ".join(r["persons"]), "; ".join(r["labels"]),
+                    "; ".join(r["albums"]), "; ".join(r["keywords"]), r["place"], r["lat"], r["lon"], int(r["fav"])])
     return buf.getvalue()
