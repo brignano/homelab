@@ -1,7 +1,11 @@
 # Clip review page: a stdlib-only HTTP server, so there is nothing to pip install.
+# ffmpeg only makes the small still thumbnails on /meta (cached under the data dir).
 FROM python:3.12-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /srv
 COPY app ./app

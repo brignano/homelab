@@ -481,12 +481,19 @@ class Handler(BaseHTTPRequestHandler):
             name, path, _r = recs[0]
             return self._file(path, mimetypes.guess_type(name)[0] or "application/octet-stream",
                               [("Content-Disposition", 'attachment; filename="%s"' % name.replace('"', ""))])
+        if u.path.startswith("/meta/thumb/"):
+            with _lock:
+                ok = metalib.file_for(u.path[len("/meta/thumb/"):]) is not None
+            th = metalib.thumb_for(u.path[len("/meta/thumb/"):]) if ok else None  # ffmpeg runs outside the lock
+            if not th:
+                return self._send(404, "no thumbnail")
+            return self._send(200, th.read_bytes(), "image/jpeg", [("Cache-Control", "private, max-age=86400")])
         if u.path.startswith("/meta/file/"):
             with _lock:
                 hit = metalib.file_for(u.path[len("/meta/file/"):])
             if not hit:
                 return self._send(404, "no viewable original")
-            return self._file(*hit)
+            return self._file(hit[0], hit[1], [("Content-Disposition", "inline")])
         if u.path.startswith("/video/"):
             return self._video(u.path[len("/video/"):])
         if u.path in ("/export.csv", "/export.txt"):
