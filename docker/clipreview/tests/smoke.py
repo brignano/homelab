@@ -363,5 +363,6 @@ assert q(text="IMG_902")["results"][0]["viewable"] is False        # no preview 
 (tmp / "previews/2019/07/IMG_902.jpg").write_bytes(b"P" * 7)
 assert q(text="IMG_902")["results"][0]["viewable"] is True and get("/meta/file/AAAAAAAA-0003").read() == b"P" * 7
 assert b"AAAAAAAA-0001" in get("/api/meta/export.csv").read()
-assert "Cold storage search" in get("/meta").read().decode()
+page = get("/meta").read().decode()
+assert "<title>Cold storage \u00b7 Review</title>" in page and 'id="lb"' in page and "__" not in page.replace("__proto__", "")
 print("ok")
