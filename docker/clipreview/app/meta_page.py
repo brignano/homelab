@@ -11,13 +11,15 @@ form input:not([type=checkbox]),form select{width:100%;min-height:2.25rem}
 form label.chk{flex-direction:row;align-items:center;gap:var(--s2);min-height:2.25rem;font-size:var(--text-sm)}
 .actions{display:flex;gap:var(--s3);align-items:center;grid-column:1/-1}
 #facets{font-size:var(--text-sm);margin:var(--s2) 0}
-.chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:0 var(--s3);margin:2px;background:none;font-size:var(--text-xs)}
+.chip{display:inline-flex;align-items:center;gap:var(--s2);padding-right:var(--s1,3px);cursor:pointer;border:1px solid var(--line);border-radius:999px;padding:0 var(--s3);margin:2px;background:none;font-size:var(--text-xs)}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(15rem,1fr));gap:var(--s3)}
 .r{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;font-size:var(--text-sm)}
 .r .m{width:100%;height:11rem;object-fit:contain;background:var(--n-100);display:flex;align-items:center;justify-content:center;color:var(--slate)}
 .r .t{padding:var(--s2) var(--s3)}
 .r .k{color:var(--slate);font-size:var(--text-xs)}
-.x{opacity:.6;padding:0 2px}.x:hover{opacity:1}
+.x{display:inline-flex;align-items:center;justify-content:center;min-width:1.5rem;height:1.5rem;margin-left:2px;border-radius:999px;border:1px solid var(--line-strong,var(--line));font-weight:700;line-height:1}
+.x.hide{color:var(--danger-ink);background:var(--danger-surface)}.x.show{color:var(--success-ink);background:var(--success-surface);padding:0 var(--s2)}
+.x:hover{filter:brightness(1.25)}
 .gone{color:var(--danger-ink)}
 </style></head><body>
 <header>__BRAND____NAV__<span id="count" class="muted"></span></header>
@@ -65,9 +67,9 @@ function drawChips(){
     const lab=el('span','',n+' '+c);
     lab.onclick=()=>{document.querySelector('[name=person]').value=n;run(true)};
     b.appendChild(lab);
-    if(!isHid(n)){const x=el('span','x','\u00d7');x.title='Hide this person by default';
+    if(!isHid(n)){const x=el('span','x hide','\u00d7');x.title='Hide this person by default';
       x.onclick=e=>{e.stopPropagation();HID.push(n);saveHid();drawChips();run(true)};b.appendChild(x)}
-    else{b.style.opacity='.6';const x=el('span','x','+');x.title='Stop hiding this person';
+    else{const x=el('span','x show','+ unhide');x.title='Stop hiding this person';
       x.onclick=e=>{e.stopPropagation();HID=HID.filter(h=>!(low(h)===low(n)||low(n).startsWith(low(h)+' ')));saveHid();drawChips();run(true)};b.appendChild(x)}
     f.appendChild(b)}
   const h=$('hid');h.textContent='';h.hidden=!HID.length;
