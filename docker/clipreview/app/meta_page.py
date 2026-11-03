@@ -46,6 +46,8 @@ form label.chk{flex-direction:row;align-items:center;gap:var(--s2);min-height:2.
 const $=id=>document.getElementById(id);
 let offset=0,HID=[],showHid=false;
 // hidden people live on the server, so every device agrees
+// same rule as the server: "Lauren" also hides "Lauren \ud83e\udd70"
+const low=x=>x.toLowerCase(), isHid=n=>HID.some(h=>low(h)===low(n)||low(n).startsWith(low(h)+' '));
 const saveHid=()=>fetch('/api/meta/hidden',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({people:HID})});
 function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e}
 async function facets(){
@@ -58,13 +60,15 @@ async function facets(){
 let FAC=[];
 function drawChips(){
   const f=$('facets');f.textContent='';
-  for(const [n,c] of FAC.filter(([n])=>showHid||!HID.includes(n)).slice(0,30)){
+  for(const [n,c] of FAC.filter(([n])=>showHid||!isHid(n)).slice(0,30)){
     const b=el('span','chip');
     const lab=el('span','',n+' '+c);
     lab.onclick=()=>{document.querySelector('[name=person]').value=n;run(true)};
     b.appendChild(lab);
-    if(!HID.includes(n)){const x=el('span','x','\u00d7');x.title='Hide this person by default';
+    if(!isHid(n)){const x=el('span','x','\u00d7');x.title='Hide this person by default';
       x.onclick=e=>{e.stopPropagation();HID.push(n);saveHid();drawChips();run(true)};b.appendChild(x)}
+    else{b.style.opacity='.6';const x=el('span','x','+');x.title='Stop hiding this person';
+      x.onclick=e=>{e.stopPropagation();HID=HID.filter(h=>!(low(h)===low(n)||low(n).startsWith(low(h)+' ')));saveHid();drawChips();run(true)};b.appendChild(x)}
     f.appendChild(b)}
   const h=$('hid');h.textContent='';h.hidden=!HID.length;
   if(HID.length){
