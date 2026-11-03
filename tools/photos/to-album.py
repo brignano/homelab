@@ -70,6 +70,11 @@ def main() -> int:
                 if p.favorite:
                     print("skipped (favourite): %s" % stem)
                     taken.add(stem)
+                elif p.hidden:
+                    # Scripts cannot put hidden items in an album (Photos accepts the
+                    # command and drops them), so say so instead of "added".
+                    print("hidden in Photos, remove by hand in the Hidden album: %s" % stem)
+                    taken.add(stem)
                 else:
                     found.setdefault(stem, p.uuid)
                     taken.add(stem)
@@ -101,8 +106,14 @@ def main() -> int:
     new = [u for u in found.values() if u not in have]
     if new:
         album.add(lib.photos(uuid=new))
-    print("album '%s': added %d, already there %d. Open it in Photos, Cmd-A, Delete."
-          % (args.album, len(new), len(found) - len(new)))
+    after = {p.uuid for p in album.photos()}
+    missing = [u for u in found.values() if u not in after]
+    print("album '%s': %d of %d are in it now. Open it in Photos, Cmd-A, Delete."
+          % (args.album, len(found) - len(missing), len(found)))
+    if missing:
+        names = {u: s_ for s_, u in found.items()}
+        print("NOT added (Photos dropped them), check or remove by hand: %s"
+              % ", ".join(names[u] for u in missing))
     photos_bg.hide()
     return 0
 
