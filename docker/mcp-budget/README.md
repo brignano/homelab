@@ -25,7 +25,9 @@ sync off on purpose.
 
 ## Setup
 
-1. `cp docker/mcp-budget/.env.example docker/mcp-budget/.env` on CT 100 and fill it:
+1. On CT 100 run `./scripts/mcp-budget-env.sh`. It asks for each value (passwords hidden),
+   generates the token, and writes `docker/mcp-budget/.env` (mode 600). By hand instead:
+   `cp docker/mcp-budget/.env.example docker/mcp-budget/.env` and fill it:
    the Actual server password, the Sync ID (*Settings → Show advanced settings*), the
    budget's end-to-end encryption password, and a new `MCP_BUDGET_TOKEN`
    (`openssl rand -hex 32`). Save the token in the password manager. These never go in
