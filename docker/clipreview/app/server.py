@@ -535,12 +535,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urlparse(self.path).path
-        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import", "/api/meta/hidden"):
+        if path not in ("/api/label", "/api/dupes/sets", "/api/dupes/decide", "/api/triage/accept", "/api/cold/check", "/api/photos/report", "/api/meta/import", "/api/meta/hidden", "/api/meta/staged"):
             return self._send(404, "not found")
         if (self.headers.get("Content-Type") or "").split(";")[0] != "application/json":
             return self._send(415, "json only")
         raw = self._same_origin_json(dupes.MAX_SETS_BYTES if path in ("/api/dupes/sets", "/api/cold/check", "/api/photos/report")
-                                     else metalib.MAX_BODY if path == "/api/meta/import" else 4096)
+                                     else metalib.MAX_BODY if path in ("/api/meta/import", "/api/meta/staged") else 4096)
         if raw is None:
             return
         try:
@@ -551,6 +551,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/cold/check":
                 with _lock:
                     return self._send(200, json.dumps(dupes.cold_check(body)), "application/json")
+            if path == "/api/meta/staged":
+                with _lock:
+                    return self._send(200, json.dumps(metalib.stage(body)), "application/json")
             if path == "/api/meta/hidden":
                 with _lock:
                     return self._send(200, json.dumps({"people": metalib.set_hidden_people(body)}), "application/json")

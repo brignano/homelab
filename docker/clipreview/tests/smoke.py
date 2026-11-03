@@ -362,6 +362,22 @@ json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0003", "filename": "IMG_902.HEIC"
 assert q(text="IMG_902")["results"][0]["viewable"] is False        # no preview made yet
 (tmp / "previews/2019/07/IMG_902.jpg").write_bytes(b"P" * 7)
 assert q(text="IMG_902")["results"][0]["viewable"] is True and get("/meta/file/AAAAAAAA-0003").read() == b"P" * 7
+# staging for deletion: a mark only, hidden from normal results, files untouched
+assert q(person="Dakota")["total"] == 1 and json.load(get("/api/meta/facets"))["staged"] == 0
+def spost(body):
+    return json.load(urllib.request.urlopen(urllib.request.Request(
+        base + "/api/meta/staged", json.dumps(body).encode(), {"Content-Type": "application/json"})))
+assert spost({"add": ["AAAAAAAA-0001", "AAAAAAAA-9999"]})["staged"] == 1        # unknown ids are ignored
+assert q(person="Dakota")["total"] == 0 and q(staged="only")["total"] == 1 and q(staged="only")["results"][0]["staged"] is True
+fc = json.load(get("/api/meta/facets"))
+assert fc["staged"] == 1 and fc["staged_bytes"] == 50
+assert (tmp / "photos/2019/07/IMG_900.JPG").read_bytes() == b"J" * 50           # still on the drive
+assert spost({"remove": ["AAAAAAAA-0001"]})["staged"] == 0 and q(person="Dakota")["total"] == 1
+try:
+    spost({"add": ["not a uuid!"]})
+    raise SystemExit("expected 400")
+except urllib.error.HTTPError as e:
+    assert e.code == 400
 # media types (screenshot, selfie, RAW...) and downloading originals
 json.load(mpost({"photos": [{"uuid": "AAAAAAAA-0004", "filename": "IMG_900.JPG", "bytes": 50, "date": "2019-07-04T12:00:00-04:00",
                              "types": ["selfie", "bogus", "live"]},

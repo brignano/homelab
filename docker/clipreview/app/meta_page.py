@@ -70,6 +70,8 @@ main{display:block;overflow:auto;padding:0;scroll-behavior:smooth}
 .sbar{position:sticky;top:0;z-index:5;padding:var(--s2) var(--s3);background:var(--card);border:1px solid var(--line-control);border-radius:var(--radius);box-shadow:var(--shadow-1)}
 .t .ck{position:absolute;top:var(--s2);left:var(--s2);width:1.6rem;height:1.6rem;border-radius:999px;border:2px solid #fff;background:rgb(0 0 0/.45);color:#fff;display:none;align-items:center;justify-content:center;font-weight:700;pointer-events:none;z-index:3}
 .selmode .t .ck{display:flex}.t.picked::after{content:"";position:absolute;inset:0;border:4px solid var(--i-ink);border-radius:var(--radius);z-index:2;pointer-events:none}.t.picked .ck{background:var(--i);border-color:var(--i)}
+.note{margin:0 0 var(--s4);padding:var(--s3) var(--s4);border:1px solid var(--attention-line,var(--line));background:var(--attention-surface,var(--card));color:var(--attention-ink,var(--ink));border-radius:var(--radius);font-size:var(--text-sm)}
+button.warnb{color:var(--danger-ink);background:var(--danger-surface);border-color:var(--danger-line)}
 .empty{grid-column:1/-1;text-align:center;color:var(--slate);padding:var(--s6,3rem) 0}
 #end{height:1px}
 
@@ -117,14 +119,15 @@ dialog::backdrop{background:rgb(8 8 10/.9);backdrop-filter:blur(6px)}
  <label>Month<select name="mon" disabled><option value="">Any month</option></select></label>
  <label>Type<select name="type"><option value="">Any type</option></select></label>
  <label>Kind<select name="kind"><option value="">All</option><option value="photo">Photos</option><option value="video">Clips</option></select></label>
- <label>Where<select name="where"><option value="">Everywhere</option><option value="library">In the library</option><option value="hidden">Hidden album</option><option value="trashed">Recently Deleted</option></select></label>
+ <label>Where<select name="where"><option value="">Everywhere</option><option value="library">In the library</option><option value="hidden">Hidden album</option><option value="trashed">Recently Deleted</option><option value="staged">To delete</option></select></label>
  <label class="tog"><input type="checkbox" name="fav" value="1"> Favourites only</label>
  <div class="actions"><button class="primary" type="submit">Search</button><button type="button" id="reset">Clear</button><a href="/api/meta/export.csv">Download everything as CSV</a></div>
 </form>
 <datalist id="dl-person"></datalist><datalist id="dl-label"></datalist><datalist id="dl-album"></datalist>
 <div id="rail" aria-label="People"></div>
 <div class="bar"><h2 id="res">Loading…</h2><span class="sp"></span><span id="hid" class="muted"></span><button type="button" id="tog" hidden></button><button type="button" id="sel">Select</button></div>
-<div class="bar sbar" id="sbar" hidden><b id="sn">0 selected</b><span class="sp"></span><button type="button" id="sall">Select all loaded</button><button type="button" class="primary" id="sdl">Download selected</button><button type="button" id="sx">Cancel</button></div>
+<div class="bar sbar" id="sbar" hidden><b id="sn">0 selected</b><span class="sp"></span><button type="button" id="sall">Select all loaded</button><button type="button" class="primary" id="sdl">Download selected</button><button type="button" class="warnb" id="sstage">Stage for deletion</button><button type="button" id="sx">Cancel</button></div>
+<p class="note" id="stnote" hidden></p>
 <div class="grid" id="out"></div>
 <div id="end"></div>
 </div></main>
@@ -148,6 +151,7 @@ function params(){
   const p=new URLSearchParams();
   for(const [k,v] of new FormData(f)){if(!v||k==='mon')continue;p.set(k,v)}
   const y=f.year.value,m=f.mon.value;if(y&&m)p.set('month',y+'-'+m),p.delete('year');
+  if(p.get('where')==='staged'){p.delete('where');p.set('staged','only')}
   if(HID.length&&!showHid)p.set('exclude',HID.join(','));
   return p;
 }
@@ -190,7 +194,7 @@ async function load(reset){
   loading=false;
   if(offset<total&&$('end').getBoundingClientRect().top<innerHeight*1.5)load(false);
 }
-const run=()=>load(true);
+const run=()=>{noteUi();pickUi();return load(true)};
 
 // rail of people: click to filter, red x hides, dashed ones are hidden (shown only when asked)
 function drawRail(){
@@ -218,11 +222,21 @@ function drawHid(){
 }
 $('tog').onclick=()=>{showHid=!showHid;drawRail();run()};
 
+const inPile=()=>f.where.value==='staged';
+async function stage(add,remove){
+  await fetch('/api/meta/staged',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({add,remove})});
+  pickMode=false;picked.clear();pickUi();await facetsCount();run()}
+let STG={n:0,bytes:0};
+const gb=b=>b>=1e9?(b/1e9).toFixed(1)+' GB':(b/1e6).toFixed(0)+' MB';
+async function facetsCount(){const d=await (await fetch('/api/meta/facets')).json();STG={n:d.staged,bytes:d.staged_bytes};noteUi();$('count').textContent=d.total.toLocaleString()+' items \u00b7 '+d.trashed.toLocaleString()+' in Recently Deleted'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' staged for deletion':'')}
+function noteUi(){const n=$('stnote');n.hidden=!inPile();
+  if(inPile())n.textContent=STG.n.toLocaleString()+' staged ('+gb(STG.bytes)+'). Staging only marks them: nothing has been deleted from the drive. Review them here, tick any you want to keep and use Put back, then tell Claude to go ahead and they are moved to a trash folder first.'}
 // select mode: tick photos, download the originals (with a metadata.csv) to put back in Photos
 function pickUi(){document.body.classList.toggle('selmode',pickMode);$('sbar').hidden=!pickMode;$('sel').hidden=pickMode;
-  $('sn').textContent=picked.size+' selected'+(picked.size>300?' (the first 300 will download)':'');$('sdl').disabled=!picked.size}
+  $('sn').textContent=picked.size+' selected'+(picked.size>300?' (the first 300 will download)':'');$('sdl').disabled=!picked.size;$('sstage').disabled=!picked.size;$('sstage').textContent=inPile()?'Put back (don\'t delete)':'Stage for deletion'}
 function pick(u,b){if(picked.has(u)){picked.delete(u);b.classList.remove('picked')}else{picked.add(u);b.classList.add('picked')}pickUi()}
 $('sel').onclick=()=>{pickMode=true;pickUi()};
+$('sstage').onclick=()=>{const ids=[...picked];if(!ids.length)return;inPile()?stage([],ids):stage(ids,[])};
 $('sx').onclick=()=>{pickMode=false;picked.clear();for(const t of document.querySelectorAll('.t.picked'))t.classList.remove('picked');pickUi()};
 $('sall').onclick=()=>{for(const r of items)picked.add(r.uuid);for(const t of document.querySelectorAll('.t'))if(picked.has(t.dataset.u))t.classList.add('picked');pickUi()};
 $('sdl').onclick=()=>{const p=new URLSearchParams();for(const u of [...picked].slice(0,300))p.append('id',u);location.href='/api/meta/zip?'+p};
@@ -250,6 +264,7 @@ function openLb(i){cur=i;const r=items[i];if(!r)return;
   if(r.mirror&&r.mirror.startsWith('ok')){const a=el('div','acts');
     const d=el('a','','Download the original');d.href='/meta/original/'+r.uuid;a.appendChild(d);
     if(r.viewable){const l=el('a','','Open in a tab');l.href='/meta/file/'+r.uuid;l.target='_blank';l.rel='noopener';a.appendChild(l)}
+    const g=el('button',r.staged?'':'warnb',r.staged?'Put back (don\'t delete)':'Stage for deletion');g.type='button';g.onclick=async()=>{await stage(r.staged?[]:[r.uuid],r.staged?[r.uuid]:[]);$('lb').close()};a.appendChild(g);
     s.appendChild(a)}
   $('lbp').hidden=i<=0;$('lbn').hidden=false;
   if(!$('lb').open)$('lb').showModal();
@@ -274,7 +289,8 @@ new IntersectionObserver(es=>{if(es[0].isIntersecting&&!loading&&offset<total)lo
 async function init(){
   try{HID=(await (await fetch('/api/meta/hidden')).json()).people||[]}catch(e){}
   const d=await (await fetch('/api/meta/facets')).json();
-  $('count').textContent=d.total?d.total.toLocaleString()+' items · '+d.trashed.toLocaleString()+' in Recently Deleted':'nothing imported yet: run tools/photos/metadata-export.py on the Mac';
+  STG={n:d.staged,bytes:d.staged_bytes};
+  $('count').textContent=d.total?d.total.toLocaleString()+' items · '+d.trashed.toLocaleString()+' in Recently Deleted'+(d.staged?' \u00b7 '+d.staged.toLocaleString()+' staged for deletion':''):'nothing imported yet: run tools/photos/metadata-export.py on the Mac';
   for(const [k,id] of [['persons','dl-person'],['labels','dl-label'],['albums','dl-album']])
     for(const [n] of d[k]){const o=el('option');o.value=n;$(id).appendChild(o)}
   for(const [y,c] of d.years){const o=el('option','',y+' ('+c.toLocaleString()+')');o.value=y;f.year.appendChild(o)}
