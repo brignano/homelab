@@ -334,7 +334,8 @@ session there and runs `/deploy` itself, then reports the result. Do not hand me
 
 Homelab's backlog is worked by agents under the fleet standard in
 [`brignano/ai-tools` `fleet/README.md`](https://github.com/brignano/ai-tools/blob/main/fleet/README.md).
-Issues are specs and only I set `agent:ready`. Every builder PR touching
+Issues are specs. Any open issue that isn't held (see "Ready by default" in the
+standard) is ready for an agent. Every builder PR touching
 `docker/`, `scripts/`, `grafana/` or Caddy runs `invariants-reviewer` first, and
 "Who runs the deploy" above still governs what happens after merge.
 
