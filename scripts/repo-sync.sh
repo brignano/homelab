@@ -160,6 +160,9 @@ ping_healthchecks() {
 trap ping_healthchecks EXIT
 
 cd "$REPO" || { echo "repo-sync: $REPO not found" >&2; exit 1; }
+# Docker reports bind-mount sources with symlinks resolved; the drift loop
+# matches them against both spellings of the repo path.
+REPO_REAL=$(pwd -P)
 
 # --- pull ---------------------------------------------------------------------
 
@@ -605,36 +608,101 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
   # falls back to `start`, the conservative direction — a missed staleness is
   # caught by tomorrow's run, an unclearable alert is forever.
   #
-  # Pure stacks are unaffected: every image in one is either all built (assistant)
-  # or all pulled (everything else), so they measure exactly as before.
-  oldest=""
+  # 2026-11-06: and the dependency is a property of each container too. This
+  # loop used to measure every container against the newest commit anywhere in
+  # the stack directory, so a Caddyfile edit counted against `adguard`, which
+  # never reads it. adguard's config lives in Docker volumes and its image is
+  # pinned; nothing in the repo except its own service definition can make it
+  # stale. proxy is on HL_NO_AUTOHEAL, so nothing redeployed it, and
+  # `hl-stack-drift` re-posted "proxy is Nh behind" to Discord every 4h from
+  # 2026-11-02 over a container that was running exactly what the repo says.
+  #
+  # So each container is measured against what it actually consumes:
+  #
+  #   bind mounts     every source inside the repo -> newest commit touching it,
+  #                   against the container START (mounts are read at boot).
+  #   its service     Compose's own answer: the config-hash label the container
+  #                   was created with vs `config --hash` for the file as it is
+  #                   now. Different -> the compose file's newest commit counts,
+  #                   against START. Same -> edits to OTHER services in the file
+  #                   are not this container's problem. A hash that cannot be
+  #                   computed counts as different, the conservative direction.
+  #   its build       built here only: the stack directory minus the compose
+  #                   file and the bind-mounted paths (each already handled
+  #                   above), against the image's creation time. Excluding the
+  #                   mounts matters for caddy: a Caddyfile-only change rebuilds
+  #                   with every layer cached, the image's Created never moves,
+  #                   and measuring the Caddyfile by it could never clear.
+  #
+  # The stack reports its worst container and that container's basis.
+  worst=""
   basis=""
   for cid in $cids; do
     img=$(docker inspect -f '{{.Image}}' "$cid" 2>/dev/null || true)
     [ -n "$img" ] || continue
-    if [ "$(docker image inspect -f '{{len .RepoDigests}}' "$img" 2>/dev/null || echo 1)" = "0" ]; then
-      cbasis="image"
-      ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
-    else
-      cbasis="start"
-      ts=$(epoch "$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)")
+    started=$(epoch "$(docker inspect -f '{{.State.StartedAt}}' "$cid" 2>/dev/null || true)")
+    [ -n "$started" ] || continue
+    cdrift=0
+    cbasis="start"
+
+    # Bind mounts inside the repo. Docker reports absolute host paths; the
+    # repo-relative form is what git log takes.
+    excl=""
+    for src in $(docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{println .Source}}{{end}}{{end}}' "$cid" 2>/dev/null || true); do
+      case "$src" in
+        "$REPO_REAL"/*) rel=${src#"$REPO_REAL"/} ;;
+        "$REPO"/*)      rel=${src#"$REPO"/} ;;
+        *) continue ;;
+      esac
+      excl="$excl :(exclude)$rel"
+      bts=$(git log -1 --format=%ct -- "$rel" 2>/dev/null || true)
+      if [ -n "$bts" ] && [ "$bts" -gt "$started" ] && [ $((bts - started)) -gt "$cdrift" ]; then
+        cdrift=$((bts - started))
+      fi
+    done
+
+    # Its own service definition.
+    svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$cid" 2>/dev/null || true)
+    have=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' "$cid" 2>/dev/null || true)
+    want=""
+    if [ -n "$svc" ]; then
+      want=$(cd "$REPO" && docker compose -f "$compose" config --hash "$svc" 2>/dev/null | awk -v s="$svc" '$1 == s { print $2 }' || true)
     fi
-    [ -n "$ts" ] || continue
-    # The oldest container is what limits the stack's freshness, and the basis
-    # reported is that container's — the report names why THIS number is what it
-    # is, not what the rest of the stack happens to be measured by.
-    if [ -z "$oldest" ] || [ "$ts" -lt "$oldest" ]; then oldest=$ts; basis=$cbasis; fi
+    if [ -z "$want" ] || [ "$want" != "$have" ]; then
+      dts=$(git log -1 --format=%ct -- "$compose" 2>/dev/null || true)
+      if [ -n "$dts" ] && [ "$dts" -gt "$started" ] && [ $((dts - started)) -gt "$cdrift" ]; then
+        cdrift=$((dts - started))
+      fi
+    fi
+
+    # Built here: the build context, by image creation time. RepoDigests empty
+    # means never pulled from a registry, i.e. built on this box.
+    if [ "$(docker image inspect -f '{{len .RepoDigests}}' "$img" 2>/dev/null || echo 1)" = "0" ]; then
+      created=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
+      # shellcheck disable=SC2086 # $excl is a list of pathspecs, split on purpose
+      cts=$(git log -1 --format=%ct -- "$dir" \
+        ":(exclude,glob)${dir}**/*.md" \
+        ":(exclude,glob)${dir}tests/**" \
+        ":(exclude)${dir}.env.example" \
+        ":(exclude)$compose" $excl 2>/dev/null || true)
+      if [ -n "$created" ] && [ -n "$cts" ] && [ "$cts" -gt "$created" ] && [ $((cts - created)) -gt "$cdrift" ]; then
+        cdrift=$((cts - created))
+        cbasis="image"
+      fi
+    fi
+
+    if [ -z "$worst" ] || [ "$cdrift" -gt "$worst" ]; then worst=$cdrift; basis=$cbasis; fi
   done
-  [ -n "$oldest" ] || continue
+  [ -n "$worst" ] || continue
 
   # Recorded for every stack, including the ones that are in sync — a gauge that
   # only appears when something is wrong cannot be graphed, and "0 for the last
   # 30 days" is the reassurance the panel exists to give.
-  if [ "$commit_ts" -le "$oldest" ]; then
+  if [ "$worst" -le 0 ]; then
     record_drift "$stack" "$basis" 0
     continue
   fi
-  drift=$((commit_ts - oldest))
+  drift=$worst
   age=$(human "$drift")
   cmd="docker compose -f $compose $hint"
 

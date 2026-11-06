@@ -263,6 +263,13 @@ needs `docker compose restart grafana`, because provisioning is read at startup.
   0 in the same run. A stack the sync will not touch — `proxy`, on
   `HL_NO_AUTOHEAL` — still needs the manual re-run, because the fix happened
   outside the job and nothing has re-measured since.
+- **Stack drift is measured per container, against what that container reads.**
+  Bind-mounted repo files count against the container's start, its own service
+  definition counts only when Compose's config hash says it changed, and a
+  built image's Dockerfile and build context count against the image. Until
+  2026-11-06 every container was measured against the newest commit anywhere in
+  its stack directory, so Caddyfile edits kept `adguard` "behind the repo" and
+  `Stack running old code · proxy` re-posted every 4h for days.
 - **Each layer is watched by the one outside it, and that is the whole design.**
   Grafana watches the lab. Prometheus scrapes Grafana, so a rule that stops
   evaluating and a notification that fails to send are visible rather than
