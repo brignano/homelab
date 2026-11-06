@@ -619,8 +619,9 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
   #
   # So each container is measured against what it actually consumes:
   #
-  #   bind mounts     every source inside the repo -> newest commit touching it,
-  #                   against the container START (mounts are read at boot).
+  #   bind mounts     every source inside this stack's directory -> newest
+  #                   non-doc commit touching it, against the container START
+  #                   (mounts are read at boot).
   #   its service     Compose's own answer: the config-hash label the container
   #                   was created with vs `config --hash` for the file as it is
   #                   now. Different -> the compose file's newest commit counts,
@@ -654,8 +655,17 @@ homelab_stack_running{$(metric_kv stack "$stack")} 1"
         "$REPO"/*)      rel=${src#"$REPO"/} ;;
         *) continue ;;
       esac
+      # Only mounts inside this stack's own directory. Another stack's files
+      # mounted here (caddy's ../budget/theme, ../dashboard/assets) are served
+      # live as static files, so a commit there leaves nothing to restart; they
+      # never counted before this loop either.
+      case "$rel/" in "$dir"*) ;; *) continue ;; esac
       excl="$excl :(exclude)$rel"
-      bts=$(git log -1 --format=%ct -- "$rel" 2>/dev/null || true)
+      # Same doc/test excludes as the stack-level lookup: a README inside a
+      # mounted directory is in the container but changes nothing it runs.
+      bts=$(git log -1 --format=%ct -- "$rel" \
+        ":(exclude,glob)$rel/**/*.md" \
+        ":(exclude,glob)$rel/**/tests/**" 2>/dev/null || true)
       if [ -n "$bts" ] && [ "$bts" -gt "$started" ] && [ $((bts - started)) -gt "$cdrift" ]; then
         cdrift=$((bts - started))
       fi
