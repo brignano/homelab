@@ -894,6 +894,51 @@ moves_on_pull() {
   return 0
 }
 
+# Is there anything newer upstream than the image this container runs?
+#
+# Age alone could not tell "nobody updated this" from "upstream has not shipped
+# in 90 days", and by November 2026 three of the five warnings were the second
+# kind: node-exporter, postgres-exporter and gluetun were all on their newest
+# release, re-flagged every night with nothing anyone could do. A warning that
+# is right but unactionable every day is how the channel learns to scroll past
+# the one that is not.
+#
+# So an old image is asked about once, and only once it is already old: one
+# registry lookup per stale image, none for the rest. The age decision above
+# stays local and offline; this only ever REMOVES an entry.
+#
+#   floating tag   the remote digest of the same tag. Equal to the one we
+#                  pulled means a pull would fetch nothing new.
+#   pinned tag     the remote digest of its major series tag (`v3` for
+#                  v3.41.3, `2` for 2.10.2). Equal means the pin IS the newest
+#                  release in its series. A new major is a project, not a
+#                  nightly nag, and Renovate opens it as a PR.
+#
+# Any failure — no buildx, no network, a registry that does not publish series
+# tags, a timeout — answers "yes, newer", which keeps the warning. That is the
+# direction this check was written to protect: a Renovate that has quietly
+# stopped still shows up here, because a newer patch moves the series tag.
+upstream_newer() { # image-ref image-id
+  # _u_ prefix: sh has no locals, and moves_on_pull writes _ref and _tag.
+  _u_ref=$1
+  if moves_on_pull "$_u_ref"; then
+    _u_check=$_u_ref
+  else
+    _u_r=${_u_ref%%@*}
+    case "${_u_r##*/}" in *:*) ;; *) return 0 ;; esac
+    _u_tag=${_u_r##*:}
+    _u_check="${_u_r%:*}:${_u_tag%%.*}"
+  fi
+  _u_remote=$(timeout 30 docker buildx imagetools inspect \
+    --format '{{json .Manifest.Digest}}' "$_u_check" 2>/dev/null | tr -d '"' || true)
+  case "$_u_remote" in sha256:*) ;; *) return 0 ;; esac
+  # Pinned by digest in the compose file: the ref itself carries it.
+  case "$_u_ref" in *"@$_u_remote") return 1 ;; esac
+  _u_have=$(docker image inspect -f '{{range .RepoDigests}}{{.}} {{end}}' "$2" 2>/dev/null || true)
+  case " $_u_have " in *"@$_u_remote "*) return 1 ;; esac
+  return 0
+}
+
 for dir in docker/*/; do
   stack=$(basename "$dir")
   compose="${dir}docker-compose.yml"
@@ -929,6 +974,12 @@ for dir in docker/*/; do
     ts=$(epoch "$(docker image inspect -f '{{.Created}}' "$img" 2>/dev/null || true)")
     [ -n "$ts" ] || continue
     age_days=$(( (NOW - ts) / 86400 ))
+    # Old and already the newest upstream counts as not stale: there is nothing
+    # to pull or bump. The age gauge below still records it.
+    stale=0
+    if [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] && upstream_newer "$name" "$img"; then
+      stale=1
+    fi
 
     # POSIX-safe dedupe — no arrays, and the spaces make it a whole-word match.
     case " $seen " in
@@ -940,7 +991,7 @@ for dir in docker/*/; do
         # the reassurance. Same reasoning as the deploy-drift gauge above.
         M_IMAGE_AGE="$M_IMAGE_AGE
 homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")} $((NOW - ts))"
-        if [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ]; then
+        if [ "$stale" = 1 ]; then
           if moves_on_pull "$name"; then
             hits="$hits
     $name ($(human $((NOW - ts))))"
@@ -952,7 +1003,7 @@ homelab_image_age_seconds{$(metric_kv stack "$stack"),$(metric_kv image "$name")
         ;;
     esac
 
-    [ "$age_days" -ge "$MAX_IMAGE_AGE_DAYS" ] || continue
+    [ "$stale" = 1 ] || continue
     # A pinned image contributes no service: the command below is a pull, and a
     # pull is not what moves it.
     moves_on_pull "$name" || continue
@@ -1241,7 +1292,7 @@ fi
 if [ -n "$STALE" ]; then
   MSG="$MSG
 
-**Images older than ${MAX_IMAGE_AGE_DAYS}d**
+**Images older than ${MAX_IMAGE_AGE_DAYS}d, with a newer one upstream**
 $(as_bullets "$STALE")
 *review before running — this pulls versions nobody has looked at*
 \`\`\`bash
@@ -1256,9 +1307,9 @@ if [ -n "$STALE_PINNED" ]; then
 **Pinned and old — waiting on a tag bump, not on you**
 $(as_bullets "$STALE_PINNED")
 Pinning is what let these get old, and a pull does not move them: the tag has to
-change in the compose file. Renovate opens those as PRs for \`proxy\`,
-\`dashboard\` and \`desktops\` (see renovate.json5) — merge one, deploy it, and the
-entry goes. A stack Renovate does not cover needs the bump by hand."
+change in the compose file. Renovate opens those as PRs for the stacks
+renovate.json5 covers — merge one, deploy it, and the entry goes. A stack
+Renovate does not cover needs the bump by hand."
 fi
 if [ -z "$HC_URL" ]; then
   # Reported every run, deliberately: an unconfigured dead man's switch is

@@ -27,6 +27,20 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-07 — Clear the standing image warnings in the daily sync report
+
+**Goal:** The repo-sync report had shown ⚠️ for weeks: 3 stale monitoring images and 2 pins waiting.
+
+**Steps:**
+1. cAdvisor moved from `gcr.io/cadvisor/cadvisor` (no releases since 2025) to `ghcr.io/google/cadvisor:latest`.
+2. Cleanuparr pin bumped 2.10.2 → 2.10.12 (Renovate was held back by its open-PR limit).
+3. `repo-sync.sh`: an image past the age threshold is checked once against its registry and not reported when it is already the newest release (same tag for floating images, major series tag for pins). node-exporter, postgres-exporter and gluetun were all in that state.
+
+**Notes / next steps:**
+- If buildx or the registry is unreachable, the warning stays, so a stopped Renovate still shows up.
+
+---
+
 ## 2026-11-02 — Actual Budget, tailnet only (#310)
 
 **Goal:** A private budgeting tool for 2027 with no bank sync.

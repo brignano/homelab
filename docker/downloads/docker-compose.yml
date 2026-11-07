@@ -218,7 +218,7 @@ services:
   # qBittorrent's at gluetun:8080. No access to the media drive: every action
   # goes through those APIs, so it never deletes a file itself.
   cleanuparr:
-    image: ghcr.io/cleanuparr/cleanuparr:2.10.2@sha256:98463b1116142887767cf90dde3375e7e43718aa623fe737677372023ffb7ebe
+    image: ghcr.io/cleanuparr/cleanuparr:2.10.12@sha256:d0212e4c66bd0522e23c5e5da5d3006bd5ff0e0de1e3ecfcf892e039d55721e2
     container_name: cleanuparr
     restart: unless-stopped
     # 0.5 cpu / 512m (was 0.25 / 256m): on 2026-11-02 the container had hit its

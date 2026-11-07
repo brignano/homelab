@@ -181,6 +181,13 @@ answers a narrower question. "Is there something newer" has to be asked per
 registry and can fail per registry. "Is this older than 90 days" always answers,
 offline, and is the question that would have caught every drift observed here.
 
+*Amended 2026-11-07:* age still decides what is a candidate, offline. Only an
+image already past the threshold is then checked once against its registry
+(`docker buildx imagetools inspect` on the same tag, or on the major series tag
+for a pin), and dropped from the warning when it is already the newest upstream.
+Any failure keeps the warning. Without this, node-exporter, postgres-exporter
+and gluetun were flagged every night for weeks while on their latest release.
+
 **Automatic pulls are accepted for the low-risk stacks.** The trade is a
 possible unannounced breaking change against certain permanent staleness. The
 status quo has already lost that bet on six images. Visible occasional breakage
