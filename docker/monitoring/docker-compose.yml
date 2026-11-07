@@ -102,8 +102,11 @@ services:
     networks:
       - monitoring
 
+  # Pulled from ghcr.io. gcr.io/cadvisor/cadvisor stopped receiving releases in
+  # 2025 (its newest tags are named `no-new-use-public-image-*`), so `:latest`
+  # there never moves again and the image-age report flagged it forever.
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:latest
+    image: ghcr.io/google/cadvisor:latest
     container_name: cadvisor
     restart: unless-stopped
     privileged: true
