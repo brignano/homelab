@@ -1,6 +1,6 @@
 # TSD: Deploy to CT 100 automatically after a merge
 
-**Status:** proposed — tracked in #335
+**Status:** accepted 2026-11-08 — tracked in #335, decision record [`decisions/0001-auto-deploy.md`](../../decisions/0001-auto-deploy.md)
 **Date:** 2026-11-08
 **Owner:** Anthony
 
@@ -169,19 +169,15 @@ flowchart TD
 Settled on #335 (2026-11-03): 5-minute polling, a new `scripts/auto-deploy.sh`,
 `HL_NO_AUTOHEAL` stacks report-only, no webhook.
 
-Open, for the design review:
+Accepted by Anthony on 2026-11-08 ("1A 2A"):
 
-1. **How does a manual `/deploy` keep auto-deploy out?**
-   Recommended: `/deploy` step 1 writes a pause marker with a timestamp, and
-   auto-deploy honours it for 30 minutes. It then clears itself, so a forgotten
-   one can't stop deploys forever. The alternative is to rely on the lock only,
-   but `/deploy` runs as many separate commands and can't hold a lock across
-   them.
-2. **Should verify also fail on `unhealthy`?**
-   Recommended: yes, in `verify_stack`, so repo-sync gets it too. Only stacks
-   with a `healthcheck:` are affected (`core` and `ai` today), and a container
-   that's running but unhealthy is exactly the bad deploy worth an alert. The
-   alternative is to keep today's check (running and not restarting).
+1. **Manual `/deploy` vs auto-deploy:** `/deploy` writes a pause marker with a
+   timestamp, and auto-deploy honours it for 30 minutes, after which it expires
+   on its own. Relying on the lock alone was rejected because `/deploy` runs as
+   many separate commands and can't hold a lock across them.
+2. **Verify fails on `unhealthy`:** `verify_stack` also fails when a container
+   in the stack reports `health=unhealthy`, so repo-sync's nightly heal gets
+   the same check.
 
 ## Out of scope
 
