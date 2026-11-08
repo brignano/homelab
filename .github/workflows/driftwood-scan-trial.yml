@@ -1,0 +1,5 @@
+name: driftwood-scan-trial
+on: push
+jobs:
+  architecture:
+    uses: brignano/ai-tools/.github/workflows/driftwood-scan.yml@claude/driftwood-scan-workflow
