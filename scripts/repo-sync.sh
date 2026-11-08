@@ -163,11 +163,12 @@ trap ping_healthchecks EXIT
 
 # The deploy lock (deploy-common.sh), shared with auto-deploy.sh and /deploy.
 # Waits rather than skipping: this run is daily, and an auto-deploy holds the
-# lock for a minute or two at most. Ten minutes without it means something is
-# stuck, which is worth a failed run and the Healthchecks page that follows.
+# lock for minutes at most (a few `--build`s and a verify per stack). Half an
+# hour without it means something is stuck, which is worth a failed run and the
+# Healthchecks page that follows.
 exec 9>"$DEPLOY_LOCK"
-if ! flock -w 600 9; then
-  echo "repo-sync: could not take $DEPLOY_LOCK in 10 minutes — another deploy is stuck" >&2
+if ! flock -w 1800 9; then
+  echo "repo-sync: could not take $DEPLOY_LOCK in 30 minutes — another deploy is stuck" >&2
   exit 1
 fi
 

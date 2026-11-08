@@ -67,15 +67,18 @@ flowchart TD
    `auto-deploy.sh` never parses the human text.
 
 2. **Shared helpers move to `scripts/deploy-common.sh`.** `verify_stack`,
-   `running_ids`, `job_only`, `in_list`, the stale file-mount check (the "config
-   drift" loop) and the lock path move out of `repo-sync.sh` into one file
-   that both scripts source. This is a move with no behaviour change, so
-   repo-sync's nightly run is the regression test.
+   `running_ids`, `job_only`, `in_list`, the JSON helpers and the lock path move
+   out of `repo-sync.sh` into one file that both scripts source. This is a move
+   with no behaviour change, so repo-sync's nightly run is the regression test.
+   The stale file-mount check stays where it was: repo-sync keeps its `docker
+   cp` metric loop untouched, and auto-deploy runs `/deploy` step 4's
+   `/proc/<pid>/root` check, which is the one that can fail (built narrower than
+   drafted, to keep the repo-sync change to a pure move).
 
 3. **One lock.** Everything that deploys takes `flock` on
    `/run/lock/homelab-deploy.lock`. `auto-deploy.sh` uses `flock -n` and exits
    quietly if it's busy, since the next tick is 5 minutes away. `repo-sync.sh`
-   waits up to 10 minutes for it. A manual `/deploy` is covered by Decision 1.
+   waits up to 30 minutes for it. A manual `/deploy` is covered by Decision 1.
 
 4. **Run the script that was just pulled.** `sh` reads a script while running
    it, so a pull that rewrites `auto-deploy.sh` could corrupt the run in
@@ -86,8 +89,9 @@ flowchart TD
 5. **Skipped, never guessed.**
    - Stacks in `HL_NO_AUTOHEAL` (`proxy matterbridge` by default): reported with
      the exact `hl-ssh` line.
-   - A key in a stack's `.env.example` that its `.env` lacks: the key name, never
-     the value, is reported and that stack is skipped.
+   - A key the merged range added to a stack's `.env.example` that its `.env`
+     lacks: the key name, never the value, is reported and that stack is
+     skipped. Only new keys, since many keys are optional and blank on purpose.
    - `scripts/host/` changes: reported with the line `deploy-plan.sh` already
      prints.
    - A stack with no running containers: left stopped and reported. Stopped
@@ -108,7 +112,9 @@ flowchart TD
    other merge (#254 stays the place for real rollback).
    Each plan covers everything since the last commit that deployed cleanly
    (`last-good`), not just the newest pull, so a stack that failed is retried
-   with the next merge instead of being forgotten.
+   with the next merge instead of being forgotten. A run that dies part-way
+   (reboot, hung compose) is finished on the next tick: `last-good` behind
+   `HEAD` with no failure recorded means a deploy never completed.
 
 8. **Pause.** Touching `/var/lib/homelab/auto-deploy.pause` stops auto-deploy
    without editing cron. The existing `HL_AUTOHEAL=no` pauses it too, so one

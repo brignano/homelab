@@ -87,9 +87,10 @@ ping_hc() {
 }
 
 # --- metrics --------------------------------------------------------------------
-# behind: HEAD is not origin/main after this run. That is the stall signal: a
-# dirty tree, a non-fast-forward or a stuck lock all leave it at 1, and
-# hl-auto-deploy-behind pages if it stays there for 30 minutes while not paused.
+# behind: HEAD is not origin/main after this run (a dirty tree or a
+# non-fast-forward, already reported once to Discord). Information for the
+# dashboard, not an alert: the alert is hl-auto-deploy-stale, on the timestamp,
+# which stops moving when no run reaches a decision at all.
 write_metrics() { # <behind 0|1> <paused 0|1> <failed 0|1>
   metrics_open auto_deploy
   metric_help homelab_auto_deploy_timestamp_seconds gauge \
@@ -174,6 +175,18 @@ if [ "${1:-}" != "--after-pull" ]; then
     ping_hc 0
     exit 0
   fi
+  # --- the lock -----------------------------------------------------------------
+  # Busy means repo-sync or a manual deploy is running. The next tick is five
+  # minutes away, so skip quietly rather than queue. fd 9 stays open across the
+  # exec below, so the lock is held until the deploy finishes.
+  exec 9>"$DEPLOY_LOCK"
+  if ! flock -n 9; then
+    exit 0
+  fi
+
+  # A manual /deploy in the last 30 minutes. Checked under the lock: /deploy
+  # writes the marker after waiting on the same lock, so a tick that got the
+  # lock first finishes before /deploy starts, and one that comes after sees it.
   if [ -f "$STATE_DIR/manual-deploy" ]; then
     _since=$(cat "$STATE_DIR/manual-deploy" 2>/dev/null || echo 0)
     case "$_since" in ''|*[!0-9]*) _since=0 ;; esac
@@ -182,15 +195,6 @@ if [ "${1:-}" != "--after-pull" ]; then
       ping_hc 0
       exit 0
     fi
-  fi
-
-  # --- the lock -----------------------------------------------------------------
-  # Busy means repo-sync or a manual deploy is running. The next tick is five
-  # minutes away, so skip quietly rather than queue. fd 9 stays open across the
-  # exec below, so the lock is held until the deploy finishes.
-  exec 9>"$DEPLOY_LOCK"
-  if ! flock -n 9; then
-    exit 0
   fi
 
   cd "$REPO" || { log "$REPO not found"; exit 1; }
@@ -204,6 +208,17 @@ if [ "${1:-}" != "--after-pull" ]; then
   TARGET=$(git rev-parse "origin/$BRANCH")
 
   if [ "$HEAD_SHA" = "$TARGET" ]; then
+    # Up to date with GitHub, but was the last pull actually deployed? Phase 2
+    # runs after the merge, so a run killed part-way (a reboot, a hung compose,
+    # a bug) leaves HEAD current and nothing recording the work left. last-good
+    # behind HEAD with no failure on record is exactly that: finish it now.
+    _good=$(cat "$STATE_DIR/last-good" 2>/dev/null || true)
+    _failed=$(cat "$STATE_DIR/last-failed" 2>/dev/null || true)
+    if [ -n "$_good" ] && [ "$_good" != "$HEAD_SHA" ] && [ "$_failed" != "$HEAD_SHA" ] \
+       && git merge-base --is-ancestor "$_good" HEAD 2>/dev/null; then
+      log "resuming an unfinished deploy of $(git rev-parse --short "$_good")..$(git rev-parse --short HEAD)"
+      exec "$REPO/scripts/auto-deploy.sh" --after-pull "$_good"
+    fi
     write_metrics 0 0 "$(failed_flag)"
     ping_hc 0
     exit 0
@@ -298,12 +313,16 @@ add() { # <var> <entry>: one bullet, which may run over several lines
 \$_entry\""; else eval "$1=\$_entry"; fi
 }
 
-# missing_env_keys <stack>: keys in .env.example that .env lacks. Names only.
+# missing_env_keys <stack>: keys this range ADDED to .env.example that .env
+# lacks. Names only, never values. Only new keys: plenty of keys in an
+# .env.example are optional and blank on purpose (a Healthchecks URL not created
+# yet), and flagging those would skip the stack on every merge forever.
 missing_env_keys() {
   _ex="docker/$1/.env.example"
   [ -f "$_ex" ] || return 0
   [ -f "docker/$1/.env" ] || { echo "(no .env — not set up on this box)"; return 0; }
-  for _k in $(sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' "$_ex" | sort -u); do
+  for _k in $(git diff "$BASE" HEAD -- "$_ex" 2>/dev/null \
+                | sed -n 's/^+[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | sort -u); do
     grep -qE "^[[:space:]]*(export[[:space:]]+)?$_k=" "docker/$1/.env" || printf '%s ' "$_k"
   done
 }
@@ -432,7 +451,9 @@ for c in $(docker ps --format '{{.Names}}' 2>/dev/null || true); do
     cmp -s "$src" "$seen" || stale="$stale ${src#"$REPO"/}"
   done
   [ -n "$stale" ] || continue
-  svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$c")
+  svc=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$c" 2>/dev/null || true)
+  # Gone since `docker ps` (Sablier scaled it down, or a recreate above replaced it).
+  [ -n "$svc" ] || continue
   if out=$(compose_run "$stack" up -d --force-recreate "$svc" </dev/null); then
     add DEPLOYED "$stack: recreated $svc for stale${stale}"
   else

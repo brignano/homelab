@@ -189,4 +189,26 @@ merge docker/media/docker-compose.yml 'services: {a: {image: t}}' "while locked"
 )
 check "busy lock skips" [ ! -s "$WORK/compose.log" ]
 
+
+# 11. Phase 2 died after the merge (reboot, hung compose): the next tick finishes it.
+: > "$WORK/compose.log"
+merge docker/media/docker-compose.yml 'services: {a: {image: s}}' "interrupted"
+git -C "$WORK/box" fetch -q origin main && git -C "$WORK/box" merge -q --ff-only origin/main
+run
+check "unfinished deploy resumed" has "$WORK/compose.log" "docker/media/docker-compose.yml up -d"
+check "resume logged" has "$WORK/out" "resuming an unfinished deploy"
+: > "$WORK/compose.log"
+run
+check "resumed once, then quiet" [ ! -s "$WORK/compose.log" ]
+
+# 12. Only keys the range ADDED block a stack; an old blank optional key does not.
+merge docker/media/.env.example 'A=
+B=
+OPTIONAL=' "optional key"
+run
+: > "$WORK/compose.log"
+merge docker/media/docker-compose.yml 'services: {a: {image: r}}' "later change"
+run
+check "old optional key does not block later deploys" has "$WORK/compose.log" "docker/media/docker-compose.yml up -d"
+
 exit $fail
