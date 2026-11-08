@@ -153,6 +153,25 @@ Home Videos and Photos*, name **Photo Archive (HEIC previews)**, folder
 Check: `find /media/photos/icloud -iname '*.heic' | wc -l` should match
 `find /media/photos/icloud-previews -name '*.jpg' | wc -l`.
 
+### Keeping the archive off the home screen
+
+The archive is personal, and the TV is shared. Jellyfin's home screen shows
+every library as a *My Media* tile (a collage of its own photos) and a
+*Recently added in …* row, which after the nightly sync is last night's photos.
+`scripts/jellyfin-hide-libraries.py` turns both off for every user (the
+per-user *Settings → Home* options), for each library named `Photo Archive…`:
+
+```bash
+./scripts/jellyfin-hide-libraries.py --dry-run   # what would change
+./scripts/jellyfin-hide-libraries.py             # apply; safe to re-run
+./scripts/jellyfin-hide-libraries.py --undo      # put it back
+```
+
+Access is unchanged: the archive is still reachable through Search or a
+bookmark, and anyone who can see it can turn it back on in *Settings → Home*.
+Run it again after adding a user or another `Photo Archive…` library. It uses
+the concierge's admin key (`docker/concierge/.env`) and never prints it.
+
 ## Monitoring
 
 | Signal | Where |
