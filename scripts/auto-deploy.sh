@@ -216,6 +216,13 @@ if [ "${1:-}" != "--after-pull" ]; then
     _failed=$(cat "$STATE_DIR/last-failed" 2>/dev/null || true)
     if [ -n "$_good" ] && [ "$_good" != "$HEAD_SHA" ] && [ "$_failed" != "$HEAD_SHA" ] \
        && git merge-base --is-ancestor "$_good" HEAD 2>/dev/null; then
+      # Once per commit. A Phase 2 that dies the same way every time would
+      # otherwise restart the same stacks every five minutes, silently.
+      if [ "$(cat "$STATE_DIR/resumed" 2>/dev/null || true)" = "$HEAD_SHA" ]; then
+        rm -f "$STATE_DIR/resumed"
+        refuse "$HEAD_SHA" "A deploy of this commit was started twice and did not finish either time (a crash or a hung compose). See /var/log/auto-deploy.log."
+      fi
+      printf '%s\n' "$HEAD_SHA" > "$STATE_DIR/resumed"
       log "resuming an unfinished deploy of $(git rev-parse --short "$_good")..$(git rev-parse --short HEAD)"
       exec "$REPO/scripts/auto-deploy.sh" --after-pull "$_good"
     fi
@@ -287,6 +294,7 @@ SHORT=$(git rev-parse --short HEAD)
 
 if ! PLAN=$("$REPO/scripts/deploy-plan.sh" --machine "$BASE" 2>&1); then
   printf '%s\n' "$HEAD_SHA" > "$STATE_DIR/last-failed"
+  rm -f "$STATE_DIR/resumed"
   post "❌ Auto-deploy failed · $(hostname)" \
 "\`$SHORT\` was pulled, but \`deploy-plan.sh\` failed, so nothing was restarted.
 \`\`\`
@@ -317,14 +325,30 @@ add() { # <var> <entry>: one bullet, which may run over several lines
 # lacks. Names only, never values. Only new keys: plenty of keys in an
 # .env.example are optional and blank on purpose (a Healthchecks URL not created
 # yet), and flagging those would skip the stack on every merge forever.
+#
+# A key that blocked a stack once stays owed in env-pending/<stack> until .env
+# has it. Without that, the next merge's range would no longer contain the line
+# that added it, and the stack would deploy without a key it needs.
 missing_env_keys() {
   _ex="docker/$1/.env.example"
-  [ -f "$_ex" ] || return 0
+  _owed="$STATE_DIR/env-pending/$1"
+  [ -f "$_ex" ] || { rm -f "$_owed"; return 0; }
   [ -f "docker/$1/.env" ] || { echo "(no .env — not set up on this box)"; return 0; }
-  for _k in $(git diff "$BASE" HEAD -- "$_ex" 2>/dev/null \
-                | sed -n 's/^+[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p' | sort -u); do
-    grep -qE "^[[:space:]]*(export[[:space:]]+)?$_k=" "docker/$1/.env" || printf '%s ' "$_k"
+  _miss=""
+  for _k in $( { git diff "$BASE" HEAD -- "$_ex" 2>/dev/null \
+                   | sed -n 's/^+[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)=.*/\1/p'
+                 cat "$_owed" 2>/dev/null || true; } | sort -u); do
+    # A key since removed from .env.example is no longer owed.
+    grep -qE "^[[:space:]]*$_k=" "$_ex" || continue
+    grep -qE "^[[:space:]]*(export[[:space:]]+)?$_k=" "docker/$1/.env" || _miss="$_miss $_k"
   done
+  if [ -n "$_miss" ]; then
+    mkdir -p "$STATE_DIR/env-pending"
+    printf '%s\n' $_miss > "$_owed"
+    printf '%s ' $_miss
+  else
+    rm -f "$_owed"
+  fi
 }
 
 # may_deploy <stack> <what>: the policy, in one place. Prints nothing and
@@ -365,6 +389,19 @@ note_touched() { # <stack>
   TOUCHED="$TOUCHED $1"
   WANT="$WANT $1=$(running_ids "$REPO/docker/$1" | wc -l | tr -d ' ')"
 }
+
+# --- keys owed --------------------------------------------------------------------
+# A merge that only adds a key to .env.example plans nothing (deploy-plan ignores
+# *.example), so nothing above would ever look at it, and the NEXT merge to use
+# that key would no longer contain the line that added it. Record what each such
+# stack is owed now, and say so if the stack is not otherwise in this plan.
+for _ex in $(git diff --name-only "$BASE" HEAD -- 'docker/*/.env.example' 2>/dev/null || true); do
+  _s=$(basename "$(dirname "$_ex")")
+  _miss=$(missing_env_keys "$_s")
+  [ -n "$_miss" ] || continue
+  printf '%s\n' "$PLAN" | grep -qE "^[a-z]+ $_s( |$)" && continue
+  add MANUAL "**$_s** needs \`.env\` keys before its next deploy: ${_miss% }"
+done
 
 # --- act on the plan, in the plan's order ---------------------------------------
 # deploy-plan emits stack bring-ups first, then startup-only restarts, then cron,
@@ -473,6 +510,9 @@ for s in $TOUCHED; do
 done
 
 # --- record and report -----------------------------------------------------------
+# Reaching here means Phase 2 finished, whatever it found: the one resume a commit
+# is allowed (Phase 1) is not needed again.
+rm -f "$STATE_DIR/resumed"
 if [ -n "$FAILED" ]; then
   printf '%s\n' "$HEAD_SHA" > "$STATE_DIR/last-failed"
 else

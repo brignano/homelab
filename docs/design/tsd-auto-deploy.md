@@ -89,9 +89,12 @@ flowchart TD
 5. **Skipped, never guessed.**
    - Stacks in `HL_NO_AUTOHEAL` (`proxy matterbridge` by default): reported with
      the exact `hl-ssh` line.
-   - A key the merged range added to a stack's `.env.example` that its `.env`
-     lacks: the key name, never the value, is reported and that stack is
-     skipped. Only new keys, since many keys are optional and blank on purpose.
+   - A key added to a stack's `.env.example` that its `.env` lacks: the key
+     name, never the value, is reported and that stack is skipped. Once
+     flagged, the key stays owed (`env-pending/<stack>`) until `.env` has it,
+     even empty, so a later merge can't deploy the stack without it. Keys that
+     were already in `.env.example` before auto-deploy started never block,
+     since many are optional and blank on purpose.
    - `scripts/host/` changes: reported with the line `deploy-plan.sh` already
      prints.
    - A stack with no running containers: left stopped and reported. Stopped
@@ -114,7 +117,9 @@ flowchart TD
    (`last-good`), not just the newest pull, so a stack that failed is retried
    with the next merge instead of being forgotten. A run that dies part-way
    (reboot, hung compose) is finished on the next tick: `last-good` behind
-   `HEAD` with no failure recorded means a deploy never completed.
+   `HEAD` with no failure recorded means a deploy never completed. That
+   resume happens once per commit; a second unfinished run is refused and
+   alerted, so a crash can't restart the same stacks every five minutes.
 
 8. **Pause.** Touching `/var/lib/homelab/auto-deploy.pause` stops auto-deploy
    without editing cron. The existing `HL_AUTOHEAL=no` pauses it too, so one

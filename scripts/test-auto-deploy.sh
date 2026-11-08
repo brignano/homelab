@@ -201,14 +201,41 @@ check "resume logged" has "$WORK/out" "resuming an unfinished deploy"
 run
 check "resumed once, then quiet" [ ! -s "$WORK/compose.log" ]
 
-# 12. Only keys the range ADDED block a stack; an old blank optional key does not.
-merge docker/media/.env.example 'A=
-B=
-OPTIONAL=' "optional key"
-run
+# 12. A key that was already in .env.example before this range, and is blank
+#     or absent in .env on purpose, does not block anything.
+sed -i '/^A=/d' "$WORK/box/docker/media/.env"
 : > "$WORK/compose.log"
 merge docker/media/docker-compose.yml 'services: {a: {image: r}}' "later change"
 run
 check "old optional key does not block later deploys" has "$WORK/compose.log" "docker/media/docker-compose.yml up -d"
+
+# 13. A key that blocked a stack stays owed: a later unrelated merge must not
+#     deploy the stack while .env still lacks it.
+merge docker/media/.env.example 'A=
+B=
+NEEDED=' "needs a key"
+run
+: > "$WORK/compose.log"
+merge docker/media/docker-compose.yml 'services: {a: {image: q}}' "unrelated change"
+run
+check "owed key still blocks the next merge" lacks "$WORK/compose.log" "docker/media"
+printf 'NEEDED=1\n' >> "$WORK/box/docker/media/.env"
+merge docker/media/docker-compose.yml 'services: {a: {image: p}}' "after key added"
+run
+check "deploys once the key is in .env" has "$WORK/compose.log" "docker/media/docker-compose.yml up -d"
+
+# 14. Phase 2 that dies every time: resumed once, then refused once, then quiet.
+mv "$WORK/bin/docker" "$WORK/bin/docker.real"
+printf '#!/bin/sh\ncase " $* " in *" up "*|*" restart "*) pkill -9 -f box/scripts/auto-deploy.sh; exit 137 ;; esac\nexec "%s/bin/docker.real" "$@"\n' "$WORK" > "$WORK/bin/docker"
+chmod +x "$WORK/bin/docker"
+merge docker/media/docker-compose.yml 'services: {a: {image: o}}' "crashes phase 2"
+run   # pulls, dies in Phase 2
+run   # resumes, dies again
+run   # refuses
+check "second crash is refused" has "$WORK/out" "did not finish either time"
+check "refusal recorded" [ -f "$WORK/state/last-failed" ]
+run
+check "then quiet" lacks "$WORK/out" "resuming"
+mv "$WORK/bin/docker.real" "$WORK/bin/docker"
 
 exit $fail
