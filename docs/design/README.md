@@ -22,3 +22,4 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-ai-homelab-assistant.md`](tsd-ai-homelab-assistant.md) | 🗄 shelved — open-ended telemetry querying; its canned-summary half shipped in `tsd-local-llm-discord-jobs.md` |
 | [`tsd-personal-assistant.md`](tsd-personal-assistant.md) | 🚧 phases 1–4 built — watch lane (mail/calendar/Home Assistant into the digest) + act lane (Claude Agent SDK in `#ask`; calendar events, Gmail drafts and scenes, each approved) |
 | [`tsd-dependency-updates.md`](tsd-dependency-updates.md) | ✅ approved / shipped — image staleness watchdog, auto-pull split by blast radius, Renovate on `proxy` |
+| [`tsd-auto-deploy.md`](tsd-auto-deploy.md) | proposed — deploy to CT 100 within ~10 min of a merge, pull-based (#335) |
