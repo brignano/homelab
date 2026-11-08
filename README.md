@@ -134,6 +134,13 @@ house, with re-pairing as the fix. Both are reported instead, with the command
 to run. Adjust with `HL_NO_AUTOHEAL`, or set
 `HL_AUTOHEAL=no` for report-only.
 
+Merges do not wait for 04:00. `scripts/auto-deploy.sh` runs every five minutes,
+pulls what merged to `main` and deploys it with the same plan and the same
+verify, under the same exclusions, then posts the result to Discord. It is
+quiet when nothing merged. `HL_AUTOHEAL=no` pauses it too, as does
+`touch /var/lib/homelab/auto-deploy.pause`. See
+[`docs/design/tsd-auto-deploy.md`](docs/design/tsd-auto-deploy.md).
+
 ## Quick start
 
 1. Bootstrap Docker on the host (run once on a fresh install):

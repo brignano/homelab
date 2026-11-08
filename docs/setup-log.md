@@ -27,6 +27,29 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-08 — Deploy to CT 100 automatically after a merge (#335)
+
+**Goal:** Merged homelab PRs go live within about 10 minutes, with no manual `/deploy`, and nothing gets inbound access to the box.
+
+**Steps:**
+1. Design accepted: `docs/design/tsd-auto-deploy.md`, `decisions/0001-auto-deploy.md`.
+2. `scripts/deploy-plan.sh --machine <rev>`: the same plan, one action a line.
+3. `scripts/deploy-common.sh`: `verify_stack` (now also fails on `unhealthy`), the shared deploy lock, and helpers moved out of `repo-sync.sh`. repo-sync takes the lock too.
+4. `scripts/auto-deploy.sh` on a `*/5` cron, Healthchecks key `HEALTHCHECKS_AUTO_DEPLOY_URL`, alert `hl-auto-deploy-stale`.
+5. `/deploy` now holds auto-deploy off for 30 minutes (step 1) and hands back at the end (step 7).
+
+**Issues encountered:**
+- None yet: not installed on CT 100 at the time of writing.
+
+**Resolution:**
+- First install is one manual `/deploy`, which runs `install-cron.sh` and adds the job.
+
+**Notes / next steps:**
+- Create the `auto-deploy` check in Healthchecks (period 5m, grace 30m) and paste its URL into `docker/monitoring/.env`. Until then `hl-hc-ping-failing` reports it unarmed.
+- Pause with `touch /var/lib/homelab/auto-deploy.pause`.
+
+---
+
 ## 2026-11-07 — Clear the standing image warnings in the daily sync report
 
 **Goal:** The repo-sync report had shown ⚠️ for weeks: 3 stale monitoring images and 2 pins waiting.

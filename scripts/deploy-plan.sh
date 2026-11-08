@@ -18,6 +18,22 @@
 #
 #   ./scripts/deploy-plan.sh              what is RUNNING vs what is on disk
 #   ./scripts/deploy-plan.sh <rev>        what changed between <rev> and HEAD
+#   ./scripts/deploy-plan.sh --machine <rev>   the same plan, one action a line
+#
+# --machine is what auto-deploy.sh reads. It is the same rules in plan_for, not
+# a second copy of them, so the plan a person reads and the plan the box acts on
+# cannot drift apart. One line per action, space-separated:
+#
+#   up <stack>                 docker compose up -d
+#   build <stack>              docker compose up -d --build
+#   restart <stack> <service>  config read only at startup
+#   recreate <stack>           up -d --force-recreate (a new FILENAME must appear)
+#   cron                       ./scripts/install-cron.sh
+#   manual proxy               needs a person — /deploy "Safety"
+#   manual host                scripts/host changed — the Proxmox host's own copy
+#   deletion <file> <id>       provisioning drops an id nothing deletes
+#
+# Range mode only: an unattended deploy should act on a diff, never on a guess.
 #
 # Range mode is the one `/deploy` step 2a uses, with the pre-pull revision.
 #
@@ -64,14 +80,20 @@ IGNORE='\.(md|example)$|(^|/)\.gitignore$'
 
 say() { printf '%s\n' "$*"; }
 
+MACHINE=0
+# human: a line only the person reading the plan sees. act: a line only
+# auto-deploy.sh sees. Every rule below emits both, side by side.
+human() { [ "$MACHINE" = 1 ] || say "$*"; }
+act() { if [ "$MACHINE" = 1 ]; then say "$*"; fi; }
+
 # --- the rules, in one place -------------------------------------------------
 # Input: a newline-separated list of repo-relative paths. Output: the commands.
 # Both modes feed this, so they cannot drift apart.
 plan_for() {
   paths=$1
-  [ -n "$paths" ] || { say "nothing to do — running containers are current"; return 0; }
+  [ -n "$paths" ] || { human "nothing to do — running containers are current"; return 0; }
 
-  say "--- stacks to bring up ---"
+  human "--- stacks to bring up ---"
   for s in $(printf '%s\n' "$paths" | sed -n 's#^docker/\([^/]*\)/.*#\1#p' | sort -u); do
     # proxy is DNS and the reverse proxy for everything. Never unattended —
     # see /deploy "Safety". Reported at the bottom instead.
@@ -81,48 +103,55 @@ plan_for() {
     # is unchanged, so Compose does nothing and the container keeps the old
     # code. This is the assistant's whole failure mode.
     if printf '%s\n' "$paths" | grep -qE "^docker/$s/(app/|tests/|Dockerfile|requirements\.txt)"; then
-      say "docker compose -f docker/$s/docker-compose.yml up -d --build"
+      human "docker compose -f docker/$s/docker-compose.yml up -d --build"
+      act "build $s"
     else
-      say "docker compose -f docker/$s/docker-compose.yml up -d"
+      human "docker compose -f docker/$s/docker-compose.yml up -d"
+      act "up $s"
     fi
   done
 
-  say "--- config read only at startup ---"
+  human "--- config read only at startup ---"
   quiet=1
   if printf '%s\n' "$paths" | grep -qE '^docker/monitoring/grafana/provisioning/'; then
-    say "docker compose -f docker/monitoring/docker-compose.yml restart grafana"
-    say "    # a directory mount shows the files immediately; Grafana reads them once, at boot"
+    human "docker compose -f docker/monitoring/docker-compose.yml restart grafana"
+    act "restart monitoring grafana"
+    human "    # a directory mount shows the files immediately; Grafana reads them once, at boot"
     quiet=0
   fi
   if printf '%s\n' "$paths" | grep -qE '^docker/dashboard/(icons|assets)/'; then
-    say "docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate"
-    say "    # RECREATE, not restart: Next.js enumerates /app/public once, so a NEW"
-    say "    # FILENAME 404s until the container is replaced — and a 404 favicon is"
-    say "    # not an error anywhere, the browser just draws a globe"
+    human "docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate"
+    act "recreate dashboard"
+    human "    # RECREATE, not restart: Next.js enumerates /app/public once, so a NEW"
+    human "    # FILENAME 404s until the container is replaced — and a 404 favicon is"
+    human "    # not an error anywhere, the browser just draws a globe"
     quiet=0
   fi
   if printf '%s\n' "$paths" | grep -qE '^scripts/'; then
-    say "./scripts/install-cron.sh   # scripts changed; idempotent, never rewrites an existing entry"
+    human "./scripts/install-cron.sh   # scripts changed; idempotent, never rewrites an existing entry"
+    act "cron"
     quiet=0
   fi
-  if [ "$quiet" = 1 ]; then say "(none)"; fi
+  if [ "$quiet" = 1 ]; then human "(none)"; fi
 
-  say "--- needs you, not the runbook ---"
+  human "--- needs you, not the runbook ---"
   quiet=1
   if printf '%s\n' "$paths" | grep -qE '^docker/proxy/'; then
-    say "docker/proxy changed — AdGuard (the household's DNS) and Caddy."
-    say "    Prove something is broken first:  dig +short stats.home @10.0.0.201"
-    say "    If it answers, a recreate can only make things worse. See /deploy Safety."
+    human "docker/proxy changed — AdGuard (the household's DNS) and Caddy."
+    human "    Prove something is broken first:  dig +short stats.home @10.0.0.201"
+    human "    If it answers, a recreate can only make things worse. See /deploy Safety."
+    act "manual proxy"
     quiet=0
   fi
   if printf '%s\n' "$paths" | grep -qE '^scripts/host/'; then
-    say "scripts/host changed — the Proxmox host runs its own copy, git pull does not reach it."
-    say "    From the Mac: cd ansible && ansible-playbook site.yml --limit proxmox"
-    say "    (or on m5: pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook)"
-    say "    Then the check in docs/runbook-backups.md → SMART metrics."
+    human "scripts/host changed — the Proxmox host runs its own copy, git pull does not reach it."
+    human "    From the Mac: cd ansible && ansible-playbook site.yml --limit proxmox"
+    human "    (or on m5: pct pull 100 /root/homelab/scripts/host/hl-vzdump-hook /usr/local/bin/hl-vzdump-hook)"
+    human "    Then the check in docs/runbook-backups.md → SMART metrics."
+    act "manual host"
     quiet=0
   fi
-  if [ "$quiet" = 1 ]; then say "(nothing)"; fi
+  if [ "$quiet" = 1 ]; then human "(nothing)"; fi
   # Explicit: a trailing conditional that happens to be false would otherwise
   # make this function "fail" and take the script down under `set -e`. It did.
   return 0
@@ -147,6 +176,8 @@ check_deletions() {
       # is what a `deleteRules:` / `deleteContactPoints:` entry looks like, and
       # what a uid moved between sections looks like too. Either way, handled.
       if [ -f "$f" ] && grep -qE "(uid|name): *$id *$" "$f"; then continue; fi
+      act "deletion $f $id"
+      [ "$MACHINE" = 1 ] && continue
       say "$f drops '$id' with nothing left naming it —"
       say "    provisioning UPSERTS, so it lingers in Grafana marked Unused and the UI"
       say "    will not delete a provisioned resource either. It needs an explicit"
@@ -158,6 +189,18 @@ check_deletions() {
 }
 
 # --- mode selection ----------------------------------------------------------
+if [ "${1:-}" = "--machine" ]; then
+  [ $# -eq 2 ] || { say "usage: $0 --machine <rev>" >&2; exit 2; }
+  MACHINE=1
+  BEFORE=$2
+  git rev-parse --verify --quiet "$BEFORE^{commit}" >/dev/null \
+    || { say "deploy-plan: $BEFORE is not a commit this repo has" >&2; exit 1; }
+  changed=$(git diff --name-only "$BEFORE" HEAD | grep -vE "$IGNORE" || true)
+  plan_for "$changed"
+  check_deletions "$BEFORE"
+  exit 0
+fi
+
 if [ $# -gt 0 ]; then
   BEFORE=$1
   git rev-parse --verify --quiet "$BEFORE^{commit}" >/dev/null \

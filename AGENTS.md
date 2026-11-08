@@ -308,13 +308,32 @@ which need a Grafana restart, which need a recreate, and what needs a human.
 Given no argument it asks Docker instead — each container's start time against
 the mtime of the files it reads — which is the answer when the pull already
 happened and nothing recorded where it started. It reports; it never deploys.
+`deploy-plan.sh --machine <rev>` prints the same plan one action a line, which is
+what auto-deploy acts on.
 
 ## Who runs the deploy
 
-**Claude does, not me.** CT 100 is connected to Claude as a Remote Control
-device ("docker (homelab)", folder `/root/homelab`). A cloud session that
-merges or finishes a change to anything CT 100 runs starts a Remote Control
-session there and runs `/deploy` itself, then reports the result. Do not hand me
+**Usually nobody: CT 100 deploys itself.**
+[`scripts/auto-deploy.sh`](scripts/auto-deploy.sh) runs every 5 minutes from
+cron, pulls what merged to `main`, deploys it from `deploy-plan.sh --machine`,
+verifies with the same `verify_stack` repo-sync heals with
+([`scripts/deploy-common.sh`](scripts/deploy-common.sh)), and posts the result
+to Discord. It is pull-based: nothing reaches into the box. It never touches
+`HL_NO_AUTOHEAL` stacks (`proxy`, `matterbridge`), a stopped stack, a stack
+whose `.env` lacks a new `.env.example` key, or the Proxmox host. Those, and
+any failure, come to Discord with the exact `/deploy` line. A failed commit
+alerts once and is not retried; a revert PR is the rollback. Pause it with
+`touch /var/lib/homelab/auto-deploy.pause` or `HL_AUTOHEAL=no`. Design:
+[`docs/design/tsd-auto-deploy.md`](docs/design/tsd-auto-deploy.md). So a PR's
+`## Deploy` section says which stacks auto-deploy will pick up and what, if
+anything, still needs `/deploy`.
+
+**When it doesn't, Claude does, not me.**
+CT 100 is connected to Claude as a Remote Control
+device ("docker (homelab)", folder `/root/homelab`). When a merged change
+needs more than auto-deploy will do (see above), or auto-deploy reported a
+failure, the cloud session starts a Remote Control session there and runs
+`/deploy` itself, then reports the result. Do not hand me
 `ssh` + commands for CT 100; that is the job this connection exists for.
 
 - [`.claude/settings.json`](.claude/settings.json) pre-approves the read-only

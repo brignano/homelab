@@ -1,6 +1,6 @@
 # 0001: Deploy to CT 100 automatically after a merge
 
-**Status:** accepted, 2026-11-08 · **TSD:** [`tsd-auto-deploy.md`](../docs/design/tsd-auto-deploy.md) · **Issue:** #335
+**Status:** accepted, 2026-11-08 · built in the PR that closes #335 · **TSD:** [`tsd-auto-deploy.md`](../docs/design/tsd-auto-deploy.md) · **Issue:** #335
 
 ## Decision
 
@@ -16,7 +16,7 @@ and deploys what changed, using the same rules as `/deploy`
 - Verify fails on a missing, restarting or `unhealthy` container. A failed
   commit alerts once and is not retried. A revert PR is the rollback.
 - Paused by `/var/lib/homelab/auto-deploy.pause` or `HL_AUTOHEAL=no`.
-- Healthchecks ping plus a "behind main" alert catch a stalled timer.
+- A Healthchecks ping plus the `hl-auto-deploy-stale` alert catch a stalled timer.
 
 ## Why
 
