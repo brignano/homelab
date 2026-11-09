@@ -27,6 +27,20 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-09 — Architecture diagram in CI (#357)
+
+**Goal:** A diagram of the whole stack that stays current without anyone drawing it.
+
+**Steps:**
+1. `ci.yml` gained an `architecture` job calling the shared `brignano/ai-tools` `driftwood-scan.yml` (ai-tools#88). It reads the 21 compose files (73 services, volumes and networks) and needs no secrets.
+2. README "Architecture diagram" says where to find it: the job summary of the latest `main` run, or the `driftwood-scan` artifact for the interactive viewer.
+
+**Notes / next steps:**
+- Known wrong today: Caddy's routes are not drawn and published ports are labelled "Internet" (brignano/driftwood#141). A follow-up adds `caddy adapt` once that ships.
+- What the diagram gets wrong goes to brignano/driftwood as issues, not workarounds here.
+
+---
+
 ## 2026-11-07 — Clear the standing image warnings in the daily sync report
 
 **Goal:** The repo-sync report had shown ⚠️ for weeks: 3 stale monitoring images and 2 pins waiting.
