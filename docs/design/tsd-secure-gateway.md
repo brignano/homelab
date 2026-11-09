@@ -1,8 +1,14 @@
 # TSD: One secure gateway for everything the homelab exposes
 
-**Status:** proposed — tracked in #360, decision record [`decisions/0002-secure-gateway.md`](../../decisions/0002-secure-gateway.md)
+**Status:** accepted 2026-11-09 — tracked in #360, decision record [`decisions/0002-secure-gateway.md`](../../decisions/0002-secure-gateway.md)
 **Date:** 2026-11-09
 **Owner:** Anthony
+
+## Decisions (accepted by Anthony, 2026-11-09)
+
+1. **Adopt the pattern.** Anything that must be public goes through this gateway and nothing else. Keeping things private (LAN, tailnet, Remote Control) is still the first choice.
+2. **One random first-level hostname per endpoint**, each with its own Access application and its own credential.
+3. **Cloudflare Zero Trust free plan.** The box keeps its own 90-day copy of the Access logs.
 
 ## Problem
 
@@ -275,7 +281,7 @@ The `/expose-service` command is rewritten to walk through this list.
 The paid plan (about $7 per user per month) would add 30-day log retention and
 mTLS. Not needed: the poller keeps 90 days on the box.
 
-## Build plan (after acceptance)
+## Build plan (#362)
 
 One PR for the gateway itself, then one PR per endpoint.
 

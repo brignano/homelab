@@ -7,4 +7,4 @@ reasoning and the rejected alternatives live in the linked TSD in
 | ADR | Decision | TSD | Issue |
 |---|---|---|---|
 | [0001](0001-auto-deploy.md) | Deploy to CT 100 automatically after a merge, pull-based | [`tsd-auto-deploy.md`](../docs/design/tsd-auto-deploy.md) | #335 |
-| [0002](0002-secure-gateway.md) | Expose endpoints only through one gateway: Access, tunnel, origin token checks (proposed) | [`tsd-secure-gateway.md`](../docs/design/tsd-secure-gateway.md) | #360 |
+| [0002](0002-secure-gateway.md) | Expose endpoints only through one gateway: Access, tunnel, origin token checks | [`tsd-secure-gateway.md`](../docs/design/tsd-secure-gateway.md) | #360 |

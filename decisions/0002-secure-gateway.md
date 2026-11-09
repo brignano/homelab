@@ -1,6 +1,6 @@
 # 0002: One secure gateway for everything the homelab exposes
 
-**Status:** proposed, 2026-11-09 · **TSD:** [`tsd-secure-gateway.md`](../docs/design/tsd-secure-gateway.md) · **Issue:** #360
+**Status:** accepted, 2026-11-09 · **TSD:** [`tsd-secure-gateway.md`](../docs/design/tsd-secure-gateway.md) · **Issue:** #360
 
 ## Decision
 
