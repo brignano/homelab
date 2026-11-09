@@ -405,3 +405,12 @@ jobs:
         run: |
           npm install --no-save --no-audit --no-fund renovate
           ./node_modules/.bin/renovate-config-validator
+
+  architecture:
+    # The homelab diagram, redrawn from the compose files on every push and PR.
+    # driftwood reads docker/*/docker-compose.yml (no secrets, no network to the
+    # lab) and puts a Mermaid diagram in this run's job summary, plus the
+    # interactive viewer as the `driftwood-scan` artifact. It never fails on what
+    # it draws, only if the CLI itself crashes. Shared fleet step: ai-tools#88.
+    name: architecture (driftwood scan)
+    uses: brignano/ai-tools/.github/workflows/driftwood-scan.yml@main
