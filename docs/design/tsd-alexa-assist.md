@@ -1,6 +1,6 @@
 # TSD: Ask Home Assistant's Claude-powered Assist through Alexa
 
-**Status:** proposed — tracked in #363, depends on the secure gateway (#362)
+**Status:** accepted 2026-11-09 — tracked in #363, decision record [`decisions/0003-alexa-assist.md`](../../decisions/0003-alexa-assist.md), builds after the secure gateway (#362)
 **Date:** 2026-11-09
 **Owner:** Anthony
 
@@ -32,8 +32,7 @@ designed for exactly this, and Alexa is its first endpoint.
 ## What you'll see
 
 - "Alexa, ask **house helper** whether anything's left on." Alexa answers in
-  her own voice with Assist's reply. ("house helper" is a placeholder: the
-  real name is Decision 3.)
+  her own voice with Assist's reply. 
 - "Alexa, ask house helper to turn off everything downstairs and set the heat
   to 66." It's done, and Alexa says what changed.
 - Alexa keeps listening for a few seconds after a reply, so you can follow up
@@ -150,15 +149,15 @@ design:
   Anthropic integration, with no redeploy.
 - **What Assist can reach:** Assist uses HA's global **Expose** list
   (Settings → Voice assistants → Expose), which is separate from the
-  Matterbridge **Alexa** label. Decision 2 picks the starting set. Either
-  way, locks, the alarm, the garage cover, the car's controls and the litter
+  Matterbridge **Alexa** label. Decision 2 sets it to the entities that carry
+  the Alexa label. Locks, the alarm, the garage cover, the car's controls and the litter
   box are never exposed. CI can't check that, because exposure lives in HA's
   `.storage`. The build PR lists the exposed entities, and the runbook has a
   monthly check.
 
 ### 5. Deploying the Lambda
 
-Decision 4. The recommended option is a GitHub Action
+Decision 4: a GitHub Action
 (`.github/workflows/alexa-lambda.yml`) on pushes to `main` that touch
 `alexa/lambda/`. It zips the code and calls `UpdateFunctionCode`. It signs in
 to AWS with **GitHub OIDC**, so no long-lived AWS key is stored anywhere, and
@@ -167,27 +166,20 @@ function. Creating the function, its role and its environment variables is a
 one-time step, done from your Mac with a script in `alexa/` (or by Claude
 through the AWS connector with your OK).
 
-## Decisions for you
+## Decisions (accepted by Anthony, 2026-11-09)
 
-These are posted as a Design review on the proposal PR as well.
-
-1. **The brain.** A: HA Assist with Claude Haiku (recommended). It's built
-   into HA, can only touch exposed entities, and costs cents a month. B: Otto
-   (the concierge). It knows your calendar and mail, but its writes wait for a
-   ✅ in Discord, which voice can't give, and it would put Otto's endpoint on
-   the internet. C: HA's local intents only. Free, but no smarter than
-   Matterbridge.
-2. **What Assist may control.** A: the same entities that carry the Alexa
-   label today (recommended: one list to reason about, already reviewed for
-   Matterbridge). B: read-only to start (expose sensors only, add controls
-   later). C: everything except the never-list.
-3. **Invocation name.** Alexa requires two words or more for a skill that
-   isn't a brand. A: "house helper". B: "home otto". C: a name you choose.
-   Pick something short that Alexa won't mishear.
-4. **How the Lambda is deployed.** A: a GitHub Action with an OIDC role
-   limited to this one function (recommended: Claude ships changes without
-   you, and no AWS key is stored). B: a script you run from your Mac when the
-   code changes.
+1. **The brain is HA Assist with Claude Haiku**, not Otto and not local
+   intents only. Rejected: Otto (its writes need a ✅ in Discord, which voice
+   can't give, and it would make Otto public); local intents only (no smarter
+   than Matterbridge).
+2. **Assist may control the same entities that carry the Alexa label**, kept
+   in step with Matterbridge's list. Locks, the alarm, the garage, the car's
+   controls and the litter box are never exposed.
+3. **Invocation name: "house helper".**
+4. **The Lambda deploys from a GitHub Action** that signs in to AWS with
+   OIDC, using a role whose only permission is `lambda:UpdateFunctionCode`
+   on this function. No AWS key is stored. Creating the function the first
+   time is the one-time `alexa/setup.sh`.
 
 ## Threat model (only what's new beyond the gateway TSD)
 
@@ -219,7 +211,7 @@ After #362 ships and this proposal is accepted, one PR:
 2. `alexa/skill/interaction-model.json` and `skill.json`.
 3. `alexa/setup.sh`: a one-time script to create the function, role, log
    retention and environment variables (Decision 4).
-4. `.github/workflows/alexa-lambda.yml` if Decision 4A is chosen.
+4. `.github/workflows/alexa-lambda.yml` (Decision 4).
 5. The gateway route block and `.env.example` placeholders.
 6. Docs: `alexa/README.md` (setup and troubleshooting),
    `docker/homeassistant/README.md` (user, Anthropic integration, pipeline,
@@ -244,6 +236,6 @@ script, and create the `home-assistant` Anthropic API key in the HA UI.
 
 - Replacing Matterbridge.
 - Otto's abilities by voice (calendar, Gmail drafts, approvals). Possible
-  later as a second gateway route if Decision 1 ever moves to B.
+  later as a second gateway route if Otto is ever wanted by voice.
 - Alexa announcements or proactive notifications from HA.
 - Publishing the skill or sharing it with anyone else.
