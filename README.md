@@ -64,6 +64,13 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 > the bare `$HOMELAB_DOMAIN`, and a DNS wildcard substitutes for the `*` rather
 > than matching the parent name, so it needs its own `A` record.
 
+## Architecture diagram
+
+CI redraws the whole stack from the compose files on every push: open the latest
+`main` run of [CI](../../actions/workflows/ci.yml?query=branch%3Amain) → the
+**architecture** job's summary for the diagram, or download its `driftwood-scan`
+artifact and open `index.html` for the interactive viewer.
+
 ## Repository layout
 
 ```
@@ -93,7 +100,7 @@ homelab/
 │   ├── check-dashboard.sh   # CI: every proxied site has a dashboard tile
 │   └── check-observability.sh # CI: dashboards render, metrics have a writer
 ├── .github/
-│   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks
+│   └── workflows/ci.yml     # Compose, Caddyfile, shell and assistant checks + diagram
 ├── ansible/                 # The host and CT 100 as code (rebuild + drift check)
 ├── docs/
 │   ├── runbook-rebuild.md   # What to do when the box, or more, is gone
