@@ -24,3 +24,4 @@ Technical Spec Documents for the homelab — one `tsd-*.md` per design.
 | [`tsd-dependency-updates.md`](tsd-dependency-updates.md) | ✅ approved / shipped — image staleness watchdog, auto-pull split by blast radius, Renovate on `proxy` |
 | [`tsd-auto-deploy.md`](tsd-auto-deploy.md) | accepted — deploy to CT 100 within ~10 min of a merge, pull-based (#335) |
 | [`tsd-secure-gateway.md`](tsd-secure-gateway.md) | accepted — one secure gateway for every public endpoint (Access + tunnel + origin checks) (#360) |
+| [`tsd-alexa-assist.md`](tsd-alexa-assist.md) | accepted 2026-11-09 — ask Home Assistant's Claude-powered Assist through a private Alexa skill; first endpoint on the secure gateway (#363, needs #362) |
