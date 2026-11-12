@@ -374,6 +374,13 @@ The working checklist. A new session starts here: "read this TSD and do the
 next unchecked item". Tick items in the PR that finishes them. Items marked
 **(you)** are done in a UI or on the box, and nothing in git can do them.
 
+**Claude Duet trial (since 2026-11-09, #365):** the morning brief and the
+evening review are switched off by config (`BRIEF_ENABLED=false`,
+`REVIEW_ENABLED=false` in `docker/assistant/.env` on CT 100), because Duet now
+sends a proactive brief and does follow-ups from Gmail and Calendar. No code
+was removed. To revert, set both back to `true` and run `/deploy assistant`.
+Trimming what Duet makes redundant is a follow-up issue after the trial.
+
 **Done**
 - [x] Phase 1 deployed and verified live (calendar, overlaps, mail; `source-*`
       metrics in Prometheus).
