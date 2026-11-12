@@ -27,6 +27,21 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-12 — Media containers down after a power cut (#370)
+
+**Goal:** Find why Healthchecks and Discord alerted all morning.
+
+**Issues encountered:**
+- m5 lost power around 05:25 UTC (no clean shutdown in the journal) and was off until 15:53 UTC, so the heartbeat stopped and Healthchecks alerted, as designed.
+- On power-on, CT 100 started before the USB media drive mounted on m5. jellyfin, sonarr, radarr, qbittorrent and clipreview failed on the empty `/media` and stayed down; hl-drive-watchdog mounted the drive minutes later but nothing restarts containers.
+
+**Resolution:**
+- `proxmox_host` now installs a `pve-guests.service` drop-in (`Wants=`/`After=mnt-media.mount`) so guests wait for the media mount attempt and still start if the drive is missing. Applied by running the playbook from the Mac.
+- The five containers were started by hand once the drive was mounted.
+
+**Notes / next steps:**
+- Second unclean stop in two weeks (Oct 30 too). Worth a look at host logs and a UPS.
+
 ## 2026-11-12 — Discord re-laid out after the Duet switch (#368)
 
 **Goal:** With the morning brief and evening review moved to Claude Duet,
