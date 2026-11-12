@@ -729,6 +729,41 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [26] }
 
+      # --- Auto-deploy has stopped deciding ---
+      #
+      # auto-deploy.sh runs every 5 minutes and is silent when nothing merged,
+      # so a timer that died, a lock that is stuck or a fetch that keeps failing
+      # all look like a quiet week. Its timestamp moves on every run that reaches
+      # a decision (paused runs included), so 30 minutes without one is six
+      # missed ticks. Healthchecks watches the same thing from off the box.
+      - uid: hl-auto-deploy-stale
+        title: Auto-deploy has not run
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "auto-deploy last reached a decision {{ printf \"%.0f\" $values.A.Value }}m ago — merges are not being deployed; see /var/log/auto-deploy.log on CT 100"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: (time() - homelab_auto_deploy_timestamp_seconds) / 60
+          - refId: C
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [30] }
+
       # --- The nightly database dump is stale ---
       #
       # Measured from the last SUCCESSFUL run: pg-backup.sh deliberately does not

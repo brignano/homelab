@@ -1,6 +1,6 @@
 # TSD: Deploy to CT 100 automatically after a merge
 
-**Status:** accepted 2026-11-08 — tracked in #335, decision record [`decisions/0001-auto-deploy.md`](../../decisions/0001-auto-deploy.md)
+**Status:** 🚧 built 2026-11-08, waiting on first install on CT 100 — tracked in #335, decision record [`decisions/0001-auto-deploy.md`](../../decisions/0001-auto-deploy.md)
 **Date:** 2026-11-08
 **Owner:** Anthony
 
@@ -66,16 +66,19 @@ flowchart TD
    rules, so the human plan and the automatic one can't drift apart.
    `auto-deploy.sh` never parses the human text.
 
-2. **Shared helpers move to `scripts/lib/deploy.sh`.** `verify_stack`,
-   `running_ids`, `job_only`, `in_list`, the stale file-mount check (the "config
-   drift" loop) and the lock helper move out of `repo-sync.sh` into one file
-   that both scripts source. This is a move with no behaviour change, so
-   repo-sync's nightly run is the regression test.
+2. **Shared helpers move to `scripts/deploy-common.sh`.** `verify_stack`,
+   `running_ids`, `job_only`, `in_list`, the JSON helpers and the lock path move
+   out of `repo-sync.sh` into one file that both scripts source. This is a move
+   with no behaviour change, so repo-sync's nightly run is the regression test.
+   The stale file-mount check stays where it was: repo-sync keeps its `docker
+   cp` metric loop untouched, and auto-deploy runs `/deploy` step 4's
+   `/proc/<pid>/root` check, which is the one that can fail (built narrower than
+   drafted, to keep the repo-sync change to a pure move).
 
 3. **One lock.** Everything that deploys takes `flock` on
    `/run/lock/homelab-deploy.lock`. `auto-deploy.sh` uses `flock -n` and exits
    quietly if it's busy, since the next tick is 5 minutes away. `repo-sync.sh`
-   waits up to 10 minutes for it. A manual `/deploy` is covered by Decision 1.
+   waits up to 30 minutes for it. A manual `/deploy` is covered by Decision 1.
 
 4. **Run the script that was just pulled.** `sh` reads a script while running
    it, so a pull that rewrites `auto-deploy.sh` could corrupt the run in
@@ -86,10 +89,17 @@ flowchart TD
 5. **Skipped, never guessed.**
    - Stacks in `HL_NO_AUTOHEAL` (`proxy matterbridge` by default): reported with
      the exact `hl-ssh` line.
-   - A key in a stack's `.env.example` that its `.env` lacks: the key name, never
-     the value, is reported and that stack is skipped.
+   - A key added to a stack's `.env.example` that its `.env` lacks: the key
+     name, never the value, is reported and that stack is skipped. Once
+     flagged, the key stays owed (`env-pending/<stack>`) until `.env` has it,
+     even empty, so a later merge can't deploy the stack without it. Keys that
+     were already in `.env.example` before auto-deploy started never block,
+     since many are optional and blank on purpose.
    - `scripts/host/` changes: reported with the line `deploy-plan.sh` already
      prints.
+   - A stack with no running containers: left stopped and reported. Stopped
+     may be deliberate (a drive not fitted yet), and starting it is a person's
+     call. Added while building.
    - `install-cron.sh` runs when `scripts/` changed. It's idempotent and never
      rewrites an existing entry, so this is safe unattended.
 
@@ -103,6 +113,13 @@ flowchart TD
    `main` moves or a manual `/deploy` clears the file. There's no automatic
    rollback. A revert PR is the rollback, and auto-deploy picks it up like any
    other merge (#254 stays the place for real rollback).
+   Each plan covers everything since the last commit that deployed cleanly
+   (`last-good`), not just the newest pull, so a stack that failed is retried
+   with the next merge instead of being forgotten. A run that dies part-way
+   (reboot, hung compose) is finished on the next tick: `last-good` behind
+   `HEAD` with no failure recorded means a deploy never completed. That
+   resume happens once per commit; a second unfinished run is refused and
+   alerted, so a crash can't restart the same stacks every five minutes.
 
 8. **Pause.** Touching `/var/lib/homelab/auto-deploy.pause` stops auto-deploy
    without editing cron. The existing `HL_AUTOHEAL=no` pauses it too, so one
@@ -111,12 +128,15 @@ flowchart TD
 
 9. **Watching the watcher.**
    - Healthchecks: each run pings `HEALTHCHECKS_AUTO_DEPLOY_URL` (5-minute
-     period, 15-minute grace). Until that key is set the script runs unarmed and
+     period, 30-minute grace, since repo-sync can hold the lock a while). Until that key is set the script runs unarmed and
      says so, the same as the other jobs through `scripts/healthchecks.sh`.
-   - Metrics: `auto_deploy.prom` in the node-exporter textfile directory, with the
-     last run time, the last deployed commit time, and a "behind `origin/main`"
-     gauge. A Grafana alert rule fires if the box stays behind `main` for 30
-     minutes while not paused.
+   - Metrics: `auto_deploy.prom` in the node-exporter textfile directory: the
+     last run that reached a decision, behind/paused/failed gauges, and the
+     last clean deploy. `hl-auto-deploy-stale` fires when no run has reached a
+     decision for 30 minutes (a dead timer, a stuck lock, a fetch that keeps
+     failing). Built narrower than first drafted: a "behind main for 30
+     minutes" alert would re-page every failure Discord already reported once,
+     which the one-alert-per-commit rule forbids.
 
 10. **Discord.** It uses the existing `DISCORD_ALERT_WEBHOOK`, the same channel
     repo-sync reports to. Success is a plain message and a failure is an alert.
@@ -127,15 +147,15 @@ flowchart TD
 | File | Change |
 |---|---|
 | `scripts/auto-deploy.sh` | new |
-| `scripts/lib/deploy.sh` | new: helpers moved out of `repo-sync.sh` |
+| `scripts/deploy-common.sh` | new: helpers moved out of `repo-sync.sh` (next to `metrics.sh` so CI's `sh -n scripts/*.sh` covers it) |
 | `scripts/repo-sync.sh` | sources the lib, takes the lock |
 | `scripts/deploy-plan.sh` | `--machine` output from the same rules |
 | `scripts/install-cron.sh` | `*/5 * * * *` auto-deploy entry |
 | `docker/monitoring/.env.example` | `HEALTHCHECKS_AUTO_DEPLOY_URL=` |
-| `docker/monitoring/grafana/provisioning/alerting/` | "behind main" alert rule |
+| `docker/monitoring/grafana/provisioning/alerting/rules.yml` | `hl-auto-deploy-stale` |
 | `.claude/commands/deploy.md` | lock / pause step (Decision 1), clears `last-failed` |
 | `AGENTS.md`, `docs/setup-log.md` | how deploys work now |
-| CI | shellcheck already covers `scripts/`; add a `deploy-plan.sh --machine` test against a fixture range |
+| `scripts/test-deploy-plan.sh`, `scripts/test-auto-deploy.sh`, CI | the machine plan, and the policy end to end against a fake `docker` |
 
 ## Rejected
 

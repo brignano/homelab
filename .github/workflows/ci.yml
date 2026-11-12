@@ -191,6 +191,14 @@ jobs:
           done
           exit $status
 
+      - name: deploy-plan --machine and auto-deploy policy
+        # auto-deploy.sh restarts stacks with nobody watching, from the lines
+        # deploy-plan.sh --machine prints. Both run against throwaway repos and
+        # a fake docker: no Docker daemon needed.
+        run: |
+          ./scripts/test-deploy-plan.sh
+          ./scripts/test-auto-deploy.sh
+
       - name: python helpers compile
         # Two scripts reach for python where sh would be unreadable — the token
         # palette and the composed icons. Same reasoning as above: a parse error

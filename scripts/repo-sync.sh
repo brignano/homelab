@@ -114,6 +114,8 @@ MAX_CHARS=3800
 . "$(dirname "$0")/metrics.sh"
 # shellcheck source=scripts/healthchecks.sh
 . "$(dirname "$0")/healthchecks.sh"
+# shellcheck source=scripts/deploy-common.sh
+. "$(dirname "$0")/deploy-common.sh"
 
 # Stacks never restarted automatically — see "Self-healing" above.
 NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy matterbridge}"
@@ -158,6 +160,17 @@ ping_healthchecks() {
   fi
 }
 trap ping_healthchecks EXIT
+
+# The deploy lock (deploy-common.sh), shared with auto-deploy.sh and /deploy.
+# Waits rather than skipping: this run is daily, and an auto-deploy holds the
+# lock for minutes at most (a few `--build`s and a verify per stack). Half an
+# hour without it means something is stuck, which is worth a failed run and the
+# Healthchecks page that follows.
+exec 9>"$DEPLOY_LOCK"
+if ! flock -w 1800 9; then
+  echo "repo-sync: could not take $DEPLOY_LOCK in 30 minutes — another deploy is stuck" >&2
+  exit 1
+fi
 
 cd "$REPO" || { echo "repo-sync: $REPO not found" >&2; exit 1; }
 # Docker reports bind-mount sources with symlinks resolved; the drift loop
@@ -233,45 +246,9 @@ human() {
   }'
 }
 
-# Containers compose is currently running for this stack directory.
-running_ids() {
-  docker ps --filter "label=com.docker.compose.project.working_dir=$1" \
-            --filter "status=running" --format '{{.ID}}' 2>/dev/null || true
-}
-
-# Did the stack come back? Two questions, because either can fail alone: are at
-# least as many containers running as before, and is anything stuck in a restart
-# loop (which `status=running` would otherwise happily count).
-verify_stack() {
-  _abs=$1; _want=$2; _try=0
-  while [ "$_try" -lt "$VERIFY_TRIES" ]; do
-    sleep "$VERIFY_DELAY"
-    _try=$((_try + 1))
-    _now=$(running_ids "$_abs" | wc -l | tr -d ' ')
-    _bad=$(docker ps --filter "label=com.docker.compose.project.working_dir=$_abs" \
-                     --filter "status=restarting" --format '{{.ID}}' 2>/dev/null | wc -l | tr -d ' ')
-    if [ "$_now" -ge "$_want" ] && [ "$_bad" -eq 0 ]; then
-      return 0
-    fi
-  done
-  echo "$_now/$_want running, $_bad restarting"
-  return 1
-}
-
-# job_only <compose>: every service carries a profile, so `up -d` starts
-# nothing and cron runs it with `docker compose run` (docker/photos/). Its
-# one-off container can be up when this runs, which must not read as a stack to
-# pull, heal or call stale. Asked of Compose rather than listed here, and only
-# an answer that parsed counts: a compose file that cannot be read is not one.
-job_only() {
-  _jo=$(cd "$REPO" && docker compose -f "$1" config --services 2>/dev/null) || return 1
-  [ -z "$_jo" ]
-}
-
-in_list() {
-  for _w in $2; do [ "$_w" = "$1" ] && return 0; done
-  return 1
-}
+# running_ids, verify_stack, job_only and in_list live in deploy-common.sh,
+# shared with auto-deploy.sh so the two cannot disagree about what "deployed"
+# means.
 
 # --- image pull ---------------------------------------------------------------
 #
@@ -1361,16 +1338,7 @@ echo "$MSG"
 WEBHOOK=$(sed -n 's/^DISCORD_ALERT_WEBHOOK=//p' "$ENV_FILE" | tail -n1 | tr -d '"'"'"' \r')
 [ -n "$WEBHOOK" ] || { echo "repo-sync: DISCORD_ALERT_WEBHOOK unset in $ENV_FILE" >&2; exit 1; }
 
-# Escape for JSON by hand rather than depending on jq or python being installed:
-# backslashes first, then quotes, then fold newlines into \n.
-json_escape() {
-  printf '%s' "${1:-}" \
-    | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' \
-    | awk 'NR > 1 { printf "\\n" } { printf "%s", $0 }'
-}
-json_escape_line() {
-  printf '%s' "${1:-}" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'
-}
+# json_escape and json_escape_line: deploy-common.sh.
 
 # An embed rather than plain content, for one reason: Discord renders a
 # message's content ABOVE its embeds, so anything sent as content arrives before

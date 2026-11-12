@@ -5,6 +5,14 @@ the containers a plain `up -d` silently leaves on old config.
 
 Run with no argument to deploy every stack, or name one: `/deploy monitoring`.
 
+**Most merges no longer need this.** `scripts/auto-deploy.sh` runs every five
+minutes, pulls what merged to `main` and deploys it with the same plan
+(`deploy-plan.sh --machine`) and the same verify as repo-sync, then posts the
+result to Discord. This command is the fallback and the reference: for `proxy`
+and `matterbridge` (never restarted unattended), a stack auto-deploy reported as
+needing you, a failed auto-deploy, or a first install. Design:
+`docs/design/tsd-auto-deploy.md`.
+
 ## Why this is not just `git pull && docker compose up -d`
 
 Three separate ways a deploy here looks complete and is not. All three have
@@ -57,6 +65,16 @@ hostname && pwd && git status --short
 Must be CT 100 with a clean tree. Uncommitted local changes stop the deploy —
 `git pull --ff-only` will refuse anyway, and a dirty tree means something was
 edited on the box that should have been a commit.
+
+Then hold auto-deploy off, so it cannot pull or restart in the middle of this.
+The marker pauses it for 30 minutes and then expires on its own, so forgetting
+step 7 cannot leave it paused. `flock` waits for an auto-deploy or repo-sync run
+already in progress to finish first:
+
+```bash
+flock /run/lock/homelab-deploy.lock true
+mkdir -p /var/lib/homelab/auto-deploy && date +%s > /var/lib/homelab/auto-deploy/manual-deploy
+```
 
 ### 2. Pull, remembering where you started
 
@@ -266,6 +284,21 @@ hand rather than waiting a day to find out whether they work:
 If the pull touched Grafana metric names or panels, re-run the metric-name check
 in `docker/monitoring/README.md` under **Verify**. A panel that has lost its
 metric renders a calm zero, not an error.
+
+### 7. Hand back to auto-deploy
+
+Only once step 6 passed. This clears a failure auto-deploy is holding on, marks
+this commit as deployed so its next plan starts from here, and ends the pause
+from step 1:
+
+```bash
+d=/var/lib/homelab/auto-deploy
+git rev-parse HEAD > $d/last-good && date +%s > $d/last-good-ts
+rm -f $d/last-failed $d/manual-deploy
+```
+
+If step 6 failed, leave the marker: auto-deploy stays off for the rest of the
+30 minutes while you look.
 
 ## Safety — `proxy` is never deployed unattended
 

@@ -11,6 +11,7 @@
 |---|---|---|
 | Container exits | `restart: unless-stopped` on every long-running service | `docker/*/docker-compose.yml` |
 | Stack is stale or down after a merge | Nightly restart, then **verified** (`verify_stack`); a failed verify is reported with the fix command | `scripts/repo-sync.sh` → "Self-healing" |
+| A merge is not live yet | Deployed within ~10 minutes and verified with the same `verify_stack` (which now also fails on `unhealthy`) | `scripts/auto-deploy.sh` (#335, [`tsd-auto-deploy.md`](tsd-auto-deploy.md)) |
 | Disk fills with replaced images | Nightly `docker image prune` + build-cache prune (keeps 7 days) | `scripts/repo-sync.sh` → "Reclaim" |
 | Thin pool does not reclaim deleted blocks | Weekly `pct fstrim` of CT 100, Sunday 05:00 | `ansible/roles/proxmox_host/tasks/main.yml` |
 | Backup drive not mounted after a reboot | `hl-drive-watchdog` timer unlocks/remounts it and restarts the exporter; `hl-backup-drive-offline` alert is the backstop | `ansible/roles/proxmox_host/tasks/watchdog.yml` (#250, #251) |
