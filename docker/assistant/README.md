@@ -385,6 +385,12 @@ Setup, costs and the audit trail are in
 
 ### The morning brief
 
+> **Off for the Claude Duet trial (since 2026-11-09, #365).** `BRIEF_ENABLED=false`
+> on CT 100, because Duet now sends the morning brief from Gmail and Calendar.
+> The digest still posts its lab sections and the leads/starred mail line. To
+> turn it back on, set `BRIEF_ENABLED=true` in `docker/assistant/.env` and run
+> `/deploy assistant`.
+
 **Mail line.** The concierge also adds one line to **Needs you**, with no model
 involved: unread `Leads/Driftwood`, `Leads/Sites` and `Leads/Guidebook` mail,
 counted per product, and starred mail, e.g. `📬 2 new Driftwood leads, 1 starred
@@ -470,6 +476,11 @@ a late-posting transaction is still covered. Fixed text, no Claude call, no
 spend. On whenever #ask is configured; `IMPORT_REMINDER_ENABLED=false` turns it off.
 
 ### The evening review
+
+> **Off for the Claude Duet trial (since 2026-11-09, #365).** `REVIEW_ENABLED=false`
+> on CT 100; follow-ups go to Duet during the trial, while existing
+> `#follow-ups` entries still fire. To turn it back on, set
+> `REVIEW_ENABLED=true` in `docker/assistant/.env` and run `/deploy assistant`.
 
 Once a day at `REVIEW_AT` (21:00), the bot gathers the day: the `#ask`
 threads with activity in the last 24 hours (their turns, as `#ask` itself
