@@ -27,6 +27,27 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-12 — Discord re-laid out after the Duet switch (#368)
+
+**Goal:** With the morning brief and evening review moved to Claude Duet,
+make the server simpler and stop routine good news burying real alerts in
+`#alerts`.
+
+**Steps:**
+1. `guild.yml`: three categories, OTTO (`#ask`), LAB (`#alerts`, `#digest`,
+   new `#deploys`) and NOTEBOOK (`#memory`, `#follow-ups`, `#activity`).
+2. Provisioning learned to move a channel that sits under another category
+   instead of creating a duplicate, so channel history and IDs survive.
+3. `discord_webhook` in `scripts/deploy-common.sh` routes green auto-deploy and
+   repo-sync reports to the optional `DISCORD_REPORT_WEBHOOK`.
+
+**Notes / next steps:**
+- No bot `.env` changes: the bot finds channels by ID, not name.
+- After the Duet trial (#366), decide whether `#activity` and `#follow-ups`
+  still earn their place.
+
+---
+
 ## 2026-11-09 — Architecture diagram in CI (#357)
 
 **Goal:** A diagram of the whole stack that stays current without anyone drawing it.

@@ -120,7 +120,7 @@ post() { # <title> <body> <color>
   # The log keeps the whole report: Discord is where it is read, this is where
   # it is found again.
   printf '%s\n%s\n' "$1" "$2"
-  _wh=$(sed -n 's/^DISCORD_ALERT_WEBHOOK=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r' || true)
+  _wh=$(discord_webhook "$3")
   if [ -z "$_wh" ]; then
     log "DISCORD_ALERT_WEBHOOK unset in $ENV_FILE — not posted"
     return 0

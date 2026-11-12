@@ -781,20 +781,31 @@ logs a warning and carries on rather than aborting over something cosmetic.
 [`guild.yml`](guild.yml) is the source of truth:
 
 ```
-📁 HOMELAB      the lab reporting to you — you scroll these
-   # digest     daily health log, bot posts only
-   # alerts     Grafana + dead-man's-switch, webhook-fed
-
-📁 ASSISTANT    you talking to the assistant
+📁 OTTO         the one channel you type in
    # ask        the one place to ask for anything; each request gets a thread
-   # activity   what it actually did, one line per approved action, bot only
+
+📁 LAB          the lab reporting to you — alerts loud, the rest muted
+   # alerts     needs you: Grafana, dead-man's switch, failed deploys; webhook-fed
+   # digest     daily health log, bot posts only
+   # deploys    routine good news: verified auto-deploys, nightly repo-sync; webhook-fed
+
+📁 NOTEBOOK     Otto's own storage — collapse and mute it
    # memory     what it remembers about you, bot only
    # follow-ups what it will come back to, and when, bot only
+   # activity   what it actually did, one line per approved action, bot only
 ```
 
-The split is by **direction** — things the lab tells you unprompted, versus
-things you ask it. Output channels are worth scrolling back through; the
-conversation isn't.
+The split is by **what you do with each channel**: type in `#ask`, get pinged by
+`#alerts`, scroll back through `#digest` and `#deploys` when you want to, and
+leave the notebook to Otto. (Until 2026-11-12 it was HOMELAB and ASSISTANT; a
+provision run moves existing channels into the new categories, keeping their
+history and IDs, and leaves the two empty categories for you to delete.)
+
+`#deploys` exists so `#alerts` only speaks when something is wrong.
+`scripts/auto-deploy.sh` and `scripts/repo-sync.sh` pick the webhook by the
+report's colour: green goes to `DISCORD_REPORT_WEBHOOK`, red and amber to
+`DISCORD_ALERT_WEBHOOK` (both in `docker/monitoring/.env`). With the report
+webhook blank, everything goes to `#alerts` as before.
 
 Within that, one decision carries the weight: **the digest is a log, not a
 chat.** "Was disk climbing last week?" is a question you'll actually scroll back

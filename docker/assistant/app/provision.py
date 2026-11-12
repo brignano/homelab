@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 ActionKind = Literal[
     "create_category", "create_channel", "update_topic", "update_permissions",
-    "extra_channel", "set_nickname",
+    "extra_channel", "set_nickname", "move_channel",
 ]
 
 
@@ -49,6 +49,7 @@ class Action:
             "update_permissions": "~ perms   ",
             "extra_channel": "? extra   ",
             "set_nickname": "~ nickname",
+            "move_channel": "> move    ",
         }[self.kind]
         return f"  {symbol}  {where}" + (f"  — {self.detail}" if self.detail else "")
 
@@ -116,6 +117,10 @@ def plan(
     """
     actions: list[Action] = []
     declared: set[str] = set()
+    # Every existing channel by name, whatever its category, so one that guild.yml
+    # now files under a different category is moved — keeping its history and its
+    # ID, which the bot's .env points at — instead of being created a second time.
+    anywhere = {c["name"]: (cat, c) for cat, chans in existing.items() for c in chans}
 
     wanted_nick = (desired.get("bot") or {}).get("nickname")
     if wanted_nick and wanted_nick != current_nickname:
@@ -140,6 +145,12 @@ def plan(
             want_bot_only = bool(ch.get("bot_only"))
 
             found = by_name.get(name)
+            if found is None and name in anywhere:
+                old_cat, found = anywhere[name]
+                actions.append(Action(
+                    "move_channel", cat_name, name,
+                    detail=f"from {old_cat or '(uncategorised)'}", spec=ch,
+                ))
             if found is None:
                 actions.append(Action(
                     "create_channel", cat_name, name,
@@ -298,7 +309,12 @@ async def apply(guild, me, actions: list[Action], snapshot: Snapshot) -> dict[st
             log.warning("skipping %s — channel vanished between plan and apply", action.channel)
             continue
 
-        if action.kind == "update_topic":
+        if action.kind == "move_channel":
+            # sync_permissions stays False: a bot-only lock is the channel's own
+            # overwrite, and inheriting the new category's would drop it.
+            log.info("moving #%s to %s", action.channel, action.category)
+            await channel.edit(category=category, sync_permissions=False)
+        elif action.kind == "update_topic":
             log.info("updating topic on #%s", action.channel)
             await channel.edit(topic=action.spec.get("topic") or None)
         elif action.kind == "update_permissions":
