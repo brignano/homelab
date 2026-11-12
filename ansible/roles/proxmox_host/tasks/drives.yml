@@ -67,6 +67,30 @@
     line: "LABEL=hl-media {{ hl_media_mount }} ext4 defaults,nofail 0 2"
   notify: Reload systemd
 
+- name: Drop-in directory for pve-guests
+  ansible.builtin.file:
+    path: /etc/systemd/system/pve-guests.service.d
+    state: directory
+    mode: "0755"
+
+- name: Start CT 100 only after the media drive has had its chance to mount
+  # 2026-11-12: after a power cut the USB drive came up after pve-guests had
+  # already started CT 100, so Docker started Jellyfin, the *arrs, qBittorrent
+  # and clipreview against an empty /media; they failed and stayed down until
+  # restarted by hand, although hl-drive-watchdog mounted the drive minutes
+  # later. Wants + After, not RequiresMountsFor: `nofail` means a missing drive
+  # fails its mount unit after the device timeout, and Requires would then keep
+  # every guest from starting. This way guests wait for the mount attempt, then
+  # start either way.
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/pve-guests.service.d/hl-media.conf
+    mode: "0644"
+    content: |
+      [Unit]
+      Wants={{ hl_media_mount | regex_replace('^/', '') | replace('/', '-') }}.mount
+      After={{ hl_media_mount | regex_replace('^/', '') | replace('/', '-') }}.mount
+  notify: Reload systemd
+
 - name: Is the media drive mounted?
   ansible.builtin.command: mountpoint -q {{ hl_media_mount }}
   register: hl_media_mounted
