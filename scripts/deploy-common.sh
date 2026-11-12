@@ -68,6 +68,21 @@ in_list() {
   return 1
 }
 
+# Which Discord webhook a report goes to, by its embed colour. Red and amber
+# (something broke, something wants a person) go to #alerts through
+# DISCORD_ALERT_WEBHOOK. Green (it worked, nothing to do) goes to #deploys
+# through DISCORD_REPORT_WEBHOOK, so #alerts stays quiet unless it matters.
+# With no report webhook set, green falls back to #alerts as before. Reads only
+# the two keys it needs from ENV_FILE, never sources it. Prints the URL, or
+# nothing when neither is set.
+discord_webhook() { # <embed colour>
+  if [ "${1:-}" = 7323541 ]; then   # --success #6fbf95
+    _dw=$(sed -n 's/^DISCORD_REPORT_WEBHOOK=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r' || true)
+    if [ -n "$_dw" ]; then printf '%s' "$_dw"; return 0; fi
+  fi
+  sed -n 's/^DISCORD_ALERT_WEBHOOK=//p' "$ENV_FILE" 2>/dev/null | tail -n1 | tr -d '"'"'"' \r' || true
+}
+
 # Escape for JSON by hand rather than depending on jq or python being installed:
 # backslashes first, then quotes, then fold newlines into \n.
 json_escape() {

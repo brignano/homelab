@@ -197,7 +197,9 @@ that pings Healthchecks.io from cron, so *silence* is the signal. See
 
 - `#alerts` in Discord is fed by **webhooks only** (Grafana + Healthchecks),
   never by the assistant bot — routing through the bot would reintroduce the
-  dependency the design removes.
+  dependency the design removes. It is for red and amber only: a script's green
+  report goes through `discord_webhook` in `scripts/deploy-common.sh`, which
+  sends it to `#deploys` (`DISCORD_REPORT_WEBHOOK`) when that is set.
 - **Anything scheduled needs a dead man's switch, including the scheduler.** A
   job that only speaks when something is wrong cannot report never having run.
   Ping Healthchecks through `scripts/healthchecks.sh`, write results through

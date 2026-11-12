@@ -511,6 +511,34 @@ def _():
     assert actions[0].channel == "ask"
 
 
+@check("provision: a channel filed under another category is moved, not duplicated")
+def _():
+    from app.provision import load_desired, plan
+    desired = load_desired(str(HERE.parent / "guild.yml"))
+    # The pre-2026-11-12 layout: everything Otto in ASSISTANT, the lab in HOMELAB.
+    row = lambda c: {"name": c["name"], "topic": c.get("topic") or "", "bot_only": bool(c.get("bot_only"))}
+    chans = {c["name"]: c for cat in desired["categories"] for c in cat["channels"]}
+    existing = {
+        "HOMELAB": [row(chans["digest"]), row(chans["alerts"])],
+        "ASSISTANT": [row(chans[n]) for n in ("ask", "memory", "follow-ups", "activity")],
+    }
+    actions = plan(desired, existing, current_nickname="Otto")
+    got = sorted((a.kind, a.category, a.channel) for a in actions)
+    assert got == sorted([
+        ("create_category", "OTTO", None), ("create_category", "LAB", None),
+        ("create_category", "NOTEBOOK", None),
+        ("move_channel", "OTTO", "ask"),
+        ("move_channel", "LAB", "alerts"), ("move_channel", "LAB", "digest"),
+        ("create_channel", "LAB", "deploys"),
+        ("move_channel", "NOTEBOOK", "memory"), ("move_channel", "NOTEBOOK", "follow-ups"),
+        ("move_channel", "NOTEBOOK", "activity"),
+    ]), got
+    # A moved channel whose topic also drifted gets both fixes.
+    existing["ASSISTANT"][0]["topic"] = "old words"
+    kinds = [(a.kind, a.channel) for a in plan(desired, existing, current_nickname="Otto") if a.channel == "ask"]
+    assert kinds == [("move_channel", "ask"), ("update_topic", "ask")], kinds
+
+
 @check("provision: unknown channels are reported, never deleted")
 def _():
     from app.provision import load_desired, plan
@@ -522,7 +550,7 @@ def _():
         ]
         for cat in desired["categories"]
     }
-    existing["HOMELAB"].append({"name": "old-notes", "topic": "", "bot_only": False})
+    existing["LAB"].append({"name": "old-notes", "topic": "", "bot_only": False})
     actions = plan(desired, existing, current_nickname="Otto")
     assert [a.kind for a in actions] == ["extra_channel"]
     assert "left alone" in actions[0].detail
@@ -1621,6 +1649,7 @@ def _():
     assert chans["memory"].get("bot_only") is True
     assert chans["activity"].get("bot_only") is True
     assert chans["follow-ups"].get("bot_only") is True
+    assert chans["deploys"].get("bot_only") is True
 
 
 @check("ask: a new request's thread is named from its first line, within Discord's cap")

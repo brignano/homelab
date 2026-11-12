@@ -1334,8 +1334,8 @@ echo "$TITLE"
 echo "$MSG"
 
 [ -f "$ENV_FILE" ] || { echo "repo-sync: $ENV_FILE not found — cannot report" >&2; exit 1; }
-# Read only the key we need; avoids sourcing a file full of other secrets.
-WEBHOOK=$(sed -n 's/^DISCORD_ALERT_WEBHOOK=//p' "$ENV_FILE" | tail -n1 | tr -d '"'"'"' \r')
+# #alerts or #deploys by colour (deploy-common.sh); never sources the .env.
+WEBHOOK=$(discord_webhook "$COLOR")
 [ -n "$WEBHOOK" ] || { echo "repo-sync: DISCORD_ALERT_WEBHOOK unset in $ENV_FILE" >&2; exit 1; }
 
 # json_escape and json_escape_line: deploy-common.sh.

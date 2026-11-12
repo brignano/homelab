@@ -8,11 +8,16 @@
 # deletes a channel — deleting one destroys its history, and #digest *is* the
 # history. Channels found here but absent below are reported, not removed.
 #
-# The layout splits on direction, which is the distinction that actually
-# matters day to day:
+# Three categories, by what you do with each channel (re-laid out 2026-11-12,
+# after the morning brief and evening review moved to Claude Duet):
 #
-#   HOMELAB    the lab reporting to you   — you scroll these, you don't type
-#   ASSISTANT  you talking to the model   — conversation, nothing to scroll back for
+#   OTTO       the one channel you type in
+#   LAB        the lab reporting to you — alerts loud, the rest muted
+#   NOTEBOOK   Otto's own storage and audit trail — collapse and mute it
+#
+# Provisioning MOVES a channel that exists under another category rather than
+# creating a second one, so a re-layout here keeps every channel's history and
+# ID. Emptied categories are left behind for you to delete by hand.
 #
 # What this file can't cover, because a bot token isn't allowed to do it:
 # creating the server, and restricting which channels a slash command appears
@@ -28,34 +33,8 @@ bot:
   nickname: Otto
 
 categories:
-  # ── Output: things the lab tells you, unprompted ────────────────────────
-  - name: HOMELAB
-    channels:
-      # Locked so it stays a clean, scrollable log. "Was disk climbing last
-      # week?" is a question you will actually scroll back for, and interleaved
-      # chat would destroy that.
-      - name: digest
-        topic: >-
-          Daily health digest, posted automatically each morning — services up,
-          CPU/RAM/disk, container restarts, log-error counts. Bot posts only, so
-          it stays a clean timeline you can scroll back through to spot drift
-          that no single alert would ever fire on. Each morning's digest opens
-          a thread for the day: reply there to ask about it or act on it, and
-          the evening review lands there too.
-        bot_only: true
-
-      # Fed by webhooks, never by the bot — that's the point. See
-      # docs/design/tsd-alerting-off-box.md.
-      - name: alerts
-        topic: >-
-          Alerts from Grafana, plus the dead-man's-switch that fires when the box
-          stops pinging Healthchecks. Both arrive by webhook rather than through
-          the bot, so they still reach you when the assistant — or the whole
-          machine — is down. Silence here is good news.
-        bot_only: true
-
-  # ── Input: things you ask it ────────────────────────────────────────────
-  - name: ASSISTANT
+  # ── Input: the one place you talk to Otto ───────────────────────────────
+  - name: OTTO
     channels:
       # #chat (conversational, local model) was removed on 2026-10-12: #ask
       # covers it. The feature is still in the bot, off while
@@ -63,11 +42,10 @@ categories:
       # from git history here, provision, and set that ID.
 
       # The act lane: Claude, with read access to calendar, mail and the house.
-      # Routed to docker/concierge/, never to Ollama.
+      # Routed to docker/concierge/, never to Ollama. Each new message gets its
+      # own thread from the bot, so the channel stays a list of requests and
+      # each conversation keeps its own context and approvals.
       # See docs/design/tsd-personal-assistant.md, phase 3.
-      # The one place to talk to the assistant, whatever the request. Each new
-      # message gets its own thread from the bot, so the channel stays a list
-      # of requests and each conversation keeps its own context and approvals.
       - name: ask
         topic: >-
           Ask Otto anything: your calendar, email, home or the lab. It looks
@@ -77,17 +55,46 @@ categories:
           few cents per question.
         bot_only: false
 
-      # The audit trail for writes, as #digest is for the lab's numbers: one
-      # line per approved action, linking to the thread it was approved in.
-      # Answers stay in their threads; only things that changed the world land
-      # here. Off until DISCORD_ACTIVITY_CHANNEL_ID is set.
-      - name: activity
+  # ── Output: things the lab tells you, unprompted ────────────────────────
+  - name: LAB
+    channels:
+      # Fed by webhooks, never by the bot — that's the point. See
+      # docs/design/tsd-alerting-off-box.md. Only red and amber land here
+      # (DISCORD_ALERT_WEBHOOK); green reports go to #deploys.
+      - name: alerts
         topic: >-
-          Everything Otto has actually done, one line per approved action
-          (events created or moved, drafts written, scenes run), each linking
-          to the #ask thread it came from. Bot posts only.
+          Things that are wrong or need you: Grafana alerts, the dead-man's
+          switch when the box stops pinging Healthchecks, and failed or blocked
+          deploys. All arrive by webhook rather than through the bot, so they
+          still reach you when the assistant — or the whole machine — is down.
+          Keep notifications on. Silence here is good news.
         bot_only: true
 
+      # Locked so it stays a clean, scrollable log. "Was disk climbing last
+      # week?" is a question you will actually scroll back for, and interleaved
+      # chat would destroy that.
+      - name: digest
+        topic: >-
+          Daily health digest, posted automatically each morning — services up,
+          CPU/RAM/disk, container restarts, log-error counts. Bot posts only, so
+          it stays a clean timeline you can scroll back through to spot drift
+          that no single alert would ever fire on. Each morning's digest opens a
+          thread for the day: reply there to ask about it.
+        bot_only: true
+
+      # The green half of what #alerts used to get: auto-deploy and the nightly
+      # repo-sync when everything worked. Webhook-fed (DISCORD_REPORT_WEBHOOK
+      # in docker/monitoring/.env); blank sends them to #alerts as before.
+      - name: deploys
+        topic: >-
+          Routine good news: each merge auto-deployed and verified, and the
+          nightly repo-sync report. Anything that failed or needs you goes to
+          #alerts instead. Safe to mute.
+        bot_only: true
+
+  # ── Otto's notebook: storage the bot reads, rarely opened ───────────────
+  - name: NOTEBOOK
+    channels:
       # One message per remembered fact, read by the concierge before every
       # #ask task. Bot-only so nothing lands here unapproved — the bot posts a
       # fact when you press Approve. As server owner you can still post one by
@@ -109,4 +116,13 @@ categories:
           each added only when you approve it. When one is due Otto posts in
           the thread it came from and removes it here. Delete a message to
           cancel that follow-up.
+        bot_only: true
+
+      # The audit trail for writes, as #digest is for the lab's numbers: one
+      # line per approved action, linking to the thread it was approved in.
+      # Off until DISCORD_ACTIVITY_CHANNEL_ID is set.
+      - name: activity
+        topic: >-
+          Everything Otto has actually done, one line per approved action, each
+          linking to the #ask thread it came from. Bot posts only.
         bot_only: true

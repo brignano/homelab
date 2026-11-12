@@ -106,6 +106,9 @@ actually writes (`scripts/check-observability.sh`).
    → pick `#alerts` → Copy Webhook URL, and put it in `.env` as
    `DISCORD_ALERT_WEBHOOK`. This is required — with ntfy gone it is the only
    path an alert takes, so the stack will not start without it.
+   Optionally make a second webhook on `#deploys` and set it as
+   `DISCORD_REPORT_WEBHOOK`: auto-deploy and repo-sync then send their green
+   reports there and keep `#alerts` for failures and things that need you.
 
 ## Verify
 

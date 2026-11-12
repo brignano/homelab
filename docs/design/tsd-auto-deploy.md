@@ -140,7 +140,8 @@ flowchart TD
 
 10. **Discord.** It uses the existing `DISCORD_ALERT_WEBHOOK`, the same channel
     repo-sync reports to. Success is a plain message and a failure is an alert.
-    There's no new secret.
+    There's no new secret. (Since 2026-11-12 green reports go to `#deploys`
+    through the optional `DISCORD_REPORT_WEBHOOK` when it is set.)
 
 ### Files touched (build PR)
 
