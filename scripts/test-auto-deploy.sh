@@ -238,4 +238,23 @@ run
 check "then quiet" lacks "$WORK/out" "resuming"
 mv "$WORK/bin/docker.real" "$WORK/bin/docker"
 
+
+# 15. Discord routing by colour (discord_webhook, deploy-common.sh): green to
+# #deploys when DISCORD_REPORT_WEBHOOK is set, everything else to #alerts.
+route() { # <env file contents> <colour>
+  printf '%s' "$1" > "$WORK/route.env"
+  ENV_FILE="$WORK/route.env" sh -c '. "$1/deploy-common.sh"; discord_webhook "$2"' _ "$HERE" "$2"
+}
+BOTH='DISCORD_ALERT_WEBHOOK="https://alert"
+DISCORD_REPORT_WEBHOOK=https://report
+'
+ALERT='DISCORD_ALERT_WEBHOOK=https://alert
+DISCORD_REPORT_WEBHOOK=
+'
+check "green goes to the report webhook" [ "$(route "$BOTH" 7323541)" = https://report ]
+check "green falls back to #alerts when report is blank" [ "$(route "$ALERT" 7323541)" = https://alert ]
+check "red stays on #alerts" [ "$(route "$BOTH" 14711391)" = https://alert ]
+check "amber stays on #alerts" [ "$(route "$BOTH" 14722127)" = https://alert ]
+check "nothing set is empty" [ -z "$(route '' 7323541)" ]
+
 exit $fail
