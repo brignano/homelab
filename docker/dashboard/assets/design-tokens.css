@@ -28,7 +28,7 @@
    2. IDENTITY IS NOT A FILL. Amber used to be the brand colour AND the
       warning colour, managed by a rule about scale. Rules enforced by
       remembering get forgotten. So identity moved to the thing that was
-      always carrying it — the trail, the monogram, the type — and --mark
+      always carrying it — the monogram, the type, restraint — and --mark
       exists only to ink a graphic. It is never a button, chip, wash, or
       border. The naming is the enforcement.
 
@@ -119,6 +119,11 @@
   --card: light-dark(#ffffff, #17171a); /* n-0 / n-50 */
   --surface-hover: var(--n-100);
   --surface-active: var(--n-200);
+  /* Sticky chrome — a header or toolbar that content scrolls under, usually
+     with `backdrop-filter: blur()`. 92% of the surface it sits on: the card
+     in light, the page ground in dark, where cards are lighter than the
+     page. A token so consumers never color-mix() one (DESIGN.md §11). */
+  --surface-sticky: light-dark(color-mix(in srgb, #ffffff 92%, transparent), color-mix(in srgb, #0d0d0f 92%, transparent)); /* card / bg */
   --ink: var(--n-900);
   --ink-soft: var(--n-700);
   --slate: light-dark(#6b6b73, #8b8b93); /* n-600 / n-500 — text-safe: eyebrows, axis labels, captions */
@@ -132,6 +137,11 @@
      for (3.39:1 on card, 3.68:1 on bg). */
   --line-control: light-dark(#8a8a8f, #6b6b73);
   --on-dark: light-dark(#fafafb, #0d0d0f); /* n-25 / n-0 */
+  /* A phone's bezel (.pp-device). A phone is a dark object in either theme,
+     so this stays dark rather than flipping with --ink, which would draw a
+     near-white bezel in dark mode. Dark lifts it to n-300 so the frame still
+     has an edge against the near-black page. Decoration, not a boundary. */
+  --device: light-dark(#111114, #3a3a41); /* n-900 / n-300 */
 
   /* ── Interactive — cobalt ─────────────────────────────────────────────
      Everything you can act on: links, buttons, focus, selection. Chosen to
@@ -144,23 +154,48 @@
      chroma. It is deliberately NOT Tailwind's blue-600 (263°, a touch
      violet and electric): same affordance, our own colour (ADR-0008).
 
-       --i          fill               5.18:1 / 7.07:1  (label 5.18 / 7.46)
+       --i          fill               5.18:1 / 3.78:1  (label 5.18 / 4.73)
        --i-ink      link/icon/focus    6.78:1 / 7.07:1
-       --i-hover    hover fill         8.65:1 / 10.50:1 (label)
-       --i-pressed  pressed fill      10.44:1 / 13.32:1 (label)
+       --i-hover    hover fill         label 8.65:1 / 5.88:1
+       --i-ink-hover  hovered link     8.65:1 / 9.95:1 on --card
+       --i-pressed  pressed fill       label 10.44:1 / 7.52:1
 
-     In dark, fill and ink converge, and hover/pressed get LIGHTER.
+     The fill is a saturated mid-cobalt with a WHITE label in both themes,
+     and hover and pressed step darker in both. Dark used to lift the fill
+     to the ink's pale blue with a dark label, which read as washed out on
+     the most important control on the screen. So in dark the fill and the
+     ink are now different steps: --i fills, --i-ink is what you read
+     (links, icons, the focus ring). The dark fill is as light as a white
+     label allows (4.5:1), which is what keeps it 3:1 as a mark on --card,
+     --bg and its own wash.
 
      DISABLED IS NEUTRAL, NEVER HUED — a greyed-out control must stop
      signalling "click me". */
-  --i: light-dark(#076bd3, #6ba5f3);
+  --i: light-dark(#076bd3, #0371e0);
   --i-ink: light-dark(#0159b5, #6ba5f3);
-  --i-hover: light-dark(#014a97, #98c4ff);
-  --i-pressed: light-dark(#003e82, #c0dbff);
-  --i-surface: light-dark(color-mix(in srgb, #076bd3 12%, transparent), color-mix(in srgb, #6ba5f3 20%, transparent));
-  --i-line: light-dark(color-mix(in srgb, #076bd3 32%, transparent), color-mix(in srgb, #6ba5f3 44%, transparent));
-  --i-selection: light-dark(color-mix(in srgb, #076bd3 26%, transparent), color-mix(in srgb, #6ba5f3 30%, transparent));
-  --on-i: light-dark(#ffffff, #111111);
+  --i-hover: light-dark(#014a97, #0062c7);
+  /* A hovered link is TEXT, so it follows the ink, not the fill: in dark the
+     fill's hover is too deep to read on a dark page (about 3.3:1). */
+  --i-ink-hover: light-dark(#014a97, #98c4ff);
+  --i-pressed: light-dark(#003e82, #0553a6);
+  --i-surface: light-dark(color-mix(in srgb, #076bd3 12%, transparent), color-mix(in srgb, #0371e0 20%, transparent));
+  --i-line: light-dark(color-mix(in srgb, #076bd3 32%, transparent), color-mix(in srgb, #0371e0 44%, transparent));
+  --i-selection: light-dark(color-mix(in srgb, #076bd3 26%, transparent), color-mix(in srgb, #0371e0 30%, transparent));
+  --on-i: light-dark(#ffffff, #ffffff);
+  /* A button filled with danger (.btn-danger), and its label. Its own
+     tokens so the state hue --danger can stay a pale, readable rust in dark
+     (messages, pills, field errors) while the button is as deep as the
+     primary beside it: as light as a white label allows, stepping darker on
+     hover and press (ADR-0015). In light the fills ARE --danger and
+     --danger-ink; `npm run check` holds them to those.
+
+       --danger-fill          label 6.10:1 / 4.58:1   on --card 3.91:1 in dark
+       --danger-fill-hover    label 7.92:1 / 5.65:1
+       --danger-fill-pressed  label 7.92:1 / 6.96:1 */
+  --danger-fill: light-dark(#a4442c, #be563c);
+  --danger-fill-hover: light-dark(#8a3722, #ad472e);
+  --danger-fill-pressed: light-dark(#8a3722, #9d381e);
+  --on-danger: light-dark(#ffffff, #ffffff);
   --i-disabled-bg: var(--n-200);
   --i-disabled-ink: var(--n-400);
 
@@ -216,8 +251,25 @@
   --diff-removed-ink: var(--danger-ink);
   --diff-removed-surface: var(--danger-surface);
 
+  /* ── Code ─────────────────────────────────────────────────────────────
+     Syntax colour without a rainbow (DESIGN.md §3): keywords take the
+     interactive cobalt ink, everything else is a step of the neutral ramp,
+     and weight and italics do the rest. All aliases, so code adds no hue.
+
+       --code-surface   the block, inset one step below the card
+       --code-keyword   if, return, const — cobalt ink
+       --code-string    literals — secondary ink
+       --code-comment   comments — slate, set in italics
+       --code-highlight a highlighted line — the cobalt wash */
+  --code-surface: var(--bg);
+  --code-ink: var(--ink);
+  --code-keyword: var(--i-ink);
+  --code-string: var(--ink-soft);
+  --code-comment: var(--slate);
+  --code-highlight: var(--i-surface);
+
   /* ── Mark — identity ──────────────────────────────────────────────────
-     Inks a GRAPHIC: the trail line, the A|B monogram, a hero rule. That is
+     Inks a GRAPHIC: a product's glyph, the A|B monogram, a hero rule. That is
      the entire permitted use.
 
      It is NOT a button, chip, badge, wash, border, or link. If you are
@@ -230,6 +282,25 @@
      in the same context. */
   --mark: light-dark(#b4741f, #e0a44f);
   --mark-ink: light-dark(#8a5714, #e0a44f); /* when the mark carries a label, 6.08:1 / 8.17:1 */
+
+  /* ── Product marks — one per product page ─────────────────────────────
+     Each product's marketing page picks one, so Driftwood, Guidebook and
+     Sites don't read as the same page with the words swapped (ADR-0011).
+     Same contract as --mark: it inks the product's graphics (its glyph,
+     the hero rule, the proof's stage, step numerals), never a button,
+     link, text or state. Hues sit away from cobalt (act), forest
+     (success), amber (attention) and rust (danger). All ≥ 3:1 on --bg and
+     --card in both themes. product-page.css maps one onto --pp-mark via
+     data-mark on .pp. */
+  --mark-teal: light-dark(#0e7c86, #4cc0cb);
+  --mark-violet: light-dark(#7148c9, #a990f2);
+  --mark-magenta: light-dark(#b1366f, #ea7fb0);
+  /* The mark in force here (ADR-0014): the family amber until `data-mark`
+     on an ancestor, usually <html>, names a product's. A brand glyph and
+     .rule draw in this, so a product's colour follows it from its marketing
+     page into its app and onto its error pages. The [data-mark] rules below
+     only point it at a token above; they declare no colour of their own. */
+  --mark-current: var(--mark);
 
   /* ── Legacy aliases ───────────────────────────────────────────────────
      Kept so existing `life` components keep compiling. Do not use in new
@@ -259,6 +330,45 @@
   --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, monospace;
   --display: var(--sans);
 
+  /* Weight, leading and tracking. Sizes are per tier (below); these are
+     not. Three weights, and nothing lighter or bolder.
+     (--weight-heavy is the one exception: the display treatment, .display
+     and .stamp, ADR-0014.) Leading is unitless
+     so it scales with the text: display for large headings, title for
+     titles, ui for interface text, body for paragraphs. Tracking
+     only ever tightens a heading or opens an uppercase mono eyebrow
+     (and the .stamp monogram, whose bar closes up otherwise).
+
+     Named by role, not tight/snug/normal: Tailwind owns those names
+     (--leading-tight, --tracking-tight) and an unlayered token here would
+     silently change what its utilities do in every consumer. */
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-heavy: 800;
+  --leading-display: 1.15;
+  --leading-title: 1.3;
+  --leading-ui: 1.4;
+  --leading-body: 1.6;
+  --tracking-title: -0.01em;
+  --tracking-display: -0.025em;
+  --tracking-caps: 0.08em;
+
+  /* ── Stacking ─────────────────────────────────────────────────────────
+     Named by what sits above what. Dialogs, popovers and sheets use the
+     browser's top layer and need none of these.
+
+       --z-raised  a control above its card's stretched link, a sticky th
+       --z-sticky  a header content scrolls under
+       --z-float   a label floating over the page (the rail's tooltip)
+       --z-skip    the skip link, above the header it skips
+       --z-toast   toasts, above everything not in the top layer */
+  --z-raised: 1;
+  --z-sticky: 10;
+  --z-float: 20;
+  --z-skip: 30;
+  --z-toast: 40;
+
   /* ── Space ── 4px base. Tiers differ by which steps they reach for. */
   --s1: 4px;  --s2: 8px;  --s3: 12px; --s4: 16px; --s5: 24px;
   --s6: 32px; --s7: 48px; --s8: 64px; --s9: 96px;
@@ -271,6 +381,7 @@
      differs. So shadows 2 and 3 carry one layer per theme, with the other
      theme's layer transparent — it draws nothing. */
   --radius-sm: 6px;
+  --radius-control: 8px; /* buttons, inputs, selects, the segmented control, menu items */
   --radius: 12px;
   --radius-lg: 18px;
   --shadow-1: 0 1px 2px light-dark(rgba(17, 17, 17, 0.04), rgba(0, 0, 0, 0.45));
@@ -311,6 +422,15 @@
   --measure: 780px;
 }
 
+/* On a phone the tool tier's smallest step rises from 11px to 12px: fine
+   beside a mouse, too small at arm's length. The marketing tier's is
+   already 12px. */
+@media (pointer: coarse) {
+  :root:not(.tier-marketing) {
+    --text-xs: 0.75rem;
+  }
+}
+
 /* ── Marketing tier ─────────────────────────────────────────────────────
    `class="tier-marketing"` on <html> (brignano.io). Unlocks the display
    face and opens the type scale. COLOUR IS IDENTICAL ACROSS TIERS — that
@@ -329,6 +449,19 @@
   --measure: 68ch;
 }
 
+/* ── A product's mark, wherever the product is ──────────────────────────
+   One attribute per product: <html data-mark="teal">. Works on any element,
+   so a page that shows two products can mark each one's section. */
+[data-mark='teal'] {
+  --mark-current: var(--mark-teal);
+}
+[data-mark='violet'] {
+  --mark-current: var(--mark-violet);
+}
+[data-mark='magenta'] {
+  --mark-current: var(--mark-magenta);
+}
+
 ::selection {
   background: var(--i-selection);
 }
@@ -337,6 +470,16 @@
    instead of the browser's own blue. */
 :root {
   accent-color: var(--i);
+}
+
+/* Paper is light. Printing a dark page spends ink on the background and
+   most browsers drop backgrounds anyway, leaving pale text on white. After
+   the [data-theme] rules above so it wins over an in-app dark choice. */
+@media print {
+  :root,
+  [data-theme] {
+    color-scheme: light;
+  }
 }
 
 /* Ships here so no surface can forget it. */
@@ -348,5 +491,11 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  /* View transitions live on pseudo-elements the rule above can't reach. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }

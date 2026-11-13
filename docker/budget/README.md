@@ -54,6 +54,9 @@ Install, once per browser: *Settings → General → Themes → Custom theme →
 Additional CSS overrides*, paste the whole of `actual-dark.css` (or `-light`),
 Apply, reload. After a token update, regenerate, merge, and paste the new file
 again. Geist and the focus ring are not themeable this way and stay Actual's.
+So are the report charts' segment colours (`chartQual1–9`) and the labels
+drawn on them (`reportsInnerLabel`): the tokens have no label that stays dark
+in both themes on those pale colours, so Actual keeps its own pairing (#373).
 
 Caddy still serves `/_design/` on the budget site (left from #316); Actual
 cannot load it, so it is unused.

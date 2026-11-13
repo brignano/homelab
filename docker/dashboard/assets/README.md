@@ -17,7 +17,7 @@ whole install.
 
 ```sh
 ./scripts/update-design-tokens.sh            # refresh at the pinned versions
-./scripts/update-design-tokens.sh 0.3.0      # move to a version, or `latest`
+./scripts/update-design-tokens.sh 0.9.0      # move to a version, or `latest`
 ./scripts/update-design-tokens.sh --check    # what CI runs; offline
 ```
 

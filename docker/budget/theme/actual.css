@@ -157,7 +157,7 @@
   --color-buttonMenuBackgroundHover: var(--surface-hover);
   --color-buttonMenuBorder: var(--line-control);
   --color-buttonMenuSelectedText: var(--i-ink);
-  --color-buttonMenuSelectedTextHover: var(--i-hover);
+  --color-buttonMenuSelectedTextHover: var(--i-ink-hover);
   --color-buttonMenuSelectedBackground: var(--i-surface);
   --color-buttonMenuSelectedBackgroundHover: var(--i-surface);
   --color-buttonMenuSelectedBorder: var(--i-line);
@@ -265,7 +265,11 @@
   --color-reportsGreen: var(--success);
   --color-reportsGray: var(--n-500);
   --color-reportsLabel: var(--ink);
-  --color-reportsInnerLabel: var(--on-i);
+  /* --color-reportsInnerLabel is deliberately not mapped (#373). Actual draws
+     it on chart segments in its own chartQual palette, which this theme does
+     not map, so the label stays Actual's own (navy, 3.1:1 or better on every
+     segment). It used to be --on-i, which only worked while --on-i was dark
+     in dark mode; since @brignano/design 0.9.0 it is white in both themes. */
   --color-reportsChartFill: var(--i);
 
   /* note tags, budget month headers */
