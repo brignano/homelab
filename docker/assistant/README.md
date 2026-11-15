@@ -291,8 +291,12 @@ It is its own source, `ha-calendar`, with its own `source-ha-calendar` stamp,
 because HA and Google fail independently. If only one calendar source could be
 read, the line shows the other's events and says which is missing
 (`· _HA calendars not read_`) rather than claiming a free day. A calendar
-entity HA does not know fails the read, so a typo cannot quietly hide events.
-Unset, nothing changes.
+entity HA does not know (a typo, or a calendar removed from iCloud) is skipped:
+the other calendars are still shown and the source still counts as read, but
+every digest's ⚠️ _Incomplete_ line names the ID until it is taken out of
+`HA_CALENDARS`, so it never quietly hides events. If none of the listed
+calendars exist, or HA errors, the whole source fails and `hl-google-stale`
+fires. Unset, nothing changes.
 
 **After fixing the sign-in,** run `/digest` once. The alert clears on the next
 successful read, and otherwise that would be tomorrow's scheduled one.
