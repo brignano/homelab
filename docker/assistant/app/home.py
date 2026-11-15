@@ -79,6 +79,10 @@ class HomeError(RuntimeError):
     """Home Assistant could not be read at all."""
 
 
+class MissingCalendar(HomeError):
+    """A calendar.* ID in HA_CALENDARS that Home Assistant does not have."""
+
+
 @dataclass(frozen=True)
 class Reading:
     entity_id: str
@@ -281,25 +285,41 @@ class Home:
             return when.astimezone(dt.timezone.utc).replace(microsecond=0, tzinfo=None).isoformat() + "Z"
         status, body = await self._get(f"/api/calendars/{quote(entity_id, safe='')}",
                                        {"start": z(start), "end": z(end)})
-        # HA answers 400 "Entity not found" for an unknown calendar. Fail the
-        # source rather than skip it: a calendar the digest silently stopped
-        # reading looks exactly like a free day.
+        # HA answers 400 "Entity not found" for an unknown calendar (one that
+        # was removed or renamed). calendars() skips it and says so; it is
+        # never treated as an empty calendar.
         if status in (400, 404):
-            raise HomeError(f"{entity_id} not found in Home Assistant (HTTP {status})")
+            raise MissingCalendar(f"{entity_id} not found in Home Assistant (HTTP {status})")
         if status != 200:
             raise HomeError(f"HTTP {status}")
         return parse_calendar(body)
 
     async def calendars(self, entity_ids: tuple[str, ...], start: dt.datetime,
-                        end: dt.datetime) -> list[list[Event]]:
-        """Each calendar's events between start and end. All or nothing, like
-        readings(): half a calendar rendered as a free afternoon is wrong."""
-        try:
-            return list(await asyncio.gather(*(self._calendar(e, start, end) for e in entity_ids)))
-        except aiohttp.ClientError as exc:
-            raise HomeError(f"unreachable ({exc.__class__.__name__})") from exc
-        except asyncio.TimeoutError as exc:
-            raise HomeError("timed out") from exc
+                        end: dt.datetime) -> list[list[Event] | None]:
+        """Each calendar's events between start and end, None for a calendar
+        Home Assistant does not have. A missing calendar must not black out
+        the others (a calendar removed from iCloud once hid every HA calendar
+        for days, #378), so the caller reports it by name instead. Anything
+        else (HA down, a 401, a 500) is still all or nothing, like readings():
+        half a calendar rendered as a free afternoon is wrong. All missing is
+        an error too: nothing was read."""
+        results = await asyncio.gather(*(self._calendar(e, start, end) for e in entity_ids),
+                                       return_exceptions=True)
+        out: list[list[Event] | None] = []
+        for result in results:
+            if isinstance(result, MissingCalendar):
+                out.append(None)
+            elif isinstance(result, aiohttp.ClientError):
+                raise HomeError(f"unreachable ({result.__class__.__name__})") from result
+            elif isinstance(result, asyncio.TimeoutError):
+                raise HomeError("timed out") from result
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                out.append(result)
+        if out and all(r is None for r in out):
+            raise HomeError("; ".join(str(r) for r in results))
+        return out
 
     async def history(self, entity_ids: tuple[str, ...], start: dt.datetime) -> list[list[dict]]:
         """Each entity's state changes since `start` (the evening review's

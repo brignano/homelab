@@ -1188,7 +1188,7 @@ def _():
                      events=[_ev("G", 19, 0, 20, 0)], ha_events=[naive]))  # must not raise
 
 
-@check("ha calendar: only GETs the named calendars, today's window in UTC, unknown fails loudly")
+@check("ha calendar: only GETs the named calendars, today's window in UTC, unknown is None, errors fail")
 def _():
     from app.home import Home, HomeError
     item = {"summary": "Dinner", "start": {"dateTime": "2026-10-12T19:00:00+00:00"},
@@ -1200,9 +1200,13 @@ def _():
     assert session.params == [{"start": "2026-10-12T07:30:15Z", "end": "2026-10-12T07:30:15Z"}], \
         "no '+' in a query string, no microseconds"
     assert [e.title for e in got[0]] == ["Dinner"]
-    for states in ({"calendar.home": [item], "calendar.typo": 400},
-                   {"calendar.home": [item], "calendar.typo": 404},
+    for code in (400, 404):
+        got = asyncio.run(Home(_HASession({"calendar.home": [item], "calendar.gone": code}), "http://ha", "t")
+                          .calendars(("calendar.home", "calendar.gone"), start, start))
+        assert [e.title for e in got[0]] == ["Dinner"] and got[1] is None, got
+    for states in ({"calendar.typo": 400, "calendar.gone": 404},
                    {"calendar.home": [item], "calendar.typo": 500},
+                   {"calendar.home": [item], "calendar.gone": 400, "calendar.typo": 500},
                    {"calendar.home": 401}):
         try:
             asyncio.run(Home(_HASession(states), "http://ha", "t").calendars(tuple(states), start, start))
@@ -1290,6 +1294,31 @@ def _():
         assert "SECRET" not in seen["prompt"] and "7pm SECRET-ICLOUD" in out, out
         assert all("/api/states/" not in c[1] for c in session.calls)
         assert "Home Assistant" in out.splitlines()[-1] and "Google" not in out.splitlines()[-1]
+
+
+@check("ha calendar: a removed calendar is named in the digest, the rest still read and stamped")
+def _():
+    import tempfile
+    from app import stamp
+    from app.day import DayCollector, render_lines, stamp_path
+    from app.home import Home
+    item = {"summary": "Dinner", "start": {"dateTime": "2026-10-12T19:00:00+00:00"},
+            "end": {"dateTime": "2026-10-12T20:00:00+00:00"}}
+    with tempfile.TemporaryDirectory() as d:
+        dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("ha-calendar",), state_dir=d,
+                          home=Home(_HASession({"calendar.home": [item], "calendar.gone": 400}), "http://ha", "t"),
+                          ha_calendars=("calendar.home", "calendar.gone"))
+        day = asyncio.run(dc.collect(NOW))
+        assert [e.title for e in day.ha_events] == ["Dinner"], day.ha_events
+        assert day.problems == ["calendar.gone is not in Home Assistant, remove it from HA_CALENDARS"], day.problems
+        assert stamp.read(stamp_path(d, "ha-calendar")) is not None, "read, so the alert clears"
+        assert "calendar.gone" in "\n".join(render_lines(day))
+    with tempfile.TemporaryDirectory() as d:
+        dc = DayCollector(None, calendar_ids=(), mail_labels=(), sources=("ha-calendar",), state_dir=d,
+                          home=Home(_HASession({"calendar.gone": 400}), "http://ha", "t"),
+                          ha_calendars=("calendar.gone",))
+        day = asyncio.run(dc.collect(NOW))
+        assert day.ha_events is None and stamp.read(stamp_path(d, "ha-calendar")) is None, "nothing read"
 
 
 @check("ha calendar: HA_FREE_CALENDARS are shown but never flagged as overlaps")

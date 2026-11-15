@@ -333,14 +333,17 @@ class DayCollector:
             *(self._google.events(cid, start, end) for cid in self._calendar_ids))
         return dedupe(*per_calendar)
 
-    async def _ha_calendar(self, now: dt.datetime) -> list[Event]:
+    async def _ha_calendar(self, now: dt.datetime) -> tuple[list[Event], list[str]]:
+        """The events, and the HA_CALENDARS IDs Home Assistant does not have."""
         start, end = window(now)
         per_calendar = await self._home.calendars(self._ha_calendars, start, end)
+        missing = [cid for cid, events in zip(self._ha_calendars, per_calendar) if events is None]
         # HA has no free/busy. A calendar named in HA_FREE_CALENDARS (a TV
         # schedule, say) is shown but never counted as a double-booking.
-        return dedupe(*(
+        events = dedupe(*(
             [replace(e, busy=False) for e in events] if cid in self._ha_free_calendars else events
-            for cid, events in zip(self._ha_calendars, per_calendar)))
+            for cid, events in zip(self._ha_calendars, per_calendar) if events is not None))
+        return events, missing
 
     async def _mail(self, now: dt.datetime, since: dt.datetime) -> tuple[list[Mail], bool]:
         ids, estimate = await self._google.list_unread(self._mail_labels)
@@ -386,7 +389,12 @@ class DayCollector:
             elif source == "mail":
                 day.mail, day.mail_more = result
             elif source == "ha-calendar":
-                day.ha_events = result
+                day.ha_events, missing = result
+                # Read, so the source is not stale, but never silent: every
+                # digest names the calendar until HA_CALENDARS drops it.
+                for cid in missing:
+                    log.warning("ha-calendar: %s not found in Home Assistant", cid)
+                    day.problems.append(f"{cid} is not in Home Assistant, remove it from HA_CALENDARS")
             else:
                 day.home = result
             self._ok(source)
