@@ -49,7 +49,10 @@ layout:
 # it onto <html data-theme>, so the tokens follow the page rather than the
 # phone's OS setting.
 headerStyle: boxedWidgets
-statusStyle: dot
+# `basic` prints the state as a word ("Up" / "Down"); `dot` told it by colour
+# alone, which the design system rules out. custom.css styles the word as a
+# pill; the response time is in its tooltip.
+statusStyle: basic
 cardBlur: sm
 theme: dark
 color: zinc
