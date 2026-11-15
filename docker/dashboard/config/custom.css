@@ -4,8 +4,16 @@
   Homepage is config-driven, not a design surface: the only hook it gives is
   this file, served verbatim at /api/config/custom.css. So the rule here is to
   reach for the variables Homepage and Tailwind already theme themselves from,
-  and never for a class name — class names churn between releases, and the
-  image is pinned but not frozen.
+  and never for a utility class — `.bg-theme-200\/50` and friends churn between
+  releases, and the image is pinned but not frozen.
+
+  The one exception is Homepage's own hook classes: `service-card`,
+  `site-monitor-status`, `resource-value`, `information-widget-datetime` and
+  the like. They name what an element *is* rather than how it looks, they sit
+  beside the utilities precisely so custom.css has something to aim at (the
+  custom CSS docs point there), and a variable cannot reach what they reach —
+  one kind of rounded-md, or one widget's font. Use one only when no variable
+  will do, and say why beside it.
 
   Three things are imported or set, in this order:
 
@@ -49,7 +57,9 @@ html[class*="theme-"] {
   --font-sans: var(--sans);
   --font-mono: var(--mono);
 
-  /* Shape. Homepage's cards are `rounded-md`, its dialogs `rounded-lg`. */
+  /* Shape. Homepage uses `rounded-md` for its cards AND its controls (search,
+     tabs, quick-launch rows), so the shared step stays at the chip radius and
+     the tiles take --radius by name, below. Dialogs are `rounded-lg`. */
   --radius-md: var(--radius-sm);
   --radius-lg: var(--radius);
   --radius-xl: var(--radius-lg);
@@ -104,6 +114,91 @@ html[class*="theme-"] ::selection {
 html[class*="theme-"] :focus-visible {
   outline: 2px solid var(--i-ink);
   outline-offset: 2px;
+}
+
+/* Tiles are cards, and cards take --radius (12px). `--radius-md` cannot
+   carry it: the same step rounds the search box and the tabs, which are
+   controls. The header's boxed widgets keep the shared step; they are a strip,
+   not a set of cards. */
+html[class*="theme-"] .service-card {
+  border-radius: var(--radius);
+}
+
+/* The status pill sits over the tile's top-right corner (Homepage positions
+   it absolutely), and a word is wider than the dot it replaced. Keep the
+   name and description clear of it, so "AdGuard Home" never runs under
+   "DOWN" on a narrow tile. */
+html[class*="theme-"] .service-card .service-name {
+  padding-right: 4.5rem;
+}
+
+/* Status as a word, never a colour alone (DESIGN.md). `statusStyle: basic` in
+ * settings.yaml makes Homepage print "Up" or "Down"; this dresses it as the
+ * system's .pill: mono, uppercase, the state's -ink on its own wash, and a
+ * dot. Homepage stamps the state as a Tailwind colour on the label, and the
+ * bridge above already points that colour at --success / --danger, so the
+ * pill reads its state from `currentColor` rather than from a class name: the
+ * word is drawn in the ink, the wash and the dot are the same colour thinned.
+ * Re-pointing the two hues here, on the pill only, swaps --success for
+ * --success-ink without touching every other green on the page.
+ *
+ * The wash is `color-mix` on currentColor rather than --success-surface for
+ * the same reason: picking the surface token needs to know the state, and the
+ * only thing that knows it is a utility class.
+ *
+ * Response time is in the tooltip (Homepage's `title`), not on the pill: no
+ * statusStyle prints both the word and the time, and adding the time would
+ * mean custom.js writing into the tile on every 30s refresh. */
+html[class*="theme-"] .site-monitor-status {
+  --color-emerald-500: var(--success-ink);
+  --color-rose-500: var(--danger-ink);
+  padding: 6px 6px 0 0;
+  background: transparent;
+  border-radius: 0;
+}
+
+html[class*="theme-"] .site-monitor-status > div {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background-color: color-mix(in srgb, currentColor 14%, transparent);
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 16px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+html[class*="theme-"] .site-monitor-status > div::before {
+  content: "";
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: currentColor;
+}
+
+@media (forced-colors: active) {
+  html[class*="theme-"] .site-monitor-status > div {
+    border: 1px solid CanvasText;
+  }
+}
+
+/* Numbers in mono, with tabular figures, so a value that ticks does not
+   shuffle its neighbours (DESIGN.md §5: data that must read precise). The
+   header's numbers are the CPU, memory and disk readings, the temperature and
+   the clock; each is reached through the hook class Homepage puts on it,
+   because the only variable that would move them, --font-mono, is not what
+   these elements are set in. The weather condition and the resource labels
+   stay in sans: they are words. */
+html[class*="theme-"] .resource-value,
+html[class*="theme-"] .information-widget-openmeteo .primary-text,
+html[class*="theme-"] .information-widget-datetime span {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Re-ink our own tile icon from the page.

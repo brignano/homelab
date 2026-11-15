@@ -287,14 +287,56 @@
      Each product's marketing page picks one, so Driftwood, Guidebook and
      Sites don't read as the same page with the words swapped (ADR-0011).
      Same contract as --mark: it inks the product's graphics (its glyph,
-     the hero rule, the proof's stage, step numerals), never a button,
-     link, text or state. Hues sit away from cobalt (act), forest
+     the hero rule, the proof's stage, step numerals), never a link, text
+     or state. On a product page only, it may also fill the primary button
+     and wash the ground, through the -fill and -surface steps below
+     (ADR-0017). Hues sit away from cobalt (act), forest
      (success), amber (attention) and rust (danger). All ≥ 3:1 on --bg and
      --card in both themes. product-page.css maps one onto --pp-mark via
      data-mark on .pp. */
   --mark-teal: light-dark(#0e7c86, #4cc0cb);
   --mark-violet: light-dark(#7148c9, #a990f2);
   --mark-magenta: light-dark(#b1366f, #ea7fb0);
+  /* ── A mark as a fill and a ground — product pages only (ADR-0017) ────
+     On a product's marketing page, and nowhere else, the mark may fill the
+     one primary button and wash the page ground. Never in an app, never a
+     link, text or a state. The mark tokens above don't move: like --i beside
+     --i-ink and --danger-fill beside --danger, the fill is its own step.
+
+       -fill          the button, under a white --on-mark label in both themes.
+                      In light it IS the mark (amber is deepened to carry the
+                      label); in dark it sits at the mark's hue, as light as a
+                      white label allows (4.5:1), the method ADR-0015 used
+                      for cobalt.
+       -fill-hover, -fill-pressed   step darker in both themes.
+       -surface       the page ground: a faint, opaque tint at the mark's hue
+                      that --ink, --ink-soft and --i-ink all read on.
+
+     Labels, light / dark:   fill          hover         pressed
+       amber (the family)    4.60 / 4.61   6.09 / 5.65   7.63 / 6.92
+       teal                  4.95 / 4.56   6.70 / 5.60   8.31 / 6.90
+       violet                6.05 / 4.57   8.23 / 5.68   10.24 / 6.94
+       magenta               5.79 / 4.57   7.83 / 5.61   9.71 / 6.91
+
+     Use the unprefixed four: `data-mark` points them at a product's, as it
+     does --mark-current. With no attribute they are the family amber. */
+  --mark-fill: light-dark(#a66707, #a06a05);
+  --mark-fill-hover: light-dark(#8c5602, #8e5d03);
+  --mark-fill-pressed: light-dark(#784903, #7c5102);
+  --mark-surface: light-dark(#fce7d3, #241807);
+  --mark-teal-fill: light-dark(#0e7c86, #19828a);
+  --mark-teal-fill-hover: light-dark(#03666f, #07737b);
+  --mark-teal-fill-pressed: light-dark(#01575e, #05646b);
+  --mark-teal-surface: light-dark(#d1f3f6, #021f22);
+  --mark-violet-fill: light-dark(#7148c9, #855cdf);
+  --mark-violet-fill-hover: light-dark(#5e31b1, #774ccd);
+  --mark-violet-fill-pressed: light-dark(#511ea1, #6a3dbe);
+  --mark-violet-surface: light-dark(#ebe8ff, #1c1729);
+  --mark-magenta-fill: light-dark(#b1366f, #c24986);
+  --mark-magenta-fill-hover: light-dark(#991d5b, #b23977);
+  --mark-magenta-fill-pressed: light-dark(#88024d, #a1296a);
+  --mark-magenta-surface: light-dark(#ffe3ec, #27141c);
+  --on-mark: light-dark(#ffffff, #ffffff);
   /* The mark in force here (ADR-0014): the family amber until `data-mark`
      on an ancestor, usually <html>, names a product's. A brand glyph and
      .rule draw in this, so a product's colour follows it from its marketing
@@ -451,15 +493,28 @@
 
 /* ── A product's mark, wherever the product is ──────────────────────────
    One attribute per product: <html data-mark="teal">. Works on any element,
-   so a page that shows two products can mark each one's section. */
+   so a page that shows two products can mark each one's section. It also
+   points the product-page fill and ground (ADR-0017) at the product's. */
 [data-mark='teal'] {
   --mark-current: var(--mark-teal);
+  --mark-fill: var(--mark-teal-fill);
+  --mark-fill-hover: var(--mark-teal-fill-hover);
+  --mark-fill-pressed: var(--mark-teal-fill-pressed);
+  --mark-surface: var(--mark-teal-surface);
 }
 [data-mark='violet'] {
   --mark-current: var(--mark-violet);
+  --mark-fill: var(--mark-violet-fill);
+  --mark-fill-hover: var(--mark-violet-fill-hover);
+  --mark-fill-pressed: var(--mark-violet-fill-pressed);
+  --mark-surface: var(--mark-violet-surface);
 }
 [data-mark='magenta'] {
   --mark-current: var(--mark-magenta);
+  --mark-fill: var(--mark-magenta-fill);
+  --mark-fill-hover: var(--mark-magenta-fill-hover);
+  --mark-fill-pressed: var(--mark-magenta-fill-pressed);
+  --mark-surface: var(--mark-magenta-surface);
 }
 
 ::selection {
