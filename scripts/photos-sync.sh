@@ -137,6 +137,8 @@ AUTH_FAIL_RE='None of providers|Password was not saved|Invalid email/password|Py
 # icloudpd processes would share one session volume. Taken where each mode
 # starts, so a run that is merely unconfigured never touches the lock.
 LOCK="${HL_PHOTOS_LOCK:-/run/photos-sync.lock}"
+# Where --auth parks the previous session while it signs in (on the session volume).
+AUTH_BACKUP=/config/.pre-auth
 take_lock() {
   exec 9>"$LOCK"
   flock -n 9 || { echo "photos-sync: another photos-sync is still running" >&2; exit 1; }
@@ -161,8 +163,27 @@ console'
   # when its session token is invalid, and an --auth run while it still works
   # would otherwise leave the keyring empty. The saved password goes too, so
   # a changed Apple ID password replaces it.
-  docker compose -f "$COMPOSE" run --rm -T --entrypoint sh icloudpd \
-    -c 'rm -rf /config/* /config/.[!.]*' </dev/null
+  #
+  # Set aside, not deleted: a Ctrl-C at the password prompt (2026-11-17) used
+  # to leave no sign-in at all, so every night failed until --auth was run to
+  # the end. The old session and password wait in $AUTH_BACKUP on the same
+  # volume and come back unless this sign-in is proven good. A backup left by
+  # an --auth that was killed outright is the last known-good one, so it is
+  # kept rather than overwritten.
+  auth_session() { docker compose -f "$COMPOSE" run --rm -T --entrypoint sh icloudpd -c "$1" </dev/null; }
+  auth_session "mkdir -p $AUTH_BACKUP && for f in /config/* /config/.[!.]*; do
+      [ -e \"\$f\" ] && [ \"\$f\" != $AUTH_BACKUP ] || continue
+      if [ -e $AUTH_BACKUP/\"\${f##*/}\" ]; then rm -rf \"\$f\"; else mv \"\$f\" $AUTH_BACKUP/; fi
+    done"
+  restore_session() {
+    auth_session "[ -d $AUTH_BACKUP ] || exit 0
+      for f in /config/* /config/.[!.]*; do
+        [ -e \"\$f\" ] && [ \"\$f\" != $AUTH_BACKUP ] && rm -rf \"\$f\"
+      done
+      for f in $AUTH_BACKUP/* $AUTH_BACKUP/.[!.]*; do [ -e \"\$f\" ] && mv \"\$f\" /config/; done
+      rmdir $AUTH_BACKUP"
+  }
+  trap 'unset IFS; restore_session; echo "photos-sync: cancelled; the previous sign-in is back" >&2; exit 130' INT TERM
   docker compose -f "$COMPOSE" run --rm icloudpd $(set_args) --auth-only
   rc=$?
   PW_PROVIDERS='--password-provider
@@ -181,10 +202,15 @@ keyring'
   vrc=$?
   unset IFS
   if [ "$rc" -eq 0 ] && [ "$vrc" -eq 0 ] && ! printf '%s' "$out" | grep -qiE "$AUTH_FAIL_RE"; then
+    trap - INT TERM
+    auth_session "rm -rf $AUTH_BACKUP"
     echo "photos-sync: signed in. Run ./scripts/photos-sync.sh to sync now and clear the alert."
     exit 0
   fi
+  trap - INT TERM
+  restore_session
   printf '%s\n' "$out" | grep -iE "$AUTH_FAIL_RE" | tail -n 3 >&2
+  echo "photos-sync: the previous sign-in was put back, so nothing changed for the nightly run." >&2
   echo "photos-sync: NOT signed in. Check the Apple ID in $PHOTOS_ENV (Settings → your name on the iPhone) and the password, then run --auth again." >&2
   exit 1
 elif [ -n "${1:-}" ]; then

@@ -27,6 +27,18 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-17 — iCloud Photos mirror failed: Apple still indexing
+
+**Goal:** Find why `hl-photos-sync-failed` fired.
+
+**Issues encountered:**
+- The 2026-11-17 01:00 UTC run stopped after two seconds: icloudpd logged "Apple iCloud Photo Library has not finished indexing yet" and exited 1. This is on Apple's side (seen after big uploads, iOS updates or a server reindex). The sign-in was valid, and the disk had plenty of room.
+- Following the alert's hint, `--auth` was run and cancelled with Ctrl-C at the password prompt. `--auth` had already emptied the session volume, so the saved password and trust token were gone and every night would fail until `--auth` was completed.
+
+**Resolution:**
+- `photos-sync.sh --auth` now moves the old session to `/config/.pre-auth` on the same volume instead of deleting it, and puts it back on Ctrl-C or on any sign-in that does not prove good. A successful sign-in removes the backup.
+- The indexing failure needs nothing; the next night retries. If it repeats for several nights, open Photos on the iPhone or at icloud.com.
+
 ## 2026-11-12 — Media containers down after a power cut (#370)
 
 **Goal:** Find why Healthchecks and Discord alerted all morning.
