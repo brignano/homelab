@@ -5,8 +5,14 @@ internet. Everything else is reachable solely over the LAN or the tailnet (see
 [`AGENTS.md`](../../AGENTS.md) — the `*.$HOMELAB_DOMAIN` names resolve publicly
 but point at `10.0.0.201`, a private address).
 
-So this directory owns two questions, not one: *what gets out*, and *what
-someone sees when they reach something they cannot open*.
+Since #362 it can hand that traffic to exactly one place: the secure gateway
+([`../gateway/`](../gateway/README.md)). It joins `gateway_edge` and no other
+network, every tunnel route points at `http://gateway:8080` with **Protect
+with Access** on, and the image is pinned with path normalization turned on.
+Adding an endpoint, the self-tests and the kill switch
+(`scripts/gateway-off.sh`) are in [`docs/runbook-gateway.md`](../../docs/runbook-gateway.md).
+This file covers the other question: *what someone sees when they reach
+something they cannot open*.
 
 ## What someone sees when they are denied
 
@@ -91,16 +97,10 @@ rather than a login.
 
 ## Non-browser endpoints must not get HTML
 
-The calendar MCP server is the one MCP endpoint meant to go through the tunnel,
-on its own hostname with Managed OAuth; setup is in
-[`../mcp-calendar/README.md`](../mcp-calendar/README.md). It is not `mcp.$HOMELAB_DOMAIN`,
-which stays tailnet-only.
-
-
-`mcp.$HOMELAB_DOMAIN` speaks streamable HTTP to an MCP client, and Caddy
-already fails it closed with a plain `401` (see [`../proxy/Caddyfile`](../proxy/Caddyfile)).
-If Access ever goes in front of it, turn on **401 Response for Service Auth
-policies** on that application. An MCP client handed a styled block page
+Every gateway route is non-browser unless it says otherwise, so every Access
+application in front of one turns on **401 Response for Service Auth
+policies**, and the org has **strict service token authentication** on (the
+runbook's one-time setup). An MCP client or a Lambda handed a styled block page
 reports a parse error, not an auth error, and that is an afternoon lost.
 
 For anything doing XHR against a protected origin, sending

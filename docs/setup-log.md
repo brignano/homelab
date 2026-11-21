@@ -27,6 +27,21 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-21 — Secure gateway built (#362)
+
+**Goal:** Implement the gateway accepted in #360, so a public endpoint (Alexa first, a calendar connector later) is a checklist rather than a new security argument.
+
+**Steps:**
+1. `docker/gateway/`: a dedicated Caddy (no ports, internal networks only) and `gateway-verifier`, our `forward_auth` service that re-checks the Access JWT per route: signature, issuer, expiry, AUD, hostname, and the caller's identity. A throwaway `selftest` route with no upstream.
+2. `docker/tunnel/`: cloudflared pinned (2026.11.1), path normalization on, joins only `gateway_edge` (was `core_core` + `ai_ai`).
+3. `scripts/gateway-watch.sh` and `scripts/access-log-poll.sh` (cron every 5 min, Healthchecks, `#alerts`), a Gateway line in the digest, `scripts/gateway-off.sh` / `gateway-on.sh`.
+4. CI: verifier and watcher tests, and a guard on Caddy's adapted config (verify first, exact paths, denylist, no committed hostname, empty `.env.example`).
+5. `docs/runbook-gateway.md`; `/expose-service` now walks its checklist.
+
+**Notes / next steps:**
+- Nothing is public yet. The Cloudflare side (Access app, service tokens, tunnel route, notifications, API token) and the `.env` files are manual: runbook "One-time setup" and "Bring the gateway up".
+- Run the runbook's self-tests with the selftest route live, then remove the route. Alexa is the first real endpoint, in its own issue.
+
 ## 2026-11-12 — Media containers down after a power cut (#370)
 
 **Goal:** Find why Healthchecks and Discord alerted all morning.
