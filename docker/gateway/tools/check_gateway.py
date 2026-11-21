@@ -138,6 +138,13 @@ def check_caddy(config: dict, text: str) -> list[str]:
     for srv in servers.values():
         if srv.get("listen") != [":8080"]:
             problems.append(f"gateway listens on {srv.get('listen')}, expected only :8080")
+        # handle_errors blocks run after a refusal: they may only answer, never
+        # proxy or serve files, or a 403 could become a way in.
+        for r in srv.get("errors", {}).get("routes", []):
+            for h in json.dumps(r.get("handle", [])).split('"handler": "')[1:]:
+                kind = h.split('"', 1)[0]
+                if kind in ("reverse_proxy", "file_server", "templates"):
+                    problems.append(f"handle_errors uses {kind}; error routes may only respond")
         for r in srv.get("routes", []):
             hosts = [h for m in r.get("match", []) for h in m.get("host", [])]
             route = hosts[0].removesuffix(".invalid") if len(hosts) == 1 and hosts[0].endswith(".invalid") else ""
@@ -164,6 +171,24 @@ def check_env_examples() -> list[str]:
     return problems
 
 
+def check_compose_hosts() -> list[str]:
+    """Every GW_HOST_* the gateway gets defaults to <route>.invalid. Caddy's
+    {$VAR:default} only covers an UNSET variable; compose's `:-` makes an empty
+    one look unset to Caddy too. An empty host would be a second
+    `http://:8080` and Caddy would refuse to start at all."""
+    compose = yaml.safe_load((REPO / "docker/gateway/docker-compose.yml").read_text())
+    problems = []
+    env = compose["services"]["gateway"].get("environment", {})
+    for key, value in env.items():
+        if not key.startswith("GW_HOST_"):
+            continue
+        route = key[len("GW_HOST_"):].lower()
+        if str(value) != f"${{{key}:-{route}.invalid}}":
+            problems.append(f"docker/gateway/docker-compose.yml: gateway's {key} must be "
+                            f"${{{key}:-{route}.invalid}}, not {value!r}")
+    return problems
+
+
 def check_tunnel() -> list[str]:
     compose = yaml.safe_load((REPO / "docker/tunnel/docker-compose.yml").read_text())
     nets = compose["services"]["cloudflared"].get("networks", [])
@@ -184,7 +209,7 @@ def main() -> int:
     path = pathlib.Path(args.caddyfile)
     problems = check_caddy(adapt(args.caddy, path), path.read_text())
     if not args.only_caddy:
-        problems += check_env_examples() + check_tunnel()
+        problems += check_env_examples() + check_compose_hosts() + check_tunnel()
     for p in problems:
         print(f"FAIL  {p}")
     if problems:

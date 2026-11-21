@@ -20,7 +20,7 @@ click-by-click is docs/runbook-gateway.md, "Adding an endpoint: the checklist".
      `import strip_caller_credentials`, the upstream credential from
      `{$GW_UPSTREAM_TOKEN_<ROUTE>}`;
    - add the route's variables to `docker/gateway/docker-compose.yml`
-     (`GW_HOST_*` to both services, `GW_AUD_*` and `GW_ALLOW_*` to the verifier
+     (`GW_HOST_*` to both services, in the gateway as `${GW_HOST_<ROUTE>:-<route>.invalid}`, `GW_AUD_*` and `GW_ALLOW_*` to the verifier
      only, the upstream credential to the gateway only) and, empty, to
      `docker/gateway/.env.example`;
    - join the upstream's network (or `extra_hosts` for host-networked HA);

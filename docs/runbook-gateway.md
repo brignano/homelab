@@ -166,8 +166,10 @@ One issue and one PR per endpoint, every line ticked. No new design work.
 8. **Tunnel route** → `http://gateway:8080`, Protect with Access on, AUD set.
 9. **Gateway route block**: copy the commented example at the bottom of the
    Caddyfile. Add the route's lines to `docker/gateway/docker-compose.yml`
-   (`GW_HOST_*` to both services, `GW_AUD_*`/`GW_ALLOW_*` to the verifier, the
-   upstream credential to the gateway) and to `.env.example` (empty). If the
+   (`GW_HOST_*` to both services, in the gateway as
+   `${GW_HOST_<ROUTE>:-<route>.invalid}` so a blank value cannot take the
+   gateway down, `GW_AUD_*`/`GW_ALLOW_*` to the verifier, the upstream
+   credential to the gateway) and to `.env.example` (empty). If the
    upstream is another stack, join its network; if it is Home Assistant on
    host networking, add `extra_hosts: host.docker.internal:host-gateway` and
    a non-internal network for it.

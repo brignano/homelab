@@ -323,4 +323,10 @@ class FactCollector:
             except ValueError as exc:
                 facts.problems.append(f"could not read log errors ({exc})")
 
+        if (payload := unwrap(gateway_r, "the gateway's counters")) is not None:
+            try:
+                facts.gateway = parse_gateway(parse_vector(payload))
+            except ValueError as exc:
+                facts.problems.append(f"could not read the gateway's counters ({exc})")
+
         return facts

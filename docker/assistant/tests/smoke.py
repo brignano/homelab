@@ -264,6 +264,35 @@ def _():
         assert f.concerns and out.startswith("## ⚠️ ") and "🟠 **Gateway (24h)**" in out, (bad, out)
 
 
+@check("facts: collect reads the gateway's counters into the digest")
+def _():
+    import asyncio
+    from app.facts import FactCollector, Q_GATEWAY
+
+    def vec(*rows):
+        return {"status": "success", "data": {"result": [
+            {"metric": m, "value": [0, str(v)]} for m, v in rows]}}
+
+    class Resp:
+        def __init__(self, body): self.body = body
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        def raise_for_status(self): pass
+        async def json(self, content_type=None): return self.body
+
+    class Session:
+        def get(self, url, params=None, timeout=None):
+            if params["query"] == Q_GATEWAY:
+                return Resp(vec(({"__name__": "homelab_gateway_routes_live"}, 1),
+                                ({"__name__": "homelab_gateway_requests_24h", "outcome": "refused"}, 2)))
+            return Resp(vec())
+
+    facts = asyncio.run(FactCollector(Session(), "http://p", "http://l").collect(
+        dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)))
+    assert facts.gateway is not None and facts.gateway.routes == 1 and facts.gateway.refused == 2, facts.gateway
+    assert any("gateway refused 2" in c for c in facts.concerns), facts.concerns
+
+
 @check("digest: the marks and the verdict cannot disagree")
 def _():
     from app.digest import render

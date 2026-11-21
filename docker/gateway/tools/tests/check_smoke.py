@@ -42,6 +42,9 @@ CASES = [
      "without exact paths"),
     ("verifies the wrong route", route("\troute {\n\t\timport verify selftest\n\t\trespond 200\n\t}"),
      "expected `/verify/alexa`"),
+    ("handle_errors proxies to a denylisted upstream",
+     route("\troute {\n\t\timport verify alexa\n\t\trespond 404\n\t}\n\thandle_errors {\n"
+           "\t\treverse_proxy portainer:9000\n\t}"), "error routes may only respond"),
     ("committed hostname", HEAD + "\nhttp://k7q2m9.example.com:8080 {\n\trespond 404\n}\n", "must be http://"),
     ("mismatched placeholder", route("\trespond 404").replace("{$GW_HOST_ALEXA:alexa.invalid}",
                                                            "{$GW_HOST_ALEXA:selftest.invalid}"), "different routes"),

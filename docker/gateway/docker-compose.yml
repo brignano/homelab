@@ -19,8 +19,11 @@ services:
     # Only what the site addresses and upstream credentials need. The verifier's
     # AUDs and allowlists are not here, and the upstream credentials are not in
     # the verifier. One line per route; see docs/runbook-gateway.md.
+    # GW_HOST_* defaults to <route>.invalid, never empty: Caddy's {$VAR:default}
+    # only applies when a variable is unset, and an empty host turns the site
+    # into a second `http://:8080` that stops the whole gateway from starting.
     environment:
-      GW_HOST_SELFTEST: ${GW_HOST_SELFTEST:-}
+      GW_HOST_SELFTEST: ${GW_HOST_SELFTEST:-selftest.invalid}
     volumes:
       # Bind-mounted like docker/proxy's: a pull changes the file, a restart
       # (`docker compose restart gateway`) is what makes Caddy read it.
