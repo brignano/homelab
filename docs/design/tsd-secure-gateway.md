@@ -1,6 +1,6 @@
 # TSD: One secure gateway for everything the homelab exposes
 
-**Status:** accepted 2026-11-09 — tracked in #360, decision record [`decisions/0002-secure-gateway.md`](../../decisions/0002-secure-gateway.md)
+**Status:** accepted 2026-11-09 — tracked in #360, decision record [`decisions/0002-secure-gateway.md`](../../decisions/0002-secure-gateway.md). Built in #362: [`docs/runbook-gateway.md`](../runbook-gateway.md)
 **Date:** 2026-11-09
 **Owner:** Anthony
 

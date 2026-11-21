@@ -184,6 +184,18 @@ bumps are worth merging promptly.",
       groupName: null,
       addLabels: ["pinned-image"],
     },
+    {
+      description: "The secure gateway (docker/gateway/) and the tunnel \
+(docker/tunnel/): Caddy, the verifier's Python base and cloudflared, pinned by \
+tag and digest. These are the internet-facing path, so every bump is a PR to \
+read, one per image, never a nightly pull. cloudflared stays >= 2026.10.0 for \
+path normalization (docs/runbook-gateway.md).",
+      matchFileNames: ["docker/gateway/**", "docker/tunnel/**"],
+      enabled: true,
+      pinDigests: true,
+      groupName: null,
+      addLabels: ["gateway"],
+    },
   ],
 
   customManagers: [

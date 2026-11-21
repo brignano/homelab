@@ -156,6 +156,24 @@ def _line(mark: str, label: str, value: str) -> str:
     return f"{mark + ' ' if mark else ''}**{label}** {value}"
 
 
+def _gateway_line(facts: Facts) -> str:
+    """Let in, refused, routes live, tokens expiring: the TSD's one digest line.
+
+    Marked exactly when facts.concerns has a gateway entry, so the line and
+    the verdict cannot disagree."""
+    g = facts.gateway
+    bits = [f"{g.allowed} let in", f"{g.refused} refused"]
+    if g.access_denied is not None:
+        bits.append(f"{g.access_denied} Access logins refused")
+    bits.append(f"{g.routes} route{'s' if g.routes != 1 else ''} live")
+    if g.tunnel_up is False:
+        bits.append("**off**")
+    if g.tokens_expiring is not None:
+        bits.append(f"{g.tokens_expiring} token{'s' if g.tokens_expiring != 1 else ''} expiring")
+    flagged = bool(g.refused or g.tokens_expiring or (g.routes and g.tunnel_up is False))
+    return _line(WARN if flagged else "", "Gateway (24h)", " · ".join(bits))
+
+
 def links(facts: Facts, base: str) -> list[tuple[str, str]]:
     """Where to go next, chosen by what the digest actually found.
 
@@ -232,6 +250,9 @@ def render(
         f"Log errors ({facts.span})",
         " · ".join(f"{n} {c}" for n, c in facts.log_errors) if facts.log_errors else "none",
     ))
+
+    if facts.gateway is not None:
+        out.append(_gateway_line(facts))
 
     if facts.problems:
         out.append("")

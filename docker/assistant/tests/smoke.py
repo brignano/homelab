@@ -238,6 +238,61 @@ def _():
     assert len(out) <= 2000, f"would be split across messages: {len(out)}"
 
 
+@check("digest: the gateway line appears only once a route is live, marked with its concerns")
+def _():
+    from app.digest import render
+    from app.facts import Gateway, parse_gateway
+    assert parse_gateway([]) is None
+    assert parse_gateway([({"__name__": "homelab_access_logins_24h", "result": "denied"}, 3.0)]) is None
+    g = parse_gateway([
+        ({"__name__": "homelab_gateway_routes_live"}, 1.0),
+        ({"__name__": "homelab_gateway_requests_24h", "outcome": "allowed"}, 12.0),
+        ({"__name__": "homelab_gateway_requests_24h", "outcome": "refused"}, 0.0),
+        ({"__name__": "homelab_access_logins_24h", "result": "denied"}, 4.0),
+        ({"__name__": "homelab_access_tokens_expiring"}, 0.0),
+        ({"__name__": "homelab_gateway_tunnel_up"}, 1.0),
+    ])
+    assert g == Gateway(routes=1, allowed=12, refused=0, access_denied=4, tokens_expiring=0, tunnel_up=True), g
+    calm = _facts(targets_up=2, targets_total=2, gateway=g)
+    out = render(calm, None)
+    assert not calm.concerns and out.startswith("## ✅ "), out
+    assert "**Gateway (24h)** 12 let in · 0 refused · 4 Access logins refused · 1 route live · 0 tokens expiring" in out, out
+    assert "Gateway" not in render(_facts(targets_up=2, targets_total=2), None)
+    for bad in (dict(refused=2), dict(tokens_expiring=1), dict(tunnel_up=False)):
+        f = _facts(targets_up=2, targets_total=2, gateway=Gateway(routes=1, **bad))
+        out = render(f, None)
+        assert f.concerns and out.startswith("## ⚠️ ") and "🟠 **Gateway (24h)**" in out, (bad, out)
+
+
+@check("facts: collect reads the gateway's counters into the digest")
+def _():
+    import asyncio
+    from app.facts import FactCollector, Q_GATEWAY
+
+    def vec(*rows):
+        return {"status": "success", "data": {"result": [
+            {"metric": m, "value": [0, str(v)]} for m, v in rows]}}
+
+    class Resp:
+        def __init__(self, body): self.body = body
+        async def __aenter__(self): return self
+        async def __aexit__(self, *a): return False
+        def raise_for_status(self): pass
+        async def json(self, content_type=None): return self.body
+
+    class Session:
+        def get(self, url, params=None, timeout=None):
+            if params["query"] == Q_GATEWAY:
+                return Resp(vec(({"__name__": "homelab_gateway_routes_live"}, 1),
+                                ({"__name__": "homelab_gateway_requests_24h", "outcome": "refused"}, 2)))
+            return Resp(vec())
+
+    facts = asyncio.run(FactCollector(Session(), "http://p", "http://l").collect(
+        dt.datetime(2026, 1, 1, tzinfo=dt.timezone.utc)))
+    assert facts.gateway is not None and facts.gateway.routes == 1 and facts.gateway.refused == 2, facts.gateway
+    assert any("gateway refused 2" in c for c in facts.concerns), facts.concerns
+
+
 @check("digest: the marks and the verdict cannot disagree")
 def _():
     from app.digest import render

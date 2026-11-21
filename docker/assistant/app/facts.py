@@ -49,6 +49,14 @@ def q_log_errors(window: str = "24h") -> str:
     return f'sum by (container) (count_over_time({{job="docker"}} {ERROR_MATCH} [{window}]))'
 
 
+# The secure gateway's counters, written by scripts/gateway-watch.sh and
+# scripts/access-log-poll.sh (docs/runbook-gateway.md). One query for all of
+# them; an empty answer means the gateway is not set up, not that it is fine.
+Q_GATEWAY = (
+    '{__name__=~"homelab_gateway_requests_24h|homelab_gateway_routes_live|'
+    'homelab_gateway_tunnel_up|homelab_access_logins_24h|homelab_access_tokens_expiring"}'
+)
+
 Q_RESTARTS = q_restarts()
 Q_LOG_ERRORS = q_log_errors()
 
@@ -105,6 +113,41 @@ def top_counts(vec: list[tuple[dict, float]], label: str, limit: int = 5) -> lis
     return rows[:limit]
 
 
+@dataclass
+class Gateway:
+    """The public gateway's last 24 hours, for the digest's one Gateway line."""
+    routes: int
+    allowed: int = 0
+    refused: int = 0
+    access_denied: int | None = None
+    tokens_expiring: int | None = None
+    tunnel_up: bool | None = None
+
+
+def parse_gateway(vec: list[tuple[dict, float]]) -> Gateway | None:
+    """None when no route has ever been live: no gateway, no line."""
+    by: dict[str, list[tuple[dict, float]]] = {}
+    for labels, value in vec:
+        by.setdefault(labels.get("__name__", ""), []).append((labels, value))
+    routes = by.get("homelab_gateway_routes_live")
+    if not routes:
+        return None
+    g = Gateway(routes=int(routes[0][1]))
+    for labels, value in by.get("homelab_gateway_requests_24h", []):
+        if labels.get("outcome") == "allowed":
+            g.allowed = int(value)
+        elif labels.get("outcome") == "refused":
+            g.refused = int(value)
+    for labels, value in by.get("homelab_access_logins_24h", []):
+        if labels.get("result") == "denied":
+            g.access_denied = int(value)
+    if by.get("homelab_access_tokens_expiring"):
+        g.tokens_expiring = int(by["homelab_access_tokens_expiring"][0][1])
+    if by.get("homelab_gateway_tunnel_up"):
+        g.tunnel_up = by["homelab_gateway_tunnel_up"][0][1] == 1
+    return g
+
+
 # --- Collected facts ----------------------------------------------------------
 
 @dataclass
@@ -121,6 +164,8 @@ class Facts:
     # How far back restarts and log errors were counted, as rendered ("24h",
     # or "9h" when the digest covers only what is new since the last one).
     span: str = "24h"
+    # None until the secure gateway is set up (docs/runbook-gateway.md).
+    gateway: Gateway | None = None
     # Collection failures — reported rather than silently rendered as "all good".
     problems: list[str] = field(default_factory=list)
 
@@ -141,6 +186,17 @@ class Facts:
                 f"container restarts in {self.span}: "
                 + ", ".join(f"{n}×{c}" for n, c in self.restarts)
             )
+        g = self.gateway
+        if g is not None:
+            # Locks 1 and 2 should stop everything before the gateway does, so
+            # any refusal at all is worth a mark (gateway-watch.sh already
+            # alerted on each one).
+            if g.refused:
+                out.append(f"the public gateway refused {g.refused} request(s) in 24h")
+            if g.tokens_expiring:
+                out.append(f"{g.tokens_expiring} Access service token(s) expire within 30 days")
+            if g.routes and g.tunnel_up is False:
+                out.append("the public gateway is switched off (cloudflared stopped)")
         return out
 
     @property
@@ -222,10 +278,10 @@ class FactCollector:
 
         results = await asyncio.gather(
             prom(Q_UP), prom(Q_CPU), prom(Q_MEM), prom(Q_DISK),
-            prom(q_restarts(window)), loki(q_log_errors(window)),
+            prom(q_restarts(window)), loki(q_log_errors(window)), prom(Q_GATEWAY),
             return_exceptions=True,
         )
-        up_r, cpu_r, mem_r, disk_r, restart_r, logs_r = results
+        up_r, cpu_r, mem_r, disk_r, restart_r, logs_r, gateway_r = results
 
         def unwrap(result, what: str):
             if isinstance(result, Exception):
@@ -266,5 +322,11 @@ class FactCollector:
                 facts.log_errors = top_counts(parse_vector(payload), "container")
             except ValueError as exc:
                 facts.problems.append(f"could not read log errors ({exc})")
+
+        if (payload := unwrap(gateway_r, "the gateway's counters")) is not None:
+            try:
+                facts.gateway = parse_gateway(parse_vector(payload))
+            except ValueError as exc:
+                facts.problems.append(f"could not read the gateway's counters ({exc})")
 
         return facts

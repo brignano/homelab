@@ -1,0 +1,69 @@
+services:
+  # The secure gateway (docs/design/tsd-secure-gateway.md, decisions/0002).
+  # Everything the homelab exposes to the internet goes through here and
+  # nothing else: Cloudflare Access -> tunnel -> cloudflared (docker/tunnel/,
+  # on gateway_edge only) -> this Caddy -> one upstream per route.
+  #
+  # No published ports. No TLS: it ends at Cloudflare. No internet access of
+  # its own: both of its networks are internal.
+  gateway:
+    image: caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0
+    container_name: gateway
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /data
+      - /config
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # Only what the site addresses and upstream credentials need. The verifier's
+    # AUDs and allowlists are not here, and the upstream credentials are not in
+    # the verifier. One line per route; see docs/runbook-gateway.md.
+    # GW_HOST_* defaults to <route>.invalid, never empty: Caddy's {$VAR:default}
+    # only applies when a variable is unset, and an empty host turns the site
+    # into a second `http://:8080` that stops the whole gateway from starting.
+    environment:
+      GW_HOST_SELFTEST: ${GW_HOST_SELFTEST:-selftest.invalid}
+    volumes:
+      # Bind-mounted like docker/proxy's: a pull changes the file, a restart
+      # (`docker compose restart gateway`) is what makes Caddy read it.
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      verifier:
+        condition: service_healthy
+    networks:
+      - edge
+      - verifier
+
+  # Lock 3: re-checks the Access token, the route's AUD and the caller's
+  # identity. Our code (verifier/verifier.py), tested offline in CI.
+  verifier:
+    build: ./verifier
+    image: gateway-verifier:local
+    container_name: gateway-verifier
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      ACCESS_TEAM_DOMAIN: ${ACCESS_TEAM_DOMAIN:?required}
+      GW_HOST_SELFTEST: ${GW_HOST_SELFTEST:-}
+      GW_AUD_SELFTEST: ${GW_AUD_SELFTEST:-}
+      GW_ALLOW_SELFTEST: ${GW_ALLOW_SELFTEST:-}
+    networks:
+      - verifier
+      # The one way out, for Access's signing keys
+      # (https://<team>.cloudflareaccess.com/cdn-cgi/access/certs).
+      - egress
+
+networks:
+  # cloudflared <-> gateway. Internal: nothing on it can reach the internet or
+  # the host, and cloudflared joins this network and no other stack's.
+  edge:
+    internal: true
+  # gateway <-> verifier.
+  verifier:
+    internal: true
+  # verifier -> internet, for the signing keys only.
+  egress:
+    driver: bridge

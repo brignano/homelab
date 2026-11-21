@@ -101,6 +101,60 @@ jobs:
       - name: Every module compiles
         run: python -m compileall -q app tests
 
+  gateway:
+    # The secure gateway (docs/design/tsd-secure-gateway.md). Everything here is
+    # offline: fake signing keys, fake docker logs, a fake Cloudflare API.
+    name: gateway (verifier, watchers, route guard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          # The watchers run on the box's own python3 (Debian 12 ships 3.11),
+          # so they are tested on the oldest one they may meet.
+          python-version: "3.11"
+
+      - name: Watchers (gateway-watch, access-log-poll), standard library only
+        run: python -I docker/gateway/tools/tests/smoke.py
+
+      - uses: actions/setup-python@v5
+        with:
+          # Match the verifier's Dockerfile.
+          python-version: "3.12"
+
+      - name: Install the verifier's pinned dependencies
+        run: pip install --disable-pip-version-check -r docker/gateway/verifier/requirements.txt pyyaml
+
+      - name: Verifier refuses everything it should
+        # Missing, expired, foreign, wrong-AUD and wrong-identity tokens, an
+        # unconfigured route, unreachable signing keys: each must be a 403.
+        run: python docker/gateway/verifier/tests/smoke.py
+
+      - name: Caddy from the pinned gateway image
+        # The binary the box runs, so `adapt` judges the same Caddy. Static Go,
+        # so the Alpine image's binary runs on the runner as is.
+        run: |
+          img=$(sed -n 's/^ *image: *\(caddy:[^ ]*\)$/\1/p' docker/gateway/docker-compose.yml)
+          cid=$(docker create "$img")
+          docker cp "$cid:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          docker rm "$cid" > /dev/null
+          "$RUNNER_TEMP/caddy" version
+
+      - name: The route guard catches each mistake it exists for
+        run: CADDY="$RUNNER_TEMP/caddy" python docker/gateway/tools/tests/check_smoke.py
+
+      - name: Every route verified first, no denylisted upstream, no committed hostname
+        # Fails on: a route that answers or proxies before forward_auth, an
+        # upstream on the denylist (budget, admin UIs, media, Matterbridge,
+        # Kali), a proxy without exact paths, a method, a body limit and the
+        # caller's credentials stripped, a hostname in the repo, a value in an
+        # .env.example, or cloudflared on any network but gateway_edge.
+        run: python docker/gateway/tools/check_gateway.py --caddy "$RUNNER_TEMP/caddy"
+
+      - name: Every module compiles
+        run: python -m compileall -q docker/gateway/verifier docker/gateway/tools
+
   clipreview:
     name: clipreview (labels, export, read-only serving)
     runs-on: ubuntu-latest
@@ -147,6 +201,7 @@ jobs:
       HOMELAB_DOMAIN: example.com
       CLOUDFLARE_API_TOKEN: ci
       CLOUDFLARE_TUNNEL_TOKEN: ci
+      ACCESS_TEAM_DOMAIN: example.cloudflareaccess.com
       ANTHROPIC_API_KEY: ci
       CONCIERGE_TOKEN: ci
       RENDER_GID: "993"
