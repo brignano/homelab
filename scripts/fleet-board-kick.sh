@@ -21,8 +21,9 @@
 #
 # 2026-11-22 (ai-tools#109): every 10 minutes was ~147 runs a day for a board
 # that is only glanced at. Every 4 hours is 6 a day, which with the daily
-# backstop schedule in ai-tools keeps that repo under its 400-minute budget. Agents answer "what's
-# next" from GitHub itself, not the board, so nothing waits on it.
+# backstop schedule in ai-tools keeps that repo under its 400-minute budget.
+# Agents answer "what's next" from GitHub itself, not the board, so nothing
+# waits on it.
 #
 # Setup (once, on CT 100)
 # -----------------------
