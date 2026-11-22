@@ -28,8 +28,9 @@
 #     the ones that install things (pip, npm, the proxy image) are narrower.
 #     Editing this file runs everything.
 #   - Docs-only PRs start nothing (paths-ignore).
-#   - No run on push to main: every change already ran on its PR, and nothing
-#     reads main's CI status (auto-deploy pulls main without asking GitHub).
+#   - No run on push to main: every change already ran on its PR, and
+#     auto-deploy pulls main without asking GitHub. (The concierge's
+#     github_status still reads main's last run, so it shows that, not new.)
 #     workflow_dispatch runs every check, for a full check of main by hand.
 #   - A new push to a PR cancels the run it supersedes.
 #   - The driftwood diagram is a second job only when a compose file changed.
@@ -84,6 +85,8 @@ jobs:
             assistant:
               - *ci
               - "docker/assistant/**"
+              # smoke.py checks the sources heartbeat.sh publishes.
+              - "scripts/heartbeat.sh"
             concierge:
               - *ci
               - "docker/concierge/**"
