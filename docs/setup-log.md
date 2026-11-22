@@ -27,6 +27,30 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-22 — CI cut from 13 jobs to 1 (#383)
+
+**Goal:** Stop this repo using up the account's Actions minutes. `ci.yml` used
+2,317 minutes in November (over the 2,000-minute account quota on its own),
+because each of its 13 jobs billed at least a minute and it ran again on every
+merge to `main`.
+
+**Steps:**
+1. Every check moved into one `checks` job, still one named step each, every
+   step running even after an earlier one fails.
+2. `dorny/paths-filter` picks the steps a PR needs; editing `ci.yml` runs all.
+   Docs-only PRs start nothing (`paths-ignore`).
+3. No more run on push to `main` (nothing reads main's CI status); a new push
+   to a PR cancels the older run. `workflow_dispatch` runs everything by hand.
+4. The driftwood `architecture` job runs only when a compose file changed.
+5. Python services install into their own venvs, since they now share a runner.
+
+**Notes / next steps:**
+- Expected: about 1 to 2 billed minutes per PR push, under 300 a month.
+- The proxy image's build cache now lives only in PR scope, so the first run
+  of a proxy PR compiles Caddy in full (about 3 minutes).
+
+---
+
 ## 2026-11-21 — Secure gateway built (#362)
 
 **Goal:** Implement the gateway accepted in #360, so a public endpoint (Alexa first, a calendar connector later) is a checklist rather than a new security argument.
