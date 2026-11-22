@@ -25,6 +25,8 @@
 # - Start a stack that was not running. Stopped may be deliberate.
 # - Deploy a stack whose .env is missing a key its .env.example now has, or that
 #   has no .env at all. It names the key, never a value.
+# - Deploy a stack that joins an external network nobody has created yet (its
+#   owning stack is not up). It says which network and which stack.
 # - Anything on the Proxmox host (scripts/host/).
 # - Roll back. A failed verify alerts once; a revert PR is the rollback, and it
 #   arrives here like any other merge.
@@ -351,6 +353,28 @@ missing_env_keys() {
   fi
 }
 
+# missing_networks <stack>: external networks the stack joins that do not exist
+# on this box. Compose will not create an external network, so `up -d` would
+# fail on it every time; it belongs to another stack that has to come up first
+# (docker/tunnel joins gateway_edge, which docker/gateway creates). That is a
+# person's call, not a failure: auto-deploy never starts a stopped stack. Read
+# from Compose's own resolved config, so names set by interpolation count. A
+# config that cannot be read says nothing here; `up -d` will say it instead.
+missing_networks() {
+  _cfg=$(docker compose -f "docker/$1/docker-compose.yml" config </dev/null 2>/dev/null) || return 0
+  for _n in $(printf '%s\n' "$_cfg" | awk '
+      /^[^ #]/      { if (in_net && ext && name != "") print name
+                      in_net = ($0 ~ /^networks:/); name = ""; ext = 0; next }
+      !in_net       { next }
+      /^  [^ ]/     { if (ext && name != "") print name
+                      name = $1; sub(/:$/, "", name); ext = 0; next }
+      /^    name: / { name = $2; next }
+      /^    external: true/ { ext = 1 }
+      END           { if (in_net && ext && name != "") print name }'); do
+    docker network inspect "$_n" >/dev/null 2>&1 || printf '%s ' "$_n"
+  done
+}
+
 # may_deploy <stack> <what>: the policy, in one place. Prints nothing and
 # returns 0 if the stack may be touched unattended; otherwise records why under
 # MANUAL and returns 1.
@@ -372,6 +396,16 @@ may_deploy() {
   if [ -n "$_miss" ]; then
     add MANUAL "**$_s** ($_what) needs \`.env\` first: ${_miss% }
 then \`$(manual_line "$_s")\`"
+    return 1
+  fi
+  _nets=$(missing_networks "$_s")
+  if [ -n "$_nets" ]; then
+    _from=""
+    for _n in $_nets; do
+      [ -d "docker/${_n%%_*}" ] && ! in_list "${_n%%_*}" "$_from" && _from="$_from ${_n%%_*}"
+    done
+    add MANUAL "**$_s** ($_what) joins network \`${_nets% }\`, which does not exist here yet, so it was left as it is. Bring up${_from:- the stack that creates it} first, then:
+\`$(manual_line "$_s")\`"
     return 1
   fi
   return 0
