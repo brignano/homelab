@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Work</title>
+<meta name="description" content="Open issues and PRs across the fleet repos, read live from GitHub.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Work</h1>
+      <div class="sub" id="sub">Reading GitHub…</div>
+    </div>
+    <button class="btn" type="button" id="refresh">Refresh</button>
+  </header>
+
+  <aside class="side" aria-label="Repos">
+    <h2>Repos</h2>
+    <input type="search" id="sidesearch" class="sidesearch" placeholder="Find a repo" aria-label="Find a repo" autocomplete="off">
+    <div class="list" style="padding:4px"><table><thead><tr><th>Repo</th><th>You</th><th>Doing</th><th>Next</th><th>Held</th></tr></thead><tbody id="repotab"></tbody></table></div>
+    <p class="why" id="sidefoot"></p>
+  </aside>
+
+  <div class="main">
+    <div class="counts" id="counts"></div>
+    <div class="toolbar">
+      <span class="sortwrap phone-only"><span class="lbl">Repo</span><button class="sortbtn" type="button" id="repobtn" aria-haspopup="true" aria-expanded="false"><span id="repolbl">All repos</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div class="menu left" id="repomenu" role="menu" hidden><input type="search" id="reposearch" placeholder="Find a repo" aria-label="Find a repo" autocomplete="off"><div id="repoitems"></div></div></span>
+      <span><span class="lbl">Group</span><span class="seg" id="group"><button type="button" data-v="status" aria-pressed="true">Status</button><button type="button" data-v="repo" aria-pressed="false">Repo</button></span></span>
+      <span class="sortwrap"><span class="lbl">Sort</span><button class="sortbtn" type="button" id="sortbtn" aria-haspopup="true" aria-expanded="false"><span id="sortlbl">Fleet order</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div class="menu" id="sortmenu" role="menu" hidden>
+          <button type="button" role="menuitemradio" data-v="fleet" aria-checked="true"><b>Fleet order</b><small>Priority, then size, then age</small></button>
+          <button type="button" role="menuitemradio" data-v="prio" aria-checked="false"><b>Priority</b><small>p1 first, oldest within each</small></button>
+          <button type="button" role="menuitemradio" data-v="new" aria-checked="false"><b>Newest</b><small>Most recently opened</small></button>
+          <button type="button" role="menuitemradio" data-v="old" aria-checked="false"><b>Oldest</b><small>Opened longest ago</small></button>
+          <button type="button" role="menuitemradio" data-v="upd" aria-checked="false"><b>Recently updated</b><small>Latest comment or change</small></button>
+          <button type="button" role="menuitemradio" data-v="idle" aria-checked="false"><b>Longest idle</b><small>No activity for the longest</small></button>
+        </div></span>
+      <span class="filt" id="filt" hidden></span>
+    </div>
+    <div id="lists"><div class="state">Reading open issues and PRs from GitHub…</div></div>
+    <div class="tidy" id="tidy"></div>
+    <details class="donebox" id="donebox" hidden><summary id="donesum">Done this week</summary><div class="list done" id="done"></div></details>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" hidden><span>Copied <code id="tcmd"></code>. Paste it in the <span id="tproj"></span> project.</span><a href="https://claude.ai/code" id="topen" target="_blank" rel="noopener">Open project</a></div>
+</body>
+</html>

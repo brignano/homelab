@@ -122,6 +122,47 @@ review.{$HOMELAB_DOMAIN} {
 	reverse_proxy clipreview:8000
 }
 
+# Work (docker/work/): open issues and PRs across the fleet repos, read live
+# from GitHub on every load (homelab#386). Static files plus one API route, so
+# there is no container: Caddy serves the page and holds the token.
+# LAN + tailnet only, never the tunnel: private repos' issues come through here.
+work.{$HOMELAB_DOMAIN} {
+	# The page's only data call. Caddy adds a fine-grained READ-ONLY token
+	# (WORK_GITHUB_TOKEN, docker/proxy/.env) so the browser never holds one, and
+	# the token's permissions are what make the route read-only: GitHub refuses
+	# a mutation from it. POST only, one path, small bodies. Unset token: GitHub
+	# answers 401 and the page says which variable to set.
+	handle /api/graphql {
+		@notpost not method POST
+		respond @notpost "POST only" 405
+		request_body {
+			max_size 16KB
+		}
+		rewrite * /graphql
+		reverse_proxy https://api.github.com {
+			header_up Host api.github.com
+			header_up Authorization "Bearer {env.WORK_GITHUB_TOKEN}"
+			header_up -Cookie
+			header_up -Origin
+			header_up -Referer
+			header_down -Set-Cookie
+		}
+	}
+
+	# Tokens and Geist: the dashboard's vendored copies, already mounted for
+	# the budget theme. One source for every page on the box.
+	handle_path /assets/* {
+		root * /srv/design
+		file_server
+	}
+
+	handle {
+		root * /srv/work
+		header Cache-Control "no-cache"
+		file_server
+	}
+}
+
 # Actual Budget (docker/budget/). Joins the proxy network. Financial data: LAN +
 # tailnet only, never the tunnel, and no bank sync is configured.
 budget.{$HOMELAB_DOMAIN} {

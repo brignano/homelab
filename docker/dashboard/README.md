@@ -67,8 +67,11 @@ The same skeleton logic applies to `docker.yaml`, `kubernetes.yaml` and
 - **No Docker socket.** Homepage can discover services from container labels,
   but that needs root-equivalent access to save maintaining a list CI already
   keeps honest (`scripts/check-dashboard.sh`).
-- **No widgets.** The ones worth having need an admin credential in this stack
-  to render a number you can see by clicking through. The header's
+- **No widgets that need a credential.** The ones worth having need an admin
+  credential in this stack to render a number you can see by clicking through.
+  The Work tile's counts are the exception that proves it: the widget POSTs to
+  work.<domain>/api/graphql, and Caddy, not this stack, holds the read-only
+  GitHub token (see `docker/work/README.md`). The header's
   weather is not one of them: Open-Meteo needs no key, and its
   coordinates live in `.env` (`WEATHER_LATITUDE`, `WEATHER_LONGITUDE`).
 - **Only the proxy network.** Tiles are plain links, and the up/down checks go
