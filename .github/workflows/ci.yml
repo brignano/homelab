@@ -61,37 +61,6 @@ jobs:
     outputs:
       # Read by the architecture job. Always true outside a PR (manual runs).
       compose: ${{ github.event_name != 'pull_request' || steps.changes.outputs.compose == 'true' }}
-    # Throwaway values for the vars each stack declares with `:?required`.
-    # Compose interpolates before it validates, so without these the compose
-    # check cannot run at all. None of these are real, and none need to be.
-    env:
-      WEBUI_SECRET_KEY: ci
-      DISCORD_TOKEN: ci
-      DISCORD_GUILD_ID: "1"
-      DISCORD_ALLOWED_USER_IDS: "1"
-      POSTGRES_PASSWORD: ci
-      DESKTOP_USER: ci
-      DESKTOP_PASSWORD: ci
-      GRAFANA_SERVICE_ACCOUNT_TOKEN: ci
-      GRAFANA_ADMIN_PASSWORD: ci
-      PVE_USER: ci
-      PVE_TOKEN_NAME: ci
-      PVE_TOKEN_VALUE: ci
-      POSTGRES_EXPORTER_DSN: ci
-      DISCORD_ALERT_WEBHOOK: https://discord.invalid/api/webhooks/ci
-      HOMELAB_DOMAIN: example.com
-      CLOUDFLARE_API_TOKEN: ci
-      CLOUDFLARE_TUNNEL_TOKEN: ci
-      ACCESS_TEAM_DOMAIN: example.cloudflareaccess.com
-      ANTHROPIC_API_KEY: ci
-      CONCIERGE_TOKEN: ci
-      RENDER_GID: "993"
-      WIREGUARD_PRIVATE_KEY: ci
-      HA_TOKEN: ci
-      ACTUAL_PASSWORD: ci
-      ACTUAL_BUDGET_SYNC_ID: ci
-      MCP_BUDGET_TOKEN: ci
-      EPG_PLAYLISTS: https://example.invalid/ci.m3u
     steps:
       - uses: actions/checkout@v4
 
@@ -158,9 +127,44 @@ jobs:
 
       - name: "compose: every docker compose file parses"
         # Catches malformed YAML, unknown keys, bad port/volume syntax, and any
-        # NEW `:?required` var that was added without being listed above — which
+        # NEW `:?required` var that was added without being listed below — which
         # is the failure worth having: it means someone must decide whether that
         # var belongs in .env.example too.
+        #
+        # Throwaway values for the vars each stack declares with `:?required`.
+        # Compose interpolates before it validates, so without these the check
+        # cannot run at all. None of these are real, and none need to be. They
+        # stay on this step: on the job they would reach the service smoke
+        # tests, which read the same names (HA_TOKEN turns the concierge's home
+        # tools on, for one).
+        env:
+          WEBUI_SECRET_KEY: ci
+          DISCORD_TOKEN: ci
+          DISCORD_GUILD_ID: "1"
+          DISCORD_ALLOWED_USER_IDS: "1"
+          POSTGRES_PASSWORD: ci
+          DESKTOP_USER: ci
+          DESKTOP_PASSWORD: ci
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+          PVE_USER: ci
+          PVE_TOKEN_NAME: ci
+          PVE_TOKEN_VALUE: ci
+          POSTGRES_EXPORTER_DSN: ci
+          DISCORD_ALERT_WEBHOOK: https://discord.invalid/api/webhooks/ci
+          HOMELAB_DOMAIN: example.com
+          CLOUDFLARE_API_TOKEN: ci
+          CLOUDFLARE_TUNNEL_TOKEN: ci
+          ACCESS_TEAM_DOMAIN: example.cloudflareaccess.com
+          ANTHROPIC_API_KEY: ci
+          CONCIERGE_TOKEN: ci
+          RENDER_GID: "993"
+          WIREGUARD_PRIVATE_KEY: ci
+          HA_TOKEN: ci
+          ACTUAL_PASSWORD: ci
+          ACTUAL_BUDGET_SYNC_ID: ci
+          MCP_BUDGET_TOKEN: ci
+          EPG_PLAYLISTS: https://example.invalid/ci.m3u
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           status=0
