@@ -1,0 +1,135 @@
+# The secure gateway: lock 3 of docs/design/tsd-secure-gateway.md.
+#
+# The only thing cloudflared can reach (it joins gateway_edge and nothing else),
+# and separate from docker/proxy on purpose: that Caddy serves the LAN and the
+# tailnet and can reach every service here, this one serves the internet and
+# can reach only what a route below names.
+#
+# Rules for every route, checked in CI by scripts/check-gateway.py:
+#
+#   - its site address is `http://{$GW_HOST_<ROUTE>:<route>.invalid}:8080`.
+#     The hostname lives in docker/gateway/.env, never in this public repo, and
+#     an unset one falls back to a name that cannot resolve, so the route is off
+#     rather than catching every host;
+#   - everything inside it sits behind `import verify <route>`, before any
+#     other handler;
+#   - it lists exact paths and methods, and a body-size limit on anything that
+#     reaches an upstream; whatever is not listed answers 404;
+#   - an upstream gets `import strip_caller_credentials` and the gateway's own,
+#     least-privilege credential from .env. The caller never holds it;
+#   - no upstream on the denylist (budget, admin UIs, media, Matterbridge, Kali).
+#
+# A new route is a checklist, not a design: docs/runbook-gateway.md.
+{
+	# Nothing to administer at runtime and no certificates to get: TLS ends at
+	# Cloudflare, and cloudflared reaches this over a private Docker network.
+	admin off
+	auto_https off
+	persist_config off
+}
+
+# JSON access log to stdout, so `docker logs gateway` is what
+# scripts/gateway-watch.sh reads and Alloy ships it to Loki like every other
+# container. The Access token and service-token headers are bearer credentials
+# and are never written down. Caddy logs each request's `uuid`, which it also
+# sends to the verifier as X-Request-Id: that joins a line here to the
+# verifier's line about the same request.
+(gateway_log) {
+	log {
+		output stdout
+		format filter {
+			wrap json
+			fields {
+				request>headers>Cf-Access-Jwt-Assertion delete
+				request>headers>Cf-Access-Client-Id delete
+				request>headers>Cf-Access-Client-Secret delete
+				request>headers>Cookie delete
+				request>headers>Authorization delete
+			}
+		}
+	}
+}
+
+# Lock 3. The verifier answers 204 with the caller's identity, or 403, and on
+# 403 that answer is what the client gets. The identity header is deleted
+# first, so a caller can never supply their own.
+(verify) {
+	request_header -X-Gateway-Identity
+	forward_auth gateway-verifier:9000 {
+		uri /verify/{args[0]}
+		header_up X-Request-Id {http.request.uuid}
+		copy_headers X-Gateway-Identity
+	}
+}
+
+# What the caller authenticated with stays here. The upstream gets the
+# gateway's own credential instead (header_up in the route's reverse_proxy).
+(strip_caller_credentials) {
+	request_header -Cf-Access-Jwt-Assertion
+	request_header -Cf-Access-Client-Id
+	request_header -Cf-Access-Client-Secret
+	request_header -Cf-Access-Authenticated-User-Email
+	request_header -Cookie
+	request_header -Authorization
+	request_header -X-Gateway-Identity
+}
+
+# Any hostname no route claims. A tunnel route pointed here by mistake gets a
+# 404, and gateway-watch.sh reports it like any other refusal.
+http://:8080 {
+	import gateway_log
+	respond 404
+}
+
+# --- routes ------------------------------------------------------------------
+
+# route: selftest
+# Throwaway route that proves the gateway's checks on the box (#362, "How to
+# verify"). It has no upstream: a verified GET /selftest answers with the
+# identity the verifier saw. Remove it once the checks have passed.
+http://{$GW_HOST_SELFTEST:selftest.invalid}:8080 {
+	import gateway_log
+	route {
+		import verify selftest
+		@allowed {
+			method GET
+			path /selftest
+		}
+		handle @allowed {
+			request_body {
+				max_size 1KB
+			}
+			respond "gateway selftest ok: {http.request.header.X-Gateway-Identity}" 200
+		}
+		handle {
+			respond 404
+		}
+	}
+}
+
+# A route with an upstream looks like this (the Alexa one is next, #362 is
+# only the gateway). Copy it, fill in the names, and follow the runbook.
+#
+# # route: alexa
+# http://{$GW_HOST_ALEXA:alexa.invalid}:8080 {
+# 	import gateway_log
+# 	route {
+# 		import verify alexa
+# 		@allowed {
+# 			method POST
+# 			path /api/conversation/process
+# 		}
+# 		handle @allowed {
+# 			request_body {
+# 				max_size 8KB
+# 			}
+# 			import strip_caller_credentials
+# 			reverse_proxy host.docker.internal:8123 {
+# 				header_up Authorization "Bearer {$GW_UPSTREAM_TOKEN_ALEXA}"
+# 			}
+# 		}
+# 		handle {
+# 			respond 404
+# 		}
+# 	}
+# }

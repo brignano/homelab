@@ -1,24 +1,40 @@
 services:
+  # The only thing on this box that accepts traffic from the internet, and it
+  # can hand that traffic to exactly one place: the gateway (docker/gateway/).
+  # Lock 2 of docs/design/tsd-secure-gateway.md: each public hostname's route
+  # has "Protect with Access" on, so cloudflared itself refuses a request with
+  # no valid Access token for that application, even if the Access application
+  # were deleted.
+  #
+  # Kill switch: scripts/gateway-off.sh stops this container and nothing else.
   cloudflared:
-    image: cloudflare/cloudflared:latest
+    # Pinned: path normalization below needs >= 2026.10.0, and a tunnel client
+    # is not something to change on a nightly pull. Renovate opens the bumps.
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     container_name: cloudflared
     restart: unless-stopped
     command: tunnel --no-autoupdate run
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
     environment:
       TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?required}
+      # Normalize the path before matching ingress rules, so /allowed/../admin
+      # cannot match a rule written for /allowed. cloudflared's default is to
+      # NOT normalize (true here means "disabled"), and its own help text says
+      # an unnormalized path can bypass Access rules.
+      TUNNEL_DISABLE_PATH_NORMALIZATION: "false"
     networks:
+      # Its own network, for the outbound connection to Cloudflare.
       - tunnel
-      - core
-      - ai
+      # The gateway's edge network, and no other stack's. A tunnel route that
+      # names anything but http://gateway:8080 does not resolve.
+      - gateway_edge
 
-# Attach to existing networks so cloudflared can proxy to other stacks.
-# Run the other stacks first, then bring this one up.
+# Bring docker/gateway up first: it creates gateway_edge.
 networks:
   tunnel:
     driver: bridge
-  core:
+  gateway_edge:
     external: true
-    name: core_core
-  ai:
-    external: true
-    name: ai_ai
+    name: gateway_edge

@@ -102,7 +102,8 @@ plan_for() {
     # Source baked into an image is invisible to `up -d`: the service definition
     # is unchanged, so Compose does nothing and the container keeps the old
     # code. This is the assistant's whole failure mode.
-    if printf '%s\n' "$paths" | grep -qE "^docker/$s/(app/|tests/|Dockerfile|requirements\.txt)"; then
+    # `verifier/` is docker/gateway's build context (its Dockerfile lives there).
+    if printf '%s\n' "$paths" | grep -qE "^docker/$s/(app/|tests/|verifier/|Dockerfile|requirements\.txt)"; then
       human "docker compose -f docker/$s/docker-compose.yml up -d --build"
       act "build $s"
     else
@@ -356,7 +357,7 @@ $(printf '%s\n' "$watched" | grep -v '^$' | while read -r p; do
       newer="$newer
 $(find "$dir" -type f -newermt "@$bepoch" 2>/dev/null \
         | sed "s#^$REPO/##" | grep -Fxf "$TRACKED" \
-        | grep -E '^docker/[^/]+/(app/|tests/|Dockerfile$|requirements\.txt$)' || true)"
+        | grep -E '^docker/[^/]+/(app/|tests/|verifier/|Dockerfile$|requirements\.txt$)' || true)"
     fi
   fi
 
