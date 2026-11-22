@@ -62,7 +62,9 @@ inside CT 100.
    `photos_session` volume: Apple's session lasts hours, so the nightly run
    signs in again with the saved password, and the 2FA code is needed only
    every couple of months. Each `--auth` starts from scratch, so run it
-   again after changing the Apple ID password.
+   again after changing the Apple ID password. The previous sign-in is set
+   aside while you type, and comes back if you press Ctrl-C or the new one
+   fails, so a cancelled `--auth` never leaves the nightly run signed out.
 6. **Schedule it**, then try a short run:
    ```bash
    ./scripts/install-cron.sh
