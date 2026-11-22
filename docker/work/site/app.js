@@ -96,27 +96,28 @@ async function load() {
     boardRepos = board.repos.filter(r => !never.has(r));
     const want = new Set(boardRepos);
 
-    // One short query, filtered here: a repo: qualifier per repo would hit
-    // search's 256-character limit as the fleet grows.
-    const nodes = [];
-    let after = null;
-    for (let page = 0; page < 10; page++) {
-      const d = await gql(Q_OPEN, { q: `user:${OWNER} is:open archived:false`, after });
-      nodes.push(...d.search.nodes);
-      if (!d.search.pageInfo.hasNextPage) break;
-      after = d.search.pageInfo.endCursor;
-    }
+    // Short queries, filtered here: a repo: qualifier per repo would hit
+    // search's 256-character limit as the fleet grows. GitHub's issue search
+    // now returns NOTHING unless the query says is:issue or is:pr (found on
+    // the first live load, 2026-11-22), so each kind is its own search.
+    const all = async (query, q) => {
+      const out = [];
+      for (const kind of ['is:issue', 'is:pr']) {
+        let after = null;
+        for (let page = 0; page < 10; page++) {
+          const d = await gql(query, { q: q + ' ' + kind, after });
+          out.push(...d.search.nodes);
+          if (!d.search.pageInfo.hasNextPage) break;
+          after = d.search.pageInfo.endCursor;
+        }
+      }
+      return out;
+    };
+    const nodes = await all(Q_OPEN, `user:${OWNER} is:open archived:false`);
     items = classify(nodes.filter(n => n && n.repository && want.has(n.repository.name)));
 
     const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-    const closed = [];
-    after = null;
-    for (let page = 0; page < 10; page++) {
-      const dd = await gql(Q_DONE, { q: `user:${OWNER} is:closed closed:>=${since}`, after });
-      closed.push(...dd.search.nodes);
-      if (!dd.search.pageInfo.hasNextPage) break;
-      after = dd.search.pageInfo.endCursor;
-    }
+    const closed = await all(Q_DONE, `user:${OWNER} is:closed closed:>=${since}`);
     done = closed.filter(n => n && n.repository && want.has(n.repository.name))
       .sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
     loadedAt = new Date();

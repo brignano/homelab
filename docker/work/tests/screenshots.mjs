@@ -73,9 +73,17 @@ const BOARD = `owner: brignano\nproject: 1\nrepos:\n  - driftwood\n  - guidebook
 function answer(body) {
   const { query, variables } = JSON.parse(body);
   if (query.includes('board.yml')) return { data: { repository: { object: { text: BOARD } } } };
-  if (query.includes('closedAt')) return { data: { search: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: DONE } } };
-  if (variables && variables.after) return { data: { search: { issueCount: NODES.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes: NODES.slice(12) } } };
-  return { data: { search: { issueCount: NODES.length, pageInfo: { hasNextPage: true, endCursor: 'p2' }, nodes: NODES.slice(0, 12) } } };
+  // Like GitHub since 2025: no is:issue / is:pr, no results.
+  const q = (variables && variables.q) || '';
+  const kind = /\bis:issue\b/.test(q) ? 'Issue' : /\bis:pr\b/.test(q) ? 'PullRequest' : null;
+  const empty = { pageInfo: { hasNextPage: false, endCursor: null }, nodes: [] };
+  if (!kind) return { data: { search: { issueCount: 0, ...empty } } };
+  if (query.includes('closedAt')) return { data: { search: { ...empty, nodes: DONE.filter(n => n.__typename === kind) } } };
+  const mine = NODES.filter(n => n.__typename === kind);
+  // Two pages for issues, so paging is exercised.
+  if (kind === 'Issue' && !variables.after) return { data: { search: { issueCount: mine.length, pageInfo: { hasNextPage: true, endCursor: 'p2' }, nodes: mine.slice(0, 8) } } };
+  if (kind === 'Issue') return { data: { search: { issueCount: mine.length, ...empty, nodes: mine.slice(8) } } };
+  return { data: { search: { issueCount: mine.length, ...empty, nodes: mine } } };
 }
 
 const TYPES = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff2': 'font/woff2' };

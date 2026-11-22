@@ -103,3 +103,5 @@ writes phone and desktop screenshots.
 | A repo is listed but always empty | Token was not granted that repo | Add it to the token |
 | No "checks passing" words | Token lacks Commit statuses: read | Add the permission |
 | Dashboard tile shows no numbers | Same token problem, or Homepage not restarted | Fix the token; `/deploy dashboard` |
+| 403 "Request forbidden by administrative rules" | No User-Agent reached GitHub (Caddy block lost its `header_up User-Agent`) | Restore it; `/deploy proxy` |
+| Lists empty, no error | A search query lost its `is:issue` / `is:pr` (GitHub returns nothing without one) | Restore it |

@@ -35,13 +35,16 @@ Chronological record of significant configuration steps, decisions, and issues.
 1. Wireframed at 390px and 1280px and agreed in the project thread: counts that filter, Waiting on you / In progress / Up next / Blocked or held, details on tap, group by status or repo, six sorts, a searchable repo menu, idle and stalled markers, Done this week, Start copies `build <repo>#N`.
 2. `docker/work/site/`: static HTML, CSS and JS, styled from the dashboard's vendored tokens. Status is computed from fleet labels in the browser; the repo list comes from ai-tools `fleet/board.yml` at load.
 3. `work.` site block in the Caddyfile: serves the files and proxies `POST /api/graphql` to api.github.com with `WORK_GITHUB_TOKEN`, a fine-grained read-only token. No container.
-4. Dashboard tile with a `customapi` count of Waiting on you and Agents working, through the same route.
+4. Dashboard tile with a `customapi` count of Issues for you, PRs for you and Agents working (issues), through the same route.
 
 **Issues encountered:**
 - GitHub search caps queries at 256 characters, so one `repo:` qualifier per fleet repo stops working as the fleet grows.
+- After deploy the lists were empty: GitHub search now returns nothing unless the query says `is:issue` or `is:pr` (#391).
+- The tile got a 403 "Request forbidden by administrative rules": api.github.com refuses requests with no User-Agent, and Homepage sends none (#391).
 
 **Resolution:**
-- Query `user:brignano is:open archived:false` once (paged) and filter to `board.yml` repos in the browser. The token's repo list is the second fence for life, people and ideas.
+- Query `user:brignano is:open archived:false` once per kind (`is:issue`, then `is:pr`, each paged) and filter to `board.yml` repos in the browser. The token's repo list is the second fence for life, people and ideas.
+- The tile runs one search per kind too, and Caddy sets `User-Agent: homelab-work-page` on the proxied route.
 
 **Notes / next steps:**
 - Anthony: create the token, add it to `docker/proxy/.env`, `/deploy proxy` and `/deploy dashboard` (docker/work/README.md, Setup).
