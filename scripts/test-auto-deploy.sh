@@ -40,6 +40,13 @@ if [ "$1" = compose ]; then
       exit 0 ;;
   esac
   echo "$*" >> "$W/compose.log"
+  # Like Compose: `up` fails when an external network it needs is missing.
+  case " $* " in *" up "*)
+    for a in "$@"; do case "$a" in */docker-compose.yml)
+      for net in $(sed -n 's/^    name: //p' "$W/config-$(basename "$(dirname "$a")")" 2>/dev/null); do
+        case "$net" in *_edge) grep -qx "$net" "$W/networks" 2>/dev/null || exit 1 ;; esac
+      done ;; esac; done ;;
+  esac
   exit 0
 fi
 if [ "$1" = network ] && [ "$2" = inspect ]; then
