@@ -13,6 +13,8 @@ services:
       # the budget site under /_design/ (see the Caddyfile). Read-only.
       - ../budget/theme:/srv/budget-theme:ro
       - ../dashboard/assets:/srv/design:ro
+      # The Work page's static files (docker/work/site), served at work.<domain>.
+      - ../work/site:/srv/work:ro
       - caddy_data:/data
       - caddy_config:/config
     environment:
@@ -20,6 +22,10 @@ services:
       # fail-closed: if unset, mcp.home rejects all requests but the other sites
       # are unaffected and Caddy still starts. Set the real value in ./.env.
       MCP_BEARER_TOKEN: ${MCP_BEARER_TOKEN:-}
+      # Fine-grained, READ-ONLY GitHub token for the Work page's /api/graphql
+      # route (docker/work/README.md). Optional: unset, the page loads and says
+      # GitHub refused it, and nothing else on the proxy is affected.
+      WORK_GITHUB_TOKEN: ${WORK_GITHUB_TOKEN:-}
       # Base domain every service name hangs off, e.g. home.example.com ->
       # stats.home.example.com. Required: without it Caddy would try to serve
       # sites literally named "stats." and certificate issuance would fail.

@@ -50,3 +50,4 @@ docker/dashboard/config/proxmox.yaml
 *.tar.gz
 *.tgz
 *.zip
+docker/work/tests/out/
