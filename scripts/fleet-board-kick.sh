@@ -2,7 +2,7 @@
 #
 # Start the Fleet board sync (brignano/ai-tools, workflow fleet-board) a few
 # times a day. Run from cron on the Docker LXC every hour; the script itself
-# only starts a run once HL_FLEET_KICK_INTERVAL (default 3 hours) has passed
+# only starts a run once HL_FLEET_KICK_INTERVAL (default 4 hours) has passed
 # since the last one it started:
 #
 #   0 * * * * /root/homelab/scripts/fleet-board-kick.sh >> /var/log/fleet-board-kick.log 2>&1
@@ -20,7 +20,8 @@
 # workflow_dispatch call starts a run straight away, so this box asks for one.
 #
 # 2026-11-22 (ai-tools#109): every 10 minutes was ~147 runs a day for a board
-# that is only glanced at. Every 3 hours is 8 a day. Agents answer "what's
+# that is only glanced at. Every 4 hours is 6 a day, which with the daily
+# backstop schedule in ai-tools keeps that repo under its 400-minute budget. Agents answer "what's
 # next" from GitHub itself, not the board, so nothing waits on it.
 #
 # Setup (once, on CT 100)
@@ -44,7 +45,7 @@ REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 ENV_FILE="${HL_FLEET_ENV:-/root/.config/homelab/fleet-board.env}"
 URL="${HL_FLEET_DISPATCH_URL:-https://api.github.com/repos/brignano/ai-tools/actions/workflows/fleet-board.yml/dispatches}"
 # Seconds between runs, and where the time of the last started run is kept.
-INTERVAL="${HL_FLEET_KICK_INTERVAL:-10800}"
+INTERVAL="${HL_FLEET_KICK_INTERVAL:-14400}"
 STAMP="${HL_FLEET_KICK_STAMP:-/var/lib/homelab/fleet-board-kick.last}"
 
 configured=0
