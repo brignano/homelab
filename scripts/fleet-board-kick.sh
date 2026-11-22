@@ -1,10 +1,16 @@
 #!/usr/bin/env sh
 #
-# Start the Fleet board sync (brignano/ai-tools, workflow fleet-board) so new
-# issues and PRs reach the board within minutes. Run from cron on the Docker
-# LXC every ten minutes:
+# Start the Fleet board sync (brignano/ai-tools, workflow fleet-board) a few
+# times a day. Run from cron on the Docker LXC every hour; the script itself
+# only starts a run once HL_FLEET_KICK_INTERVAL (default 3 hours) has passed
+# since the last one it started:
 #
-#   */10 * * * * /root/homelab/scripts/fleet-board-kick.sh >> /var/log/fleet-board-kick.log 2>&1
+#   0 * * * * /root/homelab/scripts/fleet-board-kick.sh >> /var/log/fleet-board-kick.log 2>&1
+#
+# Why the interval lives in the script, not the crontab: install-cron.sh never
+# rewrites an existing entry, so the old */10 line on CT 100 stays until someone
+# edits it by hand. Gating here means a merge alone cuts the runs, whatever
+# schedule cron calls it on.
 #
 # Why this exists
 # ---------------
@@ -12,7 +18,10 @@
 # workflows when it has spare capacity: on 2026-11-01..03 it ran every 4 to 10
 # hours, so a new issue waited that long to appear on the board. A
 # workflow_dispatch call starts a run straight away, so this box asks for one.
-# ai-tools is public, so the runs cost nothing.
+#
+# 2026-11-22 (ai-tools#109): every 10 minutes was ~147 runs a day for a board
+# that is only glanced at. Every 3 hours is 8 a day. Agents answer "what's
+# next" from GitHub itself, not the board, so nothing waits on it.
 #
 # Setup (once, on CT 100)
 # -----------------------
@@ -34,6 +43,9 @@ REPO="${HL_REPO:-$(cd "$(dirname "$0")/.." && pwd)}"
 
 ENV_FILE="${HL_FLEET_ENV:-/root/.config/homelab/fleet-board.env}"
 URL="${HL_FLEET_DISPATCH_URL:-https://api.github.com/repos/brignano/ai-tools/actions/workflows/fleet-board.yml/dispatches}"
+# Seconds between runs, and where the time of the last started run is kept.
+INTERVAL="${HL_FLEET_KICK_INTERVAL:-10800}"
+STAMP="${HL_FLEET_KICK_STAMP:-/var/lib/homelab/fleet-board-kick.last}"
 
 configured=0
 ok=0
@@ -55,6 +67,16 @@ if [ ! -r "$ENV_FILE" ]; then
 fi
 configured=1
 
+# Too soon since the last run we started: nothing to do. ok stays 1, because
+# the stamp is only written after a successful dispatch.
+now=$(date +%s)
+last=$(cat "$STAMP" 2>/dev/null || echo 0)
+case "$last" in ''|*[!0-9]*) last=0 ;; esac
+if [ $((now - last)) -lt "$INTERVAL" ]; then
+  ok=1
+  exit 0
+fi
+
 # Read the one value rather than sourcing the file: it is data, not a script.
 TOKEN=$(sed -n 's/^FLEET_DISPATCH_TOKEN=//p' "$ENV_FILE" | head -n1 | tr -d '"'"'"' \r')
 if [ -z "$TOKEN" ]; then
@@ -74,6 +96,8 @@ code=$(curl -sS -o "$out" -w '%{http_code}' --max-time 30 \
 body=$(head -c 300 "$out" 2>/dev/null); rm -f "$out"
 if [ "$code" = "204" ]; then
   ok=1
+  mkdir -p "$(dirname "$STAMP")" 2>/dev/null
+  echo "$now" > "$STAMP" 2>/dev/null || true
   exit 0
 fi
 echo "$(date -Is) fleet-board-kick: HTTP $code $body" >&2
