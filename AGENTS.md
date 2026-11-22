@@ -360,8 +360,9 @@ Issues are specs. Any open issue that isn't held (see "Ready by default" in the
 standard) is ready for an agent. Every builder PR touching
 `docker/`, `scripts/`, `grafana/` or Caddy runs `invariants-reviewer` first, and
 "Who runs the deploy" above still governs what happens after merge. CT 100 starts the
-Fleet board sync every 10 minutes (`scripts/fleet-board-kick.sh`), because
-GitHub's own schedule for it runs hours late.
+Fleet board sync every 4 hours (`scripts/fleet-board-kick.sh`, gated in the
+script, `HL_FLEET_KICK_INTERVAL`), because GitHub's own schedule for it runs
+hours late. It used to be every 10 minutes; ai-tools#109 cut it.
 
 ## How to help me
 - When adding a new service, follow the existing stack pattern: separate directory, `.env.example`, `127.0.0.1` port bindings by default (open to all interfaces + a Caddy `*.home` route only if it needs LAN/tailnet access), named volume, restart policy.

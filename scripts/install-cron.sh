@@ -65,7 +65,7 @@ JOBS="*/5 * * * *|heartbeat.sh|dead man's switch -> Healthchecks
 */5 * * * *|blink-clips.sh|move Blink clips HA saved into Jellyfin's library (no-op until HA saves any)
 0 1 * * *|photos-sync.sh|nightly iCloud Photos mirror to the media drive (no-op until docker/photos/.env exists)
 15 7 * * *|photos-previews.sh|JPEG previews of the mirror's HEIC photos for Jellyfin (no-op until /media/photos/icloud-previews exists)
-*/10 * * * *|fleet-board-kick.sh|start the Fleet board sync on GitHub (no-op until fleet-board.env exists)
+0 * * * *|fleet-board-kick.sh|start the Fleet board sync on GitHub every 4 hours (no-op until fleet-board.env exists)
 */5 * * * *|gateway-watch.sh|report requests the secure gateway refused (no-op until docker/gateway/.env exists)
 */5 * * * *|access-log-poll.sh|keep 90 days of Cloudflare Access logs, alert on odd sign-ins (no-op until docker/gateway/.env exists)"
 
