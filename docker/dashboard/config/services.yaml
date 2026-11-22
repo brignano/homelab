@@ -61,15 +61,22 @@
           headers:
             Content-Type: application/json
           requestBody:
+            # Each search needs is:issue or is:pr, or GitHub returns nothing.
             query: >-
-              { you: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false label:needs:anthony -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount }
-              working: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false label:agent:working -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount } }
+              { you: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:issue label:needs:anthony -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount }
+              prs: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:pr label:needs:anthony -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount }
+              working: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:issue label:agent:working -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount } }
           refreshInterval: 300000
           mappings:
             - field:
                 data:
                   you: issueCount
-              label: Waiting on you
+              label: Issues for you
+              format: number
+            - field:
+                data:
+                  prs: issueCount
+              label: PRs for you
               format: number
             - field:
                 data:
