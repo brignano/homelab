@@ -66,10 +66,11 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 
 ## Architecture diagram
 
-CI redraws the whole stack from the compose files on every push: open the latest
-`main` run of [CI](../../actions/workflows/ci.yml?query=branch%3Amain) → the
-**architecture** job's summary for the diagram, or download its `driftwood-scan`
-artifact and open `index.html` for the interactive viewer.
+CI redraws the whole stack from the compose files on every PR that changes one:
+the **architecture (driftwood scan)** job's summary has the diagram, and its
+`driftwood-scan` artifact holds the interactive viewer (`index.html`). For the
+diagram of `main` as it is now, run [CI](../../actions/workflows/ci.yml) by hand
+(**Run workflow** on `main`), which runs every check and the scan.
 
 ## Repository layout
 

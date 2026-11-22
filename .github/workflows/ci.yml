@@ -12,213 +12,163 @@
 # None of it needs secrets or network access to the lab: the compose files are
 # validated with throwaway values, and the Caddyfile is checked inside the real
 # proxy image so the plugin-provided directives actually resolve.
+#
+# Why it is one job (#383)
+# ------------------------
+# GitHub bills every job as at least one whole minute. This file used to run 13
+# jobs of 5–25 s each on every PR push and again on the merge to main, about
+# 13 billed minutes a run and 2,317 minutes in November 2026: more than the
+# account's whole monthly quota, which stopped Actions in every repo. So:
+#
+#   - One job, `checks`. Each check is still its own named step, and every step
+#     runs even after an earlier one fails (`!cancelled()`), so a red run still
+#     lists every failure, not just the first.
+#   - Each step runs only when its files changed in the PR (the `changes` step
+#     below). Cheap text checks run on any change under docker/ or scripts/;
+#     the ones that install things (pip, npm, the proxy image) are narrower.
+#     Editing this file runs everything.
+#   - Docs-only PRs start nothing (paths-ignore).
+#   - No run on push to main: every change already ran on its PR, and
+#     auto-deploy pulls main without asking GitHub. (The concierge's
+#     github_status still reads main's last run, so it shows that, not new.)
+#     workflow_dispatch runs every check, for a full check of main by hand.
+#   - A new push to a PR cancels the run it supersedes.
+#   - The driftwood diagram is a second job only when a compose file changed.
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "decisions/**"
+      - "**/*.md"
+      - "LICENSE"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
+  # dorny/paths-filter lists a PR's files through the API.
+  pull-requests: read
 
 jobs:
-  assistant:
-    name: assistant (tests + imports)
+  checks:
+    name: checks
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docker/assistant
+    timeout-minutes: 20
+    outputs:
+      # Read by the architecture job. Always true outside a PR (manual runs).
+      compose: ${{ github.event_name != 'pull_request' || steps.changes.outputs.compose == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Which checks this PR needs
+        id: changes
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v3
         with:
-          # Match the Dockerfile — a version skew here would test something the
-          # container never runs.
-          python-version: "3.12"
+          # Every filter includes this file, so a CI change is tested by
+          # running all of it.
+          filters: |
+            ci: &ci
+              - .github/workflows/ci.yml
+            config:
+              - *ci
+              - "docker/**"
+              - "scripts/**"
+            compose:
+              - *ci
+              - "docker/*/docker-compose.yml"
+            assistant:
+              - *ci
+              - "docker/assistant/**"
+              # smoke.py checks the sources heartbeat.sh publishes.
+              - "scripts/heartbeat.sh"
+            concierge:
+              - *ci
+              - "docker/concierge/**"
+            mcp_calendar:
+              - *ci
+              - "docker/mcp-calendar/**"
+            gateway:
+              - *ci
+              - "docker/gateway/**"
+              - "docker/tunnel/**"
+            clipreview:
+              - *ci
+              - "docker/clipreview/**"
+              - "tools/photos/**"
+            proxy:
+              - *ci
+              - "docker/proxy/**"
+            ansible:
+              - *ci
+              - "ansible/**"
+            renovate:
+              - *ci
+              - "renovate.json5"
 
-      - name: Install pinned dependencies
-        run: pip install --disable-pip-version-check -r requirements.txt
-
-      - name: Offline smoke tests
-        # Pure and offline: no Discord, no Ollama, no Prometheus. Asserts the
-        # invariants that have broken before — see tests/smoke.py.
-        run: python tests/smoke.py
-
-      - name: Every module compiles
-        run: python -m compileall -q app tests
-
-  concierge:
-    name: concierge (tool tiers + imports)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docker/concierge
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install pinned dependencies
-        # Includes the Agent SDK wheel, so the tests import the real
-        # ClaudeAgentOptions, HookMatcher and permission types — a renamed
-        # option fails here rather than on the box.
-        run: pip install --disable-pip-version-check -r requirements.txt
-
-      - name: Offline smoke tests
-        # No API key and no Claude Code process. Pins the security boundary:
-        # which tools exist, their tiers, and that nothing is auto-approved.
-        run: python tests/smoke.py
-
-      - name: Every module compiles
-        run: python -m compileall -q app tests
-
-  mcp-calendar:
-    name: mcp-calendar (read-only boundary + imports)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docker/mcp-calendar
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install pinned dependencies
-        run: pip install --disable-pip-version-check -r requirements.txt
-
-      - name: Offline smoke tests
-        # No Home Assistant. Pins which tools exist, that the only HA call is a
-        # GET to /api/calendars/<a configured entity>, and that a request with
-        # the public Host never reaches the MCP endpoint.
-        run: python tests/smoke.py
-
-      - name: Every module compiles
-        run: python -m compileall -q app tests
-
-  gateway:
-    # The secure gateway (docs/design/tsd-secure-gateway.md). Everything here is
-    # offline: fake signing keys, fake docker logs, a fake Cloudflare API.
-    name: gateway (verifier, watchers, route guard)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          # The watchers run on the box's own python3 (Debian 12 ships 3.11),
-          # so they are tested on the oldest one they may meet.
-          python-version: "3.11"
-
-      - name: Watchers (gateway-watch, access-log-poll), standard library only
-        run: python -I docker/gateway/tools/tests/smoke.py
-
-      - uses: actions/setup-python@v5
-        with:
-          # Match the verifier's Dockerfile.
-          python-version: "3.12"
-
-      - name: Install the verifier's pinned dependencies
-        run: pip install --disable-pip-version-check -r docker/gateway/verifier/requirements.txt pyyaml
-
-      - name: Verifier refuses everything it should
-        # Missing, expired, foreign, wrong-AUD and wrong-identity tokens, an
-        # unconfigured route, unreachable signing keys: each must be a 403.
-        run: python docker/gateway/verifier/tests/smoke.py
-
-      - name: Caddy from the pinned gateway image
-        # The binary the box runs, so `adapt` judges the same Caddy. Static Go,
-        # so the Alpine image's binary runs on the runner as is.
+      # Outside a PR (workflow_dispatch) there is no diff, so every check runs.
+      - name: Resolve what runs
+        id: run
+        env:
+          ALL: ${{ github.event_name != 'pull_request' }}
+          CHANGES: ${{ toJSON(steps.changes.outputs) }}
         run: |
-          img=$(sed -n 's/^ *image: *\(caddy:[^ ]*\)$/\1/p' docker/gateway/docker-compose.yml)
-          cid=$(docker create "$img")
-          docker cp "$cid:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
-          docker rm "$cid" > /dev/null
-          "$RUNNER_TEMP/caddy" version
+          for k in config assistant concierge mcp_calendar gateway clipreview proxy ansible renovate; do
+            if [ "$ALL" = true ]; then v=true
+            else v=$(printf '%s' "$CHANGES" | python3 -c "import json,sys; print(json.load(sys.stdin).get('$k','false'))")
+            fi
+            echo "$k=$v" >> "$GITHUB_OUTPUT"
+            echo "$k: $v"
+          done
 
-      - name: The route guard catches each mistake it exists for
-        run: CADDY="$RUNNER_TEMP/caddy" python docker/gateway/tools/tests/check_smoke.py
+      # ── config: cheap text checks, any change under docker/ or scripts/ ──
 
-      - name: Every route verified first, no denylisted upstream, no committed hostname
-        # Fails on: a route that answers or proxies before forward_auth, an
-        # upstream on the denylist (budget, admin UIs, media, Matterbridge,
-        # Kali), a proxy without exact paths, a method, a body limit and the
-        # caller's credentials stripped, a hostname in the repo, a value in an
-        # .env.example, or cloudflared on any network but gateway_edge.
-        run: python docker/gateway/tools/check_gateway.py --caddy "$RUNNER_TEMP/caddy"
-
-      - name: Every module compiles
-        run: python -m compileall -q docker/gateway/verifier docker/gateway/tools
-
-  clipreview:
-    name: clipreview (labels, export, read-only serving)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docker/clipreview
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Offline smoke tests
-        run: python tests/smoke.py
-
-      - name: Every module compiles
-        run: python -m compileall -q app tests
-
-      - name: Triage script (parsing, resume, Live Photo skip)
-        run: python ../../tools/photos/test_triage.py
-
-  compose:
-    name: compose files parse
-    runs-on: ubuntu-latest
-    # Throwaway values for the vars each stack declares with `:?required`.
-    # Compose interpolates before it validates, so without these the check
-    # cannot run at all. None of these are real, and none need to be.
-    env:
-      WEBUI_SECRET_KEY: ci
-      DISCORD_TOKEN: ci
-      DISCORD_GUILD_ID: "1"
-      DISCORD_ALLOWED_USER_IDS: "1"
-      POSTGRES_PASSWORD: ci
-      DESKTOP_USER: ci
-      DESKTOP_PASSWORD: ci
-      GRAFANA_SERVICE_ACCOUNT_TOKEN: ci
-      GRAFANA_ADMIN_PASSWORD: ci
-      PVE_USER: ci
-      PVE_TOKEN_NAME: ci
-      PVE_TOKEN_VALUE: ci
-      POSTGRES_EXPORTER_DSN: ci
-      DISCORD_ALERT_WEBHOOK: https://discord.invalid/api/webhooks/ci
-      HOMELAB_DOMAIN: example.com
-      CLOUDFLARE_API_TOKEN: ci
-      CLOUDFLARE_TUNNEL_TOKEN: ci
-      ACCESS_TEAM_DOMAIN: example.cloudflareaccess.com
-      ANTHROPIC_API_KEY: ci
-      CONCIERGE_TOKEN: ci
-      RENDER_GID: "993"
-      WIREGUARD_PRIVATE_KEY: ci
-      HA_TOKEN: ci
-      ACTUAL_PASSWORD: ci
-      ACTUAL_BUDGET_SYNC_ID: ci
-      MCP_BUDGET_TOKEN: ci
-      EPG_PLAYLISTS: https://example.invalid/ci.m3u
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: docker compose config
+      - name: "compose: every docker compose file parses"
         # Catches malformed YAML, unknown keys, bad port/volume syntax, and any
-        # NEW `:?required` var that was added without being listed above — which
+        # NEW `:?required` var that was added without being listed below — which
         # is the failure worth having: it means someone must decide whether that
         # var belongs in .env.example too.
+        #
+        # Throwaway values for the vars each stack declares with `:?required`.
+        # Compose interpolates before it validates, so without these the check
+        # cannot run at all. None of these are real, and none need to be. They
+        # stay on this step: on the job they would reach the service smoke
+        # tests, which read the same names (HA_TOKEN turns the concierge's home
+        # tools on, for one).
+        env:
+          WEBUI_SECRET_KEY: ci
+          DISCORD_TOKEN: ci
+          DISCORD_GUILD_ID: "1"
+          DISCORD_ALLOWED_USER_IDS: "1"
+          POSTGRES_PASSWORD: ci
+          DESKTOP_USER: ci
+          DESKTOP_PASSWORD: ci
+          GRAFANA_SERVICE_ACCOUNT_TOKEN: ci
+          GRAFANA_ADMIN_PASSWORD: ci
+          PVE_USER: ci
+          PVE_TOKEN_NAME: ci
+          PVE_TOKEN_VALUE: ci
+          POSTGRES_EXPORTER_DSN: ci
+          DISCORD_ALERT_WEBHOOK: https://discord.invalid/api/webhooks/ci
+          HOMELAB_DOMAIN: example.com
+          CLOUDFLARE_API_TOKEN: ci
+          CLOUDFLARE_TUNNEL_TOKEN: ci
+          ACCESS_TEAM_DOMAIN: example.cloudflareaccess.com
+          ANTHROPIC_API_KEY: ci
+          CONCIERGE_TOKEN: ci
+          RENDER_GID: "993"
+          WIREGUARD_PRIVATE_KEY: ci
+          HA_TOKEN: ci
+          ACTUAL_PASSWORD: ci
+          ACTUAL_BUDGET_SYNC_ID: ci
+          MCP_BUDGET_TOKEN: ci
+          EPG_PLAYLISTS: https://example.invalid/ci.m3u
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           status=0
           for f in docker/*/docker-compose.yml; do
@@ -231,14 +181,10 @@ jobs:
           done
           exit $status
 
-  scripts:
-    name: scripts parse
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: sh -n
+      - name: "scripts: sh -n"
         # Syntax only, deliberately. These run from cron where a parse error is
         # silent until the day you need the script to work.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           status=0
           for f in scripts/*.sh; do
@@ -246,27 +192,24 @@ jobs:
           done
           exit $status
 
-      - name: deploy-plan --machine and auto-deploy policy
+      - name: "scripts: deploy-plan --machine and auto-deploy policy"
         # auto-deploy.sh restarts stacks with nobody watching, from the lines
         # deploy-plan.sh --machine prints. Both run against throwaway repos and
         # a fake docker: no Docker daemon needed.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           ./scripts/test-deploy-plan.sh
           ./scripts/test-auto-deploy.sh
 
-      - name: python helpers compile
+      - name: "scripts: python helpers compile"
         # Two scripts reach for python where sh would be unreadable — the token
         # palette and the composed icons. Same reasoning as above: a parse error
         # in either is silent until someone runs an update.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: python3 -m compileall -q scripts
 
-  observability:
-    name: dashboards render and metrics line up
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Alerting and scrape config is valid YAML
+      - name: "observability: alerting and scrape config is valid YAML"
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           python3 -c "
           import yaml, pathlib
@@ -277,15 +220,16 @@ jobs:
               yaml.safe_load(f.read_text()); print('ok   ', f)
           "
 
-      - name: Every stack can come up from scratch
+      - name: "observability: every stack can come up from scratch"
         # Compose will not create an external network, so the stacks have a
         # start order hidden in their networks: blocks — and monitoring and
         # proxy need each other's. This fails when a compose change leaves
         # some stack waiting on a network no stack creates, or no order
         # (partial steps included) can bring them all up.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/bootstrap-plan.py
 
-      - name: Dashboards render, metrics have a writer, job lists agree
+      - name: "observability: dashboards render, metrics have a writer, job lists agree"
         # Three silent failures, all of which had already happened:
         #
         #   A dashboard full of Angular panels that Grafana 12 no longer ships.
@@ -298,15 +242,11 @@ jobs:
         #   heartbeat.sh and install-cron.sh drifting on which jobs exist — the
         #   same two-lists-of-one-thing shape as check-dashboard.sh and
         #   check-probes.sh, over the very list whose gap cost three weeks.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/check-observability.sh
 
-  dashboard:
-    name: dashboard covers every proxied site
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Config files are valid YAML
+      - name: "dashboard: config files are valid YAML"
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
           python3 -c "
           import sys, yaml, pathlib
@@ -315,52 +255,232 @@ jobs:
               print('ok   ', f)
           "
 
-      - name: The generated palette still matches the vendored design tokens
+      - name: "dashboard: the generated palette still matches the vendored design tokens"
         # homepage-palette.css is generated from design-tokens.css, because
         # Homepage themes itself from RGB channels and the design system ships
         # hex. A hand edit to the generated file is the one way the dashboard
         # can drift from the package without anyone noticing, so this
         # regenerates it and diffs. Offline — nothing is fetched.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/update-design-tokens.sh --check
 
-      - name: Actual Budget theme matches the tokens
+      - name: "dashboard: Actual Budget theme matches the tokens"
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/gen-actual-theme.py --check
 
-      - name: Every Caddyfile site has a tile
+      - name: "dashboard: every Caddyfile site has a tile"
         # The Caddyfile and services.yaml are two hand-maintained lists of the
         # same thing. A dashboard that falls behind does not break — it just
         # stops being complete, which is worse, because you keep trusting it.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/check-dashboard.sh
 
-  caddy:
-    name: Caddyfile adapts
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Blackbox probes hit a path Caddy answers 200
-        # Text-only, so it runs before the image build and fails in seconds.
-        #
+      - name: "caddy: blackbox probes hit a path Caddy answers 200"
         # Caddy routes by Host header and blackbox probes it by container name,
         # which matches no service site. A probe of `http://caddy/` therefore
         # got a 404 and Grafana paged Discord about a healthy proxy, day after
         # day. The probe target and the block that answers it live in different
         # files; this keeps them in step. See scripts/check-probes.sh.
+        if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/check-probes.sh
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/setup-python@v5
+        if: ${{ !cancelled() && (steps.run.outputs.assistant == 'true' || steps.run.outputs.concierge == 'true' || steps.run.outputs.mcp_calendar == 'true' || steps.run.outputs.gateway == 'true' || steps.run.outputs.clipreview == 'true' || steps.run.outputs.ansible == 'true') }}
+        with:
+          # 3.12 matches the Dockerfiles (the last listed is the default
+          # `python`); 3.11 is what the box's own python3 is (Debian 12), for
+          # the gateway watchers that run there.
+          python-version: |
+            3.11
+            3.12
 
-      - name: Build the proxy image
+      # ── python services: each in its own venv so pins never collide ──
+
+      - name: "assistant: install pinned dependencies"
+        if: ${{ !cancelled() && steps.run.outputs.assistant == 'true' }}
+        working-directory: docker/assistant
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-assistant"
+          "$RUNNER_TEMP/venv-assistant/bin/pip" install -q --disable-pip-version-check -r requirements.txt
+
+      - name: "assistant: offline smoke tests"
+        # Pure and offline: no Discord, no Ollama, no Prometheus. Asserts the
+        # invariants that have broken before — see tests/smoke.py.
+        if: ${{ !cancelled() && steps.run.outputs.assistant == 'true' }}
+        working-directory: docker/assistant
+        run: |
+          "$RUNNER_TEMP/venv-assistant/bin/python" tests/smoke.py
+          "$RUNNER_TEMP/venv-assistant/bin/python" -m compileall -q app tests
+
+      - name: "concierge: install pinned dependencies"
+        # Includes the Agent SDK wheel, so the tests import the real
+        # ClaudeAgentOptions, HookMatcher and permission types — a renamed
+        # option fails here rather than on the box.
+        if: ${{ !cancelled() && steps.run.outputs.concierge == 'true' }}
+        working-directory: docker/concierge
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-concierge"
+          "$RUNNER_TEMP/venv-concierge/bin/pip" install -q --disable-pip-version-check -r requirements.txt
+
+      - name: "concierge: offline smoke tests (tool tiers)"
+        # No API key and no Claude Code process. Pins the security boundary:
+        # which tools exist, their tiers, and that nothing is auto-approved.
+        if: ${{ !cancelled() && steps.run.outputs.concierge == 'true' }}
+        working-directory: docker/concierge
+        run: |
+          "$RUNNER_TEMP/venv-concierge/bin/python" tests/smoke.py
+          "$RUNNER_TEMP/venv-concierge/bin/python" -m compileall -q app tests
+
+      - name: "mcp-calendar: install pinned dependencies"
+        if: ${{ !cancelled() && steps.run.outputs.mcp_calendar == 'true' }}
+        working-directory: docker/mcp-calendar
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-mcp-calendar"
+          "$RUNNER_TEMP/venv-mcp-calendar/bin/pip" install -q --disable-pip-version-check -r requirements.txt
+
+      - name: "mcp-calendar: offline smoke tests (read-only boundary)"
+        # No Home Assistant. Pins which tools exist, that the only HA call is a
+        # GET to /api/calendars/<a configured entity>, and that a request with
+        # the public Host never reaches the MCP endpoint.
+        if: ${{ !cancelled() && steps.run.outputs.mcp_calendar == 'true' }}
+        working-directory: docker/mcp-calendar
+        run: |
+          "$RUNNER_TEMP/venv-mcp-calendar/bin/python" tests/smoke.py
+          "$RUNNER_TEMP/venv-mcp-calendar/bin/python" -m compileall -q app tests
+
+      - name: "clipreview: offline smoke tests, triage script"
+        # Labels, export, read-only serving; then the photo triage script's
+        # parsing, resume and Live Photo skip. Standard library only.
+        if: ${{ !cancelled() && steps.run.outputs.clipreview == 'true' }}
+        working-directory: docker/clipreview
+        run: |
+          python tests/smoke.py
+          python -m compileall -q app tests
+          python ../../tools/photos/test_triage.py
+
+      # ── gateway (docs/design/tsd-secure-gateway.md): fake keys, fake
+      #    docker logs, a fake Cloudflare API ──
+
+      - name: "gateway: watchers (gateway-watch, access-log-poll), standard library only"
+        # On the box's own python3 (3.11), the oldest they may meet.
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: python3.11 -I docker/gateway/tools/tests/smoke.py
+
+      - name: "gateway: install the verifier's pinned dependencies"
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-gateway"
+          "$RUNNER_TEMP/venv-gateway/bin/pip" install -q --disable-pip-version-check -r docker/gateway/verifier/requirements.txt pyyaml
+
+      - name: "gateway: verifier refuses everything it should"
+        # Missing, expired, foreign, wrong-AUD and wrong-identity tokens, an
+        # unconfigured route, unreachable signing keys: each must be a 403.
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: |
+          "$RUNNER_TEMP/venv-gateway/bin/python" docker/gateway/verifier/tests/smoke.py
+
+      - name: "gateway: Caddy from the pinned gateway image"
+        # The binary the box runs, so `adapt` judges the same Caddy. Static Go,
+        # so the Alpine image's binary runs on the runner as is.
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: |
+          img=$(sed -n 's/^ *image: *\(caddy:[^ ]*\)$/\1/p' docker/gateway/docker-compose.yml)
+          cid=$(docker create "$img")
+          docker cp "$cid:/usr/bin/caddy" "$RUNNER_TEMP/caddy"
+          docker rm "$cid" > /dev/null
+          "$RUNNER_TEMP/caddy" version
+
+      - name: "gateway: the route guard catches each mistake it exists for"
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: |
+          CADDY="$RUNNER_TEMP/caddy" "$RUNNER_TEMP/venv-gateway/bin/python" docker/gateway/tools/tests/check_smoke.py
+
+      - name: "gateway: every route verified first, no denylisted upstream, no committed hostname"
+        # Fails on: a route that answers or proxies before forward_auth, an
+        # upstream on the denylist (budget, admin UIs, media, Matterbridge,
+        # Kali), a proxy without exact paths, a method, a body limit and the
+        # caller's credentials stripped, a hostname in the repo, a value in an
+        # .env.example, or cloudflared on any network but gateway_edge.
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: |
+          "$RUNNER_TEMP/venv-gateway/bin/python" docker/gateway/tools/check_gateway.py --caddy "$RUNNER_TEMP/caddy"
+
+      - name: "gateway: every module compiles"
+        if: ${{ !cancelled() && steps.run.outputs.gateway == 'true' }}
+        run: python -m compileall -q docker/gateway/verifier docker/gateway/tools
+
+      # ── ansible ──
+
+      - name: "ansible: install ansible-core and ansible-lint"
+        if: ${{ !cancelled() && steps.run.outputs.ansible == 'true' }}
+        run: |
+          python -m venv "$RUNNER_TEMP/venv-ansible"
+          "$RUNNER_TEMP/venv-ansible/bin/pip" install -q --disable-pip-version-check ansible-core ansible-lint
+
+      - name: "ansible: syntax check"
+        # The playbook is what rebuilds the lab on its worst day, and it is
+        # run rarely. A parse error found then is found too late.
+        if: ${{ !cancelled() && steps.run.outputs.ansible == 'true' }}
+        working-directory: ansible
+        run: |
+          PATH="$RUNNER_TEMP/venv-ansible/bin:$PATH"
+          ansible-playbook --syntax-check site.yml
+
+      - name: "ansible: ansible-lint"
+        # Config in ansible/.ansible-lint. Catches the quiet ones: a command
+        # task with no changed_when, a probe that would be skipped in --check.
+        if: ${{ !cancelled() && steps.run.outputs.ansible == 'true' }}
+        working-directory: ansible
+        run: |
+          PATH="$RUNNER_TEMP/venv-ansible/bin:$PATH"
+          ansible-lint site.yml
+
+      # ── renovate ──
+
+      - uses: actions/setup-node@v4
+        if: ${{ !cancelled() && steps.run.outputs.renovate == 'true' }}
+        with:
+          node-version: "22"
+
+      - name: "renovate: config is valid"
+        # A broken renovate.json5 does not fail loudly — Renovate simply stops
+        # opening PRs, which looks exactly like "nothing needed updating". That
+        # is the same silence this repo has now been bitten by three times, and
+        # here it would rot the one stack deliberately excluded from automatic
+        # pulls, so the config is checked rather than trusted.
+        #
+        # This has already earned its place: the first draft of renovate.json5
+        # used `"a" + "b"` to wrap a long description, which JSON5 does not
+        # support. The file looked fine and parsed nowhere.
+        #
+        # Installed rather than run through `npx --package`, which resolves to a
+        # broken dependency tree for this package. No arguments: the validator
+        # discovers renovate.json5 itself and checks it as a REPOSITORY config,
+        # whereas passing the path makes it validate as a global config and
+        # apply the wrong schema. Installed outside the checkout so the
+        # node_modules it brings never sits next to the repo's files.
+        if: ${{ !cancelled() && steps.run.outputs.renovate == 'true' }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/renovate" --no-save --no-audit --no-fund renovate
+          "$RUNNER_TEMP/renovate/node_modules/.bin/renovate-config-validator"
+
+      # ── proxy: last, because it is the slow one ──
+
+      - uses: docker/setup-buildx-action@v3
+        if: ${{ !cancelled() && steps.run.outputs.proxy == 'true' }}
+
+      - name: "caddy: build the proxy image"
         # The real image, not stock Caddy. The Caddyfile uses directives that
         # only exist once the sablier and cloudflare plugins are compiled in —
         # stock Caddy rejects `acme_dns cloudflare` with "module not registered",
         # so validating against it would prove nothing about what we deploy.
         #
-        # The xcaddy compile was ~70s of every CI run, and it almost never has
-        # anything new to compile, so its layers live in the Actions cache.
-        # mode=max keeps the builder stage too, which is the stage that's slow.
-        # The cache misses (and the build runs in full) whenever the
-        # caddy:2-builder digest or the Dockerfile changes.
+        # The xcaddy compile is slow and almost never has anything new to
+        # compile, so its layers live in the Actions cache (mode=max keeps the
+        # builder stage too). A PR reads its own earlier runs' cache and main's;
+        # with no CI on main any more, main's entry ages out, so the first run
+        # of a proxy PR compiles in full and its later pushes hit the cache.
+        if: ${{ !cancelled() && steps.run.outputs.proxy == 'true' }}
         uses: docker/build-push-action@v6
         with:
           context: docker/proxy
@@ -369,7 +489,7 @@ jobs:
           cache-from: type=gha,scope=proxy
           cache-to: type=gha,scope=proxy,mode=max
 
-      - name: caddy adapt
+      - name: "caddy: caddy adapt"
         # `adapt`, not `validate`, and the distinction is the whole point.
         #
         # `validate` goes on to *provision* every module, and the cloudflare DNS
@@ -398,6 +518,7 @@ jobs:
         #
         # The Caddyfile is bind-mounted at runtime rather than baked into the
         # image, so it is mounted here the same way.
+        if: ${{ !cancelled() && steps.run.outputs.proxy == 'true' }}
         run: |
           docker run --rm \
             -e HOMELAB_DOMAIN=example.com \
@@ -405,67 +526,15 @@ jobs:
             -v "$PWD/docker/proxy/Caddyfile:/etc/caddy/Caddyfile:ro" \
             homelab-caddy caddy adapt --config /etc/caddy/Caddyfile --adapter caddyfile > /dev/null
 
-  ansible:
-    name: ansible playbook parses and lints
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ansible
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install ansible-core and ansible-lint
-        run: pip install --disable-pip-version-check ansible-core ansible-lint
-
-      - name: Syntax check
-        # The playbook is what rebuilds the lab on its worst day, and it is
-        # run rarely. A parse error found then is found too late.
-        run: ansible-playbook --syntax-check site.yml
-
-      - name: ansible-lint
-        # Config in ansible/.ansible-lint. Catches the quiet ones: a command
-        # task with no changed_when, a probe that would be skipped in --check.
-        run: ansible-lint site.yml
-
-  renovate:
-    name: renovate config is valid
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: renovate-config-validator
-        # A broken renovate.json5 does not fail loudly — Renovate simply stops
-        # opening PRs, which looks exactly like "nothing needed updating". That
-        # is the same silence this repo has now been bitten by three times, and
-        # here it would rot the one stack deliberately excluded from automatic
-        # pulls, so the config is checked rather than trusted.
-        #
-        # This has already earned its place: the first draft of renovate.json5
-        # used `"a" + "b"` to wrap a long description, which JSON5 does not
-        # support. The file looked fine and parsed nowhere.
-        #
-        # Installed rather than run through `npx --package`, which resolves to a
-        # broken dependency tree for this package. No arguments: the validator
-        # discovers renovate.json5 itself and checks it as a REPOSITORY config,
-        # whereas passing the path makes it validate as a global config and
-        # apply the wrong schema.
-        run: |
-          npm install --no-save --no-audit --no-fund renovate
-          ./node_modules/.bin/renovate-config-validator
-
   architecture:
-    # The homelab diagram, redrawn from the compose files on every push and PR.
-    # driftwood reads docker/*/docker-compose.yml (no secrets, no network to the
-    # lab) and puts a Mermaid diagram in this run's job summary, plus the
-    # interactive viewer as the `driftwood-scan` artifact. It never fails on what
-    # it draws, only if the CLI itself crashes. Shared fleet step: ai-tools#88.
+    # The homelab diagram, redrawn from the compose files. driftwood reads
+    # docker/*/docker-compose.yml (no secrets, no network to the lab) and puts
+    # a Mermaid diagram in this run's job summary, plus the interactive viewer
+    # as the `driftwood-scan` artifact. It never fails on what it draws, only if
+    # the CLI itself crashes. Shared fleet step: ai-tools#88. Its own job (a
+    # reusable workflow cannot be a step), so it only starts when a compose file
+    # changed: otherwise it is skipped, and a skipped job is not billed.
     name: architecture (driftwood scan)
+    needs: checks
+    if: ${{ !cancelled() && needs.checks.outputs.compose == 'true' }}
     uses: brignano/ai-tools/.github/workflows/driftwood-scan.yml@main

@@ -58,5 +58,5 @@ something by hand, the next run reports it as drift. That is the reminder.
 `scripts/host/hl-vzdump-hook` reaches m5 by running the playbook. That
 replaces the `pct pull` the backup runbook used to ask for after every edit.
 
-CI runs `ansible-playbook --syntax-check` and `ansible-lint` on every PR
-(`.github/workflows/ci.yml`, job `ansible`).
+CI runs `ansible-playbook --syntax-check` and `ansible-lint` on every PR that
+touches `ansible/` (`.github/workflows/ci.yml`, the `ansible:` steps).
