@@ -73,7 +73,7 @@ const BOARD = `owner: brignano\nproject: 1\nrepos:\n  - driftwood\n  - guidebook
 function answer(body) {
   const { query, variables } = JSON.parse(body);
   if (query.includes('board.yml')) return { data: { repository: { object: { text: BOARD } } } };
-  if (query.includes('closedAt')) return { data: { search: { nodes: DONE } } };
+  if (query.includes('closedAt')) return { data: { search: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: DONE } } };
   if (variables && variables.after) return { data: { search: { issueCount: NODES.length, pageInfo: { hasNextPage: false, endCursor: null }, nodes: NODES.slice(12) } } };
   return { data: { search: { issueCount: NODES.length, pageInfo: { hasNextPage: true, endCursor: 'p2' }, nodes: NODES.slice(0, 12) } } };
 }

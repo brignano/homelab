@@ -135,6 +135,21 @@ work.{$HOMELAB_DOMAIN} {
 	handle /api/graphql {
 		@notpost not method POST
 		respond @notpost "POST only" 405
+
+		# Cross-site guard. Without it, any page open in a browser on the LAN or
+		# tailnet could POST here as `text/plain` (no CORS preflight), get the
+		# token attached, and read the answer, since GitHub replies with
+		# `Access-Control-Allow-Origin: *`. Requiring JSON forces a preflight,
+		# which the 405 above refuses; a browser Origin must be this site; and
+		# GitHub's CORS headers are stripped on the way back. Homepage's tile
+		# asks server-side with JSON and no Origin, so it still gets through.
+		@notjson not header Content-Type application/json*
+		respond @notjson "JSON only" 415
+		@foreign {
+			header Origin *
+			not header Origin https://work.{$HOMELAB_DOMAIN}
+		}
+		respond @foreign "Wrong origin" 403
 		request_body {
 			max_size 16KB
 		}
@@ -146,6 +161,7 @@ work.{$HOMELAB_DOMAIN} {
 			header_up -Origin
 			header_up -Referer
 			header_down -Set-Cookie
+			header_down -Access-Control-*
 		}
 	}
 

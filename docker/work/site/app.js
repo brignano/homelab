@@ -83,7 +83,7 @@ const FIELDS = `
 
 const Q_BOARD = `query { repository(owner: "${OWNER}", name: "ai-tools") { object(expression: "HEAD:fleet/board.yml") { ... on Blob { text } } } }`;
 const Q_OPEN = `query($q: String!, $after: String) { search(type: ISSUE, query: $q, first: 50, after: $after) { issueCount pageInfo { hasNextPage endCursor } nodes { ${FIELDS} } } }`;
-const Q_DONE = `query($q: String!) { search(type: ISSUE, query: $q, first: 50) { nodes { __typename ... on Issue { number title url closedAt repository { name } } ... on PullRequest { number title url closedAt merged repository { name } } } } }`;
+const Q_DONE = `query($q: String!, $after: String) { search(type: ISSUE, query: $q, first: 50, after: $after) { pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number title url closedAt repository { name } } ... on PullRequest { number title url closedAt merged repository { name } } } } }`;
 
 async function load() {
   $('sub').textContent = 'Reading GitHub…';
@@ -109,8 +109,15 @@ async function load() {
     items = classify(nodes.filter(n => n && n.repository && want.has(n.repository.name)));
 
     const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-    const dd = await gql(Q_DONE, { q: `user:${OWNER} is:closed closed:>=${since}` });
-    done = dd.search.nodes.filter(n => n && n.repository && want.has(n.repository.name))
+    const closed = [];
+    after = null;
+    for (let page = 0; page < 10; page++) {
+      const dd = await gql(Q_DONE, { q: `user:${OWNER} is:closed closed:>=${since}`, after });
+      closed.push(...dd.search.nodes);
+      if (!dd.search.pageInfo.hasNextPage) break;
+      after = dd.search.pageInfo.endCursor;
+    }
+    done = closed.filter(n => n && n.repository && want.has(n.repository.name))
       .sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
     loadedAt = new Date();
     render();

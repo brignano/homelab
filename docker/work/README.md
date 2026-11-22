@@ -20,6 +20,14 @@ flowchart LR
 route. The browser never sees the token, and the token is read-only, which is
 what makes the route read-only: GitHub refuses a mutation from it.
 
+**Other websites cannot use the route.** Because Caddy adds the token, a page
+on some other site, open in a browser on the LAN or tailnet, could otherwise
+POST a query here and read private repos' issues (GitHub answers any origin).
+So the route takes only `Content-Type: application/json` (which makes a
+browser ask first, and that preflight gets a 405), refuses a browser `Origin`
+other than `https://work.<domain>` with a 403, and strips GitHub's
+`Access-Control-*` headers. Keep all three if you touch the block.
+
 ## What it shows
 
 Status follows the fleet standard's table ("Status, priority and blocked" in
