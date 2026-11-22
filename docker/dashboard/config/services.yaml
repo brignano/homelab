@@ -11,8 +11,7 @@
 # `siteMonitor` gives up/down and response time by fetching the URL. It needs no
 # credentials, which is why there are almost no widgets here — a Grafana or
 # AdGuard widget would mean putting an admin password in this stack to render a
-# number you can see by clicking through. The one widget (Work) holds no
-# credential; see its comment.
+# number you can see by clicking through.
 
 # Icons are local paths, served from docker/dashboard/icons. A bare name like
 # `grafana.png` would make the *browser* fetch it from a CDN on every load,
@@ -43,46 +42,15 @@
         description: Local model chat — slow by design, prefer Otto in Discord
         icon: /icons/open-webui.svg
 
-    # Open issues and PRs across the fleet repos (docker/work/). The widget is
-    # the one exception to "no widgets" above, and holds no credential: it
-    # POSTs a count query to the Work page's own /api/graphql route, where
-    # Caddy adds a read-only token. Homepage asks from the server side, through
-    # Caddy, like siteMonitor does. The never-list repos are excluded by name
-    # here and are also outside the token's reach.
+    # Open issues and PRs across the fleet repos (docker/work/). A plain tile:
+    # the counts live on the page itself. A count widget made this tile taller
+    # than the rest of the group and ran three GitHub searches on every refresh
+    # (removed 2026-11-22, #386).
     - Work:
         href: https://work.{{HOMEPAGE_VAR_DOMAIN}}
         siteMonitor: https://work.{{HOMEPAGE_VAR_DOMAIN}}
         description: Issues and PRs across every repo, live from GitHub
         icon: /icons/work.svg
-        widget:
-          type: customapi
-          url: https://work.{{HOMEPAGE_VAR_DOMAIN}}/api/graphql
-          method: POST
-          headers:
-            Content-Type: application/json
-          requestBody:
-            # Each search needs is:issue or is:pr, or GitHub returns nothing.
-            query: >-
-              { you: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:issue label:needs:anthony -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount }
-              prs: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:pr label:needs:anthony -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount }
-              working: search(type: ISSUE, first: 1, query: "user:brignano is:open archived:false is:issue label:agent:working -repo:brignano/life -repo:brignano/people -repo:brignano/ideas") { issueCount } }
-          refreshInterval: 300000
-          mappings:
-            - field:
-                data:
-                  you: issueCount
-              label: Issues for you
-              format: number
-            - field:
-                data:
-                  prs: issueCount
-              label: PRs for you
-              format: number
-            - field:
-                data:
-                  working: issueCount
-              label: Agents working
-              format: number
 
     - Actual Budget:
         href: https://budget.{{HOMEPAGE_VAR_DOMAIN}}

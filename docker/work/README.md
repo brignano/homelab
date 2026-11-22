@@ -3,7 +3,9 @@
 `https://work.$HOMELAB_DOMAIN`: one page that shows what is waiting on you, what
 agents are building, what is up next and what is blocked, across every repo in
 ai-tools `fleet/board.yml`. It reads GitHub live on every load (and on
-Refresh), so nothing runs on a schedule and nothing is cached. It replaces the
+Refresh), so nothing runs on a schedule. The browser keeps its last load and
+draws it at once on the next visit, marked "updating", until GitHub answers;
+all searches run in parallel, so that takes about 2 to 3 seconds. It replaces the
 GitHub Projects board, which needed the `fleet-board` Action and its Actions
 minutes to stay in sync (#384, ai-tools#109). Issue: #386.
 
@@ -13,7 +15,6 @@ flowchart LR
   B -- "POST /api/graphql" --> C
   C -- "files: docker/work/site, dashboard/assets" --> B
   C -- "POST /graphql + read-only token" --> G[api.github.com]
-  H[Homepage tile] -- "count query, same route" --> C
 ```
 
 **There is no container.** Caddy serves `site/` and adds the token to one
@@ -102,6 +103,5 @@ writes phone and desktop screenshots.
 | "Could not read fleet/board.yml" | Token lacks Contents: read on ai-tools | Add ai-tools to the token |
 | A repo is listed but always empty | Token was not granted that repo | Add it to the token |
 | No "checks passing" words | Token lacks Commit statuses: read | Add the permission |
-| Dashboard tile shows no numbers | Same token problem, or Homepage not restarted | Fix the token; `/deploy dashboard` |
-| 403 "Request forbidden by administrative rules" | No User-Agent reached GitHub (Caddy block lost its `header_up User-Agent`) | Restore it; `/deploy proxy` |
+| 403 "Request forbidden by administrative rules" | No User-Agent reached GitHub (Caddy block lost its `header_up User-Agent`); only server-side callers like curl hit it | Restore it; `/deploy proxy` |
 | Lists empty, no error | A search query lost its `is:issue` / `is:pr` (GitHub returns nothing without one) | Restore it |

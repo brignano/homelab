@@ -85,44 +85,71 @@ const Q_BOARD = `query { repository(owner: "${OWNER}", name: "ai-tools") { objec
 const Q_OPEN = `query($q: String!, $after: String) { search(type: ISSUE, query: $q, first: 50, after: $after) { issueCount pageInfo { hasNextPage endCursor } nodes { ${FIELDS} } } }`;
 const Q_DONE = `query($q: String!, $after: String) { search(type: ISSUE, query: $q, first: 50, after: $after) { pageInfo { hasNextPage endCursor } nodes { __typename ... on Issue { number title url closedAt repository { name } } ... on PullRequest { number title url closedAt merged repository { name } } } } }`;
 
-async function load() {
-  $('sub').textContent = 'Reading GitHub…';
-  try {
-    const b = await gql(Q_BOARD);
-    const text = b.repository && b.repository.object && b.repository.object.text;
-    if (!text) throw new Error('Could not read fleet/board.yml from ai-tools. The token needs Contents: read on ai-tools.');
-    const board = parseBoard(text);
-    const never = new Set(board.never);
-    boardRepos = board.repos.filter(r => !never.has(r));
-    const want = new Set(boardRepos);
+// The last good load is kept in this browser and drawn at once on the next
+// visit, then replaced when GitHub answers (about 2-3 s). It is this viewer's
+// copy of what the token already shows them; nothing is cached server-side.
+const CACHE = 'work.cache.v1';
+let updating = false;
 
+function apply(c) {
+  boardRepos = c.repos;
+  items = classify(c.nodes);
+  done = c.done;
+  loadedAt = new Date(c.at);
+  render();
+}
+
+async function load() {
+  updating = true;
+  let shown = false;
+  if (!loadedAt) {
+    try { const c = JSON.parse(localStorage.getItem(CACHE) || 'null'); if (c && c.nodes) { apply(c); shown = true; } } catch (_) {}
+  }
+  if (!shown && !loadedAt) $('sub').textContent = 'Reading GitHub…';
+  else render();
+  try {
     // Short queries, filtered here: a repo: qualifier per repo would hit
     // search's 256-character limit as the fleet grows. GitHub's issue search
     // now returns NOTHING unless the query says is:issue or is:pr (found on
     // the first live load, 2026-11-22), so each kind is its own search.
-    const all = async (query, q) => {
+    // Every search runs at once; only a search's own pages are in sequence.
+    const pages = async (query, q) => {
       const out = [];
-      for (const kind of ['is:issue', 'is:pr']) {
-        let after = null;
-        for (let page = 0; page < 10; page++) {
-          const d = await gql(query, { q: q + ' ' + kind, after });
-          out.push(...d.search.nodes);
-          if (!d.search.pageInfo.hasNextPage) break;
-          after = d.search.pageInfo.endCursor;
-        }
+      let after = null;
+      for (let page = 0; page < 10; page++) {
+        const d = await gql(query, { q, after });
+        out.push(...d.search.nodes);
+        if (!d.search.pageInfo.hasNextPage) break;
+        after = d.search.pageInfo.endCursor;
       }
       return out;
     };
-    const nodes = await all(Q_OPEN, `user:${OWNER} is:open archived:false`);
-    items = classify(nodes.filter(n => n && n.repository && want.has(n.repository.name)));
-
+    const open = `user:${OWNER} is:open archived:false`;
     const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-    const closed = await all(Q_DONE, `user:${OWNER} is:closed closed:>=${since}`);
-    done = closed.filter(n => n && n.repository && want.has(n.repository.name))
-      .sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
-    loadedAt = new Date();
-    render();
+    const shut = `user:${OWNER} is:closed closed:>=${since}`;
+    const [b, oi, op, ci, cp] = await Promise.all([
+      gql(Q_BOARD),
+      pages(Q_OPEN, open + ' is:issue'), pages(Q_OPEN, open + ' is:pr'),
+      pages(Q_DONE, shut + ' is:issue'), pages(Q_DONE, shut + ' is:pr'),
+    ]);
+    const text = b.repository && b.repository.object && b.repository.object.text;
+    if (!text) throw new Error('Could not read fleet/board.yml from ai-tools. The token needs Contents: read on ai-tools.');
+    const board = parseBoard(text);
+    const never = new Set(board.never);
+    const repos = board.repos.filter(r => !never.has(r));
+    const want = new Set(repos);
+    const mine = n => n && n.repository && want.has(n.repository.name);
+    const c = {
+      at: Date.now(), repos,
+      nodes: oi.concat(op).filter(mine),
+      done: ci.concat(cp).filter(mine).sort((x, y) => new Date(y.closedAt) - new Date(x.closedAt)),
+    };
+    updating = false;
+    apply(c);
+    try { localStorage.setItem(CACHE, JSON.stringify(c)); } catch (_) {}
   } catch (e) {
+    updating = false;
+    if (loadedAt) { render(); $('sub').textContent += ' · could not refresh: ' + e.message; return; }
     $('sub').textContent = 'Could not read GitHub';
     $('lists').innerHTML = '<div class="state err" role="alert">' + esc(e.message) + '</div>';
   }
@@ -320,7 +347,7 @@ function render() {
   if (st.repo !== 'All' && !boardRepos.includes(st.repo)) st.repo = 'All';
   const vis = items.filter(d => st.repo === 'All' || d.repo === st.repo);
 
-  $('sub').textContent = boardRepos.length + ' repos · read from GitHub when you open it · ' + loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  $('sub').textContent = boardRepos.length + ' repos · ' + (updating ? 'showing ' : 'read from GitHub at ') + loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (updating ? ', updating…' : '');
 
   $('counts').innerHTML = ['you', 'doing', 'next', 'held'].map(s => '<button type="button" class="count' + (s === 'you' ? ' you' : '') + '" data-s="' + s + '" aria-pressed="' + (st.status === s) + '"><b>' + vis.filter(d => d.s === s).length + '</b><span>' + COUNT_LABEL[s] + '</span></button>').join('');
   const f = $('filt'); f.hidden = !st.status;
