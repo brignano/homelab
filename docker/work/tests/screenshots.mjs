@@ -93,8 +93,10 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 2, colorScheme: scheme });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
+  let slow = 0;
   await page.route('http://work.test/**', async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === '/api/graphql' && slow) await new Promise(r => setTimeout(r, slow));
     if (url.pathname === '/api/graphql') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(answer(route.request().postData())) });
     const file = url.pathname.startsWith('/assets/') ? join(ASSETS, url.pathname.slice(8)) : join(SITE, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
     if (!existsSync(file)) return route.fulfill({ status: 404, body: 'not found' });
@@ -114,6 +116,16 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   expect(!got.text.includes('Must never appear'), 'a repo outside board.yml was shown');
   expect(got.scroll <= width, 'page scrolls sideways: ' + got.scroll);
   expect(!errors.length, 'page errors: ' + errors.join('; '));
+
+  // Second visit: the last load is drawn from this browser's copy before
+  // GitHub answers, then replaced.
+  slow = 3000;
+  await page.reload();
+  await page.waitForSelector('.count', { timeout: 1000 }).catch(() => {});
+  const early = await page.evaluate(() => ({ n: document.querySelectorAll('.count b').length, sub: document.getElementById('sub').textContent }));
+  expect(early.n === 4 && /updating/.test(early.sub), 'cached copy not drawn at once: ' + JSON.stringify(early));
+  await page.waitForFunction(() => !/updating/.test(document.getElementById('sub').textContent), null, { timeout: 10000 });
+  slow = 0;
 
   await page.click('.row[data-id="homelab#372"] .t');
   await page.screenshot({ path: join(OUT, `${name}-${scheme}.png`), fullPage: true });
