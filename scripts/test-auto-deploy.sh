@@ -32,9 +32,27 @@ W=${FAKE_WORK:?}
 if [ "$1" = compose ]; then
   case " $* " in
     *" config --services "*) echo svc; exit 0 ;;
+    *" config "*)
+      # Resolved config: $W/config-<stack> if the test wrote one.
+      f=""; prev=""
+      for a in "$@"; do [ "$prev" = -f ] && f=$a; prev=$a; done
+      cat "$W/config-$(basename "$(dirname "$f")")" 2>/dev/null
+      exit 0 ;;
   esac
   echo "$*" >> "$W/compose.log"
+  # Like Compose: `up` fails when an external network it needs is missing.
+  case " $* " in *" up "*)
+    for a in "$@"; do case "$a" in */docker-compose.yml)
+      for net in $(sed -n 's/^    name: //p' "$W/config-$(basename "$(dirname "$a")")" 2>/dev/null); do
+        case "$net" in *_edge) grep -qx "$net" "$W/networks" 2>/dev/null || exit 1 ;; esac
+      done ;; esac; done ;;
+  esac
   exit 0
+fi
+if [ "$1" = network ] && [ "$2" = inspect ]; then
+  # Networks that exist are named in $W/networks.
+  grep -qx "$3" "$W/networks" 2>/dev/null
+  exit $?
 fi
 if [ "$1" = ps ]; then
   wd=""; status=""; health=""
@@ -256,5 +274,24 @@ check "green falls back to #alerts when report is blank" [ "$(route "$ALERT" 732
 check "red stays on #alerts" [ "$(route "$BOTH" 14711391)" = https://alert ]
 check "amber stays on #alerts" [ "$(route "$BOTH" 14722127)" = https://alert ]
 check "nothing set is empty" [ -z "$(route '' 7323541)" ]
+
+# 16. A stack joining an external network its owner has not created (tunnel on
+#     gateway_edge, gateway never brought up): needs you, not a failure, and the
+#     run still records last-good so the next merge does not alert again.
+printf 'name: tunnel\nservices:\n  cloudflared:\n    networks:\n      gateway_edge: null\nnetworks:\n  gateway_edge:\n    name: gateway_edge\n    external: true\n  tunnel:\n    name: tunnel_tunnel\n' > "$WORK/config-tunnel"
+printf 'media\nproxy\nmonitoring\ntunnel\n' > "$WORK/running"
+merge docker/gateway/docker-compose.yml 'services: {g: {image: c}}' "add gateway"
+merge docker/tunnel/docker-compose.yml 'services: {t: {image: n}}' "tunnel joins gateway_edge"
+: > "$WORK/compose.log"
+run
+check "missing network: tunnel not run" lacks "$WORK/compose.log" "docker/tunnel"
+check "missing network: not a failure" [ ! -f "$WORK/state/last-failed" ]
+check "missing network: needs you" has "$WORK/out" "needs you"
+check "missing network: names network and owner" has "$WORK/out" "gateway_edge.*Bring up gateway"
+check "missing network: last-good moves" [ "$(cat "$WORK/state/last-good")" = "$(git -C "$WORK/box" rev-parse HEAD)" ]
+printf 'gateway_edge\n' > "$WORK/networks"
+merge docker/tunnel/docker-compose.yml 'services: {t: {image: m}}' "tunnel again"
+run
+check "network present: tunnel deployed" has "$WORK/compose.log" "docker/tunnel/docker-compose.yml up -d"
 
 exit $fail

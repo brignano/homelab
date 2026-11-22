@@ -324,7 +324,9 @@ verifies with the same `verify_stack` repo-sync heals with
 ([`scripts/deploy-common.sh`](scripts/deploy-common.sh)), and posts the result
 to Discord. It is pull-based: nothing reaches into the box. It never touches
 `HL_NO_AUTOHEAL` stacks (`proxy`, `matterbridge`), a stopped stack, a stack
-whose `.env` lacks a new `.env.example` key, or the Proxmox host. Those, and
+whose `.env` lacks a new `.env.example` key, a stack that joins an external
+network nobody has created yet (its owning stack is not up), or the Proxmox
+host. Those, and
 any failure, come to Discord with the exact `/deploy` line. A failed commit
 alerts once and is not retried; a revert PR is the rollback. Pause it with
 `touch /var/lib/homelab/auto-deploy.pause` or `HL_AUTOHEAL=no`. Design:

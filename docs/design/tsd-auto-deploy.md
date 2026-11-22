@@ -100,6 +100,11 @@ flowchart TD
    - A stack with no running containers: left stopped and reported. Stopped
      may be deliberate (a drive not fitted yet), and starting it is a person's
      call. Added while building.
+   - A stack that joins an external network that does not exist on the box
+     (`docker/tunnel` on `gateway_edge` before `docker/gateway` is up): left
+     as it is and reported with the network and the stack that owns it, not
+     counted as a failure. Compose will not create an external network, so
+     `up -d` would fail on every merge. Added in homelab#389.
    - `install-cron.sh` runs when `scripts/` changed. It's idempotent and never
      rewrites an existing entry, so this is safe unattended.
 
