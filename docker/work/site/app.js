@@ -340,6 +340,13 @@ function counts(r) {
   return { you: c('you'), doing: c('doing'), next: c('next'), held: c('held'), n: z.length };
 }
 
+// Time alone for today; a cached load from an earlier day also says the date,
+// so a failed refresh never passes off old data as current.
+function stamp(d) {
+  const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return d.toDateString() === new Date().toDateString() ? t : d.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ', ' + t;
+}
+
 function render() {
   if (!loadedAt) return;
   const active = [...new Set(items.map(d => d.repo))].sort((a, b) => { const x = counts(a), y = counts(b); return y.you - x.you || y.doing - x.doing || y.n - x.n || a.localeCompare(b); });
@@ -347,7 +354,7 @@ function render() {
   if (st.repo !== 'All' && !boardRepos.includes(st.repo)) st.repo = 'All';
   const vis = items.filter(d => st.repo === 'All' || d.repo === st.repo);
 
-  $('sub').textContent = boardRepos.length + ' repos · ' + (updating ? 'showing ' : 'read from GitHub at ') + loadedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + (updating ? ', updating…' : '');
+  $('sub').textContent = boardRepos.length + ' repos · ' + (updating ? 'showing ' : 'read from GitHub at ') + stamp(loadedAt) + (updating ? ', updating…' : '');
 
   $('counts').innerHTML = ['you', 'doing', 'next', 'held'].map(s => '<button type="button" class="count' + (s === 'you' ? ' you' : '') + '" data-s="' + s + '" aria-pressed="' + (st.status === s) + '"><b>' + vis.filter(d => d.s === s).length + '</b><span>' + COUNT_LABEL[s] + '</span></button>').join('');
   const f = $('filt'); f.hidden = !st.status;
