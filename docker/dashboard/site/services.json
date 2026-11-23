@@ -1,6 +1,12 @@
 {
-  "_comment": "Every tile on the home page, in order. href uses {domain} for HOMELAB_DOMAIN. probe is the blackbox `instance` in Prometheus that says Up or Down (docker/monitoring/prometheus/prometheus.yml); container is a scale-to-zero desktop, shown Asleep or Running from cAdvisor without waking it. scripts/check-dashboard.sh checks this file against the Caddyfile and the probes.",
+  "_comment": "Every tile on the home page, in order. A featured section is shown as big cards near the top (Things I built); the rest are rows of app tiles further down. href uses {domain} for HOMELAB_DOMAIN. probe is the blackbox `instance` in Prometheus that says Up or Down (docker/monitoring/prometheus/prometheus.yml); container is a scale-to-zero desktop, shown Asleep or Running from cAdvisor without waking it. scripts/check-dashboard.sh checks this file against the Caddyfile and the probes.",
   "sections": [
+    { "name": "Things I built", "featured": true, "tiles": [
+      { "name": "Work", "href": "https://work.{domain}", "icon": "work.svg", "desc": "Everything I'm building, live from GitHub", "probe": "http://caddy/health" },
+      { "name": "Ideas", "href": "https://ideas.{domain}", "icon": "ideas.svg", "desc": "Every idea and how close it is to building", "probe": "http://caddy/health" },
+      { "name": "Photo & clip review", "href": "https://review.{domain}", "icon": "review.svg", "desc": "Sort home videos and move old ones to cold storage", "probe": "http://clipreview:8000/" },
+      { "name": "brignano.io", "href": "https://brignano.io", "icon": "brignano.svg", "inkIcon": true, "desc": "My website", "probe": "https://brignano.io/" }
+    ]},
     { "name": "Everyday", "tiles": [
       { "name": "Home Assistant", "href": "https://ha.{domain}", "icon": "home-assistant.svg", "desc": "Lights, locks, doors and cameras", "probe": "http://host.docker.internal:8123/manifest.json" },
       { "name": "Jellyfin", "href": "https://jellyfin.{domain}", "icon": "jellyfin.svg", "desc": "Our own Netflix: movies and shows", "probe": "http://jellyfin:8096/health" },
@@ -16,16 +22,8 @@
     { "name": "Lab", "tiles": [
       { "name": "Grafana", "href": "https://stats.{domain}", "icon": "grafana.svg", "desc": "Charts of everything on the box", "probe": "http://grafana:3000/api/health" },
       { "name": "Portainer", "href": "https://apps.{domain}", "icon": "portainer-on-dark.svg", "iconLight": "portainer-on-light.svg", "desc": "Start and stop the apps", "probe": "http://portainer:9000/" },
-      { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" }
-    ]},
-    { "name": "Things I built", "tiles": [
-      { "name": "Work", "href": "https://work.{domain}", "icon": "work.svg", "desc": "Everything I'm building, live from GitHub", "probe": "http://caddy/health" },
-      { "name": "Ideas", "href": "https://ideas.{domain}", "icon": "ideas.svg", "desc": "Every idea and how close it is to building", "probe": "http://caddy/health" },
-      { "name": "Photo & clip review", "href": "https://review.{domain}", "icon": "review.svg", "desc": "Sort home videos and move old ones to cold storage", "probe": "http://clipreview:8000/" },
-      { "name": "brignano.io", "href": "https://brignano.io", "icon": "brignano.svg", "inkIcon": true, "desc": "My website", "probe": "https://brignano.io/" }
-    ]},
-    { "name": "Desktops", "tiles": [
-      { "name": "Kali", "href": "https://kali.{domain}", "icon": "kali-linux.svg", "desc": "Starts when you open it", "container": "kali-linux" }
+      { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" },
+      { "name": "Kali", "href": "https://kali.{domain}", "icon": "kali-linux.svg", "desc": "Security practice lab, wakes when you open it", "container": "kali-linux" }
     ]}
   ],
   "links": [
