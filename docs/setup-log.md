@@ -127,6 +127,27 @@ merge to `main`.
 - `photos-sync.sh --auth` now moves the old session to `/config/.pre-auth` on the same volume instead of deleting it, and puts it back on Ctrl-C or on any sign-in that does not prove good. A successful sign-in removes the backup.
 - The indexing failure needs nothing; the next night retries. If it repeats for several nights, open Photos on the iPhone or at icloud.com.
 
+## 2026-11-13 — Design tokens refreshed to @brignano/design 0.9.0 (#373)
+
+**Goal:** Bring the vendored tokens from 0.3.0 up to 0.9.0, so the dashboard, the budget theme and clip review match the other sites in dark mode.
+
+**Steps:**
+1. `./scripts/update-design-tokens.sh 0.9.0`: `design-tokens.css` is the package's `tokens.css` verbatim. `homepage-palette.css` changed only in its version line, because the neutral ramp is unchanged. Geist stays at 5.3.0.
+2. `docker/budget/theme/actual.css`: hovered menu text moved from `--i-hover` to the new `--i-ink-hover`, per the 0.9.0 upgrade notes, and `--color-reportsInnerLabel` is no longer mapped (below). Regenerated with `./scripts/gen-actual-theme.py`.
+
+**Issues encountered:**
+- From 0.3.0 to 0.9.0, no token was removed or renamed. Only the dark side of seven changed: `--i`, `--i-hover`, `--i-pressed`, `--on-i` (now white in both themes) and the three `--i` washes.
+- Actual drew its in-chart report labels with `--on-i`. That only worked while `--on-i` was dark in dark mode: on Actual's own chart colours, white measures 1.4–3.7:1.
+
+**Resolution:**
+- Anthony chose to leave that label unmapped, so Actual uses its own navy (3.1:1 or better on every segment, in both themes).
+- Visible change, dark mode only: blue fills (primary buttons, the selected month, checkboxes, chart lines) are now a deeper blue with a white label. Light mode is unchanged.
+
+**Notes / next steps:**
+- After merge, the budget theme has to be pasted into Actual again by hand (`docker/budget/README.md` → Look and feel).
+
+---
+
 ## 2026-11-12 — Media containers down after a power cut (#370)
 
 **Goal:** Find why Healthchecks and Discord alerted all morning.
