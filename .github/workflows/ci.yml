@@ -245,7 +245,7 @@ jobs:
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/check-observability.sh
 
-      - name: "dashboard: the home and Work pages' scripts parse"
+      - name: "dashboard: the home, Work and Ideas pages' scripts parse"
         # Plain files with no build step, so a syntax error would ship as a
         # blank page. node is on the runner; nothing is installed.
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
@@ -254,6 +254,7 @@ jobs:
           node --check docker/dashboard/site/app.js
           node --check docker/work/site/data.js
           node --check docker/work/site/app.js
+          node --check docker/ideas/site/app.js
 
       - name: "dashboard: the generated palette still matches the vendored design tokens"
         # homepage-palette.css is generated from design-tokens.css, because

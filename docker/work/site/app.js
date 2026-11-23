@@ -26,9 +26,13 @@ try { Object.assign(st, JSON.parse(localStorage.getItem('work.prefs') || '{}'), 
 // that status across every repo, so the list matches the number tapped.
 const want = location.hash.slice(1);
 if (['you', 'doing', 'next', 'held'].includes(want)) Object.assign(st, { status: want, repo: 'All' });
+// The Ideas page links an idea being built to its repo here as #repo=<name>.
+if (want.startsWith('repo=')) Object.assign(st, { repo: decodeURIComponent(want.slice(5)), status: null });
 const save = () => { try { localStorage.setItem('work.prefs', JSON.stringify({ repo: st.repo, group: st.group, sort: st.sort, status: st.status })); } catch (_) {} };
 
 const $ = id => document.getElementById(id);
+// Ideas lives beside this page: work.<domain> -> ideas.<domain>.
+$('ideaslink').href = location.origin.replace('//work.', '//ideas.') + '/';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // The last good load is kept in this browser and drawn at once on the next

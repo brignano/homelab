@@ -27,6 +27,27 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-23 — Ideas page beside Work
+
+**Goal:** Move the idea ledger from a Claude Artifact snapshot onto the home dashboard, beside Work, read live.
+
+**Steps:**
+1. Wireframed at 390px and 1280px and agreed in the project thread. Changes asked for on the way: no native dropdown (a custom menu, and brignano/design#198 to make that the design system's rule), proof grades in words instead of E0-E4, proof and kind as labelled tags, ideas being built in a fleet repo shown under Building with a link to Work.
+2. `docker/ideas/site/`: static HTML and JS, styled by Work's app.css (served as `/work.css`) plus a few rules of its own.
+3. `ideas.` site block: `GET /api/ledger.json` reads one fixed file from GitHub with `IDEAS_GITHUB_TOKEN`, a separate read-only token for the ledger's repo only. Repo and path live in `docker/proxy/.env`.
+4. Work / Ideas switch in both headers; Work opens filtered to a repo from `#repo=<name>`; Ideas tile on the home page.
+
+**Issues encountered:**
+- Work's token backs a route that runs any GraphQL query, so adding the ledger's repo to it would expose the ledger through Work's route. Hence a second token and a GET-only, fixed-path route.
+
+**Resolution:**
+- Works against a stubbed route (`docker/ideas/tests/screenshots.mjs`).
+
+**Notes / next steps:**
+- The ledger's build has to write `ledger.json` (shape in `docker/ideas/README.md`); until it does, the page says so.
+
+---
+
 ## 2026-11-22 — Work page: issues across the fleet repos, live from GitHub (#386)
 
 **Goal:** Replace the GitHub Projects fleet board, which needed the `fleet-board` Action (and the CT 100 kick, #384) to stay in sync and burned Actions minutes, with a page that reads open issues and PRs live when it is opened.
