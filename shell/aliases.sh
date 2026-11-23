@@ -94,7 +94,15 @@ hl-alerts-ip() { _hl_open "http://$HL_IP:8090"; }
 hl-vpn()      { tailscale status; }
 hl-vpn-up()   { tailscale up --accept-routes; }
 hl-vpn-down() { tailscale down; }
-hl-ssh()      { ssh "$HL_SSH" "$@"; }
+# Bare hl-ssh lands in the repo on CT 100 (where /deploy and every hl_* doer
+# expect you to be); with args it is plain ssh, so `hl-ssh -t "cmd"` is unchanged.
+hl-ssh() {
+	if [ $# -eq 0 ]; then
+		ssh -t "$HL_SSH" "cd $HL_REPO 2>/dev/null; exec \"\$SHELL\" -l"
+	else
+		ssh "$HL_SSH" "$@"
+	fi
+}
 hl-host()     { ssh "$HL_HOST_SSH" "$@"; }
 
 # hl-status — the "Tailscale flap ≠ outage" check. Tells you WHICH layer broke
@@ -144,7 +152,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
-    hl-ssh [cmd]         ssh into the Docker LXC (CT 100, root@docker)
+    hl-ssh [cmd]         ssh into the Docker LXC (CT 100), landing in the repo
     hl-host [cmd]        ssh into the Proxmox host (m5): drives, pct, vzdump
   docker / ops           (run locally on the server, over SSH from a client)
     hl-up [stack]        whole lab (boot order) or one stack
@@ -179,7 +187,7 @@ stack         <up|down|restart> <stack>
 backup        -                    pg_dumpall (scripts/pg-backup.sh)
 models        -                    rebuild tuned Ollama models
 reload-prom   -                    reload Prometheus config (no downtime)
-ssh           [cmd]                ssh into the Docker LXC (CT 100)
+ssh           [cmd]                ssh into the Docker LXC (CT 100), in the repo
 host          [cmd]                ssh into the Proxmox host (m5)
 vpn           -                    tailscale status
 vpn-up        -                    tailscale up --accept-routes
