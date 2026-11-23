@@ -163,6 +163,7 @@ jobs:
           CONCIERGE_TOKEN: ci
           RENDER_GID: "993"
           WIREGUARD_PRIVATE_KEY: ci
+          KALI_WIREGUARD_PRIVATE_KEY: ci
           HA_TOKEN: ci
           ACTUAL_PASSWORD: ci
           ACTUAL_BUDGET_SYNC_ID: ci
