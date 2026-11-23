@@ -77,9 +77,14 @@ async function promRange(query, seconds, step) {
 const one = rows => rows && rows.length ? rows[0].v : null;
 
 const NET = 'job="node",device!~"lo|veth.*|docker.*|br-.*|tailscale.*"';
-const CPU_CHIP = 'chip=~".*(k10temp|coretemp|cpu|acpitz).*"';
-const ROOT_FS = 'job="node",mountpoint=~"/|/rootfs"';
-const MEDIA_FS = 'job="node",mountpoint=~"(/rootfs)?/media"';
+// AMD's CPU sensor (k10temp) is the PCI function 00:18.3, which is how the
+// chip label names it here; the others cover Intel and generic boards.
+const CPU_CHIP = 'chip=~".*(00:18_3|k10temp|coretemp|cpu|acpitz).*"';
+// The same series the Capacity dashboard reads. Inside CT 100 node-exporter
+// sees its own `/` (the container disk) and not the media drive, which is
+// reported by the Proxmox host's exporter at /mnt/media.
+const ROOT_FS = 'host="docker-lxc",mountpoint="/"';
+const MEDIA_FS = 'host="proxmox",mountpoint="/mnt/media"';
 const Q = {
   cpu: '100 * (1 - avg(rate(node_cpu_seconds_total{job="node",mode="idle"}[5m])))',
   cores: 'count(node_cpu_seconds_total{job="node",mode="idle"})',
