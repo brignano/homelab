@@ -325,15 +325,19 @@ function status(t) {
 }
 function renderTiles() {
   if (!SERVICES) return;
-  const tile = t => '<a class="svc" href="' + esc(href(t.href)) + '"><span class="ic">' + icon(t) + '</span><span><div class="n">' + esc(t.name) + '</div><div class="d">' + esc(t.desc) + '</div></span>' + status(t) + '</a>';
   // A featured section (Things I built) shows as big cards near the top; the
-  // rest are full-width rows of tiles, so uneven sections never leave holes.
+  // rest follow below.
   const built = SERVICES.sections.filter(s => s.featured).flatMap(s => s.tiles);
   $('builtsec').hidden = !built.length;
   $('built').innerHTML = built.map(t =>
     '<a class="feat" href="' + esc(href(t.href)) + '"><span class="ic">' + icon(t) + '</span>' + status(t) + '<span class="n">' + esc(t.name) + '</span><span class="d">' + esc(t.desc) + '</span></a>'
   ).join('');
-  $('groups').innerHTML = SERVICES.sections.filter(s => !s.featured).map(s => '<section><h2>' + esc(s.name) + '</h2><div class="list">' + s.tiles.map(tile).join('') + '</div></section>').join('');
+  // The other sections share one even grid of small tiles, in section order,
+  // so short and long sections never leave gaps between them.
+  $('groups').innerHTML = '<section aria-labelledby="apps-h"><h2 id="apps-h">Apps on the box</h2><div class="apps">' +
+    SERVICES.sections.filter(s => !s.featured).flatMap(s => s.tiles).map(t =>
+      '<a class="app" href="' + esc(href(t.href)) + '"><span class="ic">' + icon(t) + '</span>' + status(t) + '<span class="n">' + esc(t.name) + '</span><span class="d">' + esc(t.desc) + '</span></a>'
+    ).join('') + '</div></section>';
   const links = (SERVICES.links || []).filter(l => !/\{healthchecks\}/.test(l.href) || CONF.healthchecks);
   $('links').innerHTML = links.map(l => '<a href="' + esc(href(l.href)) + '">' + esc(l.name) + '</a>').join('');
 }
