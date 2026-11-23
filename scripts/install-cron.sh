@@ -122,7 +122,10 @@ if [ -s "$tmp" ] && [ -n "$(tail -c1 "$tmp")" ]; then
   printf '\n' >> "$tmp"
 fi
 
-for script in heartbeat.sh repo-sync.sh auto-deploy.sh pg-backup.sh pg-restore-test.sh offsite-backup.sh blink-clips.sh photos-sync.sh photos-previews.sh fleet-board-kick.sh gateway-watch.sh access-log-poll.sh; do
+# The jobs come from JOBS above, never a second hand-kept list: #395 added
+# media-usage.sh to JOBS but not to a list here, so this script reported
+# "nothing to do" while the job was never installed.
+for script in $(echo "$JOBS" | cut -d'|' -f2); do
   line=$(echo "$JOBS" | grep "|$script|" | head -n1)
   schedule=${line%%|*}
   path="$REPO/scripts/$script"
