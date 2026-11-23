@@ -1,0 +1,24 @@
+# Tools Kali always has. kali/tools.sh installs anything here that's missing
+# each time Kali starts, so they come back after an image update. One apt
+# package per line; # starts a comment. Add a tool here (in git), not with
+# `apt install` inside Kali, or it's gone at the next update.
+#
+# Kali's beginner bundle: nmap, Metasploit, Burp Suite, sqlmap, Hydra, John,
+# Wireshark, aircrack-ng, netcat, Responder, CrackMapExec/NetExec and friends.
+# A metapackage: one line pulls the lot (roughly 1–2 GB on disk).
+kali-tools-top10
+
+# Web: directory and parameter brute-forcing (most beginner labs use one)
+gobuster
+ffuf
+nikto
+
+# Wordlists (rockyou, dirb, etc.) and the exploit database (searchsploit)
+wordlists
+exploitdb
+
+# Everyday shell tools
+curl
+git
+tmux
+vim

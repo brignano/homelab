@@ -24,6 +24,7 @@ function hl-restart     { _hl_rcall "hl_restart $args" }
 function hl-backup      { _hl_rcall "hl_backup" }
 function hl-models      { _hl_rtty  "hl_models" }
 function hl-reload-prom { _hl_rcall "hl_reload_prom" }
+function hl-kali-shell  { _hl_rtty  "hl_kali_shell $args" }
 
 # ── Open a service in the default browser ─────────────────────────────────────
 function _hl_open { param([string]$url) Start-Process $url }
@@ -114,6 +115,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-backup            pg_dumpall (scripts/pg-backup.sh)
     hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
+    hl-kali-shell [cmd]  terminal in Kali (starts it, stops it on exit)
 "@ | Write-Host
 }
 

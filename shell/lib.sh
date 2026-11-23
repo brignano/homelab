@@ -86,6 +86,43 @@ hl_restart() {
 	docker restart "$1"
 }
 
+# hl_kali_shell — a terminal inside the Kali container, on demand. Sablier keeps
+# Kali scaled to zero for the browser desktop; this starts it if it's off, opens
+# a shell as the desktop user (or runs the given command), and stops it again on
+# exit — unless it was already running (the desktop is open), so a browser
+# session is never cut off. Stays on demand by design: an always-on Kali would
+# hold 1–2 GB that Ollama needs. Caveat: if you open the desktop while this
+# shell is up, Sablier stops Kali when that desktop session expires.
+hl_kali_shell() {
+	if ! docker inspect kali-linux >/dev/null 2>&1; then
+		echo "kali-linux doesn't exist yet: run hl-up desktops once" >&2
+		return 1
+	fi
+	_hl_kali_was_up=0
+	[ "$(docker inspect -f '{{.State.Running}}' kali-linux)" = true ] && _hl_kali_was_up=1
+	if [ "$_hl_kali_was_up" = 0 ]; then
+		echo "starting Kali…" >&2
+		docker start kali-linux >/dev/null || return 1
+		# wait for the image's init to create the desktop user (abc)
+		_hl_i=0
+		until docker exec kali-linux id abc >/dev/null 2>&1; do
+			_hl_i=$((_hl_i + 1)); [ "$_hl_i" -ge 30 ] && break; sleep 1
+		done
+	fi
+	_hl_tty=-i; [ -t 0 ] && _hl_tty=-it
+	if [ $# -eq 0 ]; then
+		docker exec $_hl_tty -u abc -w /config kali-linux bash -l
+	else
+		docker exec $_hl_tty -u abc -w /config kali-linux "$@"
+	fi
+	_hl_rc=$?
+	if [ "$_hl_kali_was_up" = 0 ]; then
+		echo "stopping Kali…" >&2
+		docker stop kali-linux >/dev/null
+	fi
+	return "$_hl_rc"
+}
+
 # hl_backup          — nightly pg_dumpall script (also runnable on demand)
 hl_backup() {
 	sh "$HL_REPO/scripts/pg-backup.sh"

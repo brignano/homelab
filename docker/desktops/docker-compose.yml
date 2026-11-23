@@ -10,11 +10,48 @@ services:
     networks:
       - proxy
 
+  # Kali's only way out: a VPN tunnel of its own (Proton over WireGuard), the
+  # same pattern as qBittorrent in docker/downloads/. Kali joins this
+  # container's network namespace and has no network of its own, so if the
+  # tunnel drops Kali is offline, never on the home connection, and its DNS
+  # and IPv6 go through the tunnel too. A separate gluetun from the downloads
+  # one, with its own WireGuard key, so a reconnect or a port-forward change on
+  # either never touches the other. Always on (~30 MB, idle): Sablier starts
+  # Kali into this namespace, and a container cannot join the namespace of a
+  # stopped one. Check from inside Kali: `curl -s https://ifconfig.me` shows a
+  # Proton IP; with this container stopped it fails instead of showing home's.
+  kali-vpn:
+    image: qmcgaw/gluetun:v3.41.3@sha256:fa19cc76b2af13d57a8d3dc3066f2ada061b1c761b8aecf989b3877c0486e027
+    container_name: kali-vpn
+    restart: unless-stopped
+    cpus: 0.25
+    mem_limit: 128m
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun   # already passed to CT 100 for docker/downloads
+    environment:
+      TZ: ${TZ:-America/New_York}
+      VPN_SERVICE_PROVIDER: protonvpn
+      VPN_TYPE: wireguard
+      WIREGUARD_PRIVATE_KEY: ${KALI_WIREGUARD_PRIVATE_KEY:?set KALI_WIREGUARD_PRIVATE_KEY in docker/desktops/.env (a new Proton WireGuard config, not the downloads one)}
+      SERVER_COUNTRIES: ${KALI_VPN_SERVER_COUNTRIES:-United States}
+      # The control server can stop the VPN; localhost only, nothing uses it.
+      HTTP_CONTROL_SERVER_ADDRESS: "127.0.0.1:8000"
+    networks:
+      - proxy        # Caddy reaches the Kali desktop here, at kali-vpn:3000
+
   # Browser-native Kali desktop (Selkies on :3000). Lifecycle owned by Sablier,
-  # so no restart policy. Reached at http://kali.home via Caddy.
+  # so no restart policy. Reached at https://kali.$HOMELAB_DOMAIN via Caddy,
+  # which proxies to kali-vpn:3000 because Kali lives in that namespace.
   kali-linux:
     image: lscr.io/linuxserver/kali-linux:latest
     container_name: kali-linux
+    network_mode: service:kali-vpn
+    depends_on:
+      kali-vpn:
+        condition: service_healthy
+        restart: true      # rejoin the new namespace when Compose replaces kali-vpn
     environment:
       PUID: 1000
       PGID: 1000
@@ -23,6 +60,11 @@ services:
       PASSWORD: ${DESKTOP_PASSWORD:?required}
     volumes:
       - kali_config:/config
+      # Tools come back after every image update: kali/tools.sh runs at each
+      # start (linuxserver custom init) and installs whatever in
+      # kali/packages.txt is missing. Edit the list in git, not in Kali.
+      - ./kali/tools.sh:/custom-cont-init.d/50-tools.sh:ro
+      - ./kali/packages.txt:/defaults/kali-packages.txt:ro
     shm_size: "1gb"
     mem_limit: 4g            # safety ceiling; container only uses what it touches
     security_opt:
@@ -33,14 +75,12 @@ services:
     labels:
       - sablier.enable=true
       - sablier.group=desktops
-    networks:
-      - proxy
 
 volumes:
   kali_config:
 
 networks:
-  # Caddy + Sablier + the desktops all share the proxy network so Caddy can reach
+  # Caddy + Sablier + kali-vpn (and so Kali) all share the proxy network so Caddy can reach
   # them by container name. Created by the proxy stack — bring that up first.
   proxy:
     external: true
