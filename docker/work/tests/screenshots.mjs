@@ -93,9 +93,10 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   const page = await browser.newPage({ viewport: { width, height: 900 }, deviceScaleFactor: 2, colorScheme: scheme });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
-  let slow = 0;
+  let slow = 0, fail = false;
   await page.route('http://work.test/**', async route => {
     const url = new URL(route.request().url());
+    if (url.pathname === '/api/graphql' && fail) return route.fulfill({ status: 502, body: 'down' });
     if (url.pathname === '/api/graphql' && slow) await new Promise(r => setTimeout(r, slow));
     if (url.pathname === '/api/graphql') return route.fulfill({ contentType: 'application/json', body: JSON.stringify(answer(route.request().postData())) });
     const file = url.pathname.startsWith('/assets/') ? join(ASSETS, url.pathname.slice(8)) : join(SITE, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
@@ -126,6 +127,17 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   expect(early.n === 4 && /updating/.test(early.sub), 'cached copy not drawn at once: ' + JSON.stringify(early));
   await page.waitForFunction(() => !/updating/.test(document.getElementById('sub').textContent), null, { timeout: 10000 });
   slow = 0;
+
+  // An old copy plus a failed refresh must say its date, not just a time.
+  await page.evaluate(() => { const c = JSON.parse(localStorage.getItem('work.cache.v1')); c.at -= 3 * 86400000; localStorage.setItem('work.cache.v1', JSON.stringify(c)); });
+  fail = true;
+  await page.reload();
+  await page.waitForFunction(() => /could not refresh/.test(document.getElementById('sub').textContent), null, { timeout: 5000 }).catch(() => {});
+  const stale = await page.evaluate(() => document.getElementById('sub').textContent);
+  expect(/could not refresh/.test(stale) && /[A-Z][a-z]{2} \d/.test(stale), 'old cached copy did not show its date: ' + stale);
+  fail = false;
+  await page.reload();
+  await page.waitForFunction(() => /read from GitHub at/.test(document.getElementById('sub').textContent), null, { timeout: 10000 });
 
   await page.click('.row[data-id="homelab#372"] .t');
   await page.screenshot({ path: join(OUT, `${name}-${scheme}.png`), fullPage: true });
