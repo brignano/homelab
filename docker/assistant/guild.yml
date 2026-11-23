@@ -36,10 +36,9 @@ categories:
   # ── Input: the one place you talk to Otto ───────────────────────────────
   - name: OTTO
     channels:
-      # #chat (conversational, local model) was removed on 2026-10-12: #ask
-      # covers it. The feature is still in the bot, off while
-      # DISCORD_CHAT_CHANNEL_ID is blank. To bring it back, restore the block
-      # from git history here, provision, and set that ID.
+      # #chat (conversational, local model) was removed from here on 2026-10-12
+      # and from the bot with the local model on 2026-11-23 (#406). An old
+      # #chat channel left in the server is safe to delete by hand.
 
       # The act lane: Claude, with read access to calendar, mail and the house.
       # Routed to docker/concierge/. Each new message gets its
