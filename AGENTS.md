@@ -149,6 +149,7 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | FlareSolverr | `docker/downloads/` | internal (`flaresolverr:8191` on `proxy_proxy`, no route); Prowlarr's Cloudflare-challenge solver, outside the VPN |
 | Cleanuparr | `docker/downloads/` | LAN + tailnet (via Caddy, `cleanuparr.`); join `proxy_proxy`; removes fake/stalled/failed downloads via the *arr and qBittorrent APIs, whitelist in `docker/downloads/cleanuparr/whitelist.txt`; no media mount |
 | Actual Budget | `docker/budget/` | LAN + tailnet only (via Caddy, `budget.$HOMELAB_DOMAIN`); joins `proxy_proxy`; no ports, **never the tunnel**: financial data. Bank sync deliberately off (no SimpleFIN/GoCardless secrets); data in volume `budget_data`, in the offsite backup. Server password is set in the app on first open, not stored in the repo |
+| Home page | `docker/dashboard/` | LAN + tailnet only, at the bare `$HOMELAB_DOMAIN` (own A record); **no container**: Caddy serves `docker/dashboard/site` and three read-only routes: `/api/prom/` (Prometheus `query` and `query_range` only, GET), `/api/graphql` (the Work page's GitHub route, same guards) and `/api/home.json` (weather coordinates and Healthchecks id from `docker/dashboard/.env`). Tiles in `site/services.json`, checked against the Caddyfile and probes by `scripts/check-dashboard.sh`. Replaced Homepage (#395) |
 | Work page | `docker/work/` | LAN + tailnet only (via Caddy, `work.$HOMELAB_DOMAIN`); **no container**: Caddy serves `docker/work/site` and proxies `POST /api/graphql` to api.github.com with a fine-grained read-only token (`WORK_GITHUB_TOKEN` in `docker/proxy/.env`). Open issues/PRs across the repos in ai-tools `fleet/board.yml`, status from fleet labels, read on every load; replaces the GitHub Projects board sync. Never the tunnel: private repos' issues |
 
 ## Networking rules
@@ -235,7 +236,8 @@ is behind `if (opts.dev)`) and matches every later request against that frozen
 list, so a **new filename** under `docker/dashboard/icons/` is a 404 no matter
 how current the mount is, while an edit to a file already there is served
 fine. That is how the dashboard's mark shipped, passed CI and was never served
-once. Ask what reads the file and when, not just how it is mounted.
+once. (Homepage was retired in #395: Caddy now serves the home page from
+directory mounts, so its files are live on pull.) Ask what reads the file and when, not just how it is mounted.
 
 ## Local LLM usage
 

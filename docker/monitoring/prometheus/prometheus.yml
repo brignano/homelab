@@ -137,6 +137,18 @@ scrape_configs:
           - http://budget:5006/health
         labels:
           service: budget
+      # The home page's tiles read their Up/Down from these probes (homelab#395),
+      # so every tile with a page behind it has one. AdGuard's UI redirects to
+      # its login page, which http_2xx follows; the review page answers / with
+      # no login.
+      - targets:
+          - http://adguard:80/
+        labels:
+          service: adguard
+      - targets:
+          - http://clipreview:8000/
+        labels:
+          service: clipreview
       # FlareSolverr's /health answers {"status":"ok"} 200 without starting a
       # browser, so the probe costs nothing.
       - targets:

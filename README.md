@@ -36,7 +36,7 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 
 | URL | Service | What it's for |
 |-----|---------|---------------|
-| https://`$HOMELAB_DOMAIN` | **Dashboard** | **Start here** — links to everything below, with up/down status |
+| https://`$HOMELAB_DOMAIN` | **Home page** | **Start here** — every app with live up/down, the box's stats and open work |
 | https://chat.`$HOMELAB_DOMAIN` | Open WebUI | AI chat |
 | https://stats.`$HOMELAB_DOMAIN` | Grafana | Dashboards & metrics |
 | https://apps.`$HOMELAB_DOMAIN` | Portainer | Docker management |
@@ -56,7 +56,7 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 >
 > The legacy `*.home` names still work; each one now redirects to its real
 > counterpart. To add a service: add a site block to the Caddyfile, add a tile to
-> [`docker/dashboard/config/services.yaml`](docker/dashboard/config/services.yaml),
+> [`docker/dashboard/site/services.json`](docker/dashboard/site/services.json),
 > then `docker compose restart caddy` — the wildcard DNS record already covers
 > it. CI fails if you do the first and forget the second.
 >

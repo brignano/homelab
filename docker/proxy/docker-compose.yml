@@ -15,8 +15,18 @@ services:
       - ../dashboard/assets:/srv/design:ro
       # The Work page's static files (docker/work/site), served at work.<domain>.
       - ../work/site:/srv/work:ro
+      # The home page at the bare domain (docker/dashboard/site) and its tile
+      # and page icons. Directory mounts, so a git pull reaches them live.
+      - ../dashboard/site:/srv/home:ro
+      - ../dashboard/icons:/srv/home-icons:ro
       - caddy_data:/data
       - caddy_config:/config
+    # WEATHER_LATITUDE/LONGITUDE and HEALTHCHECKS_PROJECT_ID for the home
+    # page's /api/home.json, kept where they always lived. Optional: without
+    # the file the page hides the weather and the Healthchecks link.
+    env_file:
+      - path: ../dashboard/.env
+        required: false
     environment:
       # Bearer token the mcp.home site requires (see Caddyfile). Empty default =
       # fail-closed: if unset, mcp.home rejects all requests but the other sites

@@ -245,15 +245,15 @@ jobs:
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: ./scripts/check-observability.sh
 
-      - name: "dashboard: config files are valid YAML"
+      - name: "dashboard: the home and Work pages' scripts parse"
+        # Plain files with no build step, so a syntax error would ship as a
+        # blank page. node is on the runner; nothing is installed.
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |
-          python3 -c "
-          import sys, yaml, pathlib
-          for f in sorted(pathlib.Path('docker/dashboard/config').glob('*.yaml')):
-              yaml.safe_load(f.read_text())
-              print('ok   ', f)
-          "
+          python3 -c "import json; json.load(open('docker/dashboard/site/services.json'))"
+          node --check docker/dashboard/site/app.js
+          node --check docker/work/site/data.js
+          node --check docker/work/site/app.js
 
       - name: "dashboard: the generated palette still matches the vendored design tokens"
         # homepage-palette.css is generated from design-tokens.css, because
@@ -269,7 +269,7 @@ jobs:
         run: ./scripts/gen-actual-theme.py --check
 
       - name: "dashboard: every Caddyfile site has a tile"
-        # The Caddyfile and services.yaml are two hand-maintained lists of the
+        # The Caddyfile and services.json are two hand-maintained lists of the
         # same thing. A dashboard that falls behind does not break — it just
         # stops being complete, which is worse, because you keep trusting it.
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}

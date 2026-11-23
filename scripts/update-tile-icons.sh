@@ -26,7 +26,7 @@ set -eu
 SOURCE_REPO="homarr-labs/dashboard-icons"
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 ICONS="$REPO/docker/dashboard/icons"
-CONFIG="$REPO/docker/dashboard/config"
+SERVICES="$REPO/docker/dashboard/site/services.json"
 SOURCE_FILE="$ICONS/SOURCE"
 
 # Drawn in this repo, not fetched from anywhere. If one of these goes missing
@@ -62,8 +62,18 @@ echo "source   $SOURCE_REPO@$ref"
 
 # Every local icon path the dashboard's config names — the tiles' `icon:` and
 # the page's own `favicon:`, which is drawn here and so only ever checked.
-refs=$(grep -hoE '(icon|favicon): /icons/[A-Za-z0-9._-]+' "$CONFIG"/*.yaml | sed 's|.*/icons/||' | sort -u)
-[ -n "$refs" ] || { echo "update-tile-icons: no /icons/... references in $CONFIG" >&2; exit 1; }
+# Every icon a tile names in services.json. A theme pair (`x-on-dark.svg`,
+# `x-on-light.svg`) is composed from upstream's `x.svg` below, so it is fetched
+# under that name. The page's own favicon is drawn here and always included.
+refs=$( { python3 -c '
+import json, re, sys
+for s in json.load(open(sys.argv[1]))["sections"]:
+    for t in s["tiles"]:
+        for k in ("icon", "iconLight"):
+            if t.get(k):
+                print(re.sub(r"-on-(dark|light)(\.svg)$", r"\2", t[k]))
+' "$SERVICES"; echo favicon.svg; } | sort -u)
+[ -n "$refs" ] || { echo "update-tile-icons: no icons named in $SERVICES" >&2; exit 1; }
 
 missing=""
 for file in $refs; do

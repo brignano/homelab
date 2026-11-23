@@ -1,260 +1,85 @@
 #!/usr/bin/env sh
 #
-# Every service reachable through Caddy must have a tile on the dashboard, and
-# every local file the dashboard's config names must exist and be mounted.
+# Every service reachable through Caddy must have a tile on the home page, and
+# every tile must point at things that exist.
 #
 # Why this exists
 # ---------------
-# docker/proxy/Caddyfile and docker/dashboard/config/services.yaml are two lists
+# docker/proxy/Caddyfile and docker/dashboard/site/services.json are two lists
 # of the same thing, maintained by hand, in different files. That is the exact
-# shape of drift this repo keeps running into: the dashboard does not break when
-# it falls behind, it just quietly stops being the complete picture — which is
-# worse, because you go on trusting it.
+# shape of drift this repo keeps running into: the home page does not break
+# when it falls behind, it just quietly stops being the complete picture —
+# which is worse, because you go on trusting it.
 #
-# So CI compares them. Add a site block, forget the tile, and the build goes red
-# while you still remember why you added it.
+# So CI compares them, and the other lists a tile leans on:
+#   - every Caddyfile site has a tile, and every tile's site still exists
+#   - every tile's icon file is in docker/dashboard/icons (an -on-dark mark
+#     needs its -on-light twin, named on the same tile)
+#   - every tile's `probe` is a blackbox target in prometheus.yml, or its
+#     Up/Down would say "No check" forever
+#   - every tile's `container` is a container_name in some compose file
+#   - every /icons/ path index.html or the web app manifest names exists
 #
 # Run by hand from the repo root:
 #   ./scripts/check-dashboard.sh
 #
 set -eu
-
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-CADDYFILE="$REPO/docker/proxy/Caddyfile"
-SERVICES="$REPO/docker/dashboard/config/services.yaml"
+exec python3 - "$REPO" <<'PY'
+import json, pathlib, re, sys
+
+repo = pathlib.Path(sys.argv[1])
+caddy = (repo / "docker/proxy/Caddyfile").read_text()
+site = repo / "docker/dashboard/site"
+icons = repo / "docker/dashboard/icons"
+services = json.loads((site / "services.json").read_text())
+prom = (repo / "docker/monitoring/prometheus/prometheus.yml").read_text()
+compose = "\n".join(p.read_text() for p in (repo / "docker").glob("*/docker-compose.yml"))
 
 # Sites that intentionally have no tile. Each needs a reason, not just a name.
-#
-#   mcp   an API endpoint, not a page. It answers MCP over HTTP and returns 401
-#         to a browser without a bearer token, so a tile would be a link to an
-#         error.
-#   budget-mcp   the same, for the Actual Budget MCP server (docker/mcp-budget).
-#         The tile for the budget itself is "budget".
-EXEMPT="mcp budget-mcp"
+#   mcp, budget-mcp   API endpoints, not pages: they answer MCP over HTTP and
+#                     return 401 to a browser without a bearer token.
+EXEMPT = {"mcp", "budget-mcp"}
 
-[ -f "$CADDYFILE" ] || { echo "check-dashboard: $CADDYFILE not found" >&2; exit 1; }
-[ -f "$SERVICES" ]  || { echo "check-dashboard: $SERVICES not found" >&2; exit 1; }
+bad = []
+def ok(msg): print("ok       " + msg)
+def fail(msg): print("MISSING  " + msg); bad.append(msg)
 
-# Subdomain of every `<name>.{$HOMELAB_DOMAIN} {` site block. The bare
-# `{$HOMELAB_DOMAIN} {` block is the dashboard itself and is not matched here —
-# it would only ever link to itself. `[ ,]` because a block may list a second
-# address after the real one (`ha.{$HOMELAB_DOMAIN}, http://ha.caddy {`, the
-# probe alias check-probes.sh guards).
-sites=$(grep -oE '^[a-z0-9-]+\.\{\$HOMELAB_DOMAIN\}[ ,]' "$CADDYFILE" | cut -d. -f1 | sort -u)
+tiles = [t for s in services["sections"] for t in s["tiles"]]
+sites = set(re.findall(r"^([a-z0-9-]+)\.\{\$HOMELAB_DOMAIN\}[ ,]", caddy, re.M))
+linked = {m.group(1) for t in tiles for m in [re.match(r"https://([a-z0-9-]+)\.\{domain\}", t["href"])] if m}
 
-missing=""
-for site in $sites; do
-  skip=""
-  for e in $EXEMPT; do
-    [ "$e" = "$site" ] && skip=yes
-  done
-  [ -z "$skip" ] || continue
+for s in sorted(sites - EXEMPT):
+    (ok if s in linked else fail)(f"{s} has a tile" if s in linked else f"{s}: Caddyfile site with no tile in services.json")
+for s in sorted(linked - sites):
+    fail(f"{s}: tile links to a site with no Caddyfile block")
 
-  # A tile is present if something links to https://<site>.<domain>.
-  if grep -q "https://${site}\.{{HOMEPAGE_VAR_DOMAIN}}" "$SERVICES"; then
-    echo "ok       $site"
-  else
-    echo "MISSING  $site"
-    missing="$missing $site"
-  fi
-done
+for t in tiles:
+    for key in ("icon", "iconLight"):
+        f = t.get(key)
+        if f and not (icons / f).is_file():
+            fail(f"{t['name']}: icon {f} is not in docker/dashboard/icons")
+    if t.get("icon", "").endswith("-on-dark.svg") and t.get("iconLight") != t["icon"].replace("-on-dark", "-on-light"):
+        fail(f"{t['name']}: {t['icon']} needs iconLight {t['icon'].replace('-on-dark', '-on-light')}")
+    if "probe" in t:
+        if re.search(r"^\s*-\s*" + re.escape(t["probe"]) + r"\s*$", prom, re.M):
+            ok(f"{t['name']} is probed ({t['probe']})")
+        else:
+            fail(f"{t['name']}: probe {t['probe']} is not a blackbox target in prometheus.yml")
+    if "container" in t and not re.search(r"container_name:\s*" + re.escape(t["container"]) + r"\s*$", compose, re.M):
+        fail(f"{t['name']}: no compose file names a container {t['container']}")
+    if "probe" not in t and "container" not in t:
+        fail(f"{t['name']}: needs a probe or a container, or it can never say Up")
 
-# The reverse direction matters too: a tile pointing at a site block that no
-# longer exists is a link to nothing, and nobody notices until they click it.
-stale=""
-for href in $(grep -oE 'href: https://[a-z0-9-]+\.\{\{HOMEPAGE_VAR_DOMAIN\}\}' "$SERVICES" \
-              | sed 's|href: https://||' | cut -d. -f1 | sort -u); do
-  if ! printf '%s\n' $sites | grep -qx "$href"; then
-    echo "STALE    $href — tile links to a site with no Caddyfile block"
-    stale="$stale $href"
-  fi
-done
+refs = set(re.findall(r'"/icons/([A-Za-z0-9._-]+)"', (site / "index.html").read_text()))
+manifest = json.loads((icons / "site.webmanifest").read_text())
+refs |= {i["src"].split("/icons/")[-1] for i in manifest.get("icons", []) if "/icons/" in i.get("src", "")}
+for r in sorted(refs):
+    if not (icons / r).is_file():
+        fail(f"/icons/{r} is named by index.html or the manifest but not in docker/dashboard/icons")
 
-# Every section in services.yaml must be named in settings.yaml's `layout:`.
-# Homepage does not complain about one that is missing — it renders it after
-# all the listed sections, so the order quietly stops being the one you chose.
-# That is how Home Assistant sat at the bottom of the page.
-SETTINGS="$REPO/docker/dashboard/config/settings.yaml"
-unlaid=""
-layout=$(awk '
-  /^layout:/ { on = 1; next }
-  on && /^[^ \t#]/ { exit }
-  on && /^  [^ #][^:]*:[[:space:]]*$/ { sub(/^  /, ""); sub(/:[[:space:]]*$/, ""); print }
-' "$SETTINGS")
-sections=$(sed -n 's/^- \(.*\):[[:space:]]*$/\1/p' "$SERVICES")
-old_ifs=$IFS
-IFS='
-'
-for section in $sections; do
-  if printf '%s\n' "$layout" | grep -qxF "$section"; then
-    echo "ok       section '$section' is in the layout"
-  else
-    echo "MISSING  section '$section' is not in settings.yaml layout — it will render last"
-    unlaid="$unlaid '$section'"
-  fi
-done
-IFS=$old_ifs
-
-# Homepage rejects any Host header it was not told to expect, so the address
-# Caddy serves the dashboard at and HOMEPAGE_ALLOWED_HOSTS must be the same
-# string. They live in different files, and a mismatch does not fail the
-# container — it renders "Invalid Host header", which reads exactly like a proxy
-# fault. This shipped broken once for precisely that reason.
-COMPOSE="$REPO/docker/dashboard/docker-compose.yml"
-mismatch=""
-if [ -f "$COMPOSE" ]; then
-  # The site block whose body reverse-proxies to the dashboard container.
-  caddy_host=$(awk '
-    /^[^ \t].*\{$/ { site = $1 }
-    /reverse_proxy dashboard:/ { print site; exit }
-  ' "$CADDYFILE")
-  allowed=$(sed -n 's/^[[:space:]]*HOMEPAGE_ALLOWED_HOSTS:[[:space:]]*//p' "$COMPOSE" \
-            | head -n1 | tr -d ' ')
-  # Normalise: the Caddyfile writes {$VAR}, compose writes ${VAR:?required}.
-  norm_caddy=$(printf '%s' "$caddy_host" | sed 's/{\$HOMELAB_DOMAIN}/D/g')
-  norm_allowed=$(printf '%s' "$allowed" | sed 's/\${HOMELAB_DOMAIN[^}]*}/D/g')
-  if [ "$norm_caddy" != "$norm_allowed" ]; then
-    echo "MISMATCH host: Caddy serves '$caddy_host' but HOMEPAGE_ALLOWED_HOSTS is '$allowed'"
-    mismatch=yes
-  else
-    echo "ok       host allowlist matches the Caddyfile"
-  fi
-fi
-
-# Everything the dashboard serves out of its own directories: the tab icon
-# named in settings.yaml, and every file config/custom.css imports. Each one is
-# three files agreeing — the config names a path under /<dir>, the compose file
-# mounts that directory at /app/public/<dir>, and the file is in the repo. Break
-# any one and Homepage does not break with it: a missing icon silently becomes
-# its default logo, and a missing stylesheet silently becomes its default theme.
-# Both look like nothing changed rather than like something is wrong.
-CONFIG_DIR="$REPO/docker/dashboard/config"
-CUSTOM_CSS="$CONFIG_DIR/custom.css"
-CUSTOM_JS="$CONFIG_DIR/custom.js"
-asset_err=""
-
-check_public_ref() {
-  ref=$1
-  source=$2
-  # Anything that is not an absolute path is Homepage's own to resolve: a full
-  # URL, or a name from its bundled icon set.
-  case "$ref" in
-    /*) ;;
-    *) echo "ok       $ref is not a local file ($source)"; return 0 ;;
-  esac
-
-  dir=$(printf '%s' "${ref#/}" | cut -d/ -f1)
-  rest=$(printf '%s' "${ref#/}" | cut -d/ -f2-)
-
-  if [ ! -f "$REPO/docker/dashboard/$dir/$rest" ]; then
-    echo "MISSING  $source references $ref, which is not in docker/dashboard/$dir"
-    asset_err=yes
-  elif ! grep -q "\./$dir:/app/public/$dir" "$COMPOSE" 2>/dev/null; then
-    echo "MISSING  $ref cannot be served — docker-compose.yml does not mount ./$dir at /app/public/$dir"
-    asset_err=yes
-  else
-    echo "ok       $ref ($source)"
-  fi
-}
-
-# Every absolute path the YAML names: the page's `favicon:`, and each tile's
-# `icon:`. A bare `grafana.png` is not one of these — that is Homepage's own
-# CDN lookup, which is exactly what ./scripts/update-tile-icons.sh replaces.
-for f in "$CONFIG_DIR"/*.yaml; do
-  [ -f "$f" ] || continue
-  for ref in $(grep -oE '(icon|favicon):[[:space:]]+/[A-Za-z0-9._/-]+' "$f" | sed 's|.*:[[:space:]]*||' | sort -u); do
-    check_public_ref "$ref" "$(basename "$f")"
-  done
-done
-
-if [ -f "$CUSTOM_CSS" ]; then
-  for ref in $(grep -oE 'url\("[^"]+"\)' "$CUSTOM_CSS" | sed 's/^url("//; s/")$//'); do
-    check_public_ref "$ref" "custom.css"
-  done
-
-  # And the other direction. A mark upstream draws twice is split into
-  # `<name>-on-light.svg` and `<name>-on-dark.svg`, and nothing renders either
-  # one until custom.css names it: Homepage points the tile at `<name>.svg`,
-  # which still answers the OS rather than the dashboard's own theme. Composing
-  # a third such icon and forgetting the stylesheet would leave it looking
-  # exactly like the bug this replaced — a dark mark on a dark card, for anyone
-  # whose phone disagrees with the dashboard.
-  for variant in "$REPO"/docker/dashboard/icons/*-on-dark.svg; do
-    [ -f "$variant" ] || continue
-    name=$(basename "$variant")
-    pair="${name%-on-dark.svg}-on-light.svg"
-    if [ ! -f "$REPO/docker/dashboard/icons/$pair" ]; then
-      echo "MISSING  $name has no $pair — re-run ./scripts/update-tile-icons.sh"
-      asset_err=yes
-    elif ! grep -q "/icons/$name" "$CUSTOM_CSS" || ! grep -q "/icons/$pair" "$CUSTOM_CSS"; then
-      echo "MISSING  custom.css does not swap $name / $pair by data-theme"
-      asset_err=yes
-    else
-      echo "ok       $name / $pair are swapped by theme (custom.css)"
-    fi
-  done
-fi
-
-# custom.js names the icon files Homepage will not declare on its own, and the
-# Caddyfile rewrites the root paths Safari probes onto the same directory. Both
-# are one edit away from pointing at a file nobody generated — and a favicon
-# that 404s is not an error anywhere, it is a browser quietly drawing a globe.
-if [ -f "$CUSTOM_JS" ]; then
-  for ref in $(grep -oE '"/(icons|assets)/[A-Za-z0-9._/-]+"' "$CUSTOM_JS" | tr -d '"' | sort -u); do
-    check_public_ref "$ref" "custom.js"
-  done
-fi
-
-for ref in $(grep -oE '^[[:space:]]*rewrite[[:space:]]+\S+[[:space:]]+/(icons|assets)/\S+' "$CADDYFILE" \
-             | awk '{print $NF}' | sort -u); do
-  check_public_ref "$ref" "Caddyfile"
-done
-
-# The web app manifest, which is the only icon declaration Chrome reads when it
-# draws an INSTALLED app — its window titlebar, its taskbar entry, the install
-# dialog. Two ways for it to be quietly dead, and neither shows up as an error:
-#
-#   1. It names a raster nobody generated. Chrome then declines to install
-#      rather than falling back, so the symptom is a missing menu item.
-#   2. The Caddyfile stops rewriting the root path onto it. Homepage hard-codes
-#      `/site.webmanifest` in its _document and ships its own at that path, so
-#      dropping the rewrite does not 404 — it silently serves Homepage's logo,
-#      which looks like nothing changed.
-MANIFEST="$REPO/docker/dashboard/icons/site.webmanifest"
-if [ -f "$MANIFEST" ]; then
-  if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$MANIFEST" 2>/dev/null; then
-    echo "MISSING  site.webmanifest is not valid JSON"
-    asset_err=yes
-  else
-    for ref in $(python3 -c '
-import json, sys
-m = json.load(open(sys.argv[1]))
-for icon in m.get("icons", []):
-    src = icon.get("src", "")
-    if src:
-        print(src)
-' "$MANIFEST" | sort -u); do
-      check_public_ref "$ref" "site.webmanifest"
-    done
-  fi
-
-  if grep -qE '^[[:space:]]*rewrite[[:space:]]+/site\.webmanifest[[:space:]]+/icons/site\.webmanifest' "$CADDYFILE"; then
-    echo "ok       /site.webmanifest is rewritten onto ours (Caddyfile)"
-  else
-    echo "MISSING  Caddyfile does not rewrite /site.webmanifest — Homepage's own logo wins"
-    asset_err=yes
-  fi
-fi
-
-if [ -n "$missing" ] || [ -n "$stale" ] || [ -n "$unlaid" ] || [ -n "$mismatch" ] || [ -n "$asset_err" ]; then
-  echo >&2
-  [ -z "$missing" ] || echo "Add a tile to docker/dashboard/config/services.yaml for:$missing" >&2
-  [ -z "$stale" ]   || echo "Remove or fix tiles pointing at:$stale" >&2
-  [ -z "$unlaid" ]  || echo "Add these sections to layout: in docker/dashboard/config/settings.yaml:$unlaid" >&2
-  [ -z "$mismatch" ] || echo "HOMEPAGE_ALLOWED_HOSTS must equal the site address Caddy serves the dashboard at." >&2
-  [ -z "$asset_err" ] || echo "Every /<dir>/... path in settings.yaml or custom.css must exist under docker/dashboard/<dir>, and that directory must be mounted at /app/public/<dir>." >&2
-  echo "(If a site genuinely should have no tile, add it to EXEMPT in $0 with a reason.)" >&2
-  exit 1
-fi
-
-echo "dashboard covers every proxied site"
+if bad:
+    print("\nThe home page's tile list is out of step: see MISSING above.", file=sys.stderr)
+    sys.exit(1)
+print("home page covers every proxied site")
+PY

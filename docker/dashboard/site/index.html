@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>homelab</title>
+<meta name="description" content="Every service on the box, in one place.">
+<link rel="icon" href="/icons/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="manifest" href="/site.webmanifest">
+<link rel="stylesheet" href="/app.css">
+<script src="/work-data.js" defer></script>
+<script src="/app.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><img src="/icons/favicon.svg" alt=""><span id="host">homelab</span></div>
+    <button class="tbtn" type="button" id="theme" aria-label="Switch light or dark">Light / dark</button>
+  </header>
+
+  <section class="hero" aria-labelledby="pitch">
+    <div class="pitchcol">
+      <div class="eyebrow">Anthony's homelab · running in the closet</div>
+      <h1 id="pitch">A tiny computer that runs our movies, smart home and a private AI.</h1>
+      <p class="pitch">Everything below lives on one small box at home, not in someone else's cloud. These numbers are live.</p>
+      <details class="why"><summary>About this box</summary><p>Everything below lives on one small box at home, not in someone else's cloud. These numbers are live.</p></details>
+    </div>
+    <div class="facts" id="facts"></div>
+    <div class="orbit" id="orbit" role="img" aria-label="Checking services">
+      <svg viewBox="0 0 240 240" aria-hidden="true">
+        <circle cx="120" cy="120" r="104" class="track"/>
+        <circle cx="120" cy="120" r="104" class="arc" id="arc" transform="rotate(-90 120 120)"/>
+        <circle cx="120" cy="120" r="84" class="dots"/>
+        <g class="dot"><circle cx="120" cy="36" r="5"/></g>
+      </svg>
+      <div class="c"><b id="upn">–</b><span id="upword">checking</span></div>
+    </div>
+  </section>
+
+  <section aria-labelledby="box-h">
+    <h2 id="box-h">The box right now</h2>
+    <div class="stats" id="stats"></div>
+    <div class="hint">Tap a card for details</div>
+    <div class="detail" id="detail" hidden></div>
+  </section>
+
+  <section aria-labelledby="work-h">
+    <div class="row-h"><h2 id="work-h">What I'm building</h2><a class="more" id="worklink" href="#">Open Work →</a></div>
+    <div class="work" id="work"></div>
+  </section>
+
+  <div class="groups" id="groups"></div>
+
+  <nav class="links" id="links" aria-label="Links"></nav>
+  <div class="foot" id="foot">Loading…</div>
+</div>
+</body>
+</html>
