@@ -44,7 +44,11 @@ function hl-alerts-ip { _hl_open "http://${HL_IP}:8090" }
 function hl-vpn      { tailscale status }
 function hl-vpn-up   { tailscale up --accept-routes }
 function hl-vpn-down { tailscale down }
-function hl-ssh      { ssh $HL_SSH @args }
+# Bare hl-ssh lands in the repo on CT 100; with args it is plain ssh.
+function hl-ssh {
+	if ($args.Count -eq 0) { ssh -t $HL_SSH "cd $HL_REPO 2>/dev/null; exec `$SHELL -l" }
+	else { ssh $HL_SSH @args }
+}
 function hl-host     { ssh $HL_HOST_SSH @args }
 
 # hl-status — the "Tailscale flap != outage" check: which layer is actually down.
@@ -98,7 +102,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
-    hl-ssh [cmd]         ssh into the Docker LXC (CT 100, root@docker)
+    hl-ssh [cmd]         ssh into the Docker LXC (CT 100), landing in the repo
     hl-host [cmd]        ssh into the Proxmox host (m5): drives, pct, vzdump
   docker / ops           (run over SSH on the server)
     hl-up [stack]        whole lab (boot order) or one stack
