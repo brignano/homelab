@@ -59,20 +59,22 @@ project" link; a repo without an entry links to claude.ai/code. A real one-tap
 start is #387.
 
 life, people and ideas are never shown: the page drops anything outside
-`board.yml` `repos:` (and anything under `never:`), and the token should not
-be granted those repos at all.
+`board.yml` `repos:` (and anything under `never:`). The token is never
+granted life or people. It does reach the ideas ledger's repo, because the
+Ideas page shares it, so this route can read that repo on the LAN and tailnet.
 
 ## Setup (once)
 
 1. Create a **fine-grained** token at
    https://github.com/settings/personal-access-tokens/new:
    - Repository access: **Only select repositories**, the repos in
-     `board.yml` `repos:` (ai-tools included). Never life, people or ideas.
+     `board.yml` `repos:` (ai-tools included), plus the ideas ledger's repo for
+     the Ideas page (docker/ideas/). Never life or people.
    - Permissions, all **Read-only**: Contents, Issues, Pull requests, Commit
      statuses. Metadata is added automatically.
 2. On CT 100, add it to `docker/proxy/.env`:
    ```sh
-   WORK_GITHUB_TOKEN=github_pat_...
+   READ_GITHUB_TOKEN=github_pat_...   # shared with the Ideas page
    ```
 3. Recreate Caddy so it reads the new variable and mount:
    ```sh
@@ -100,7 +102,7 @@ writes phone and desktop screenshots.
 
 | What you see | Why | Fix |
 |---|---|---|
-| "GitHub refused the token (401)" | `WORK_GITHUB_TOKEN` unset, expired or revoked | New token, update `.env`, `/deploy proxy` |
+| "GitHub refused the token (401)" | `READ_GITHUB_TOKEN` unset, expired or revoked | New token, update `.env`, `/deploy proxy` |
 | "Could not read fleet/board.yml" | Token lacks Contents: read on ai-tools | Add ai-tools to the token |
 | A repo is listed but always empty | Token was not granted that repo | Add it to the token |
 | No "checks passing" words | Token lacks Commit statuses: read | Add the permission |

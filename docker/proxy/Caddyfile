@@ -197,7 +197,7 @@ review.{$HOMELAB_DOMAIN} {
 # LAN + tailnet only, never the tunnel: private repos' issues come through here.
 work.{$HOMELAB_DOMAIN} {
 	# The page's only data call. Caddy adds a fine-grained READ-ONLY token
-	# (WORK_GITHUB_TOKEN, docker/proxy/.env) so the browser never holds one, and
+	# (READ_GITHUB_TOKEN in docker/proxy/.env, shared with Ideas) so the browser never holds one, and
 	# the token's permissions are what make the route read-only: GitHub refuses
 	# a mutation from it. POST only, one path, small bodies. Unset token: GitHub
 	# answers 401 and the page says which variable to set.
@@ -222,8 +222,8 @@ work.{$HOMELAB_DOMAIN} {
 # Work. LAN + tailnet only, never the tunnel: the ledger is private.
 ideas.{$HOMELAB_DOMAIN} {
 	# The page's only data call: one fixed file, GET only. Caddy adds its own
-	# fine-grained READ-ONLY token, scoped to the ledger's repo alone
-	# (IDEAS_GITHUB_TOKEN), and the repo and path come from docker/proxy/.env
+	# fine-grained READ-ONLY token (READ_GITHUB_TOKEN in docker/proxy/.env,
+	# shared with Work), and the repo and path come from docker/proxy/.env
 	# too, so neither is in this public repo. The browser cannot choose what
 	# is read: the path is fixed here. Other sites cannot read the answer:
 	# a foreign Origin gets a 403 and GitHub's CORS headers are stripped.

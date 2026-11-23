@@ -59,7 +59,7 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   const expect = (ok, msg) => { if (!ok) { failed++; console.error(`FAIL ${name}/${scheme}: ${msg}`); } };
 
   // No token / no ledger yet: the page says what to set, not a blank screen.
-  for (const [code, words] of [[401, 'IDEAS_GITHUB_TOKEN'], [404, 'IDEAS_LEDGER_REPO']]) {
+  for (const [code, words] of [[401, 'READ_GITHUB_TOKEN'], [404, 'IDEAS_LEDGER_REPO']]) {
     status = code;
     await page.goto('http://ideas.test/');
     await page.waitForSelector('.state.err');
