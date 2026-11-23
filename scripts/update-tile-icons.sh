@@ -38,7 +38,7 @@ LOCAL="favicon icon-source brignano"
 # Upstream ships a second drawing for dark backgrounds, so for these the two are
 # composed into one file that switches on the viewer's colour scheme, rather
 # than picking a theme to be wrong in. `<name>:<upstream variant>`.
-COMPOSITES="portainer:portainer-dark open-webui:open-webui-light"
+COMPOSITES="portainer:portainer-dark"
 
 refresh=""
 case "${1:-}" in

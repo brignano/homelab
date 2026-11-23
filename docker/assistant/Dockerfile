@@ -1,4 +1,4 @@
-# Small, single-purpose image: a Discord gateway client that talks to Ollama,
+# Small, single-purpose image: a Discord gateway client that reads Prometheus,
 # Prometheus and Loki over the internal Docker networks. No inbound ports.
 FROM python:3.12-slim
 

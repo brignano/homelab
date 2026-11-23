@@ -7,7 +7,7 @@
 # a broken compose file or Caddyfile is a network outage, not a failed build.
 # Every check below is one that has actually caught something by hand —
 # a Caddyfile that parsed nowhere, a config knob wired into compose but never
-# read, an Ollama option that silently undid a performance fix.
+# read, a model option that silently undid a performance fix.
 #
 # None of it needs secrets or network access to the lab: the compose files are
 # validated with throwaway values, and the Caddyfile is checked inside the real
@@ -306,7 +306,7 @@ jobs:
           "$RUNNER_TEMP/venv-assistant/bin/pip" install -q --disable-pip-version-check -r requirements.txt
 
       - name: "assistant: offline smoke tests"
-        # Pure and offline: no Discord, no Ollama, no Prometheus. Asserts the
+        # Pure and offline: no Discord, no Prometheus. Asserts the
         # invariants that have broken before — see tests/smoke.py.
         if: ${{ !cancelled() && steps.run.outputs.assistant == 'true' }}
         working-directory: docker/assistant
@@ -509,7 +509,7 @@ jobs:
         # fails the run:
         #
         #   HOMELAB_DOMAIN     the adapter substitutes it into every site address.
-        #                      Unset, the blocks become `stats.`, `chat.` and so
+        #                      Unset, the blocks become `stats.`, `apps.` and so
         #                      on — a config we never deploy.
         #   CLOUDFLARE_API_TOKEN  `acme_dns cloudflare {$CLOUDFLARE_API_TOKEN}`
         #                      expands to nothing and the directive is rejected

@@ -87,8 +87,6 @@ scrape_configs:
           - http://prometheus:9090/-/healthy
           - http://loki:3100/ready
           - http://portainer:9000/
-          - http://open-webui:8080/
-          - http://ollama:11434/
           # /health, not /, and the path matters: a bare / carries the Host
           # header `caddy`, which matches no site block and gets a 404 — a
           # failed probe against a healthy proxy. docker/proxy/Caddyfile

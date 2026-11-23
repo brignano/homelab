@@ -1,5 +1,9 @@
 # AI Strategy
 
+> **Superseded 2026-11-23 (#406).** The local model and Open WebUI were removed:
+> chat happens in Claude, and the digest is rendered by code. Kept as the record
+> of why the local model existed and what it was good for.
+
 ## Goal
 Reduce Claude Code token usage by offloading low-risk, high-token tasks to local LLMs.
 

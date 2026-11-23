@@ -122,11 +122,9 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | cAdvisor | `docker/monitoring/` | internal |
 | pve-exporter | `docker/monitoring/` | internal (Proxmox API) |
 | postgres-exporter | `docker/monitoring/` | internal (+ `core_core`) |
-| blackbox-exporter | `docker/monitoring/` | internal (+ `core`/`ai`/`proxy`) |
+| blackbox-exporter | `docker/monitoring/` | internal (+ `core`/`proxy`) |
 | Loki | `docker/monitoring/` | internal (log store) |
 | Alloy | `docker/monitoring/` | internal (log shipper) |
-| Ollama | `docker/ai/` | LAN + tailnet |
-| Open WebUI | `docker/ai/` | LAN + tailnet (via Caddy, `chat.home`) |
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
 | mcp-calendar | `docker/mcp-calendar/` | internal: no ports; reached from outside CT 100 only through Caddy at `mcp.$HOMELAB_DOMAIN/calendar/mcp` (same bearer token as Grafana MCP, LAN + tailnet). Read-only iCloud calendars via HA `GET /api/calendars/<entity>`, limited to `HA_CALENDARS`. Containers on `monitoring_monitoring` can reach it without the token. No public listener; cloud Claude reads it through the `life` Remote Control session (`scripts/life`) |
 | mcp-budget | `docker/mcp-budget/` | LAN + tailnet via Caddy at `budget-mcp.$HOMELAB_DOMAIN`; no published port, own bearer token (`MCP_BUDGET_TOKEN`). Read-only unless `docker-compose.write.yml` is added. Secrets only in its `.env` |
@@ -158,18 +156,16 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 - **Domain:** `HOMELAB_DOMAIN` is `home.brignano.io`, so services are at `https://<name>.home.brignano.io` (e.g. `review.home.brignano.io`). Use real URLs in replies, not placeholders.
 - **Service names (`*.$HOMELAB_DOMAIN`):** a real domain with real Let's Encrypt certificates. A single wildcard DNS record (`*.<base> → 10.0.0.201`, Cloudflare proxy **off**) covers every service; Caddy routes by Host header. **These are not public** — the name resolves publicly but the address is private, so only LAN/tailnet devices can reach it. Certificates come via the ACME **DNS-01** challenge (Caddy writes a TXT record to the zone), so no inbound connection is ever needed. Adding a service needs only a Caddyfile block — the wildcard already covers it.
 - **Legacy `*.home`:** still served, now as redirects to the real names. AdGuard keeps the `*.home → 10.0.0.201` rewrites for these; once nothing uses them, both can go. AdGuard itself stays for ad blocking and as the tailnet resolver.
-- **Port bindings:** admin UIs and the AI/metrics services (Portainer, Grafana, Prometheus, Ollama) bind to all interfaces — reachable over LAN + tailnet, **not** public. Home Assistant runs on **host networking** (HomeKit/discovery need LAN multicast), so its `:8123` is on all interfaces too; hand out `ha.$HOMELAB_DOMAIN`, not the plain-HTTP port. Matterbridge is host-networked for the same reason, but its web UI binds to `127.0.0.1` only: it can install npm packages as root and authenticates by client IP, so behind Caddy one login would unlock it for everyone (`docker/matterbridge/README.md` → "The web UI"). PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
+- **Port bindings:** admin UIs and the metrics services (Portainer, Grafana, Prometheus) bind to all interfaces — reachable over LAN + tailnet, **not** public. Home Assistant runs on **host networking** (HomeKit/discovery need LAN multicast), so its `:8123` is on all interfaces too; hand out `ha.$HOMELAB_DOMAIN`, not the plain-HTTP port. Matterbridge is host-networked for the same reason, but its web UI binds to `127.0.0.1` only: it can install npm packages as root and authenticates by client IP, so behind Caddy one login would unlock it for everyone (`docker/matterbridge/README.md` → "The web UI"). PostgreSQL stays on `127.0.0.1` (apps reach it over the internal Docker network).
 - **Public access:** only through the secure gateway (#362, [`docs/runbook-gateway.md`](docs/runbook-gateway.md)): Cloudflare Access → tunnel → `cloudflared` (Protect with Access) → `docker/gateway/` (verifier, exact routes) → one upstream with its own least-privilege credential. Private (LAN, tailnet, the `life` Remote Control session) stays the first choice; a new endpoint follows the runbook's checklist and nothing else. Never budget, admin UIs, media, Matterbridge or Kali (CI denylist). Hostnames are random first-level names under `brignano.io`, kept in `docker/gateway/.env`, never in this public repo. **Not for Jellyfin:** Cloudflare's terms require non-Enterprise plans to use paid products (Stream) to serve video through its network. Whether a personal tunnel counts is disputed, but enforcement would land on the account that also serves `life` and `hoststats`. Jellyfin is reached over Tailscale like every other service here. `cloudflared` joins only `gateway_edge` (it used to join `core_core` and `ai_ai`); a tunnel route to anything but `http://gateway:8080` does not resolve. The calendar MCP is not public.
 
-## Ollama / AI tuning (LXC constraint)
+## No local model (since 2026-11)
 
-- Ollama auto-detects the **host's** logical CPU count (16), not the LXC's **6-core cgroup quota**. Left at its default it oversubscribes the quota, the kernel CFS-throttles the inference threads, and generation collapses to ~0.5 tok/s.
-- **Every model must pin `num_thread` ≤ the LXC core count** via a Modelfile in `docker/ai/models/`. Use `num_thread 4` (matches 6's ~16 tok/s while leaving 2 cores for other stacks).
-- **Never send `num_thread` as a request-time option.** Options passed on `/api/generate` override the Modelfile, so doing so silently undoes the pin above. The `assistant` stack deliberately omits it.
-- **One generation at a time.** `num_thread 4` of the 6-core quota means concurrent generations contend for the same cores and memory bandwidth — both crawl and the other stacks starve. Anything driving Ollama must serialize its requests; `docker/assistant/app/jobqueue.py` is the reference implementation (single worker, interactive prioritised over scheduled).
-
-Adding or reloading a model (`docker/ai/load-models.sh`) is in
-[`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
+Ollama and Open WebUI were removed after the Duet trial: chat happens in Claude,
+and nothing on the box needed the 3B any more. The digest is rendered by code.
+If a local model ever comes back, the hard-won tuning (pin `num_thread 4` in a
+Modelfile, never send it per request, one generation at a time) is in git
+history under `docker/ai/` and the old "Ollama / AI tuning" section here.
 
 ## Host config is code
 
@@ -240,17 +236,11 @@ fine. That is how the dashboard's mark shipped, passed CI and was never served
 once. (Homepage was retired in #395: Caddy now serves the home page from
 directory mounts, so its files are live on pull.) Ask what reads the file and when, not just how it is mounted.
 
-## Local LLM usage
+## The assistant bot
 
-The deciding question is **is anyone waiting on the answer?** — synchronous work
-goes to Claude, asynchronous work to the local 3B. That's why local jobs run
-through the Discord bot in `docker/assistant/` (push) rather than Open WebUI
-(pull). See [`docs/ai-strategy.md`](docs/ai-strategy.md) and
-[`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
-
-How the bot works (`guild.yml`, `#chat` memory and scope, live readings by
-injection) and the two rules for extending it are in
-[`.claude/skills/local-llm/SKILL.md`](.claude/skills/local-llm/SKILL.md).
+How Otto works (`guild.yml`, the digest, #ask conversation scope) and the two
+rules for extending it are in
+[`.claude/skills/assistant-bot/SKILL.md`](.claude/skills/assistant-bot/SKILL.md).
 
 ## Planned / proposals (not yet deployed)
 - [`docs/design/tsd-backups-and-monitoring.md`](docs/design/tsd-backups-and-monitoring.md) — backups + restore testing + job monitoring. **🚧 Phases 0–1 running.** Since 2026-10-11 a nightly 02:30 `vzdump` images all of CT 100 (every volume and `.env`) to the 2 TB LUKS drive on the host, verified with `zstd -t` and watched by Healthchecks. ⚠️ **That copy is on the same desk as the original** — fire, theft or a surge takes both — and it has **never been restored** (the drill, Phase 1 step 6, is still to do). Offsite (restic → B2, Phase 2) is built and waits on the B2 account. The media drive is `backup=0` and has no copy by design.
@@ -293,7 +283,7 @@ when the task matches.
 |-------|--------------|
 | [`alerting`](.claude/skills/alerting/SKILL.md) | Adding or changing an alert, probe, dashboard, textfile metric or scheduled job |
 | [`dashboard-visuals`](.claude/skills/dashboard-visuals/SKILL.md) | Touching `docker/dashboard/`, an icon, a colour, or any visual choice |
-| [`local-llm`](.claude/skills/local-llm/SKILL.md) | Touching `docker/ai/`, a Modelfile, `docker/assistant/`, or anything that calls Ollama |
+| [`assistant-bot`](.claude/skills/assistant-bot/SKILL.md) | Touching `docker/assistant/` or the digest |
 | [`home-assistant`](.claude/skills/home-assistant/SKILL.md) | Touching `docker/homeassistant/` or `docker/matterbridge/`, adding a smart-home device, automation or dashboard card, or any HA, Alexa or Echo question |
 | [`media-stack`](.claude/skills/media-stack/SKILL.md) | Touching `docker/downloads/`, `docker/jellyfin/` or `docker/epg/`, or any download, queue, playback, casting or skip-credits question |
 
@@ -383,18 +373,5 @@ hours late. It used to be every 10 minutes; ai-tools#109 cut it.
 - Do not scan the whole repo unless explicitly asked.
 - Summarize findings before making large edits.
 - For broad repo questions, first inspect README.md, AGENTS.md, and docs/setup-log.md.
-- Use local Ollama/Open WebUI for low-risk, high-token tasks:
-  - repo summaries
-  - log summaries
-  - documentation drafts
-  - boilerplate
-  - first-pass scripts
-  - test scaffolding
-- Use Claude for:
-  - architecture decisions
-  - multi-file edits
-  - hard debugging
-  - security-sensitive changes
-  - final review
 - Before starting a large task, produce a short plan and list the files likely needed.
 - Avoid repeated full-file reads when a targeted grep/search is sufficient.

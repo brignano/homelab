@@ -64,7 +64,6 @@ services:
       - proxy
       - core
       - monitoring
-      - ai
 
   adguard:
     # Pinned, not `:latest`, for two reasons that pull in the same direction.
@@ -104,7 +103,7 @@ networks:
   proxy:
     driver: bridge
   # Attach Caddy to the other stacks' networks so it can reach each service by
-  # container name. These are created by the core/monitoring/ai stacks — bring
+  # container name. These are created by the core/monitoring stacks — bring
   # those up first.
   core:
     external: true
@@ -112,6 +111,3 @@ networks:
   monitoring:
     external: true
     name: monitoring_monitoring
-  ai:
-    external: true
-    name: ai_ai

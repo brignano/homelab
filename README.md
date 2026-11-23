@@ -21,9 +21,7 @@ Personal homelab running on a GMKtec M5 Ultra mini PC.
 | VPN / mesh network | Tailscale |
 | Metrics collection | Prometheus |
 | Dashboards | Grafana |
-| Local AI inference | Ollama |
-| AI chat UI | Open WebUI |
-| Local-LLM jobs & digests | Discord bot (`docker/assistant/`) |
+| Daily digest & #ask | Discord bot (`docker/assistant/`) |
 | Database | PostgreSQL |
 | Media server | Jellyfin *(planned)* |
 
@@ -37,7 +35,6 @@ Source of truth: [`docker/proxy/Caddyfile`](docker/proxy/Caddyfile).
 | URL | Service | What it's for |
 |-----|---------|---------------|
 | https://`$HOMELAB_DOMAIN` | **Home page** | **Start here** — every app with live up/down, the box's stats and open work |
-| https://chat.`$HOMELAB_DOMAIN` | Open WebUI | AI chat |
 | https://stats.`$HOMELAB_DOMAIN` | Grafana | Dashboards & metrics |
 | https://apps.`$HOMELAB_DOMAIN` | Portainer | Docker management |
 | https://dns.`$HOMELAB_DOMAIN` | AdGuard Home | DNS admin & ad blocking |
@@ -83,12 +80,10 @@ homelab/
 │   │       └── prometheus.yml
 │   ├── core/                # Portainer + PostgreSQL
 │   │   └── docker-compose.yml
-│   ├── ai/                  # Ollama + Open WebUI
-│   │   └── docker-compose.yml
 │   ├── dashboard/           # Landing page — links + status for everything
 │   │   ├── docker-compose.yml
 │   │   └── config/          # Tiles, checked against the Caddyfile by CI
-│   └── assistant/           # Discord bot: local-LLM jobs + daily digest
+│   └── assistant/           # Discord bot: daily digest + #ask
 │       ├── docker-compose.yml
 │       └── app/
 ├── scripts/                 # Run from cron on the Docker LXC
@@ -159,60 +154,38 @@ quiet when nothing merged. `HL_AUTOHEAL=no` pauses it too, as does
    ```bash
    cp docker/core/.env.example docker/core/.env
    cp docker/monitoring/.env.example docker/monitoring/.env
-   cp docker/ai/.env.example docker/ai/.env
    cp docker/assistant/.env.example docker/assistant/.env
    ```
 3. Bring up a stack:
    ```bash
    docker compose -f docker/core/docker-compose.yml up -d
    docker compose -f docker/monitoring/docker-compose.yml up -d
-   docker compose -f docker/ai/docker-compose.yml up -d
    docker compose -f docker/assistant/docker-compose.yml up -d --build
    ```
 
-## AI models
+## AI
 
-One model runs on Ollama: **`llama3.2:3b`** (built from
-[`docker/ai/models/llama3.2.Modelfile`](docker/ai/models/llama3.2.Modelfile) via
-[`docker/ai/load-models.sh`](docker/ai/load-models.sh); pins `num_thread 4` for
-the LXC CPU quota — see [`AGENTS.md`](AGENTS.md)). Kept resident
-(`OLLAMA_KEEP_ALIVE=-1`) so there's no cold-load lag.
+No model runs on the box. Ollama and Open WebUI were removed in 2026-11 after
+the Duet trial: chat happens in Claude, and the local 3B was holding memory on
+a 16 GB box for a digest that reads just as well without its two sentences.
 
-**Use it for** fast, private, offline tasks: quick Q&A from training knowledge,
-summarizing/rewriting pasted text, drafting boilerplate. No web search — see
-[`docs/ai-strategy.md`](docs/ai-strategy.md) for what goes to local vs. Claude.
-
-### Using it: Discord, not the chat page
-
-The deciding question is **is anyone waiting on the answer?** A CPU-only 3B at
-~16 tok/s is painful to watch and perfectly fine when the result arrives on its
-own — so most local work goes through the
-[`assistant`](docker/assistant/README.md) stack, a Discord bot that runs jobs and
-pushes results back:
+The [`assistant`](docker/assistant/README.md) stack is a Discord bot (Otto) that
+pushes the daily digest, answers `#ask` through the concierge, and runs
+follow-ups:
 
 | | |
 |---|---|
 | daily digest | homelab health posted each morning — services up, CPU/RAM/disk, restarts, log errors |
-| `/ask`, `/summarize` | fire it off and read the reply when it lands |
-| *right-click → Summarize message* | summarize any Discord message in place |
-| `/digest`, `/status` | run a digest now; check model + queue |
+| `/digest`, `/status` | run a digest now; check when the next one is due |
 
 It adds **no inbound attack surface** (the bot dials out, so there's no port,
-route or tunnel) and consequently works **off-tailnet**, which `chat.home`
-can't. Open WebUI stays for when you actually want interactive chat.
+route or tunnel) and consequently works **off-tailnet**.
 
 The Discord server's own layout is codified too —
 [`docker/assistant/guild.yml`](docker/assistant/guild.yml) declares the
 categories, channels, topics and permissions, applied with an idempotent
 `--provision` that never deletes anything. Setup steps:
-[`docker/assistant/README.md`](docker/assistant/README.md). Design:
-[`docs/design/tsd-local-llm-discord-jobs.md`](docs/design/tsd-local-llm-discord-jobs.md).
-
-> **Tried and removed (2026-06-07):** a self-hosted SearXNG + `qwen2.5:7b` for
-> web-augmented answers. On this CPU-only / 16 GB box the 7B was too slow and
-> RAM-hungry, and a 3B can't faithfully use retrieved sources anyway. Anything
-> needing current web data or real reasoning (trip/weather planning, research,
-> debugging) goes to Claude. See `docs/ai-strategy.md`.
+[`docker/assistant/README.md`](docker/assistant/README.md).
 
 ## Tailscale Hostname
 
@@ -227,7 +200,5 @@ All services are exposed on the Tailscale interface only (no public ports). Tail
 | Portainer | 9000 |
 | Grafana | 3000 |
 | Prometheus | 9090 |
-| Open WebUI | 3010 |
-| Ollama API | 11434 |
 | assistant | *(none — outbound only)* |
 | PostgreSQL | 5432 |

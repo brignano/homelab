@@ -1,64 +1,52 @@
-# assistant — local-LLM jobs, delivered over Discord
+# assistant — Otto, the homelab's Discord bot
 
-A single small Python container that puts the local `llama3.2:3b` to work on
-tasks **nobody is waiting on**, and delivers the results to Discord.
-
-Design + rationale: [`docs/design/tsd-local-llm-discord-jobs.md`](../../docs/design/tsd-local-llm-discord-jobs.md).
+A single small Python container that posts the daily homelab digest, forwards
+`#ask` to the concierge (`docker/concierge/`, Claude), and runs follow-ups.
 
 ```
                      ┌──────────────────────────────────┐
   Discord  ◀────────▶│  assistant                       │
-  (outbound WSS,     │   single-worker priority queue   │
-   no inbound port)  │      interactive ▶ scheduled     │
-                     └───┬─────────────┬────────────────┘
+  (outbound WSS,     │   digest · #ask · follow-ups     │
+   no inbound port)  └───┬─────────────┬────────────────┘
                          │             │
-                 ollama:11434    prometheus:9090
-                 (narration)     loki:3100  (the facts)
+                 concierge:8080   prometheus:9090
+                 (#ask, Claude)   loki:3100  (the facts)
 ```
 
-## Why this exists
-
-The model wasn't underused because it lacks jobs — it was underused because
-Open WebUI is a **pull** interface. You have to show up, type, and watch a
-CPU-only 3B emit ~16 tok/s. That's the worst possible ergonomics for a slow
-model, so you reach for Claude instead and the local box idles.
-
-Inverting it fixes the ergonomics without touching the hardware: **push, not
-pull; batch, not interactive.** A digest that takes 40 seconds to generate costs
-nothing when it arrives on its own at 07:30. A `/ask` you fire off and forget
-costs nothing either. Slow is only expensive when you're watching it.
+**No local model.** Until 2026-11 this stack also drove a local `llama3.2:3b`
+through Ollama: `/ask`, `/summarize`, a `#chat` channel, and two sentences of
+narration on top of the digest. After the Duet trial nothing needed it, and it
+was the biggest memory user on the 16 GB box, so the model, Open WebUI and
+everything only they used were removed. The digest was always the numbers; it
+now posts them without the prose. The history is in git (`docker/ai/`, and
+`docs/design/tsd-local-llm-discord-jobs.md` for why it was built).
 
 ## What it does
 
 | Surface | Kind | What it's for |
 |---------|------|---------------|
 | daily digest | scheduled | Homelab health at `DIGEST_AT`, posted to one channel |
-| `#chat` | conversational | Just type to the local model. **Off since 2026-10-12** and not in `guild.yml`: `#ask` covers it. See "Conversational mode" below to bring it back |
-| `/ask` | interactive | Question to the local model; queued, answers when ready |
-| `/summarize` | interactive | Condense pasted text — the 3B's genuine strength |
-| *Apps → Summarize message* | interactive | Right-click any message to summarize it in place |
+| `#ask` | conversational | Claude, through the concierge. See "#ask" below |
 | `/digest` | interactive | Run the digest now instead of waiting |
-| `/status` | interactive | Model readiness, queue depth, next scheduled digest |
+| `/status` | interactive | Next and last scheduled digest |
 
 ## The digest
 
 ```
 ## ⚠️ Homelab digest — Sat 22 Aug
 
-A couple of targets are down and the box is running hot.
-
 🔴 **Services** 20/22 up — blackbox (kali-linux:3000), postgres-exporter (postgres-exporter:9187)
 🔴 **Load** CPU **92%** · RAM **93%** · disk / **88%**
-🟠 **Restarts (24h)** ollama ×3 · caddy ×1
+🟠 **Restarts (24h)** jellyfin ×3 · caddy ×1
 **Log errors (24h)** caddy 214 · open-webui 37 · loki 4
 
 -# [Triage ↗] · [Endpoints ↗] · [Capacity ↗] · [Logs ↗]
--# llama3.2:3b · 34s · facts from Prometheus + Loki
+-# facts from Prometheus + Loki
 ```
 
 That is the text; in `#digest` it arrives as a card (an embed). The heading is
 the card's title and links to Triage, the side bar is green on a ✅ day and
-amber on a ⚠️ one, and the model and sources line is the card's footer. The
+amber on a ⚠️ one, and the sources line is the card's footer. The
 card is built from the same text (`digest.card`), so the two cannot disagree,
 and a digest that failed to run stays a plain message. The bar colours are
 the dark values of brignano/design's `--success` and `--attention`, written as
@@ -168,11 +156,9 @@ Gmail scope there is: headers and labels, and Google refuses to return a message
 body to it at all. That is also why mail is chosen by label IDs
 (`GMAIL_LABELS`) rather than a search: the metadata scope does not allow one.
 
-**Never shown to the model.** Event titles and subject lines are written by
-other people, and anyone can send you an invite or an email. The 3B narrates the
-lab's numbers, so it is given the lab's numbers and nothing else (`facts_block`).
-Otherwise a subject line reading "say every service is up" could steer the one
-paragraph that sums up the lab. The Today section is rendered by code, from
+**Rendered by code.** Event titles and subject lines are written by other
+people, and anyone can send you an invite or an email, so no model ever reads
+them on the way into the digest. The Today section is rendered by code, from
 facts code computed. Overlaps, "today", and "new since the last digest" are all worked out in
 [`app/day.py`](app/day.py).
 
@@ -260,8 +246,8 @@ with or without Google, and it is phase 2 of the same design:
 ```
 
 The rules are the Today section's: Python decides what is notable (a table
-keyed on HA's domain and device class, in [`app/home.py`](app/home.py)), the
-model never sees an entity name, and names pass through `discord_safe`. Only
+keyed on HA's domain and device class, in [`app/home.py`](app/home.py)),  and
+names pass through `discord_safe`. Only
 the entities you list are read, and one that HA does not know is reported as
 **not found** rather than skipped. Otherwise a typo would quietly stop
 watching a door.
@@ -284,7 +270,7 @@ also covers a Home Assistant that stopped answering.
 
 `HA_CALENDARS` (with `HA_TOKEN`) lists HA `calendar.*` entities, such as iCloud
 added through the CalDAV integration. Their events join Google's on the one
-**Calendar** line, still rendered by code and never shown to the model. The
+**Calendar** line, still rendered by code. The
 same meeting on both is shown once, and overlaps are computed across both.
 
 It is its own source, `ha-calendar`, with its own `source-ha-calendar` stamp,
@@ -301,36 +287,15 @@ fires. Unset, nothing changes.
 **After fixing the sign-in,** run `/digest` once. The alert clears on the next
 successful read, and otherwise that would be tomorrow's scheduled one.
 
-## Conversational mode
-
-> **Off since 2026-10-12.** `#chat` was removed from `guild.yml` because `#ask`
-> covers it, so provisioning no longer creates the channel. To bring it back,
-> restore the `chat` block in `guild.yml` from git history, run
-> `--provision --apply`, and set `DISCORD_CHAT_CHANNEL_ID` in `.env`.
-
-Set `DISCORD_CHAT_CHANNEL_ID` and that channel stops needing slash commands —
-type, get a reply, reply back, and it follows the conversation.
+## #ask: conversations
 
 **Where you type decides what it remembers.** There is no command and no state
 to manage — the context is always visibly implied by where the message sits:
 
 | Where | Context | For |
 |-------|---------|-----|
-| plain message in the channel | **just that message** | a one-off question that leaves no residue |
 | **reply** to a message | **that reply chain** | picking a thread of conversation back up, no ceremony |
 | inside a **thread** | **the whole thread** | a named, persistent conversation with its own memory |
-
-Rolling channel history was the first attempt and it was wrong: two unrelated
-questions in the same channel contaminated each other, and there was no way to
-end a conversation short of waiting for it to scroll away. Following Discord's
-own primitives fixes that and needs no extra concepts.
-
-> **Threads are the persistence unit.** Right-click any message → *Create
-> Thread*, name it, and it becomes a scoped conversation you can come back to
-> days later. Point `DISCORD_CHAT_CHANNEL_ID` at a **forum channel** instead and
-> every post is one of these by construction — a browsable list of titled
-> conversations. That works today with no code change, because a forum post
-> *is* a thread; create the forum channel by hand in Discord.
 
 **The memory lives in Discord, not in the bot.** No store, no database, no
 in-process state — the bot reads the relevant messages back out of Discord each
@@ -339,20 +304,10 @@ time. That means:
 - **Restart-safe.** Rebuild the container mid-conversation and it picks up
   where it was — the history was never in the container.
 - **What you see is what it sees.** Delete a message and it leaves the context.
-  Scrolling up *is* reading the model's working memory.
 - **`//` is an escape hatch.** A line starting with `//` gets no reply and stays
   out of the context — for notes, links and asides.
 
-Thread history and reply chains are both capped by a turn count and a character
-budget (`CHAT_HISTORY_TURNS`, `CHAT_HISTORY_CHARS`). Prompt evaluation is CPU-bound and
-roughly linear in tokens, so an unbounded memory would make every reply slower
-than the last. Trimming drops the *oldest* turns; the newest message is always
-kept, since it's the one being answered.
-
-Under the hood this uses Ollama's `/api/chat`, not `/api/generate`, so the
-model's own chat template is applied to the role-tagged turns. Concatenating
-turns into one prompt string produces a format the model was never trained on,
-and a 3B degrades fast when that drifts.
+Thread history and reply chains are capped at `CHAT_HISTORY_TURNS` turns.
 
 > **This needs the Message Content privileged intent** — Developer Portal → Bot
 > → Privileged Gateway Intents → **Message Content** → on. Without it Discord
@@ -361,15 +316,14 @@ and a 3B degrades fast when that drifts.
 >
 > It is a genuine widening: the bot can now read message text server-wide. It's
 > narrowed in code rather than by Discord — `_route` returns immediately
-> unless the message is from an allowlisted user in #chat or #ask
-> (or a thread under one), and it ignores bots including itself, which is what
-> stops it replying to its own replies forever. Leave `DISCORD_CHAT_CHANNEL_ID`
-> and `DISCORD_ASK_CHANNEL_ID` blank and the intent is never requested at all.
+> unless the message is from an allowlisted user in #ask
+> (or a thread under it), and it ignores bots including itself, which is what
+> stops it replying to its own replies forever. Leave `DISCORD_ASK_CHANNEL_ID`
+> blank and the intent is never requested at all.
 
 ### #ask — Claude, through the concierge
 
-`#ask` works like `#chat` (same thread/reply scope, same allowlist), with one
-difference: a new message in the channel is never a one-off. The bot opens a
+A new message in `#ask` is never a one-off. The bot opens a
 thread on it and answers there, so you keep talking in the thread and it
 reads the whole conversation, starting with the message that opened it. A
 reply to an older message in the channel still follows its reply chain. The
@@ -508,150 +462,30 @@ with nothing to read posts nothing and calls nobody. **Opt-in:**
 `REVIEW_ENABLED=true`, because it sends the day's conversations to Anthropic
 unasked. It stamps `source-review` when it finished (or had nothing to do).
 
-### Live homelab readings in the conversation
-
-Ask *"how's the server doing?"* in `#chat` and you get real numbers, because
-before each reply the bot runs the same Prometheus/Loki queries the digest uses
-and injects one compact line:
-
-```
-LIVE HOMELAB READINGS: services 15/15 up; CPU 2%; RAM 30%; disk / 12%;
-restarts 24h: none; log errors 24h: grafana 432, adguard 1
-```
-
-**Injected, not offered as a tool the model can call.** Tool-calling is
-unreliable on a 3B — that is why
-[`tsd-ai-homelab-assistant.md`](../../docs/design/tsd-ai-homelab-assistant.md)
-shelved itself — so the model never decides whether to look. It simply always
-has the numbers, and its only job is to read them out. Same rule as the digest:
-**Python measures, the model narrates.** The "needs attention" verdict is
-computed in code too, so it is told the conclusion rather than asked to reach one.
-
-- Cached for `CHAT_METRICS_TTL_S` (60s). The queries are cheap, but a rapid
-  back-and-forth would re-run six of them per message.
-- **A failure yields no readings, never stale ones.** If collection fails the
-  line is omitted and the prompt reverts to saying it cannot see live data —
-  wrong numbers would be worse than none.
-- Costs ~50–60 tokens of prompt per turn. `CHAT_LIVE_METRICS=false` disables it.
-
-**Injected every turn; mentioned only when relevant.** The readings are always in
-the prompt — the model doesn't choose whether to have them — but it is told not
-to bring them up unless the message is actually about the server. That guard is
-explicit because the opposite has happened twice here: a persona line and a
-"you cannot see live data" line both bled into unrelated answers, because a 3B
-leads with whatever is most salient. If it still volunteers metrics you didn't
-ask about, tighten that instruction in `app/chat.py` (`_WITH_LIVE`) rather than
-removing the readings.
-
-It still has no internet access, and says so — that caveat is now scoped to
-things genuinely outside the box rather than announced on every question.
-
-### Voice: register, never a character
-
-`#chat` sets a tone, but it does it with verbs and concrete bans rather than a
-persona:
-
-> Write the way a knowledgeable colleague talks: plain, direct, a touch dry. No
-> corporate warmth, no cheerleading, no "great question", no offering to help
-> further. Say "I don't know" plainly when you don't, and never apologise for
-> what you cannot do.
-
-The distinction matters more here than it would on a large model. A persona is
-identity text, and a 3B answers with whatever the prompt makes most salient — so
-`/ask` once replied to a real question by describing itself as *"a small home
-server with basic hardware components"*. That was the persona line becoming the
-answer, which is why `ASK_SYSTEM` has none. Behavioural instructions don't
-recite: there is nothing in *"no cheerleading"* for the model to read back.
-
-The same reasoning caps how much of this is worth adding. Every line competes
-for attention with the actual question, so tune by **subtracting** first, and add
-only what a real conversation showed you needed. Tone lives in
-[`app/chat.py`](app/chat.py) (`_BASE`) — deliberately not in
-`docker/ai/models/llama3.2.Modelfile`, which is shared with Open WebUI and needs
-a `load-models.sh` re-run to change.
-
-### Tuning it
-
-Voice on a small model is empirical — the fix for *"it sounds robotic"* and the
-fix for *"it won't shut up"* are opposite edits, and you only find out which you
-have by talking to it. So the knobs are env vars, tunable without a code change:
-
-| Var | Default | Turn it up when |
-| --- | --- | --- |
-| `CHAT_TEMPERATURE` | `0.6` | replies feel canned or open the same way every time. Below ~0.5 a 3B gets repetitive; above ~0.9 it drifts. |
-| `CHAT_NUM_PREDICT` | `350` | replies are getting cut off. The footer now says when that happened, so you are not guessing. |
-| `CHAT_HISTORY_TURNS` / `CHAT_HISTORY_CHARS` | `12` / `4000` | it forgets what you said earlier. This is the memory length — **not** `OLLAMA_NUM_CTX`, which is already ~3× larger than the character budget ever uses. It costs latency: prompt evaluation is CPU-bound and re-runs every turn, so doubling the budget roughly doubles time-to-first-token. |
-| `OLLAMA_KEEP_ALIVE` | `30m` | you chat in bursts spread over hours. |
-
-`OLLAMA_KEEP_ALIVE` is the one worth understanding. Ollama's own default unloads
-a model after **5 minutes** idle, so the first message after any pause paid a
-full reload from disk before generating a single token — and in a chat channel
-that is precisely the message you are sitting there waiting on. `30m` covers a
-conversation with gaps while still releasing the RAM overnight; `-1` keeps the
-model resident forever (~2.5 GB held), `0` unloads immediately. It is sent on
-every request, so it keeps the model warm for Open WebUI too.
-
-`num_thread` is still never sent — see the note in
-[`app/ollama.py`](app/ollama.py). Request-time options override the Modelfile,
-and that pin is what stops the LXC CPU-quota oversubscription.
-
 ### Tests
 
 ```bash
 cd docker/assistant && python3 tests/smoke.py
 ```
 
-22 checks, no pytest, no network — pure functions only, so it runs in under a
+No pytest, no network — pure functions only, so it runs in under a
 second and CI needs nothing but `pip install -r requirements.txt`.
 
-They are chosen by what has actually broken here, not by coverage. `num_thread`
-must never appear in a request payload (it would override the Modelfile pin that
-took generation from ~0.5 to ~16 tok/s); the chat prompt must not claim it cannot
-see live data while holding live readings; a malformed `guild.yml` must be
-rejected before it creates a mis-named channel you cannot delete without losing
-its history.
+They are chosen by what has actually broken here, not by coverage: the
+digest's marks and verdict must agree, an unreadable backend must never read as
+all clear, and a malformed `guild.yml` must be rejected before it creates a
+mis-named channel you cannot delete without losing its history.
 
-Both of the first two were verified by mutation — breaking the invariant on
-purpose turns the suite red, which is the only way to know a test is doing work.
+## Two rules
 
-## Two rules that make a 3B usable here
-
-**1. Python decides what's true; the model only writes prose.**
+**1. Python decides what's true.**
 Every number in the digest is queried and thresholded in
-[`app/facts.py`](app/facts.py) — including the "is this fine?" verdict. The model
-receives a finished facts block and is told to restate it. It never queries
-anything, never sees a raw log line, and never gets to reach a conclusion.
-This is the same conclusion [`tsd-ai-homelab-assistant.md`](../../docs/design/tsd-ai-homelab-assistant.md)
-reached before shelving; what changed is that push delivery makes a canned
-summary worth having.
+[`app/facts.py`](app/facts.py) — including the "is this fine?" verdict — and
+the digest is rendered by code from those facts.
 
-**2. If the model fails, the digest still posts.**
-Narration is a convenience layer over the numbers, not the product. Ollama down,
-slow, or timed out → the same digest posts without the prose paragraph. A
-backend that can't be read is reported as *Incomplete*, never rendered as
+**2. If a source fails, the digest still posts.**
+A backend that can't be read is reported as *Incomplete*, never rendered as
 "all clear".
-
-## Why the caps
-
-One generation at a time uses the CPU budget exactly: the tuned model pins
-`num_thread 4` of the LXC's 6-core quota. Two concurrent generations don't run
-twice as fast — they contend for the same cores and memory bandwidth, so both
-crawl and the other stacks starve. Hence:
-
-| Cap | Default | Why |
-|-----|---------|-----|
-| single worker | — | All LLM work is serialized ([`app/jobqueue.py`](app/jobqueue.py)); interactive jumps ahead of scheduled |
-| `OLLAMA_NUM_CTX` | 4096 | Prompt evaluation is CPU-bound and scales with context length |
-| `*_NUM_PREDICT` | 180–400 | A runaway generation would hold the worker as long as it rambled |
-| `MAX_INPUT_CHARS` | 6000 | A pasted wall of text is the easiest way to tie up the box for minutes |
-| `MAX_QUEUE` | 8 | Shed load rather than pile it up |
-| `LLM_TIMEOUT_S` | 300 | Hard ceiling on one job |
-
-> **`num_thread` is deliberately never sent** with a request. Request-time
-> options override the Modelfile, so passing a thread count would silently undo
-> the pin in [`../ai/models/llama3.2.Modelfile`](../ai/models/llama3.2.Modelfile)
-> — the fix that took generation from ~0.5 tok/s back to ~16 (AGENTS.md →
-> "Ollama / AI tuning").
 
 ## Setup from scratch
 
@@ -717,7 +551,7 @@ cp docker/assistant/.env.example docker/assistant/.env
 ```
 
 ### 4. Check the backends before involving Discord
-Needs no Discord token at all, so it isolates "can't reach Ollama" from
+Needs no Discord token at all, so it isolates "can't reach Prometheus" from
 "bad bot token" — the two things that actually go wrong:
 
 ```sh
@@ -746,20 +580,13 @@ Paste into docker/assistant/.env:
 ```
 
 ### 6. Bring it up
-The `ai` and `monitoring` stacks must be running first — this stack joins their
-networks and Compose will not create external networks.
+The `monitoring` stack must be running first — this stack joins its network
+and Compose will not create external networks.
 
 ```sh
-docker compose -f docker/ai/docker-compose.yml up -d
 docker compose -f docker/monitoring/docker-compose.yml up -d
 docker compose -f docker/assistant/docker-compose.yml up -d --build
 ```
-
-### 7. Keep `/ask` out of the log (optional, manual)
-Server Settings → **Integrations** → your bot → restrict `/ask` and
-`/summarize` to `#ask`. This is the one layout step a bot token genuinely
-cannot do — the command-permissions API requires a user OAuth token — so it
-stays a click.
 
 ## The bot's name
 
@@ -843,7 +670,7 @@ docker logs -f assistant          # expect "connected as <bot> (guild …)"
 docker inspect --format '{{.State.Health.Status}}' assistant
 ```
 
-In Discord, `/status` should report the model ready and the next digest time.
+In Discord, `/status` should report the next digest time.
 `/digest` runs one immediately.
 
 To render sample digests with no network at all (useful when editing the
@@ -856,16 +683,11 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 ## Notes
 
 - **No inbound exposure.** No `ports:`, no Caddy route, no DNS rewrite. The bot
-  dials out. It therefore also works when you're off the tailnet — the one thing
-  `chat.home` can't do.
+  dials out. It therefore also works when you're off the tailnet.
 - **Allowlist is mandatory.** `DISCORD_ALLOWED_USER_IDS` must be set or the
-  container refuses to start; otherwise anyone who can see the bot could queue
-  work onto your CPU.
-- **Prompt-injection surface is tiny.** The model has no tools, no shell, no
-  network of its own, and no write path anywhere. Worst case from a hostile
-  input is that it says something wrong in your Discord channel.
-- **RAM cost is ~50 MB.** Inference happens in the existing `ollama` container;
-  this one just orchestrates. It adds no new model to keep resident.
+  container refuses to start; otherwise anyone who can see the bot could use it.
+- **RAM cost is ~50 MB.** It only orchestrates; #ask's reasoning happens in
+  the concierge, which calls Claude.
 - Slash commands are registered **guild-scoped**, so they appear immediately
   rather than taking up to an hour to propagate. Changing `DISCORD_GUILD_ID`
   leaves the old guild's commands behind until they're removed manually.
@@ -876,7 +698,6 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 |---------|--------------|
 | Commands don't appear | Bot added without the `applications.commands` scope, or wrong `DISCORD_GUILD_ID`. Re-invite and restart. |
 | "Not authorised to use this bot" | Your user ID isn't in `DISCORD_ALLOWED_USER_IDS`. |
-| Digest posts without prose | Ollama unreachable or the model isn't loaded — check `/status`, then `docker exec ollama ollama list`. |
 | Digest says *Incomplete* | Prometheus or Loki couldn't be read; confirm the `monitoring` stack is up. |
 | Today says *not read* / `hl-google-stale` firing | The Google sign-in is no longer valid — the message names the reason. Usually the consent screen was left in *Testing* (7-day tokens) or access was revoked. Rerun `--google-auth`, recreate the container, then `/digest`. |
 | `--google-auth` returns no refresh token | Google only issues one on first consent. Remove the app at <https://myaccount.google.com/permissions> and sign in again. |
@@ -886,4 +707,3 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
 | `--provision` failed partway through | Safe to re-run. It's idempotent: it skips what already exists and creates only what's missing. |
 | A fix you just pulled seems to have no effect | You're running a stale image. `docker compose run` reuses the built image unless you pass `--build`. |
 | Digest channel exists but nothing posts | `DISCORD_DIGEST_CHANNEL_ID` not updated after provisioning, or the bot lost its Send Messages allow on the locked channel — re-run `--provision`. |
-| Answers take minutes | Expected on this hardware. Check `/status` for queue depth; that's the design, not a fault. |

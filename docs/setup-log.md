@@ -27,6 +27,26 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-23 — Removed the local model and Open WebUI (#406)
+
+**Goal:** Free the memory the resident `llama3.2:3b` held on the 16 GB box, now that chat happens in Claude (Duet).
+
+**Steps:**
+1. Checked what still called Ollama: only the digest's two-sentence narration, plus `/ask`, `/summarize`, *Summarize message* and the long-off `#chat`. #ask, follow-ups and the concierge never used it.
+2. Removed `docker/ai/`, the `chat.` Caddy routes, the blackbox probes, the home-page tile and icons, the `ai_ai` network in proxy and monitoring, the shell aliases and the offsite-backup volume entry.
+3. `docker/assistant/`: digest rendered by code only; model commands, the Ollama client and the job queue removed. `local-llm` skill became `assistant-bot`.
+
+**Issues encountered:**
+- None in the repo. On the box, the containers, volumes and network outlive their compose file, so they are removed by hand once.
+
+**Resolution:**
+- After merge: `/deploy proxy`, let monitoring and assistant auto-deploy, then `docker rm -f ollama open-webui`, `docker volume rm ai_ollama_data ai_open_webui_data`, `docker network rm ai_ai`.
+
+**Notes / next steps:**
+- Model tuning (num_thread pin, one generation at a time) is in git history if a local model ever returns.
+
+---
+
 ## 2026-11-23 — Ideas page beside Work
 
 **Goal:** Move the idea ledger from a Claude Artifact snapshot onto the home dashboard, beside Work, read live.

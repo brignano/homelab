@@ -16,8 +16,7 @@
     { "name": "Lab", "tiles": [
       { "name": "Grafana", "href": "https://stats.{domain}", "icon": "grafana.svg", "desc": "Charts of everything on the box", "probe": "http://grafana:3000/api/health" },
       { "name": "Portainer", "href": "https://apps.{domain}", "icon": "portainer-on-dark.svg", "iconLight": "portainer-on-light.svg", "desc": "Start and stop the apps", "probe": "http://portainer:9000/" },
-      { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" },
-      { "name": "Open WebUI", "href": "https://chat.{domain}", "icon": "open-webui-on-dark.svg", "iconLight": "open-webui-on-light.svg", "desc": "A private AI that never leaves the house", "probe": "http://open-webui:8080/" }
+      { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" }
     ]},
     { "name": "Things I built", "tiles": [
       { "name": "Work", "href": "https://work.{domain}", "icon": "work.svg", "desc": "Everything I'm building, live from GitHub", "probe": "http://caddy/health" },

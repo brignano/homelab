@@ -1,13 +1,11 @@
 """The Discord surface.
 
-Why Discord rather than the Open WebUI chat page:
+Why Discord:
 
-  * It pushes. The digest arrives; you don't go and fetch it. On a box where a
-    generation takes tens of seconds, "arrives when ready" is the difference
-    between a useful model and one you avoid.
+  * It pushes. The digest arrives; you don't go and fetch it.
   * No inbound anything. The bot dials *out* to Discord over a WebSocket, so
     there's no port, no Caddy route, no tunnel, and no new attack surface — and
-    unlike chat.home it works when you're off the tailnet.
+    it works when you're off the tailnet.
   * The history is durable and searchable, so digests accumulate into a log.
 
 No privileged gateway intents are needed: slash commands and context menus carry
@@ -21,7 +19,6 @@ import dataclasses
 import datetime as dt
 import logging
 import os
-import time
 
 import aiohttp
 import discord
@@ -29,7 +26,7 @@ from discord import app_commands
 from discord.ext import tasks
 
 from .chat import (
-    CHAIN, SINGLE, THREAD, Turn, build_messages, build_system, clean_bot_text,
+    CHAIN, SINGLE, THREAD, Turn, clean_bot_text,
     context_mode, is_ignorable,
 )
 from .concierge import (
@@ -47,8 +44,6 @@ from .digest import Card, card as digest_card, prepare as prepare_digest
 from .facts import FactCollector
 from .google import Google
 from .home import Home, HomeError, summarize_history
-from .jobqueue import PRIORITY_INTERACTIVE, PRIORITY_SCHEDULED, JobQueue, QueueFull
-from .ollama import Ollama, OllamaError
 from .stamp import clear as clear_stamp, read as read_stamp, write as write_stamp
 from .text import chunk, clamp_input, clock, thread_name
 
@@ -72,58 +67,27 @@ DAY_THREAD_HINT = "-# Reply here to ask about today or have me act on it. The ev
 # The furthest back a digest's "new since the last one" reaches.
 SINCE_LIMIT = dt.timedelta(days=7)
 
-# No persona line, deliberately. An earlier version opened with "You are a
-# concise assistant running locally on a small home server… you have no live
-# data", and a 3B is small enough that the self-description became the *answer*:
-# asked anything, it replied by describing itself as a home server with no
-# metrics. Small models answer with whatever the prompt makes most salient, so
-# the only thing made salient here is answering the question.
-ASK_SYSTEM = (
-    "Answer the question directly. No preamble, no restating the question, and "
-    "no describing yourself, your model, or your setup — the user already knows "
-    "what you are. Plain prose, as brief as the question allows.\n"
-    "You cannot browse the internet and cannot see the user's machines, files, "
-    "or any live data. If the question needs any of those, say so in one short "
-    "sentence, then answer whatever part you can from general knowledge. Never "
-    "invent specifics you would need live access to know."
-)
-
-SUMMARIZE_SYSTEM = (
-    "You summarize text. Return only the summary — no preamble, no title, no "
-    "closing remark. Use at most 5 short bullet points, fewer if the text is "
-    "short. Use only information present in the text; never add outside facts."
-)
-
-# Appended to /ask answers. The local model is a 3B with no web access; saying so
-# once, every time, is cheaper than being quietly misled.
-ASK_FOOTER = "-# {model} · {secs:.0f}s · local model, no web access — verify anything that matters"
 
 
 class Assistant(discord.Client):
     def __init__(self, cfg: Config) -> None:
-        # Conversational mode needs the Message Content privileged intent —
-        # without it Discord delivers messages with an empty `content`, so the
-        # bot literally cannot see what you typed. It is enabled only when a
-        # chat channel is configured, so a slash-commands-only deployment keeps
-        # the smaller surface. Members and Presence stay off in both cases.
+        # #ask needs the Message Content privileged intent — without it Discord
+        # delivers messages with an empty `content`, so the bot literally cannot
+        # see what you typed. It is enabled only when #ask is configured, so a
+        # slash-commands-only deployment keeps the smaller surface. Members and
+        # Presence stay off in both cases.
         #
         # The intent is server-wide, so the narrowing is done in code: on_message
         # returns immediately unless the message is from an allowlisted user in
         # the configured channels (or threads under them). See _route.
-        #
-        # #ask needs the same intent, for the same reason, and is narrowed the
-        # same way. #memory is read with it too: you can post a memory by hand.
+        # #memory is read with it too: you can post a memory by hand.
         intents = discord.Intents.default()
-        if cfg.chat_channel_id is not None or cfg.ask_enabled:
+        if cfg.ask_enabled:
             intents.message_content = True
         super().__init__(intents=intents)
         self.cfg = cfg
         self.tree = app_commands.CommandTree(self)
-        self.queue = JobQueue(max_size=cfg.max_queue)
         self._session: aiohttp.ClientSession | None = None
-        # (measured_at, line) — see _live_metrics for why this is cached.
-        self._metrics_cache: tuple[float, str] | None = None
-        self.ollama: Ollama | None = None
         self.collector: FactCollector | None = None
         self.day: DayCollector | None = None
         self._brief_stamp: str | None = None
@@ -138,14 +102,6 @@ class Assistant(discord.Client):
 
     async def setup_hook(self) -> None:
         self._session = aiohttp.ClientSession()
-        self.ollama = Ollama(
-            self._session,
-            base_url=self.cfg.ollama_url,
-            model=self.cfg.ollama_model,
-            num_ctx=self.cfg.num_ctx,
-            timeout_s=self.cfg.llm_timeout_s,
-            keep_alive=self.cfg.ollama_keep_alive,
-        )
         self.collector = FactCollector(
             self._session,
             prometheus_url=self.cfg.prometheus_url,
@@ -228,13 +184,10 @@ class Assistant(discord.Client):
         if not self.cfg.digest_enabled:
             clear_stamp(self.cfg.digest_stamp_path)
 
-        # The act lane. Not on the job queue: that queue exists to serialize
-        # Ollama, and the concierge never touches Ollama. It serializes its own
-        # work, one task at a time.
+        # The act lane. The concierge serializes its own work, one task at a time.
         if self.cfg.ask_enabled:
             self.concierge = Concierge(self._session, self.cfg.concierge_url, self.cfg.concierge_token)
 
-        self.queue.start()
 
         register_commands(self)
         # Guild-scoped sync shows up immediately, unlike global commands which
@@ -268,15 +221,12 @@ class Assistant(discord.Client):
         self.follow_ups.cancel()
         self.evening_review.cancel()
         self.import_reminder.cancel()
-        await self.queue.stop()
         if self._session is not None:
             await self._session.close()
         await super().close()
 
     async def on_ready(self) -> None:
         log.info("connected as %s (guild %s)", self.user, self.cfg.guild_id)
-        if self.cfg.chat_channel_id:
-            log.info("conversational mode active in channel %s", self.cfg.chat_channel_id)
         if self.cfg.ask_enabled:
             log.info("concierge (#ask) active in channel %s via %s",
                      self.cfg.ask_channel_id, self.cfg.concierge_url)
@@ -291,12 +241,12 @@ class Assistant(discord.Client):
             log.info("evening review active at %02d:%02d (%d HA entities)",
                      *self.cfg.review_at, len(self.cfg.review_ha_entities))
 
-    # --- conversational channels (#chat: local model; #ask: concierge) ---
+    # --- conversational channels (#ask: concierge) ---
 
     def _route(self, message: discord.Message) -> str | None:
-        """Narrow the server-wide intent down to two channels and one person.
+        """Narrow the server-wide intent down to #ask and one person.
 
-        Returns "chat", "ask" or None. The first check is the important one:
+        Returns "ask" or None. The first check is the important one:
         without it the bot would answer its own replies and spin forever.
         """
         if message.author.bot or message.author.id == (self.user.id if self.user else None):
@@ -308,8 +258,6 @@ class Assistant(discord.Client):
         # Threads started under a channel count as their own conversations.
         channel = message.channel
         here = {channel.id, getattr(channel, "parent_id", None)}
-        if self.cfg.chat_channel_id is not None and self.cfg.chat_channel_id in here:
-            return "chat"
         if self.cfg.ask_enabled and self.cfg.ask_channel_id in here:
             return "ask"
         # A day's thread under #digest is an #ask conversation about that day.
@@ -418,103 +366,9 @@ class Assistant(discord.Client):
         turn = self._to_turn(message)
         return ([turn] if turn else []), SINGLE
 
-    async def _live_metrics(self) -> str | None:
-        """A compact line of current homelab readings, or None if unavailable.
-
-        Injected rather than exposed as a tool the model can call. Tool-calling
-        is unreliable on a 3B (see docs/design/tsd-ai-homelab-assistant.md), so
-        the facts are gathered here, deterministically, on every turn — the model
-        never decides whether to look, it simply always has them. Same rule as
-        the digest: Python measures, the model only reads the numbers out.
-
-        Cached briefly: the queries are cheap but a rapid back-and-forth would
-        re-run six of them per message, and a homelab does not change
-        meaningfully between two messages typed seconds apart.
-        """
-        if not self.cfg.chat_live_metrics or self.collector is None:
-            return None
-
-        now = time.monotonic()
-        if self._metrics_cache is not None:
-            measured_at, line = self._metrics_cache
-            if now - measured_at < self.cfg.chat_metrics_ttl_s:
-                return line
-
-        try:
-            facts = await self.collector.collect(dt.datetime.now(tz=self.cfg.tz))
-        except Exception as exc:  # noqa: BLE001 — chat must still work without them
-            log.warning("could not collect live metrics for chat: %s", exc)
-            return None
-
-        line = facts.compact()
-        self._metrics_cache = (now, line)
-        return line
-
-    async def _chat_completion(self, message: discord.Message):
-        """Gather context, gather readings, generate. Split out of on_message so
-        the whole sequence sits inside one typing indicator."""
-        try:
-            turns, mode = await self._context_for(message)
-        except discord.HTTPException as exc:
-            log.warning("could not read context: %s", exc)
-            turns, mode = [Turn(role="user", content=(message.content or "").strip())], SINGLE
-        log.info("chat: %s context, %d turn(s)", mode, len(turns))
-
-        messages = build_messages(
-            turns,
-            system=build_system(await self._live_metrics()),
-            max_turns=self.cfg.chat_history_turns,
-            max_chars=self.cfg.chat_history_chars,
-        )
-        return await self.queue.submit(
-            "chat",
-            lambda: self.ollama.chat(
-                messages,
-                num_predict=self.cfg.chat_predict,
-                temperature=self.cfg.chat_temperature,
-            ),
-            priority=PRIORITY_INTERACTIVE,
-        )
-
     async def on_message(self, message: discord.Message) -> None:
-        route = self._route(message)
-        if route == "ask":
+        if self._route(message) == "ask":
             await self._handle_ask(message)
-            return
-        if route != "chat":
-            return
-
-        channel = message.channel
-        try:
-            # Typing indicator held for the whole wait, starting *before* the
-            # history and metrics fetches rather than just around generation.
-            # Those are several round trips to Discord, Prometheus and Loki, and
-            # any silent gap before the indicator appears reads as "it ignored me".
-            async with channel.typing():
-                completion = await self._chat_completion(message)
-        except QueueFull:
-            await message.reply("Busy right now — say that again in a minute.", mention_author=False)
-            return
-        except OllamaError as exc:
-            await message.reply(f"Local model failed: `{exc}`", mention_author=False)
-            return
-        except Exception:  # noqa: BLE001 — a bad reply must not kill the handler
-            log.exception("chat reply failed")
-            return
-
-        footer = f"-# {completion.model} · {completion.seconds:.0f}s"
-        if completion.truncated:
-            # It stopped at CHAT_NUM_PREDICT, not because it was finished. Say so:
-            # a reply that just stops mid-sentence otherwise looks like a crash.
-            footer += " · hit the length limit — ask me to continue"
-        body = completion.text + "\n" + footer
-        parts = chunk(body)
-        try:
-            await message.reply(parts[0], mention_author=False)
-            for part in parts[1:]:
-                await channel.send(part)
-        except discord.HTTPException as exc:
-            log.warning("could not post reply: %s", exc)
 
     # --- #ask: the concierge (act lane) ---
 
@@ -674,23 +528,16 @@ class Assistant(discord.Client):
         complete = False
         try:
             now = dt.datetime.now(tz=self.cfg.tz)
-            draft = await self.queue.submit(
-                "digest",
-                lambda: prepare_digest(
-                    self.collector, self.ollama, now, self.cfg.digest_predict,
-                    day_collector=self.day, since=self._since(now),
-                ),
-                priority=PRIORITY_SCHEDULED,
+            draft = await prepare_digest(
+                self.collector, now, day_collector=self.day, since=self._since(now),
             )
             complete = draft.complete
-            # Outside the queue: waiting on Claude must not hold the local model.
             message = draft.render(self.cfg.grafana_url, await brief if brief is not None else None)
         except Exception as exc:  # noqa: BLE001 — a bad day must not kill the loop
             log.exception("scheduled digest failed")
             message = f"⚠️ Homelab digest failed to run: `{exc}`"
             ok = False
-            # Claude's read of the mail does not depend on Prometheus or the
-            # local model: keep it (and its stamp) under the failure line.
+            # Claude's read of the mail does not depend on Prometheus: keep it (and its stamp) under the failure line.
             # _brief never raises.
             if brief is not None:
                 message += "\n\n" + "\n".join((await brief).lines)
@@ -1062,15 +909,10 @@ class Assistant(discord.Client):
         if self._shown_stamp:
             write_stamp(self._shown_stamp, now.timestamp())
 
-    async def run_digest(self, priority: int = PRIORITY_INTERACTIVE) -> str:
+    async def run_digest(self) -> str:
         now = dt.datetime.now(tz=self.cfg.tz)
-        draft = await self.queue.submit(
-            "digest",
-            lambda: prepare_digest(
-                self.collector, self.ollama, now, self.cfg.digest_predict,
-                day_collector=self.day, since=self._since(now),
-            ),
-            priority=priority,
+        draft = await prepare_digest(
+            self.collector, now, day_collector=self.day, since=self._since(now),
         )
         if draft.complete:
             self._shown(now)
@@ -1255,9 +1097,9 @@ def register_commands(client: Assistant) -> None:
     async def reply(interaction: discord.Interaction, content: str) -> None:
         """Deliver a finished answer, surviving an expired interaction token.
 
-        Discord invalidates a deferred interaction after 15 minutes. A long queue
-        can outlast that, so fall back to a plain channel message addressed to the
-        requester rather than dropping work that already cost CPU time.
+        Discord invalidates a deferred interaction after 15 minutes. A slow
+        digest can outlast that, so fall back to a plain channel message
+        addressed to the requester rather than dropping it.
         """
         parts = chunk(content)
         try:
@@ -1273,76 +1115,6 @@ def register_commands(client: Assistant) -> None:
             for part in parts[1:]:
                 await channel.send(part)
 
-    async def run_llm(
-        interaction: discord.Interaction,
-        label: str,
-        prompt: str,
-        system: str,
-        num_predict: int,
-        temperature: float,
-        footer: bool = True,
-    ) -> None:
-        depth = client.queue.depth
-        await interaction.response.defer(thinking=True)
-        if depth:
-            # Set expectations up front — one worker means real waiting.
-            await interaction.followup.send(
-                f"-# queued behind {depth} job(s) — I'll edit in the answer when it's ready",
-                ephemeral=True,
-            )
-        try:
-            completion = await client.queue.submit(
-                label,
-                lambda: client.ollama.generate(
-                    prompt=prompt, system=system,
-                    num_predict=num_predict, temperature=temperature,
-                ),
-                priority=PRIORITY_INTERACTIVE,
-            )
-        except QueueFull:
-            await reply(interaction, "Too many jobs queued right now — try again in a few minutes.")
-            return
-        except OllamaError as exc:
-            await reply(interaction, f"Local model failed: `{exc}`")
-            return
-
-        body = completion.text
-        if footer:
-            body += "\n" + ASK_FOOTER.format(model=completion.model, secs=completion.seconds)
-        await reply(interaction, body)
-
-    @tree.command(description="Ask the local model a question (queued; answers when ready)")
-    @app_commands.describe(question="What do you want to ask?")
-    async def ask(interaction: discord.Interaction, question: str) -> None:
-        if not allowed(interaction):
-            return await deny(interaction)
-        text, trimmed = clamp_input(question, cfg.max_input_chars)
-        if not text:
-            return await interaction.response.send_message("Empty question.", ephemeral=True)
-        note = "\n-# (question was truncated to fit)" if trimmed else ""
-        await run_llm(
-            interaction, "ask", text, ASK_SYSTEM,
-            cfg.ask_predict, temperature=0.6,
-        )
-        if note:
-            await interaction.followup.send(note, ephemeral=True)
-
-    @tree.command(description="Summarize pasted text with the local model")
-    @app_commands.describe(text="The text to summarize")
-    async def summarize(interaction: discord.Interaction, text: str) -> None:
-        if not allowed(interaction):
-            return await deny(interaction)
-        body, trimmed = clamp_input(text, cfg.max_input_chars)
-        if not body:
-            return await interaction.response.send_message("Nothing to summarize.", ephemeral=True)
-        prompt = f"Summarize the following text.\n\n---\n{body}\n---"
-        if trimmed:
-            prompt += "\n\n(Note: the text was truncated.)"
-        await run_llm(
-            interaction, "summarize", prompt, SUMMARIZE_SYSTEM,
-            cfg.summarize_predict, temperature=0.3,
-        )
-
     @tree.command(description="Run the homelab digest now instead of waiting for the schedule")
     async def digest(interaction: discord.Interaction) -> None:
         if not allowed(interaction):
@@ -1350,9 +1122,6 @@ def register_commands(client: Assistant) -> None:
         await interaction.response.defer(thinking=True)
         try:
             message = await client.run_digest()
-        except QueueFull:
-            await reply(interaction, "Too many jobs queued right now — try again shortly.")
-            return
         except Exception as exc:  # noqa: BLE001
             log.exception("on-demand digest failed")
             await reply(interaction, f"Digest failed: `{exc}`")
@@ -1378,16 +1147,12 @@ def register_commands(client: Assistant) -> None:
             log.warning("digest followup failed (%s); falling back to text", exc)
             await reply(interaction, message)
 
-    @tree.command(description="Show model, queue depth, and the next scheduled digest")
+    @tree.command(description="Show the next and last scheduled digest")
     async def status(interaction: discord.Interaction) -> None:
         if not allowed(interaction):
             return await deny(interaction)
         await interaction.response.defer(thinking=True, ephemeral=True)
-        up = await client.ollama.available()
-        lines = [
-            f"**Model** `{cfg.ollama_model}` — {'ready' if up else '⚠️ unreachable or not loaded'}",
-            f"**Queue** {client.queue.depth} waiting · running: {client.queue.running or 'idle'}",
-        ]
+        lines: list[str] = []
         if cfg.digest_enabled:
             nxt = client.scheduled_digest.next_iteration
             when = f"{nxt.astimezone(cfg.tz).strftime('%a %d %b')} {clock(nxt.astimezone(cfg.tz))}" if nxt else "pending"
@@ -1401,25 +1166,6 @@ def register_commands(client: Assistant) -> None:
             lines.append("**Next digest** disabled")
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    # Right-click a message → Apps → "Summarize message". Native-feeling, and it
-    # avoids re-pasting text that is already in the channel.
-    async def summarize_message(interaction: discord.Interaction, message: discord.Message) -> None:
-        if not allowed(interaction):
-            return await deny(interaction)
-        body, trimmed = clamp_input(message.content or "", cfg.max_input_chars)
-        if not body:
-            return await interaction.response.send_message(
-                "That message has no text to summarize.", ephemeral=True
-            )
-        prompt = f"Summarize the following text.\n\n---\n{body}\n---"
-        if trimmed:
-            prompt += "\n\n(Note: the text was truncated.)"
-        await run_llm(
-            interaction, "summarize-message", prompt, SUMMARIZE_SYSTEM,
-            cfg.summarize_predict, temperature=0.3,
-        )
-
-    tree.add_command(app_commands.ContextMenu(name="Summarize message", callback=summarize_message))
 
 
 def run(cfg: Config) -> None:

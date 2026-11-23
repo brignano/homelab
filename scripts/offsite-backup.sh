@@ -52,8 +52,7 @@ DUMPS="${HL_BACKUP_DIR:-/opt/backups/postgres}"
 
 # <docker volume> <comma-separated excludes, relative to the volume root>.
 # Volumes that do not exist on this box (yet) are skipped, not failed.
-VOLUMES="${HL_OFFSITE_VOLUMES:-ai_open_webui_data cache
-monitoring_grafana_data plugins,png,csv
+VOLUMES="${HL_OFFSITE_VOLUMES:-monitoring_grafana_data plugins,png,csv
 proxy_adguard_conf -
 homeassistant_homeassistant_config tts,backups
 desktops_kali_config .cache,.local/share/Trash

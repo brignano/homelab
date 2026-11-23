@@ -2,7 +2,7 @@
 
   python -m app              run the bot (needs full Discord config)
   python -m app --dry-run    render a digest from synthetic facts, no network
-  python -m app --selftest   hit the real Prometheus/Loki/Ollama, print the
+  python -m app --selftest   hit the real Prometheus/Loki, print the
                              digest, and exit — no Discord config needed
   python -m app --provision  diff the server against guild.yml and print a plan
   python -m app --provision --apply
@@ -13,7 +13,7 @@
 
 Order to run these when setting up from scratch:
 
-  1. --selftest    proves the container reaches Ollama/Prometheus/Loki.
+  1. --selftest    proves the container reaches Prometheus/Loki.
                    Needs no Discord token, so it isolates backend problems
                    from Discord problems.
   2. --provision   creates the channels. Prints the channel ID to paste into
@@ -199,7 +199,7 @@ def _sample_day(now: dt.datetime):
 
 def _dry_run() -> int:
     """Exercise the pure rendering path with representative facts. No I/O."""
-    from .digest import facts_block, render
+    from .digest import render
     from .facts import Facts
 
     healthy = Facts(
@@ -212,8 +212,8 @@ def _dry_run() -> int:
         targets_up=20, targets_total=22,
         targets_down=["blackbox (kali-linux:3000)", "postgres-exporter (postgres-exporter:9187)"],
         cpu_pct=91.7, mem_pct=93.1, disk_pct=88.4,
-        restarts=[("ollama", 3), ("caddy", 1)],
-        log_errors=[("caddy", 214), ("open-webui", 37), ("loki", 4)],
+        restarts=[("jellyfin", 3), ("caddy", 1)],
+        log_errors=[("caddy", 214), ("jellyfin", 37), ("loki", 4)],
         problems=["could not read log errors"],
     )
 
@@ -224,19 +224,8 @@ def _dry_run() -> int:
     day = _sample_day(dt.datetime(2026, 8, 22, 7, 30, tzinfo=dt.timezone.utc))
 
     for name, facts in (("HEALTHY", healthy), ("DEGRADED", degraded)):
-        print(f"\n{'=' * 70}\n{name} — prompt given to the model\n{'=' * 70}")
-        print(facts_block(facts))
-        print(f"\n{'-' * 70}\n{name} — rendered Discord message (facts + narration)\n{'-' * 70}")
-        print(render(
-            facts,
-            "Everything looks normal this morning." if not facts.concerns
-            else "A couple of targets are down and the box is running hot.",
-            model="llama3.2:3b", seconds=34.0, grafana_url=grafana,
-            day=day if name == "HEALTHY" else None,
-        ))
-        print(f"\n{'-' * 70}\n{name} — rendered with the model unavailable\n{'-' * 70}")
-        print(render(facts, None, note="narration unavailable", grafana_url=grafana,
-                     day=day if name == "HEALTHY" else None))
+        print(f"\n{'-' * 70}\n{name} — rendered Discord message\n{'-' * 70}")
+        print(render(facts, grafana_url=grafana, day=day if name == "HEALTHY" else None))
     return 0
 
 
@@ -245,25 +234,14 @@ async def _selftest_async() -> int:
 
     from .digest import build
     from .facts import FactCollector
-    from .ollama import Ollama
 
     prom = os.environ.get("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/")
     loki = os.environ.get("LOKI_URL", "http://loki:3100").rstrip("/")
-    ourl = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
-    model = os.environ.get("OLLAMA_MODEL", "llama3.2:3b")
     grafana = os.environ.get("GRAFANA_URL", "").strip().rstrip("/")
 
-    print(f"prometheus : {prom}\nloki       : {loki}\nollama     : {ourl} ({model})\n")
+    print(f"prometheus : {prom}\nloki       : {loki}\n")
 
     async with aiohttp.ClientSession() as session:
-        ollama = Ollama(
-            session, base_url=ourl, model=model,
-            num_ctx=int(os.environ.get("OLLAMA_NUM_CTX", "4096")),
-            timeout_s=int(os.environ.get("LLM_TIMEOUT_S", "300")),
-        )
-        ok = await ollama.available()
-        print(f"ollama has {model}: {'yes' if ok else 'NO — digest will post facts only'}\n")
-
         collector = FactCollector(session, prometheus_url=prom, loki_url=loki)
 
         # The "Today" section, from whichever of Google and Home Assistant is
@@ -298,7 +276,7 @@ async def _selftest_async() -> int:
 
         tz_name = os.environ.get("TZ", "").strip() or "UTC"
         from zoneinfo import ZoneInfo
-        message = await build(collector, ollama, dt.datetime.now(tz=ZoneInfo(tz_name)),
+        message = await build(collector, dt.datetime.now(tz=ZoneInfo(tz_name)),
                               grafana_url=grafana, day_collector=day_collector)
 
     print("=" * 70)

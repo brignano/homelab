@@ -1,6 +1,6 @@
 ---
 name: invariants-reviewer
-description: Reviews a homelab diff against the rules this repo learned the hard way — Ollama thread pinning, dead man's switches, alert summaries, bind-mount redeploys, port exposure, secrets, design tokens. Use before pushing or opening a PR that touches docker/, scripts/, grafana/ or Caddy config, or when asked to check a change against the homelab's rules. Read-only; reports findings, changes nothing.
+description: Reviews a homelab diff against the rules this repo learned the hard way — dead man's switches, alert summaries, bind-mount redeploys, port exposure, secrets, design tokens. Use before pushing or opening a PR that touches docker/, scripts/, grafana/ or Caddy config, or when asked to check a change against the homelab's rules. Read-only; reports findings, changes nothing.
 tools: Read, Grep, Glob, Bash
 model: opus
 ---
@@ -24,8 +24,7 @@ the source wins, and say so in your report so this file gets fixed.
 2. **Load only the sources that apply.** Always `AGENTS.md`. Then the skill for
    each area touched: `alerting` for `grafana/`, `prometheus.yml`, probes,
    metrics or any scheduled script; `dashboard-visuals` for `docker/dashboard/`
-   or anything visual; `local-llm` for `docker/ai/`, `docker/assistant/` or any
-   code calling Ollama; `docs/design/tsd-personal-assistant.md` for
+   or anything visual; `assistant-bot` for `docker/assistant/`; `docs/design/tsd-personal-assistant.md` for
    `docker/concierge/` or the bot's `#ask` code.
 3. **Run the checks CI runs**, the fast ones, so you report a red CI before the
    push does: `./scripts/check-observability.sh`, `./scripts/check-probes.sh`,
@@ -39,23 +38,15 @@ the source wins, and say so in your report so this file gets fixed.
 
 ## Checklist
 
-**Ollama** — `AGENTS.md` "Ollama / AI tuning"
-- A new model has a Modelfile in `docker/ai/models/` pinning `num_thread`.
-- No request to Ollama sends `num_thread` (or any thread option) at request time.
-- Nothing new calls Ollama outside the single-worker queue, or in parallel with it.
+**Watch lane (digest)** — `assistant-bot` skill
 
-**Local LLM / watch lane** — `local-llm` skill; `AGENTS.md` "Local LLM usage"
-
-These apply to the **local model** (Ollama, the 3B) and the code that feeds it:
-`docker/assistant/` digest, `#chat` and the slash commands. They do **not**
-apply to the concierge in `docker/concierge/`, which is Claude and is designed
-to call tools and read mail. Its rules are in the next section.
-- Facts are computed and thresholded in Python; the model only writes prose.
-- No tool-calling added for the local model.
-- A model or data failure degrades (numbers still posted, unreadable data
-  reported) and never renders as "all clear".
-- Text written by other people (mail, calendar invites) is not passed to the
-  local model. See `docs/design/tsd-personal-assistant.md`, "The two lanes".
+These apply to the `docker/assistant/` digest. They do **not** apply to the
+concierge in `docker/concierge/`, which is Claude and is designed to call tools
+and read mail. Its rules are in the next section.
+- Facts are computed and thresholded in Python, and the digest is rendered by
+  code. No model is added back without its own issue.
+- A data failure degrades (numbers still posted, unreadable data reported) and
+  never renders as "all clear".
 
 **Act lane (concierge)** — `docs/design/tsd-personal-assistant.md` Decisions 1–5
 and "Security"; `docker/concierge/README.md`

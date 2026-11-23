@@ -22,20 +22,17 @@ function hl-ps          { _hl_rcall "hl_ps" }
 function hl-logs        { _hl_rtty  "hl_logs $args" }
 function hl-restart     { _hl_rcall "hl_restart $args" }
 function hl-backup      { _hl_rcall "hl_backup" }
-function hl-models      { _hl_rtty  "hl_models" }
 function hl-reload-prom { _hl_rcall "hl_reload_prom" }
 function hl-kali-shell  { _hl_rtty  "hl_kali_shell $args" }
 
 # ── Open a service in the default browser ─────────────────────────────────────
 function _hl_open { param([string]$url) Start-Process $url }
-function hl-chat   { _hl_open "http://chat.home" }
 function hl-stats  { _hl_open "http://stats.home" }
 function hl-apps   { _hl_open "http://apps.home" }
 function hl-dns    { _hl_open "http://dns.home" }
 function hl-alerts { _hl_open "http://alerts.home" }
 function hl-kali   { _hl_open "https://kali.home" }
 # IP fallbacks for when AdGuard split-DNS isn't resolving *.home.
-function hl-chat-ip   { _hl_open "http://${HL_IP}:3010" }
 function hl-stats-ip  { _hl_open "http://${HL_IP}:3000" }
 function hl-apps-ip   { _hl_open "http://${HL_IP}:9000" }
 function hl-dns-ip    { _hl_open "http://${HL_IP}:3001" }
@@ -99,7 +96,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl <cmd> [args]      dash-less form of any command: hl logs grafana = hl-logs grafana
 
   open a service
-    hl-chat hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
+    hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
@@ -113,7 +110,6 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-logs <svc> [n]    tail & follow logs
     hl-restart <svc>     restart one container
     hl-backup            pg_dumpall (scripts/pg-backup.sh)
-    hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
     hl-kali-shell [cmd]  terminal in Kali (starts it, stops it on exit)
 "@ | Write-Host

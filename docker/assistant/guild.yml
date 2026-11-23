@@ -42,7 +42,7 @@ categories:
       # from git history here, provision, and set that ID.
 
       # The act lane: Claude, with read access to calendar, mail and the house.
-      # Routed to docker/concierge/, never to Ollama. Each new message gets its
+      # Routed to docker/concierge/. Each new message gets its
       # own thread from the bot, so the channel stays a list of requests and
       # each conversation keeps its own context and approvals.
       # See docs/design/tsd-personal-assistant.md, phase 3.
