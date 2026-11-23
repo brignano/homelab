@@ -1,4 +1,4 @@
 # Pinned for reproducible rebuilds on the LXC. Bump deliberately, not by drift.
 # PyJWT does the signature and claim checks; cryptography is its RS256 backend.
 PyJWT==2.15.0
-cryptography==48.0.1
+cryptography==50.0.0
