@@ -150,3 +150,12 @@ html,body{margin:0}
 .det code{font-family:var(--mono);font-size:.92em}
 .row .t{overflow-wrap:anywhere}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
+
+/* Work / Ideas switch: the two pages sit side by side (docker/ideas/), and
+   Ideas loads this stylesheet too, so it lives here once. */
+.hl{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+.switch{display:inline-flex;border:1px solid var(--line-control,var(--line-strong));border-radius:var(--radius-control,var(--radius-sm));overflow:hidden;background:var(--card)}
+.switch a{font-size:var(--text-sm);padding:5px 12px;color:var(--ink-soft);text-decoration:none}
+.switch a+a{border-left:1px solid var(--line)}
+.switch a:hover{background:var(--surface-hover)}
+.switch a[aria-current=page]{background:var(--i-surface);color:var(--i-ink)}

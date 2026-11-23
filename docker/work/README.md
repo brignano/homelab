@@ -29,6 +29,10 @@ browser ask first, and that preflight gets a 405), refuses a browser `Origin`
 other than `https://work.<domain>` with a 403, and strips GitHub's
 `Access-Control-*` headers. Keep all three if you touch the block.
 
+The Ideas page (`docker/ideas/`) sits beside this one: a Work / Ideas switch
+at the top of both, and Ideas loads this page's `app.css`. Ideas links to
+`#repo=<name>`, which opens Work filtered to that repo.
+
 ## What it shows
 
 Status follows the fleet standard's table ("Status, priority and blocked" in

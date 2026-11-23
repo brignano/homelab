@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ideas</title>
+<meta name="description" content="Every idea in the ledger, read live from GitHub.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/work.css">
+<link rel="stylesheet" href="/app.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Ideas</h1>
+      <div class="sub" id="sub">Reading GitHub…</div>
+    </div>
+    <div class="hl">
+      <nav class="switch" aria-label="Pages"><a href="#" id="worklink">Work</a><a href="/" aria-current="page">Ideas</a></nav>
+      <button class="btn" type="button" id="refresh">Refresh</button>
+    </div>
+  </header>
+
+  <aside class="side" aria-label="Stages">
+    <h2>Stages</h2>
+    <div class="list" style="padding:4px"><table><thead><tr><th>Stage</th><th>Ideas</th><th>Wanted</th><th>Go</th></tr></thead><tbody id="stagetab"></tbody></table></div>
+    <h2 style="margin-top:var(--s4)">Proof</h2>
+    <p class="why">How sure we are that someone wants it, weakest first: <b>Just an idea</b>, <b>Researched</b>, <b>Someone wants it</b>, <b>Someone committed</b>, <b>Proven</b>. Ideas that earn money can't move until someone commits.</p>
+  </aside>
+
+  <div class="main">
+    <div class="counts" id="counts"></div>
+    <div class="toolbar">
+      <span class="sortwrap"><span class="lbl">Kind</span><button class="sortbtn" type="button" id="kindbtn" aria-haspopup="true" aria-expanded="false"><span id="kindlbl">All kinds</span><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5 9 4.5" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></button>
+        <div class="menu left" id="kindmenu" role="menu" hidden></div></span>
+      <span><span class="lbl">Proof</span><span class="seg" id="proof"><button type="button" data-v="any" aria-pressed="true">Any</button><button type="button" data-v="wanted" aria-pressed="false">Someone wants it</button></span></span>
+      <input type="search" id="q" class="sidesearch search" placeholder="Search ideas" aria-label="Search ideas" autocomplete="off">
+      <span class="filt" id="filt" hidden></span>
+    </div>
+    <div id="lists"><div class="state">Reading the ledger from GitHub…</div></div>
+    <details class="donebox" id="archbox" hidden><summary id="archsum">Archive</summary><div class="list" id="arch"></div></details>
+  </div>
+</div>
+</body>
+</html>

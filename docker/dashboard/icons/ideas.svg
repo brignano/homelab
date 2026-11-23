@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Ideas">
+  <!-- A light bulb: the Ideas page is the idea ledger. Inked in the design
+       system's identity amber (the `mark` token) in its one permitted use,
+       inking a graphic, with a prefers-color-scheme step and NO GROUND, like
+       work.svg beside it. A copy lives at docker/ideas/site/icon.svg for the
+       page's tab; keep the two identical. -->
+  <style>
+    .m { fill: none; stroke: #b4741f; }
+    .f { fill: #b4741f; }
+    @media (prefers-color-scheme: dark) { .m { stroke: #e0a44f; } .f { fill: #e0a44f; } }
+  </style>
+  <path class="m" d="M16 4.5a8.5 8.5 0 0 0-5 15.4c.9.7 1.5 1.7 1.5 2.8v.8h7v-.8c0-1.1.6-2.1 1.5-2.8A8.5 8.5 0 0 0 16 4.5Z" stroke-width="2.4" stroke-linejoin="round"/>
+  <rect class="f" x="12.5" y="25.2" width="7" height="2.6" rx="1.3"/>
+  <path class="m" d="M16 23.5v-6.5" stroke-width="2" stroke-linecap="round"/>
+</svg>
