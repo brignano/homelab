@@ -27,7 +27,7 @@
 #
 # Usage:
 #   ./scripts/update-design-tokens.sh            # refresh at the pinned versions
-#   ./scripts/update-design-tokens.sh 0.3.0      # move tokens to a version, or `latest`
+#   ./scripts/update-design-tokens.sh 0.9.0      # move tokens to a version, or `latest`
 #   ./scripts/update-design-tokens.sh --check    # regenerate and diff; no network
 #
 # --check is what CI runs: it proves the generated palette still matches the
