@@ -128,7 +128,6 @@ household's DNS down for a few seconds — do it deliberately and verify with tw
 | assistant (Discord bot) | `docker/assistant/` | **outbound only** — no ports, no Caddy route |
 | mcp-calendar | `docker/mcp-calendar/` | internal: no ports; reached from outside CT 100 only through Caddy at `mcp.$HOMELAB_DOMAIN/calendar/mcp` (same bearer token as Grafana MCP, LAN + tailnet). Read-only iCloud calendars via HA `GET /api/calendars/<entity>`, limited to `HA_CALENDARS`. Containers on `monitoring_monitoring` can reach it without the token. No public listener; cloud Claude reads it through the `life` Remote Control session (`scripts/life`) |
 | mcp-budget | `docker/mcp-budget/` | LAN + tailnet via Caddy at `budget-mcp.$HOMELAB_DOMAIN`; no published port, own bearer token (`MCP_BUDGET_TOKEN`). Read-only unless `docker-compose.write.yml` is added. Secrets only in its `.env` |
-| concierge (Claude Agent SDK) | `docker/concierge/` | **outbound only** — no ports, no Caddy route; reached by the assistant over `assistant_concierge` (bearer token); also on `proxy_proxy` to reach Radarr/Sonarr, where the token is what keeps other containers out; reads HA and Prometheus through the host |
 | Caddy | `docker/proxy/` | LAN + tailnet (`:80`, routes `*.home`) |
 | AdGuard Home | `docker/proxy/` | LAN + tailnet (`:53` DNS, `dns.home`) |
 | cloudflared | `docker/tunnel/` | **the only public listener**, outbound to Cloudflare; joins `gateway_edge` only, so it can reach the gateway and nothing else. Pinned, path normalization on, Protect with Access on every route. Off until `docker/tunnel/.env` exists; `scripts/gateway-off.sh` stops it |
@@ -238,7 +237,7 @@ directory mounts, so its files are live on pull.) Ask what reads the file and wh
 
 ## The assistant bot
 
-How Otto works (`guild.yml`, the digest, #ask conversation scope) and the two
+How Otto works (`guild.yml`, the digest, the import reminder) and the two
 rules for extending it are in
 [`.claude/skills/assistant-bot/SKILL.md`](.claude/skills/assistant-bot/SKILL.md).
 
@@ -248,7 +247,7 @@ rules for extending it are in
 - [`docs/design/tsd-media-downloads.md`](docs/design/tsd-media-downloads.md) — **🚧 built 2026-10-11** in `docker/downloads/`: gluetun (Proton VPN, port forwarding) with qBittorrent inside its namespace, plus Sonarr, Radarr and Prowlarr hardlinking into Jellyfin's library. **Never restart or recreate gluetun alone**: qBittorrent keeps the dead namespace and loses its network; recreate the stack. Steps: `docker/downloads/README.md`.
 - [`docs/design/tsd-photo-library.md`](docs/design/tsd-photo-library.md) — **🚧 Phase 1 built 2026-10-25, not deployed** (`docker/photos/README.md`). A nightly, download-only `icloudpd` mirror of iCloud Photos onto the 5 TB drive (the second copy; iCloud stays primary and offsite), plus a Mac-side cleanup that reads Apple's own quality scores and *proposes* deletions into review albums. No script ever deletes a photo. The first sync is held under a monthly download budget (`PHOTOS_MONTHLY_BUDGET_GB`) because the lab is still on Xfinity.
 - [`docs/design/tsd-self-healing-remediation.md`](docs/design/tsd-self-healing-remediation.md) — **🚧 first remediations shipped 2026-10-31**: verified nightly restarts in repo-sync, scheduled prune + fstrim, the backup-drive watchdog on m5. Hung-container restart (#252), threshold disk cleanup (#253) and deploy rollback (#254) are open.
-- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **🚧 phases 1–4 built** (calendar, mail metadata and Home Assistant states in the digest; the concierge answering in `#ask`, proposing calendar events, Gmail drafts, allowlisted scenes and movie/show downloads that run only on a ✅; see `docker/assistant/README.md` → "Today", `docker/homeassistant/README.md` and `docker/concierge/README.md`). Personal assistant in two lanes: *watch* (calendar, mail metadata, Home Assistant state into the digest — rendered by code; text strangers wrote is never shown to the model) and *act* (`docker/concierge/`, Claude Agent SDK behind the bot in `#ask`, every write approved in Discord with its literal arguments). Locks, alarm and garage are never exposed to it.
+- [`docs/design/tsd-personal-assistant.md`](docs/design/tsd-personal-assistant.md) — **✅ watch lane running; act lane retired 2026-11-23 (#366).** Calendar, mail metadata, lead/starred counts and Home Assistant states in the daily digest, rendered by code with no model (`docker/assistant/README.md` → "Today", `docker/homeassistant/README.md`). The concierge (`#ask`, Claude via the API, with approval-gated writes, #memory, follow-ups and the brief/review) was removed so the assistant costs nothing; Claude Duet does that job.
 
 ## Where code changes happen
 

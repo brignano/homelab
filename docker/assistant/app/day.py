@@ -43,17 +43,14 @@ log = logging.getLogger(__name__)
 # its own source, because HA can be down while Google is fine, and the other
 # way round.
 SOURCES = ("calendar", "mail", "home", "ha-calendar")
-# Not a Today source, but stamped beside them: the morning brief, written by
-# the bot after a /v1/brief run that finished (bot.Assistant._brief).
-BRIEF_SOURCE = "brief"
-# Likewise the follow-ups loop (each scan of #follow-ups that worked) and the
-# evening review (each run that finished, or found nothing to review).
-FOLLOWUPS_SOURCE = "followups"
-REVIEW_SOURCE = "review"
-STAMPED = SOURCES + (BRIEF_SOURCE, FOLLOWUPS_SOURCE, REVIEW_SOURCE)
 GOOGLE_SOURCES = ("calendar", "mail")
 # The sources merged into the Calendar list, and how each is named when
 # it alone could not be read.
+# The "Waiting" line: unread lead notifications per product, and starred mail.
+# Moved here from docker/concierge (2026-11-23, #366). Counts only, from the
+# labels' own counters: never a sender or subject.
+LEAD_LABELS = (("Driftwood", "Leads/Driftwood"), ("Sites", "Leads/Sites"), ("Guidebook", "Leads/Guidebook"))
+STARRED_LABEL = "STARRED"
 CALENDAR_SOURCES = {"calendar": "Google", "ha-calendar": "HA calendars"}
 
 # How much of the section a single run can fill. The digest is one Discord
@@ -126,6 +123,9 @@ class Day:
     mail_more: bool = False
     # How far back "new" mail was looked for, as rendered.
     mail_span: str = "24h"
+    # Unread leads by product, and starred mail. None = not read.
+    leads: dict[str, int] | None = None
+    starred: int | None = None
     home: list[Reading] | None = None
     problems: list[str] = field(default_factory=list)
 
@@ -199,13 +199,23 @@ def _mail(m: Mail) -> str:
     return f"{discord_safe(m.sender, SENDER_CHARS)}: {subject}"
 
 
-def render_lines(day: Day, mail: bool = True) -> list[str]:
+def waiting_line(leads: dict[str, int] | None, starred: int | None) -> str | None:
+    """"2 new Sites leads · 3 starred", or None when there is nothing waiting
+    (or it was not read: this line is a nicety, never a "not read")."""
+    parts = []
+    for product, _label in LEAD_LABELS:
+        n = (leads or {}).get(product, 0)
+        if n > 0:
+            parts.append(f"{n} new {product} lead{'' if n == 1 else 's'}")
+    if starred:
+        parts.append(f"{starred} starred")
+    return "**Waiting** " + " · ".join(parts) if parts else None
+
+
+def render_lines(day: Day) -> list[str]:
     """The section's lines. Unmarked by design: the 🔴/🟠 marks above belong to
     the lab's verdict, and that verdict is not about your calendar. A line that
-    appears only when there is something to say (Overlaps) is its own signal.
-
-    `mail=False` when the morning brief read mail itself: one answer to "what's
-    new in my inbox" per post, not two that can disagree."""
+    appears only when there is something to say (Overlaps) is its own signal."""
     tz = day.now.tzinfo
     lines: list[str] = ["### Today"]
 
@@ -241,7 +251,7 @@ def render_lines(day: Day, mail: bool = True) -> list[str]:
             lines.append("**Overlaps** " + " · ".join(
                 f"{_event(a, tz)} ↔ {_event(b, tz)}" for a, b in conflicts[:MAX_CONFLICTS]))
 
-    if "mail" not in day.sources or not mail:
+    if "mail" not in day.sources:
         pass
     elif day.mail is None:
         lines.append("**Mail** _not read_")
@@ -251,6 +261,10 @@ def render_lines(day: Day, mail: bool = True) -> list[str]:
         count = f"{len(day.mail)}{'+' if day.mail_more else ''} new"
         newest = " · ".join(_mail(m) for m in day.mail[:3])
         lines.append(f"**Mail ({day.mail_span})** {count} — {newest}")
+    if "mail" in day.sources:
+        waiting = waiting_line(day.leads, day.starred)
+        if waiting:
+            lines.append(waiting)
 
     if "home" not in day.sources:
         pass
@@ -355,6 +369,19 @@ class DayCollector:
         more = len(new) == len(ids) and (estimate or 0) > len(ids)
         return new, more
 
+    async def _waiting(self) -> tuple[dict[str, int] | None, int | None]:
+        """Unread leads and starred count. Never raises: a failure here only
+        drops the Waiting line and must not mark mail as unread."""
+        try:
+            counts = await self._google.label_counts(
+                tuple(label for _p, label in LEAD_LABELS) + (STARRED_LABEL,))
+        except Exception as exc:  # noqa: BLE001 — class name only
+            log.warning("waiting line unavailable (%s)", exc.__class__.__name__)
+            return None, None
+        leads = {p: counts[label][0] for p, label in LEAD_LABELS if label in counts}
+        starred = counts[STARRED_LABEL][1] if STARRED_LABEL in counts else None
+        return leads, starred
+
     async def collect(self, now: dt.datetime, since: dt.datetime | None = None) -> Day:
         """Never raises. A source that fails is reported in `problems` and left
         as None, so it renders as "not read" rather than as an empty day.
@@ -376,7 +403,10 @@ class DayCollector:
             jobs["home"] = self._home.readings(self._home_entities)
         if "ha-calendar" in self._sources:
             jobs["ha-calendar"] = self._ha_calendar(now)
-        results = await asyncio.gather(*jobs.values(), return_exceptions=True)
+        extra = [self._waiting()] if "mail" in self._sources else []
+        results = list(await asyncio.gather(*jobs.values(), *extra, return_exceptions=True))
+        if extra:
+            day.leads, day.starred = results.pop()
 
         for source, result in zip(jobs, results):
             if isinstance(result, Exception):

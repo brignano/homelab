@@ -1,8 +1,35 @@
 # TSD: A personal assistant that watches and acts
 
-**Status:** 🚧 phases 1–4 built, plus follow-ups and an evening review (calendar, mail and Home Assistant in the digest: `docker/assistant/`, `docker/homeassistant/`; the concierge in #ask, reading freely and proposing calendar events, Gmail drafts and scenes behind ✅/❌: `docker/concierge/`); phase 5 draft
+**Status:** ✅ watch lane running (phases 1–2: calendar, mail, lead/starred counts and Home Assistant in the digest, `docker/assistant/`, `docker/homeassistant/`). ⛔ act lane retired 2026-11-23 (#366): phases 3–4, follow-ups, the brief and the evening review were removed with `docker/concierge/`. Phase 5 dropped.
 **Date:** 2026-10-10
 **Owner:** Anthony
+
+## Retired: the act lane (2026-11-23, #366)
+
+Anthony chose to have the assistant cost nothing and to use Claude Duet for
+everything the act lane did. The concierge was the only part of the lab billed
+per use (Claude through the Anthropic API key on CT 100), and after the Duet
+trial (#365) Duet already covered the brief, follow-ups and mail/calendar
+questions. So this PR removed, in one go:
+
+- `docker/concierge/` (the agent, its Anthropic key, its Google token with
+  `gmail.compose` and `calendar.events`, its Home Assistant user, Jellyfin key
+  use and media tools), and its CI job and setup-gated container entry.
+- From the bot: `#ask` routing and threads, the approval prompts, `#memory`,
+  `#follow-ups` and their loop, `#activity`, the morning brief, the evening
+  review, and the day thread under each digest. The bot no longer asks for the
+  Message Content intent.
+- The `brief`, `followups` and `review` freshness sources (`heartbeat.sh`,
+  `hl-google-stale`).
+- The OTTO and NOTEBOOK categories in `guild.yml`. Their channels stay in the
+  server until deleted by hand; provisioning reports them as extra.
+
+What stayed, all at no cost: the digest and its Today section (phases 1–2),
+the weekly bank-import reminder (now posted in `#digest`), and the leads and
+starred count, which moved from the concierge into Today as a **Waiting** line
+read from Gmail label counters with the existing read-only `gmail.metadata`
+token. The rest of this document is the design as it was built, kept for the
+record; read phases 3–5 and Decisions 1, 2, 5 and 6's act-lane parts as history.
 
 ## Problem
 
@@ -648,5 +675,6 @@ Trimming what Duet makes redundant is a follow-up issue after the trial.
   here, so it gets its own TSD.
 - **Backups land:** the self-healing TSD unblocks. Even then, lab remediation
   stays in its own design, not in this agent.
-- **The lab gets a GPU:** a local model with reliable tool calling could take
-  over the act lane, and email bodies would stop leaving the box at all.
+- **The lab gets a GPU:** a local model with reliable tool calling could bring
+  back an act lane at no per-use cost, and email bodies would stop leaving the
+  box at all. It would start from a new issue, not from the removed code.

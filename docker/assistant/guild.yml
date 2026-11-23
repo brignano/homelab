@@ -8,12 +8,11 @@
 # deletes a channel — deleting one destroys its history, and #digest *is* the
 # history. Channels found here but absent below are reported, not removed.
 #
-# Three categories, by what you do with each channel (re-laid out 2026-11-12,
-# after the morning brief and evening review moved to Claude Duet):
-#
-#   OTTO       the one channel you type in
-#   LAB        the lab reporting to you — alerts loud, the rest muted
-#   NOTEBOOK   Otto's own storage and audit trail — collapse and mute it
+# One category, LAB: the lab reporting to you, alerts loud, the rest muted.
+# The OTTO (#ask) and NOTEBOOK (#memory, #follow-ups, #activity) categories
+# were retired on 2026-11-23 (#366) with the paid #ask assistant; Claude Duet
+# does that job now. Provisioning never deletes, so those channels stay in the
+# server, reported as extra, until you delete them by hand.
 #
 # Provisioning MOVES a channel that exists under another category rather than
 # creating a second one, so a re-layout here keeps every channel's history and
@@ -33,27 +32,6 @@ bot:
   nickname: Otto
 
 categories:
-  # ── Input: the one place you talk to Otto ───────────────────────────────
-  - name: OTTO
-    channels:
-      # #chat (conversational, local model) was removed from here on 2026-10-12
-      # and from the bot with the local model on 2026-11-23 (#406). An old
-      # #chat channel left in the server is safe to delete by hand.
-
-      # The act lane: Claude, with read access to calendar, mail and the house.
-      # Routed to docker/concierge/. Each new message gets its
-      # own thread from the bot, so the channel stays a list of requests and
-      # each conversation keeps its own context and approvals.
-      # See docs/design/tsd-personal-assistant.md, phase 3.
-      - name: ask
-        topic: >-
-          Ask Otto anything: your calendar, email, home or the lab. It looks
-          things up before answering and can propose an event, a Gmail draft or
-          a scene; nothing happens until you press ✅. Each new message becomes
-          its own thread, so keep talking in the thread to continue. Costs a
-          few cents per question.
-        bot_only: false
-
   # ── Output: things the lab tells you, unprompted ────────────────────────
   - name: LAB
     channels:
@@ -77,8 +55,8 @@ categories:
           Daily health digest, posted automatically each morning — services up,
           CPU/RAM/disk, container restarts, log-error counts. Bot posts only, so
           it stays a clean timeline you can scroll back through to spot drift
-          that no single alert would ever fire on. Each morning's digest opens a
-          thread for the day: reply there to ask about it.
+          that no single alert would ever fire on, plus a weekly reminder to
+          import bank statements.
         bot_only: true
 
       # The green half of what #alerts used to get: auto-deploy and the nightly
@@ -89,39 +67,4 @@ categories:
           Routine good news: each merge auto-deployed and verified, and the
           nightly repo-sync report. Anything that failed or needs you goes to
           #alerts instead. Safe to mute.
-        bot_only: true
-
-  # ── Otto's notebook: storage the bot reads, rarely opened ───────────────
-  - name: NOTEBOOK
-    channels:
-      # One message per remembered fact, read by the concierge before every
-      # #ask task. Bot-only so nothing lands here unapproved — the bot posts a
-      # fact when you press Approve. As server owner you can still post one by
-      # hand or delete one; editing means delete and re-post.
-      - name: memory
-        topic: >-
-          What #ask remembers about you, one fact per message, read before every
-          question. Added only when you approve one. Delete a message to make it
-          forget that fact.
-        bot_only: true
-
-      # Approved follow-ups waiting to come due, one message each, the same
-      # idea as #memory. The bot reads it every minute, fires what is due into
-      # the thread it was set in, and deletes the message. Off until
-      # DISCORD_FOLLOWUPS_CHANNEL_ID is set.
-      - name: follow-ups
-        topic: >-
-          Reminders and check-backs Otto will come back to, one per message,
-          each added only when you approve it. When one is due Otto posts in
-          the thread it came from and removes it here. Delete a message to
-          cancel that follow-up.
-        bot_only: true
-
-      # The audit trail for writes, as #digest is for the lab's numbers: one
-      # line per approved action, linking to the thread it was approved in.
-      # Off until DISCORD_ACTIVITY_CHANNEL_ID is set.
-      - name: activity
-        topic: >-
-          Everything Otto has actually done, one line per approved action, each
-          linking to the #ask thread it came from. Bot posts only.
         bot_only: true

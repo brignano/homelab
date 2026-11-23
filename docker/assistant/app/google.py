@@ -293,6 +293,21 @@ class Google:
         estimate = payload.get("resultSizeEstimate")
         return ids, estimate if isinstance(estimate, int) else None
 
+    async def label_counts(self, names: tuple[str, ...]) -> dict[str, tuple[int, int]]:
+        """(unread, total) for each label named, by name. A name Gmail does not
+        have is left out. Labels' own counters, so no search and no `q`:
+        gmail.metadata allows both calls, and nothing about a message is read."""
+        payload = await self._get(f"{GMAIL_API}/labels", {})
+        ids = {lb.get("name"): lb.get("id") for lb in payload.get("labels", []) if lb.get("id")}
+        out: dict[str, tuple[int, int]] = {}
+        for name in names:
+            label_id = ids.get(name)
+            if not label_id:
+                continue
+            body = await self._get(f"{GMAIL_API}/labels/{quote(label_id, safe='')}", {})
+            out[name] = (int(body.get("messagesUnread") or 0), int(body.get("messagesTotal") or 0))
+        return out
+
     async def message(self, message_id: str) -> Mail | None:
         payload = await self._get(
             f"{GMAIL_API}/messages/{quote(message_id, safe='')}",

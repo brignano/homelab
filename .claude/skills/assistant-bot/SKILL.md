@@ -1,14 +1,17 @@
 ---
 name: assistant-bot
-description: "How Otto, the Discord bot in docker/assistant/, works — guild.yml provisioning, the daily digest, #ask conversation scope and memory, and the rules for extending it. Use when touching docker/assistant/ or the digest."
+description: "How Otto, the Discord bot in docker/assistant/, works — guild.yml provisioning, the daily digest, the weekly import reminder, and the rules for extending it. Use when touching docker/assistant/ or the digest."
 ---
 
 # The assistant bot (Otto)
 
-`docker/assistant/` is a Discord bot that posts the daily digest, forwards #ask
-to the concierge (`docker/concierge/`), and runs follow-ups. There is no local
-model: Ollama and Open WebUI were removed in 2026-11 after the Duet trial, and
-the digest is rendered entirely by code.
+`docker/assistant/` is a Discord bot that posts the daily digest and a weekly
+bank-import reminder, and answers `/digest` and `/status`. It calls no model
+and costs nothing to run: Ollama went in 2026-11 (#406), and the paid #ask
+assistant (`docker/concierge/`, Claude via the API, with #memory, follow-ups,
+the morning brief and the evening review) was retired on 2026-11-23 (#366) for
+Claude Duet. Don't add a model or an API-billed feature back without its own
+issue: Anthony wants this to cost nothing.
 
 The Discord server layout is declarative: `docker/assistant/guild.yml` holds the
 categories/channels/permissions and `--provision` converges the server to it
@@ -16,14 +19,8 @@ categories/channels/permissions and `--provision` converges the server to it
 Creating the server, creating the bot, and restricting a command to a channel
 all require a *user* login and stay manual; everything else is in git.
 
-#ask keeps its conversation **in Discord** — the bot re-reads messages as
-context rather than holding state, so it is restart-safe and what you see is
-what the concierge sees. *Where* you type decides the scope: a plain message is
-a one-off, a reply walks its reply chain, and a message in a thread reads the
-whole thread (`app/chat.py`). It needs the Message Content intent, narrowed in
-code to #ask and the user allowlist; the first check in `_route` (bot.py)
-ignores bots (including itself), which is what prevents an infinite self-reply
-loop.
+The bot needs no privileged intents: it never reads a channel, and slash
+commands carry their own payloads.
 
 Two rules when extending it:
 - **Python decides what's true.** Facts are queried and thresholded in code

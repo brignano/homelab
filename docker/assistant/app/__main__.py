@@ -186,6 +186,8 @@ def _sample_day(now: dt.datetime):
             Event("Standup", at(9), at(9, 15), False, True),
             Event("Pick up dry cleaning", at(17, 30), at(18), False, True),
         ],
+        leads={"Sites": 2, "Driftwood": 0},
+        starred=1,
         sources=("calendar", "mail", "home", "ha-calendar"),
         home=[
             Reading("climate.thermostat", "Thermostat", "heat", None, "at 52°F"),

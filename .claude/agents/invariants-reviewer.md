@@ -24,8 +24,7 @@ the source wins, and say so in your report so this file gets fixed.
 2. **Load only the sources that apply.** Always `AGENTS.md`. Then the skill for
    each area touched: `alerting` for `grafana/`, `prometheus.yml`, probes,
    metrics or any scheduled script; `dashboard-visuals` for `docker/dashboard/`
-   or anything visual; `assistant-bot` for `docker/assistant/`; `docs/design/tsd-personal-assistant.md` for
-   `docker/concierge/` or the bot's `#ask` code.
+   or anything visual; `assistant-bot` for `docker/assistant/`.
 3. **Run the checks CI runs**, the fast ones, so you report a red CI before the
    push does: `./scripts/check-observability.sh`, `./scripts/check-probes.sh`,
    `./scripts/check-dashboard.sh`, `./scripts/update-design-tokens.sh --check`,
@@ -40,33 +39,12 @@ the source wins, and say so in your report so this file gets fixed.
 
 **Watch lane (digest)** — `assistant-bot` skill
 
-These apply to the `docker/assistant/` digest. They do **not** apply to the
-concierge in `docker/concierge/`, which is Claude and is designed to call tools
-and read mail. Its rules are in the next section.
+These apply to the `docker/assistant/` digest.
 - Facts are computed and thresholded in Python, and the digest is rendered by
-  code. No model is added back without its own issue.
+  code. No model, and nothing billed per call (the retired `#ask` concierge),
+  is added back without its own issue.
 - A data failure degrades (numbers still posted, unreadable data reported) and
   never renders as "all clear".
-
-**Act lane (concierge)** — `docs/design/tsd-personal-assistant.md` Decisions 1–5
-and "Security"; `docker/concierge/README.md`
-- Every tool the agent can call is registered in `docker/concierge/app/tools.py`
-  and has a tier in `app/tiers.py`. A new tool without a tier, or one put in
-  the read tier but able to change something, is a finding.
-- The **never** tier stays unregistered: no send, delete, unlock, disarm,
-  garage or purchase tool, and no direct connection to an MCP server whose
-  tool list includes them (HA is proxied through `GetLiveContext` only).
-- The agent options keep `tools=[]`, `allowed_tools=[]`,
-  `permission_mode="default"`, `setting_sources=[]` and the `PreToolUse` gate
-  hook. Anything that pre-approves a call skips `can_use_tool`.
-- A write takes effect only after an allowlisted ✅. The approval prompt is
-  rendered by code from the arguments, never from the model's prose, and an
-  unanswered prompt resolves as ❌.
-- What the agent says reaches Discord without pinging anyone, without link
-  previews, and with every link's destination visible (`defang`,
-  `suppress_embeds`), because an email it read may have steered it.
-- The concierge publishes no port; the bot is its only caller, over
-  `assistant_concierge` with the bearer token.
 
 **Scheduled jobs and alerting** — `AGENTS.md` "Alerting"; `alerting` skill
 - A new or changed cron job pings Healthchecks through `scripts/healthchecks.sh`

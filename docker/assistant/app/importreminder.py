@@ -2,7 +2,7 @@
 
 Actual Budget (budget.home.brignano.io) has no bank sync, by design, so the
 transactions only arrive when someone downloads them and imports the file. This
-is the "someone": once a week the bot posts one fixed message in #ask that pings
+is the "someone": once a week the bot posts one fixed message in #digest that pings
 you, names the accounts, and gives the date range to download. No Claude call,
 so it costs nothing and cannot hallucinate a date.
 

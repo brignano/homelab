@@ -75,24 +75,25 @@ def _():
     from app.config import Config
     with_env()
     c = Config.from_env()
-    assert c.chat_history_turns == 12, c.chat_history_turns
-    assert c.max_input_chars == 6000
+    assert c.digest_at == (7, 30) and c.digest_enabled
     assert not hasattr(c, "ollama_url"), "the local model was removed in 2026-11"
+    for gone in ("ask_channel_id", "concierge_url", "brief_enabled", "review_enabled",
+                 "followups_channel_id", "activity_channel_id", "memory_channel_id"):
+        assert not hasattr(c, gone), f"{gone}: #ask was retired in 2026-11 (#366)"
 
 
 @check("config: overrides are read")
 def _():
     from app.config import Config
-    with_env(CHAT_HISTORY_TURNS="20", MAX_INPUT_CHARS="900")
+    with_env(DIGEST_AT="06:45", DIGEST_ENABLED="false")
     c = Config.from_env()
-    assert c.chat_history_turns == 20
-    assert c.max_input_chars == 900
+    assert c.digest_at == (6, 45) and not c.digest_enabled
 
 
 @check("config: bad values fail loudly, not silently")
 def _():
     from app.config import Config
-    for var, bad in (("CHAT_HISTORY_TURNS", "lots"), ("TZ", "Mars/Olympus")):
+    for var, bad in (("DIGEST_AT", "lots"), ("TZ", "Mars/Olympus")):
         with_env(**{var: bad})
         try:
             Config.from_env()
@@ -113,28 +114,6 @@ def _():
         assert "ALLOWED_USER_IDS" in str(exc), exc
     else:
         raise AssertionError("an empty allowlist would let the whole guild use the bot")
-
-
-# --- chat context -------------------------------------------------------------
-
-@check("chat: context follows Discord's primitives")
-def _():
-    from app.chat import CHAIN, SINGLE, THREAD, context_mode
-    assert context_mode(in_thread=False, is_reply=False) == SINGLE
-    assert context_mode(in_thread=False, is_reply=True) == CHAIN
-    assert context_mode(in_thread=True, is_reply=False) == THREAD
-    # Inside a thread the whole thread is the conversation; replying adds nothing.
-    assert context_mode(in_thread=True, is_reply=True) == THREAD
-
-
-@check("chat: notes and footers stay out of the conversation")
-def _():
-    from app.chat import clean_bot_text, is_ignorable
-    assert is_ignorable("// just a note for me")
-    assert is_ignorable("   ")
-    assert not is_ignorable("what is the load?")
-    assert clean_bot_text("the answer\n-# via Claude · 12s") == "the answer"
-    assert clean_bot_text("line one\nline two") == "line one\nline two"
 
 
 # --- facts --------------------------------------------------------------------
@@ -385,13 +364,9 @@ def _():
 
 # --- text ---------------------------------------------------------------------
 
-@check("text: oversized input and output are bounded")
+@check("text: oversized output is bounded")
 def _():
-    from app.text import chunk, clamp_input
-    kept, trimmed = clamp_input("x" * 100, 10)
-    assert len(kept) <= 10 and trimmed is True
-    kept, trimmed = clamp_input("short", 100)
-    assert kept == "short" and trimmed is False
+    from app.text import chunk
     parts = chunk("y" * 5000)
     assert len(parts) > 1 and all(len(p) <= 2000 for p in parts)
     assert "".join(parts).replace("\n", "") == "y" * 5000
@@ -404,7 +379,9 @@ def _():
     from app.provision import load_desired
     desired = load_desired(str(HERE.parent / "guild.yml"))
     names = [c["name"] for cat in desired["categories"] for c in cat["channels"]]
-    assert "ask" in names and "digest" in names and "alerts" in names, names
+    assert "digest" in names and "alerts" in names and "deploys" in names, names
+    for gone in ("ask", "memory", "follow-ups", "activity"):
+        assert gone not in names, f"#{gone} was retired on 2026-11-23 (#366)"
     assert "chat" not in names, "#chat was removed from guild.yml on 2026-10-12"
     assert desired["bot"]["nickname"] == "Otto"
 
@@ -422,40 +399,38 @@ def _():
         ]
     assert plan(desired, existing, current_nickname="Otto") == [], "a matching server needs no changes"
 
-    # Drop #ask and it should be recreated — and nothing should be deleted.
-    trimmed = {k: [c for c in v if c["name"] != "ask"] for k, v in existing.items()}
+    # Drop #deploys and it should be recreated — and nothing should be deleted.
+    trimmed = {k: [c for c in v if c["name"] != "deploys"] for k, v in existing.items()}
     actions = plan(desired, trimmed, current_nickname="Otto")
     kinds = {a.kind for a in actions}
     assert kinds == {"create_channel"}, kinds
-    assert actions[0].channel == "ask"
+    assert actions[0].channel == "deploys"
 
 
 @check("provision: a channel filed under another category is moved, not duplicated")
 def _():
     from app.provision import load_desired, plan
     desired = load_desired(str(HERE.parent / "guild.yml"))
-    # The pre-2026-11-12 layout: everything Otto in ASSISTANT, the lab in HOMELAB.
+    # The pre-2026-11-12 layout: the lab in HOMELAB. Retired channels left in
+    # the server (#ask under OTTO) are reported, never moved or deleted.
     row = lambda c: {"name": c["name"], "topic": c.get("topic") or "", "bot_only": bool(c.get("bot_only"))}
     chans = {c["name"]: c for cat in desired["categories"] for c in cat["channels"]}
     existing = {
         "HOMELAB": [row(chans["digest"]), row(chans["alerts"])],
-        "ASSISTANT": [row(chans[n]) for n in ("ask", "memory", "follow-ups", "activity")],
+        "OTTO": [{"name": "ask", "topic": "", "bot_only": False}],
     }
     actions = plan(desired, existing, current_nickname="Otto")
     got = sorted((a.kind, a.category, a.channel) for a in actions)
     assert got == sorted([
-        ("create_category", "OTTO", None), ("create_category", "LAB", None),
-        ("create_category", "NOTEBOOK", None),
-        ("move_channel", "OTTO", "ask"),
+        ("create_category", "LAB", None),
         ("move_channel", "LAB", "alerts"), ("move_channel", "LAB", "digest"),
         ("create_channel", "LAB", "deploys"),
-        ("move_channel", "NOTEBOOK", "memory"), ("move_channel", "NOTEBOOK", "follow-ups"),
-        ("move_channel", "NOTEBOOK", "activity"),
+        ("extra_channel", "OTTO", "ask"),
     ]), got
     # A moved channel whose topic also drifted gets both fixes.
-    existing["ASSISTANT"][0]["topic"] = "old words"
-    kinds = [(a.kind, a.channel) for a in plan(desired, existing, current_nickname="Otto") if a.channel == "ask"]
-    assert kinds == [("move_channel", "ask"), ("update_topic", "ask")], kinds
+    existing["HOMELAB"][0]["topic"] = "old words"
+    kinds = [(a.kind, a.channel) for a in plan(desired, existing, current_nickname="Otto") if a.channel == "digest"]
+    assert kinds == [("move_channel", "digest"), ("update_topic", "digest")], kinds
 
 
 @check("provision: unknown channels are reported, never deleted")
@@ -749,7 +724,7 @@ def _():
     m = parse_message({"id": "18c1f0aa", "threadId": "18c1f0a9", "internalDate": "1791800000000",
                        "payload": {"headers": [{"name": "Subject", "value": "Invoice [due](https://evil.example)"}]}})
     assert m.thread == "18c1f0a9", m
-    line = next(ln for ln in render_lines(Day(now=NOW, events=[], mail=[m]), mail=True)
+    line = next(ln for ln in render_lines(Day(now=NOW, events=[], mail=[m]))
                 if ln.startswith("**Mail"))
     assert "(https://mail.google.com/mail/u/0/#all/18c1f0a9)" in line, line
     # The subject's own markdown stays escaped: one link, and it is Gmail's.
@@ -1268,7 +1243,7 @@ def _():
 @check("freshness: every source the bot stamps is one heartbeat.sh publishes")
 def _():
     import re
-    from app.day import STAMPED
+    from app.day import SOURCES as STAMPED
     script = (HERE.parents[2] / "scripts" / "heartbeat.sh").read_text(encoding="utf-8")
     m = re.search(r"for _source in ([a-z\- ]+); do", script)
     assert m, "heartbeat.sh no longer loops over sources"
@@ -1280,424 +1255,28 @@ def _():
 @check("all modules import cleanly")
 def _():
     import importlib
-    for mod in ("bot", "chat", "concierge", "config", "day", "digest", "facts", "google", "home",
+    for mod in ("bot", "config", "day", "digest", "facts", "google", "home", "importreminder",
                 "logs", "provision", "stamp", "text"):
         importlib.import_module(f"app.{mod}")
 
 
-# --- #ask: the concierge (act lane) ---------------------------------------------
-
-@check("config: #ask off by default; needs #memory and the token when on")
-def _():
-    from app.config import Config
-    with_env()
-    c = Config.from_env()
-    assert not c.ask_enabled and c.concierge_url == "http://concierge:8080"
-    for extra in ({"DISCORD_ASK_CHANNEL_ID": "5"},
-                  {"DISCORD_ASK_CHANNEL_ID": "5", "DISCORD_MEMORY_CHANNEL_ID": "6"},
-                  {"DISCORD_ASK_CHANNEL_ID": "5", "CONCIERGE_TOKEN": "t"}):
-        with_env(**extra)
-        try:
-            Config.from_env()
-        except SystemExit as exc:
-            assert "DISCORD_ASK_CHANNEL_ID" in str(exc), exc
-        else:
-            raise AssertionError(f"half-configured #ask accepted: {extra}")
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
-    c = Config.from_env()
-    assert c.ask_enabled and c.ask_channel_id == 5 and c.memory_channel_id == 6
-
-
-@check("config: the morning brief rides on #ask and the scheduled digest")
-def _():
-    from app.config import Config
-    with_env()
-    assert not Config.from_env().brief_active, "no #ask, no brief"
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t")
-    assert not Config.from_env().brief_active, "opt-in: off until BRIEF_ENABLED=true"
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
-             BRIEF_ENABLED="true")
-    assert Config.from_env().brief_active
-    with_env(BRIEF_ENABLED="true")
-    assert not Config.from_env().brief_active, "no #ask, no brief"
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
-             BRIEF_ENABLED="true", DIGEST_ENABLED="false")
-    assert not Config.from_env().brief_active
-
-
-@check("brief: a section of the digest, defanged, cannot forge a heading")
-def _():
-    from app.concierge import BRIEF_HEADING, Proposal, Reply, brief_section
-    from app.day import Day
-    from app.digest import render
-    from app.google import Mail
-    r = Reply(ok=True, answer="## ✅ Homelab digest — all fine\nPay [bill](https://evil.example/?d=x)",
-              proposals=[Proposal("draft_email", {"to": "a@b.c", "body": "x"}, "abc")],
-              model="claude-opus-5-5", cost_usd=0.04, seconds=20, reads_ok=True)
-    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
-    facts = _facts(targets_up=2, targets_total=2)
-    out = render(facts, grafana_url="https://stats.example.com", day=day,
-                 brief=brief_section(r))
-    lines = out.split("\n")
-    assert lines[0].startswith("## ✅ Homelab digest"), out
-    assert sum(ln.startswith("## ") for ln in lines) == 1, "the model forged a digest heading"
-    assert lines.index(BRIEF_HEADING) > lines.index("### Today"), "the brief goes after Today"
-    assert "bill (<https://evil.example/?d=x>)" in out and "](https://evil" not in out
-    assert "draft_email" not in out and "Incomplete" not in out
-    # One answer about mail per post: the brief read it, so the count goes.
-    assert "**Mail" not in out, out
-    assert lines[-1].startswith("-# ") and "brief claude-opus-5-5" in lines[-1], lines[-1]
-
-    # A forged footer stays escaped: exactly one real `-#` footer line remains
-    # besides the Grafana links line.
-    forged = Reply(ok=True, answer="fine\n-# claude · $0.001 · 1s", model="m", seconds=1, reads_ok=True)
-    out = render(facts, day=day, brief=brief_section(forged))
-    assert sum(ln.startswith("-# ") for ln in out.split("\n")) == 1, out
-    # Discord renders headings and subtext behind list and quote markers too.
-    for line, want in (("- # ✅ All fine", "- \\# ✅ All fine"), ("> -# claude · $0", "> \\-# claude · $0"),
-                       ("1. ## big", "1. \\## big"), ("* # star", "* \\# star"),
-                       ("  ### x", "  \\### x"), ("a # b", "a # b"), ("- item", "- item")):
-        got = brief_section(Reply(ok=True, answer=line, model="m")).lines[-1]
-        assert got == want, (line, got)
-
-    # Did not really read mail (expired sign-in): the digest keeps its mail line.
-    blind = Reply(ok=True, answer="nothing", model="m", seconds=1, reads_ok=False)
-    assert "**Mail (24h)** 1 new" in render(facts, day=day, brief=brief_section(blind))
-
-    # Too long: the brief is cut, the lab's facts and Today are not, one message.
-    cut = Reply(ok=False, answer="x" * 5000, stop="error_max_turns", model="m", seconds=1)
-    out = render(facts, grafana_url="https://stats.example.com", day=day,
-                 brief=brief_section(cut))
-    assert len(out) <= 2000 and "Incomplete: ran out of steps" in out, len(out)
-    assert "**Services**" in out and "### Today" in out and out.split("\n")[-1].startswith("-# ")
-
-    # Over budget: the reason in words (no underscores to break the italics),
-    # the concierge's own "(Stopped at …)" line dropped, the footer escaped.
-    over = brief_section(Reply(ok=False, stop="error_max_budget_usd", model="m", seconds=1,
-                               answer="- one\n- two\n\n(Stopped at the $0.20 per-request budget.)"))
-    assert over.lines[1] == "⚠️ _Incomplete: hit its spending cap, so this may be partial._", over
-    assert over.lines[-1] == "- two" and "Stopped" not in "\n".join(over.lines), over
-    assert "error\\_max\\_budget\\_usd" in over.note, over.note
-
-
-@check("brief: one that could not run leaves a line and the digest's own mail")
-def _():
-    import asyncio
-    from app.concierge import brief_failed
-    from app.day import Day
-    from app.digest import prepare, render
-    from app.google import Mail
-    day = Day(now=NOW, events=[], mail=[Mail("Bank", "Statement", NOW)])
-    out = render(_facts(targets_up=2, targets_total=2), day=day,
-                 brief=brief_failed("concierge unreachable"))
-    assert "Morning brief unavailable: concierge unreachable" in out and "**Mail (24h)** 1 new" in out
-
-    class _Facts:
-        async def collect(self, now):
-            return _facts(targets_up=2, targets_total=2)
-
-    draft = asyncio.run(prepare(_Facts(), NOW))
-    out = draft.render("https://stats.example.com", brief_failed("x"))
-    assert "Morning brief unavailable: x" in out, out
-    assert draft.render() == render(draft.facts)
-
-
-@check("brief: the mail line is added when present, absent when empty")
-def _():
-    from app.concierge import brief_section, parse_reply
-    line = "📬 2 new Driftwood leads, 1 starred waiting"
-    on = brief_section(parse_reply({"ok": True, "answer": "- Pay rent", "mail_line": line}))
-    assert on.lines[-1] == line and "- Pay rent" in on.lines, on.lines
-    off = brief_section(parse_reply({"ok": True, "answer": "- Pay rent", "mail_line": ""}))
-    assert not any("📬" in ln for ln in off.lines), off.lines
-    none = brief_section(parse_reply({"ok": True, "answer": "- Pay rent"}))
-    assert none.lines == off.lines
-    # "Nothing needs you" would contradict the line, so it goes.
-    quiet = brief_section(parse_reply({"ok": True, "answer": "Nothing needs you today.", "mail_line": line}))
-    assert quiet.lines[-1] == line and not any("Nothing needs" in ln for ln in quiet.lines), quiet.lines
-    # Not a string: ignored.
-    assert parse_reply({"ok": True, "answer": "a", "mail_line": ["x"]}).mail_line == ""
-
-
-@check("concierge: reads_ok is parsed only when it is literally true")
-def _():
-    from app.concierge import parse_reply
-    assert parse_reply({"ok": True, "answer": "a", "reads_ok": True}).reads_ok
-    assert not parse_reply({"ok": True, "answer": "a", "reads_ok": "yes"}).reads_ok
-    assert not parse_reply({"ok": True, "answer": "a"}).reads_ok
-
-
-@check("concierge: approval prompt is rendered from the arguments, inert")
-def _():
-    from app.concierge import Proposal, fact_of, render_proposal
-    p = Proposal("remember", {"fact": "@everyone ```\nhttps://evil.example  prefers   mornings"})
-    text = render_proposal(p)
-    body = text.split("```\n", 1)[1]
-    assert body.count("```") == 1, "the fact must not be able to close the code block"
-    assert "remember(fact=" in body and "prefers mornings" in body
-    assert "\n" not in fact_of(p)
-    assert fact_of(Proposal("remember", {"fact": "x" * 999})) == "x" * 300
-
-
-@check("concierge: links in an answer are shown in full and never previewed")
-def _():
-    from app.concierge import defang
-    out = defang("See [your bill](https://evil.example/?d=secret) or https://ok.example/x.")
-    assert "[your bill](" not in out, out
-    assert "your bill (<https://evil.example/?d=secret>)" in out, out
-    assert "<https://ok.example/x.>" in out or "<https://ok.example/x>" in out, out
-    assert defang("<https://already.example>") == "<https://already.example>"
-    assert defang("no links here") == "no links here"
-
-
-@check("concierge: unknown or malformed proposals are never approvable")
-def _():
-    from app.concierge import APPROVABLE, Proposal, approvable, fact_of, render_proposal
-    assert APPROVABLE == {"remember", "follow_up", "create_event", "move_event", "draft_email",
-                          "run_scene", "add_movie", "add_show"}
-    for p in (Proposal("send_email", {"to": "a@b"}), Proposal("remember", {"fact": ""}),
-              Proposal("remember", {"fact": 7}), Proposal("remember", {})):
-        assert fact_of(p) is None, p
-        assert "can't carry out" in render_proposal(p), p
-    ev = {"title": "x", "start": "2026-10-14", "end": "2026-10-15", "calendar": "primary"}
-    for p in (Proposal("create_event", ev),                              # no id
-              Proposal("create_event", ev, "../x"),                      # bad id
-              Proposal("create_event", {**ev, "title": ""}, "a1"),       # missing field
-              Proposal("create_event", {**ev, "extra": {"x": 1}}, "a1"),  # unrenderable field
-              Proposal("draft_email", {"to": ["a@b.c"], "body": "x" * 1900}, "a1")):  # too long to show
-        assert not approvable(p) and "can't carry out" in render_proposal(p), p
-    assert approvable(Proposal("create_event", ev, "a1"))
-
-
-@check("follow-ups: proposal shown from its arguments, saved and read back exactly")
-def _():
-    from zoneinfo import ZoneInfo
-    from app import followups
-    from app.concierge import Proposal, approvable, render_proposal
-    tz = ZoneInfo("America/New_York")
-    args = {"when": "2026-10-16T09:00:00-04:00", "note": "Did Dr. Lee reply? ```@everyone", "then": "check"}
-    p = Proposal("follow_up", args, "a1")
-    assert approvable(p)
-    text = render_proposal(p, tz)
-    assert text.startswith("**Set this follow-up?**") and text.count("```") == 2, text
-    assert "when: Fri 16 Oct 9am" in text and "look into it again" in text, text
-    for bad in ({**args, "when": "2026-10-16T09:00"},          # no offset
-                {**args, "when": "soon"}, {**args, "note": " "}, {**args, "then": "send"}):
-        assert not approvable(Proposal("follow_up", bad, "a1")), bad
-    item = followups.from_args(args, 42, 7, 99)
-    assert item.due == 1792155600 and item.then == "check" and item.channel_id == 99
-    msg = followups.render(item)
-    assert followups.parse(msg) == item, msg
-    assert followups.parse(msg.replace("· check", "· buy")) is None
-    assert followups.parse(msg + "\nextra") is None and followups.parse("") is None
-    assert followups.parse("⏰ <t:1:f> (<t:2:R>) · remind\nx\n-# for <@1> in https://discord.com/channels/1/2") is None
-    assert followups.from_args({"when": "2026-10-16T09:00:00-04:00", "note": "x"}, 1, 1, 1).then == "remind"
-    on_time = followups.fired_text(item, item.due + 30)
-    assert on_time.startswith("⏰ <@42> Following up") and "late" not in on_time
-    assert "late" in followups.fired_text(item, item.due + 3600)
-    assert "Did Dr. Lee reply?" in followups.check_prompt(item)
-    soon = followups.FollowUp(100, "a", "remind", 1, 1, 1)
-    later = followups.FollowUp(50, "b", "remind", 1, 1, 1)
-    gone = followups.FollowUp(10, "c", "remind", 1, 1, 1)
-    assert followups.upcoming([soon, later, gone], 20, 100) == [later, soon]
-
-
-@check("home history: a number becomes start → end with low and high; a state, counts and times")
-def _():
-    from app.home import summarize_history
-    tz = dt.timezone.utc
-    rows = [{"entity_id": "sensor.b", "state": "34", "last_changed": "2026-10-14T01:00:00+00:00",
-             "attributes": {"friendly_name": "Tesla battery", "unit_of_measurement": "%"}},
-            {"state": "30", "last_changed": "2026-10-14T02:00:00Z"},
-            {"state": "unavailable", "last_changed": "2026-10-14T03:00:00Z"},
-            {"state": "80", "last_changed": "2026-10-14T05:00:00Z"}]
-    assert summarize_history(rows, tz) == "Tesla battery: 34 → 80 % (low 30, high 80); unavailable 1×"
-    rows = [{"entity_id": "sensor.l", "state": "ready", "last_changed": "2026-10-14T01:00:00Z",
-             "attributes": {"friendly_name": "Litter-Robot"}}] + [
-        {"state": s, "last_changed": f"2026-10-14T{h:02d}:00:00Z"}
-        for h, s in enumerate(["cycling", "ready"] * 6, start=2)]
-    line = summarize_history(rows, tz)
-    assert line.startswith("Litter-Robot: cycling ×6, ready ×6; ") and "(last 8 of 13)" in line, line
-    assert summarize_history([{"entity_id": "x", "state": "on", "attributes": {}}], tz) == "x: on all day"
-    assert summarize_history([], tz) is None
-
-
-@check("concierge: write prompts show every field the concierge will act on, inert")
-def _():
-    from app.concierge import Proposal, render_proposal
-    text = render_proposal(Proposal("draft_email", {
-        "to": ["ann@example.com"], "subject": "@everyone ```", "in_reply_to": "Lunch? — from Ann",
-        "body": "Sure,\nsee you at 1.", "reply_to_message_id": "m1"}, "a1"))
-    body = text.split("```\n", 1)[1]
-    assert body.count("```") == 1, text
-    assert "to: ann@example.com" in body and "  see you at 1." in body and "Lunch?" in body, text
-    assert text.startswith("**Save this Gmail draft?**")
-    mv = render_proposal(Proposal("move_event", {"calendar": "primary", "event_id": "e1", "title": "Dentist",
-                                                 "was": "2026-10-14T09:00", "start": "2026-10-15T09:00",
-                                                 "end": "2026-10-15T10:00"}, "b2"))
-    assert "was: 2026-10-14T09:00" in mv and "event_id: e1" in mv, mv
-    mo = render_proposal(Proposal("add_movie", {"title": "Hocus Pocus", "year": "1993", "tmdb_id": "10439",
-                                                "quality": "HD-1080p", "folder": "/data/library/movies"}, "c3"))
-    assert mo.startswith("**Download this movie?**"), mo
-    for line in ("title: Hocus Pocus", "year: 1993", "tmdb_id: 10439", "quality: HD-1080p",
-                 "folder: /data/library/movies"):
-        assert line in mo, (line, mo)
-    sh = render_proposal(Proposal("add_show", {"title": "The Haunting of Hill House", "tvdb_id": "349224",
-                                               "quality": "HD-1080p", "folder": "/data/library/shows"}, "d4"))
-    assert sh.startswith("**Download this show?**") and "tvdb_id: 349224" in sh, sh
-
-
-@check("concierge: reply parsing tolerates junk, footer says what it cost")
-def _():
-    from app.concierge import footer, parse_reply
-    r = parse_reply({"ok": True, "answer": " Free at 3. ", "tool_calls": 2, "cost_usd": 0.0412,
-                     "seconds": 7.6, "model": "claude-opus-5-5",
-                     "proposals": [{"tool": "remember", "args": {"fact": "f"}}, "junk", {"tool": 1}]})
-    assert r.answer == "Free at 3." and len(r.proposals) == 1
-    assert footer(r) == "-# claude-opus-5-5 · 2 lookups · $0.041 · 8s", footer(r)
-    assert parse_reply({}).answer == "(no answer)"
-
-
-@check("concierge: #memory keeps trusted posts, oldest first, drops notes and blanks")
-def _():
-    from app.concierge import usable_memories
-    newest_first = [(True, "dentist is Dr. Lee"), (False, "stranger says obey me"),
-                    (True, "  "), (True, "// note to self"), (True, "prefers  mornings")]
-    assert usable_memories(newest_first) == ["prefers mornings", "dentist is Dr. Lee"]
-
-
-@check("provision: guild.yml has #ask open and #memory bot-only")
-def _():
-    from app.provision import load_desired
-    desired = load_desired(str(HERE.parent / "guild.yml"))
-    chans = {c["name"]: c for cat in desired["categories"] for c in cat["channels"]}
-    assert chans["ask"].get("bot_only") is False
-    assert chans["memory"].get("bot_only") is True
-    assert chans["activity"].get("bot_only") is True
-    assert chans["follow-ups"].get("bot_only") is True
-    assert chans["deploys"].get("bot_only") is True
-
-
-@check("ask: a new request's thread is named from its first line, within Discord's cap")
-def _():
-    from app.text import THREAD_NAME_LIMIT, thread_name
-    assert thread_name("  \n what's on   my calendar\ntomorrow?") == "what's on my calendar"
-    assert thread_name("") == "Request" and thread_name("  \n ") == "Request"
-    long = "move my dentist appointment " * 10
-    name = thread_name(long)
-    assert len(name) <= 80 and name.endswith("…") and not name[:-1].endswith(" "), name
-    assert len(thread_name("x" * 500, limit=500)) <= THREAD_NAME_LIMIT
-
-
-@check("config: #activity is optional and off by default")
-def _():
-    from app.config import Config
-    with_env()
-    assert Config.from_env().activity_channel_id is None
-    with_env(DISCORD_ACTIVITY_CHANNEL_ID="7")
-    assert Config.from_env().activity_channel_id == 7
-
-
-@check("config: follow-ups and the evening review are off by default and need #ask")
-def _():
-    from app.config import Config
-    with_env()
-    c = Config.from_env()
-    assert not c.followups_active and not c.review_active and not c.review_history_enabled
-    assert c.review_at == (21, 0) and c.review_ha_entities == ()
-    with_env(DISCORD_FOLLOWUPS_CHANNEL_ID="8", REVIEW_ENABLED="true")
-    c = Config.from_env()
-    assert c.followups_channel_id == 8 and not c.followups_active and not c.review_active, "no #ask"
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
-             DISCORD_FOLLOWUPS_CHANNEL_ID="8", REVIEW_ENABLED="true", REVIEW_AT="20:30",
-             HA_TOKEN="h", HA_ENTITIES="lock.front", REVIEW_HA_ENTITIES="sensor.a, sensor.b")
-    c = Config.from_env()
-    assert c.followups_active and c.review_active and c.review_at == (20, 30)
-    assert c.review_history_enabled and c.review_ha_entities == ("sensor.a", "sensor.b")
-
-
-@check("import reminder: weekly, needs #ask, names accounts and a dated range")
+@check("import reminder: weekly, on by default, names accounts and a dated range")
 def _():
     import datetime as dt
     from app import importreminder
     from app.config import Config
     with_env()
     c = Config.from_env()
-    assert c.import_reminder_enabled and not c.import_reminder_active, "no #ask"
+    assert c.import_reminder_active, "on by default: it no longer needs #ask"
     assert c.import_reminder_day == 6 and c.import_reminder_at == (10, 0)
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
-             IMPORT_REMINDER_DAY="0", IMPORT_REMINDER_AT="09:15")
+    with_env(IMPORT_REMINDER_DAY="0", IMPORT_REMINDER_AT="09:15")
     c = Config.from_env()
     assert c.import_reminder_active and c.import_reminder_day == 0 and c.import_reminder_at == (9, 15)
-    with_env(DISCORD_ASK_CHANNEL_ID="5", DISCORD_MEMORY_CHANNEL_ID="6", CONCIERGE_TOKEN="t",
-             IMPORT_REMINDER_ENABLED="false")
+    with_env(IMPORT_REMINDER_ENABLED="false")
     assert not Config.from_env().import_reminder_active
     msg = importreminder.text(dt.datetime(2026, 11, 8, 10, 0), 42)
     assert msg.startswith("<@42> ") and "Thu Oct 29" in msg and "Sun Nov 8" in msg
     assert "Discover" in msg and "budget.home.brignano.io" in msg
-
-
-@check("ask: a follow-up in a request's thread still sees the message that opened it")
-def _():
-    from types import SimpleNamespace as NS
-    import discord
-    from app.bot import Assistant
-
-    def msg(author, text):
-        return NS(author=NS(id=author, bot=False), content=text, components=[])
-
-    class Thread:
-        id = 99
-        starter_message = None
-        def __init__(self, parent, inside):
-            self.parent, self._inside = parent, inside
-        async def history(self, limit):
-            for m in reversed(self._inside[-limit:]):
-                yield m
-
-    class Parent:
-        def __init__(self, messages):
-            self.messages = messages
-        async def fetch_message(self, mid):
-            if mid not in self.messages:
-                raise discord.NotFound(NS(status=404, reason="nf"), "gone")
-            return self.messages[mid]
-
-    stub = NS(cfg=NS(chat_history_turns=12), user=NS(id=1))
-    stub._to_turn = lambda m: Assistant._to_turn(stub, m)
-    stub._starter = lambda t: Assistant._starter(stub, t)
-    inside = [msg(1, "It's at 3pm."), msg(3, "move it to 4")]
-    opened = Thread(Parent({99: msg(3, "when is the dentist?")}), inside)
-    turns = asyncio.run(Assistant._thread_turns(stub, opened))
-    assert [t.content for t in turns] == ["when is the dentist?", "It's at 3pm.", "move it to 4"], turns
-    # A thread started from scratch has no starter: just its own messages.
-    bare = Thread(Parent({}), inside)
-    assert len(asyncio.run(Assistant._thread_turns(stub, bare))) == 2
-
-
-@check("digest: a day's thread under #digest is an #ask conversation; the channel is not")
-def _():
-    from types import SimpleNamespace as NS
-    from app.bot import Assistant, day_title
-    assert day_title(dt.datetime(2026, 10, 15, 7, 30)) == "Thu 15 Oct"
-    cfg = NS(allowed_user_ids={5}, chat_channel_id=None, ask_enabled=True,
-             ask_channel_id=20, digest_channel_id=10)
-    stub = NS(cfg=cfg, user=NS(id=1))
-
-    def route(channel, author=5):
-        m = NS(author=NS(id=author, bot=False), content="what does that mean?", channel=channel)
-        return Assistant._route(stub, m)
-    assert route(NS(id=31, parent_id=10)) == "ask", "a reply in the day's thread"
-    assert route(NS(id=10)) is None, "#digest itself stays bot-only"
-    assert route(NS(id=31, parent_id=10), author=6) is None, "only allowlisted people"
-    cfg.ask_enabled = False
-    assert route(NS(id=31, parent_id=10)) is None, "nothing answers without #ask"
-
-    # The digest card is an embed: its text is the thread's first turn.
-    card = NS(author=NS(id=1, bot=True), content="", components=[],
-              embeds=[NS(title="Homelab digest", description="**Calendar**\n- 06:30 Work")])
-    turn = Assistant._to_turn(stub, card)
-    assert turn.role == "assistant" and "- 06:30 Work" in turn.content, turn
 
 
 @check("today: an all-day event shows only on its own date, whatever the server's zone")
@@ -1721,34 +1300,6 @@ def _():
     assert [e.title for e in day.all_day] == ["Trip", "Today", "No end"], day.all_day
     assert [clock(dt.datetime(2026, 1, 1, h, m)) for h, m in ((0, 0), (6, 30), (12, 0), (22, 5))] \
         == ["12am", "6:30am", "12pm", "10:05pm"]
-
-
-@check("digest: today's thread is found by name under #digest, and a digest can go inside it")
-def _():
-    from types import SimpleNamespace as NS
-    from app.bot import Assistant, day_title
-    now = dt.datetime(2026, 10, 19, 21, 0)
-    threads = [NS(parent_id=20, name=day_title(now)), NS(parent_id=10, name="Sun 18 Oct"),
-               NS(parent_id=10, name=day_title(now), id=7)]
-
-    class Guild:
-        async def active_threads(self):
-            return threads
-    stub = NS(cfg=NS(guild_id=1, digest_channel_id=10, grafana_url=""),
-              get_guild=lambda gid: Guild())
-    found = asyncio.run(Assistant._day_thread(stub, now))
-    assert found is threads[2], "only today's, and only under #digest"
-    threads.pop()
-    assert asyncio.run(Assistant._day_thread(stub, now)) is None
-
-    sent = []
-
-    class Out:
-        async def send(self, *a, **kw):
-            sent.append((a, kw))
-            return len(sent)
-    first = asyncio.run(Assistant._send_digest(stub, Out(), "plain text, not a card"))
-    assert first == 1 and sent[0][1]["allowed_mentions"] is not None
 
 
 @check("compose: every setting config.py reads is passed into the container")
@@ -1845,6 +1396,39 @@ def _():
     assert Draft(_facts(), Day(now=NOW, sources=("mail",))).complete
     assert not Draft(_facts(problems=["could not read log errors"]), None).complete
     assert not Draft(_facts(), Day(now=NOW, sources=("mail",), problems=["mail: 401"])).complete
+
+
+@check("today: the Waiting line counts leads and starred mail, and is silent at zero or unread")
+def _():
+    from app.day import Day, DayCollector, render_lines, waiting_line
+    assert waiting_line(None, None) is None
+    assert waiting_line({"Sites": 0}, 0) is None
+    assert waiting_line({"Sites": 2, "Driftwood": 1}, 3) == \
+        "**Waiting** 1 new Driftwood lead · 2 new Sites leads · 3 starred"
+    day = Day(now=NOW, sources=("mail",), mail=[], leads={"Guidebook": 1}, starred=None)
+    assert "**Waiting** 1 new Guidebook lead" in render_lines(day)
+    assert not any("Waiting" in ln for ln in render_lines(Day(now=NOW, sources=("calendar",),
+                                                              events=[], leads={"Sites": 4})))
+
+    class G:
+        def __init__(self, fail=False):
+            self.fail = fail
+
+        async def label_counts(self, names):
+            if self.fail:
+                raise RuntimeError("HTTP 403")
+            assert "STARRED" in names and "Leads/Sites" in names
+            return {"Leads/Sites": (2, 9), "STARRED": (1, 5)}
+
+        async def list_unread(self, labels):
+            return [], 0
+    c = DayCollector(G(), calendar_ids=(), mail_labels=("INBOX",), sources=("mail",), state_dir=None)
+    day = asyncio.run(c.collect(NOW))
+    assert day.leads == {"Sites": 2} and day.starred == 5 and day.mail == [], day
+    c = DayCollector(G(fail=True), calendar_ids=(), mail_labels=("INBOX",), sources=("mail",),
+                     state_dir=None)
+    day = asyncio.run(c.collect(NOW))
+    assert day.leads is None and day.mail == [] and not day.problems, "a nicety, never a problem"
 
 
 # --- report -------------------------------------------------------------------

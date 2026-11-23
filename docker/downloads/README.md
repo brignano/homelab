@@ -190,8 +190,7 @@ them with *Select Movies → Quality Profile*. Pick *HD-1080p* once in the
   tag; only tagged indexers go through it, so leave the rest untagged (every
   FlareSolverr request starts a browser and takes seconds).
 
-Then in Sonarr *Series → Add New*, or Radarr *Movies → Add New*, or ask in
-Discord's #ask (`docker/concierge/README.md` → "Movies and shows"). A finished
+Then in Sonarr *Series → Add New*, or Radarr *Movies → Add New*. A finished
 download is hardlinked into the library, Jellyfin is told to scan, and it
 appears there.
 

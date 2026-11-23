@@ -12,7 +12,6 @@ import asyncio
 from dataclasses import dataclass
 from datetime import datetime
 
-from .concierge import Brief
 from .day import Day, render_lines as day_lines
 from .facts import CPU_WARN, DISK_WARN, MEM_WARN, Facts
 
@@ -132,13 +131,8 @@ def render(
     *,
     grafana_url: str | None = None,
     day: Day | None = None,
-    brief: Brief | None = None,
 ) -> str:
-    """Build the Discord message from the readings alone.
-
-    The morning brief, when there is one, is a section of this message rather
-    than a second post: it goes last, after Today, and it is the part that gets
-    cut if the whole would not fit in one Discord message."""
+    """Build the Discord message from the readings alone."""
     # `##` is a real Discord heading, not bold text pretending to be one: it
     # renders large, and it gives the channel a visible day boundary when a
     # month of digests is scrolled back through.
@@ -187,7 +181,7 @@ def render(
 
     if day is not None:
         out.append("")
-        out += day_lines(day, mail=not (brief and brief.owns_mail))
+        out += day_lines(day)
 
     head = out
     out = []
@@ -205,27 +199,14 @@ def render(
         if {"home", "ha-calendar"} & set(day.sources):
             origins.append("Home Assistant")
     footer_bits.append("facts from " + " + ".join(origins))
-    if brief and brief.note:
-        footer_bits.append("brief " + brief.note)
     out.append("-# " + " · ".join(footer_bits))
 
-    if brief is None:
-        return "\n".join(head + [""] + out)
-    # Only the brief is cut: the lab's facts and Today are the product.
-    fixed = len("\n".join(head + ["", "", ""] + out))
-    body = "\n".join(brief.lines)
-    room = DIGEST_LIMIT - fixed
-    if len(body) > room:
-        body = body[:max(room - 1, 0)].rstrip() + "…"
-    return "\n".join(head + ["", body, ""] + out)
+    return "\n".join(head + [""] + out)
 
 
 @dataclass
 class Draft:
-    """A digest collected, not yet rendered.
-
-    Split from `build` so the scheduled digest can add the morning brief,
-    which it collects alongside, before rendering."""
+    """A digest collected, not yet rendered."""
     facts: Facts
     day: Day | None
 
@@ -236,8 +217,8 @@ class Draft:
         digest has to cover it again."""
         return not self.facts.problems and not (self.day and self.day.problems)
 
-    def render(self, grafana_url: str | None = None, brief: Brief | None = None) -> str:
-        return render(self.facts, grafana_url=grafana_url, day=self.day, brief=brief)
+    def render(self, grafana_url: str | None = None) -> str:
+        return render(self.facts, grafana_url=grafana_url, day=self.day)
 
 
 async def prepare(

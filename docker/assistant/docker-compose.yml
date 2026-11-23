@@ -1,6 +1,6 @@
 services:
-  # Otto: the daily digest, #ask (via docker/concierge) and follow-ups, over
-  # Discord. No local model since 2026-11; see README.md.
+  # Otto: the daily digest and a weekly import reminder, over Discord. No
+  # model of any kind since 2026-11 (#406, #366), so it costs nothing to run.
   #
   # Note there are no `ports:` here and no Caddy route. The bot opens an
   # OUTBOUND websocket to Discord, so it adds zero inbound attack surface — and
@@ -36,9 +36,6 @@ services:
       # without links rather than with broken ones.
       GRAFANA_URL: ${GRAFANA_URL:-}
 
-      # How many turns of a thread or reply chain #ask passes on.
-      CHAT_HISTORY_TURNS: ${CHAT_HISTORY_TURNS:-12}
-
       # Optional: the digest's "Today" section — calendar and new mail, read-only.
       # All three blank = off, and the digest renders exactly as before. The
       # refresh token comes from `--google-auth` (README → "Today: calendar and
@@ -64,32 +61,7 @@ services:
       HA_CALENDARS: ${HA_CALENDARS:-}
       HA_FREE_CALENDARS: ${HA_FREE_CALENDARS:-}
 
-      # Optional: #ask, the act lane (docs/design/tsd-personal-assistant.md,
-      # phase 3). All blank = off. The bot only forwards and renders; the agent
-      # and its Anthropic key live in docker/concierge/, reached over the
-      # `concierge` network below. CONCIERGE_TOKEN must match that stack's.
-      DISCORD_ASK_CHANNEL_ID: ${DISCORD_ASK_CHANNEL_ID:-}
-      DISCORD_MEMORY_CHANNEL_ID: ${DISCORD_MEMORY_CHANNEL_ID:-}
-      # Optional: #activity, one line per approved action. Blank = off.
-      DISCORD_ACTIVITY_CHANNEL_ID: ${DISCORD_ACTIVITY_CHANNEL_ID:-}
-      # Optional: #follow-ups, where approved follow-ups wait until they are
-      # due. Blank = follow-ups can be proposed but not saved.
-      DISCORD_FOLLOWUPS_CHANNEL_ID: ${DISCORD_FOLLOWUPS_CHANNEL_ID:-}
-      CONCIERGE_URL: ${CONCIERGE_URL:-http://concierge:8080}
-      CONCIERGE_TOKEN: ${CONCIERGE_TOKEN:-}
-      # The morning brief: after each scheduled digest, the concierge reads
-      # mail and calendar with read-only tools and the bot posts what needs
-      # you under it. Opt-in: "true" sends a day of mail to Anthropic each
-      # morning, unasked. Needs #ask. See README.md → "The morning brief".
-      BRIEF_ENABLED: ${BRIEF_ENABLED:-false}
-      # The evening review: at REVIEW_AT the concierge reads the day's #ask
-      # threads, #activity and REVIEW_HA_ENTITIES' history (not your mail) and
-      # posts what is still open, with proposed memories and follow-ups.
-      # Opt-in. Needs #ask. See README.md → "The evening review".
-      REVIEW_ENABLED: ${REVIEW_ENABLED:-false}
-      REVIEW_AT: ${REVIEW_AT:-21:00}
-      REVIEW_HA_ENTITIES: ${REVIEW_HA_ENTITIES:-}
-      # Weekly nudge in #ask to download bank statements and import them into
+      # Weekly nudge in #digest to download bank statements and import them into
       # Actual Budget. A fixed message, no Claude spend. Day: 0=Mon .. 6=Sun.
       IMPORT_REMINDER_ENABLED: ${IMPORT_REMINDER_ENABLED:-true}
       IMPORT_REMINDER_DAY: ${IMPORT_REMINDER_DAY:-6}
@@ -99,7 +71,6 @@ services:
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
 
-      MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-6000}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       # Where the bot records that a scheduled digest posted, for
@@ -121,7 +92,6 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - monitoring
-      - concierge
 
 # Joins the monitoring stack (prometheus, loki). Bring it up first — Compose
 # will not create external networks.
@@ -129,8 +99,3 @@ networks:
   monitoring:
     external: true
     name: monitoring_monitoring
-  # Owned HERE, not by docker/concierge: the bot is the front door, and the
-  # watch lane must come up whether or not the act lane exists. The concierge
-  # joins it as external, so it is the one that waits. Nothing else joins it.
-  concierge:
-    name: assistant_concierge
