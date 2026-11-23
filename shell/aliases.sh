@@ -45,6 +45,7 @@ if [ "$_hl_local" = 1 ]; then
 	hl-backup()      { hl_backup; }
 	hl-models()      { hl_models; }
 	hl-reload-prom() { hl_reload_prom; }
+	hl-kali-shell()  { hl_kali_shell "$@"; }
 else
 	# Invoke the same lib.sh doers on the server. Args here are simple tokens
 	# (stack / service names), so word-splitting them into the remote command
@@ -60,6 +61,7 @@ else
 	hl-backup()      { _hl_rcall "hl_backup"; }
 	hl-models()      { _hl_rtty  "hl_models"; }
 	hl-reload-prom() { _hl_rcall "hl_reload_prom"; }
+	hl-kali-shell()  { _hl_rtty  "hl_kali_shell $*"; }
 fi
 
 # ── Open a service (local browser; prints the URL on a headless server) ───────
@@ -164,6 +166,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-backup            pg_dumpall (scripts/pg-backup.sh)
     hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
+    hl-kali-shell [cmd]  terminal in Kali (starts it, stops it on exit)
 EOF
 }
 
@@ -198,6 +201,7 @@ apps          -                    open Portainer          (apps-ip by IP)
 dns           -                    open AdGuard            (dns-ip by IP)
 alerts        -                    open Alertmanager       (alerts-ip by IP)
 kali          -                    open Kali desktop
+kali-shell    [cmd]                terminal in Kali (starts it, stops it on exit)
 help          -                    the full cheatsheet
 EOF
 }
