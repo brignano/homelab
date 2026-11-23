@@ -6,10 +6,12 @@
   a picked colour; the accent marks (teal, violet, amber) are the design
   system's own.
 
-  Layout: phone first. A hero (pitch + services-up ring), the box's six stats
-  with a details panel, the open-work totals, then the app tiles by section.
-  From 900px the hero goes two-up, the stats six-up and the sections three
-  columns.
+  Layout: phone first. A hero (pitch + services-up ring), Things I built as
+  big cards, the open-work totals, the box's six stats with a details panel,
+  then the app tiles by section. Each section is a full-width row whose tiles
+  flow in a grid, so a long section never leaves holes beside a short one
+  (homelab#410). From 900px the hero goes two-up, the built cards four-up,
+  the stats six-up and each section's tiles three-up.
 */
 @import url("/assets/design-tokens.css");
 
@@ -122,6 +124,15 @@ h2 { font: 600 13px var(--mono); letter-spacing: .06em; text-transform: uppercas
 .wk:hover { border-color: var(--i); }
 .work .note { grid-column: 1 / -1; font-size: 13px; color: var(--ink-soft); }
 
+/* ── Things I built ── */
+.built { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.feat { position: relative; display: grid; gap: 4px; align-content: start; text-decoration: none; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; min-width: 0; transition: border-color var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease); }
+.feat:hover { border-color: var(--i); transform: translateY(-1px); }
+.feat .ic { margin-bottom: 8px; }
+.feat .st { position: absolute; top: 14px; right: 14px; }
+.feat .n { font-weight: 600; font-size: 16px; }
+.feat .d { font-size: 13px; line-height: 1.4; color: var(--ink-soft); }
+
 /* ── Tiles ── */
 .groups { display: grid; gap: 24px; }
 .list { display: grid; gap: 8px; }
@@ -171,9 +182,13 @@ h2 { font: 600 13px var(--mono); letter-spacing: .06em; text-transform: uppercas
   .hero .facts { grid-column: 1; grid-row: 2; align-self: start; }
   .why { display: none; }
   .stats { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .groups { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; }
+  .built { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .feat { padding: 18px; }
+  .feat .ic { width: 48px; height: 48px; }
+  .feat .ic img, .feat .ic svg { width: 28px; height: 28px; }
+  .list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (prefers-reduced-motion: reduce) {
   .orbit .dot { animation: none; }
-  .orbit .arc, .bar i, .svc { transition: none; }
+  .orbit .arc, .bar i, .svc, .feat { transition: none; }
 }
