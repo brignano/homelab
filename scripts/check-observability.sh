@@ -178,7 +178,10 @@ def first_match(path, pattern):
     return set(m.group(1).split()) if m else set()
 
 hb_jobs = first_match("heartbeat.sh", r"HL_CRON_JOBS:-([^}]*)\}")
-ic_jobs = first_match("install-cron.sh", r"^\s*for script in (.+?);")
+# install-cron.sh installs from its JOBS table ("<schedule>|<script>|<what>").
+ic_text = (scripts / "install-cron.sh").read_text()
+ic_block = re.search(r'^JOBS="(.*?)"$', ic_text, re.M | re.S)
+ic_jobs = set(l.split("|")[1] for l in ic_block.group(1).splitlines() if "|" in l) if ic_block else set()
 
 if not hb_jobs:
     bad("could not read the cron job list out of heartbeat.sh")
