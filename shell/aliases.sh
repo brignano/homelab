@@ -43,7 +43,6 @@ if [ "$_hl_local" = 1 ]; then
 	hl-logs()        { hl_logs "$@"; }
 	hl-restart()     { hl_restart "$@"; }
 	hl-backup()      { hl_backup; }
-	hl-models()      { hl_models; }
 	hl-reload-prom() { hl_reload_prom; }
 else
 	# Invoke the same lib.sh doers on the server. Args here are simple tokens
@@ -58,7 +57,6 @@ else
 	hl-logs()        { _hl_rtty  "hl_logs $*"; }
 	hl-restart()     { _hl_rcall "hl_restart $*"; }
 	hl-backup()      { _hl_rcall "hl_backup"; }
-	hl-models()      { _hl_rtty  "hl_models"; }
 	hl-reload-prom() { _hl_rcall "hl_reload_prom"; }
 fi
 
@@ -77,14 +75,12 @@ _hl_open() {
 # domain to HTTPS automatically.
 : "${HL_DOMAIN:=home}"
 
-hl-chat()   { _hl_open "http://chat.$HL_DOMAIN"; }
 hl-stats()  { _hl_open "http://stats.$HL_DOMAIN"; }
 hl-apps()   { _hl_open "http://apps.$HL_DOMAIN"; }
 hl-dns()    { _hl_open "http://dns.$HL_DOMAIN"; }
 hl-alerts() { _hl_open "http://alerts.$HL_DOMAIN"; }
 hl-kali()   { _hl_open "http://kali.$HL_DOMAIN"; }
 # IP fallbacks for when you're on the tailnet but not using AdGuard split-DNS.
-hl-chat-ip()   { _hl_open "http://$HL_IP:3010"; }
 hl-stats-ip()  { _hl_open "http://$HL_IP:3000"; }
 hl-apps-ip()   { _hl_open "http://$HL_IP:9000"; }
 hl-dns-ip()    { _hl_open "http://$HL_IP:3001"; }
@@ -148,7 +144,7 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl <cmd> [args]      dash-less form of any command: hl logs grafana ≡ hl-logs grafana
 
   open a service
-    hl-chat hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
+    hl-stats hl-apps hl-dns hl-alerts hl-kali   (+ -ip twins, e.g. hl-stats-ip)
   connectivity
     hl-status            which layer is down: client / route / server
     hl-vpn[-up|-down]    tailscale status / up --accept-routes / down
@@ -162,7 +158,6 @@ homelab hl-* commands  (same names on Mac, Windows & the server)
     hl-logs <svc> [n]    tail & follow logs
     hl-restart <svc>     restart one container
     hl-backup            pg_dumpall (scripts/pg-backup.sh)
-    hl-models            rebuild tuned Ollama models (docker/ai/load-models.sh)
     hl-reload-prom       reload Prometheus config (SIGHUP, no downtime)
 EOF
 }
@@ -185,14 +180,12 @@ up            [stack]              whole lab (boot order) or one stack
 down          [stack]              whole lab (reverse) or one stack
 stack         <up|down|restart> <stack>
 backup        -                    pg_dumpall (scripts/pg-backup.sh)
-models        -                    rebuild tuned Ollama models
 reload-prom   -                    reload Prometheus config (no downtime)
 ssh           [cmd]                ssh into the Docker LXC (CT 100), in the repo
 host          [cmd]                ssh into the Proxmox host (m5)
 vpn           -                    tailscale status
 vpn-up        -                    tailscale up --accept-routes
 vpn-down      -                    tailscale down
-chat          -                    open Open WebUI         (chat-ip by IP)
 stats         -                    open Grafana            (stats-ip by IP)
 apps          -                    open Portainer          (apps-ip by IP)
 dns           -                    open AdGuard            (dns-ip by IP)

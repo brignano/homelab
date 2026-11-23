@@ -1,86 +1,20 @@
 """The daily digest: facts in, a short human-readable post out.
 
-Two rendering paths, and both must work:
-
-  facts + model  -> narrated digest
-  facts alone    -> the same digest with the prose omitted
-
-The second path is not a fallback nicety, it's the design. The numbers are the
-product; the narration is a convenience layer on top. If Ollama is down, slow,
-or returns nonsense, the digest still posts and still tells you the truth.
+Rendered entirely by code. It used to open with two or three sentences the
+local model wrote from these same numbers; the model was removed in 2026-11
+after the Duet trial, and the readings were always the product: every line below is
+computed from Prometheus, Loki and the Today sources, never generated.
 """
 
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from datetime import datetime
 
 from .concierge import Brief
 from .day import Day, render_lines as day_lines
 from .facts import CPU_WARN, DISK_WARN, MEM_WARN, Facts
-
-log = logging.getLogger(__name__)
-
-SYSTEM = (
-    "You write a short status note about a personal homelab server. "
-    "You will be given a finished set of facts that has already been checked. "
-    "Rules: use ONLY the facts given; never invent numbers, service names, or events; "
-    "do not give advice, recommendations, or next steps; no bullet points, no headings, "
-    "no preamble like 'Here is'. Write 2 to 3 plain sentences. "
-    "If the facts say everything is normal, say so briefly and stop."
-)
-
-
-def facts_block(facts: Facts) -> str:
-    """The exact text the model is given. Deliberately pre-digested and small —
-    the model's job is phrasing, not analysis.
-
-    Lab facts only, and that is a security property rather than a scope choice:
-    the "Today" section carries event titles and email subjects that strangers
-    wrote, so it is rendered by code and never put in front of the model. See
-    day.py."""
-    lines: list[str] = []
-
-    if facts.targets_total:
-        lines.append(f"- Monitored targets up: {facts.targets_up} of {facts.targets_total}")
-    if facts.targets_down:
-        lines.append("- Targets DOWN: " + ", ".join(facts.targets_down))
-    if facts.cpu_pct is not None:
-        lines.append(f"- CPU used, 1h average: {facts.cpu_pct:.0f}%")
-    if facts.mem_pct is not None:
-        lines.append(f"- RAM used: {facts.mem_pct:.0f}%")
-    if facts.disk_pct is not None:
-        lines.append(f"- Root disk used: {facts.disk_pct:.0f}%")
-
-    if facts.restarts:
-        lines.append(
-            f"- Container restarts in last {facts.span}: "
-            + ", ".join(f"{name} restarted {count} time(s)" for name, count in facts.restarts)
-        )
-    else:
-        lines.append(f"- Container restarts in last {facts.span}: none")
-
-    if facts.log_errors:
-        lines.append(
-            f"- Log lines matching error/fatal/panic in last {facts.span}: "
-            + ", ".join(f"{name}: {count}" for name, count in facts.log_errors)
-        )
-    else:
-        lines.append(f"- Log lines matching error/fatal/panic in last {facts.span}: none")
-
-    # State the verdict explicitly so the model never has to reach one itself.
-    if facts.concerns:
-        lines.append("- Overall assessment: NEEDS ATTENTION — " + "; ".join(facts.concerns))
-    else:
-        lines.append("- Overall assessment: NORMAL, nothing needs attention")
-
-    if facts.problems:
-        lines.append("- Note, some data could not be collected: " + "; ".join(facts.problems))
-
-    return "\n".join(lines)
-
 
 # --- Discord rendering --------------------------------------------------------
 #
@@ -195,16 +129,12 @@ def links(facts: Facts, base: str) -> list[tuple[str, str]]:
 
 def render(
     facts: Facts,
-    narration: str | None,
     *,
-    model: str | None = None,
-    seconds: float | None = None,
-    note: str | None = None,
     grafana_url: str | None = None,
     day: Day | None = None,
     brief: Brief | None = None,
 ) -> str:
-    """Build the Discord message. Numbers always present; prose only if we got it.
+    """Build the Discord message from the readings alone.
 
     The morning brief, when there is one, is a section of this message rather
     than a second post: it goes last, after Today, and it is the part that gets
@@ -215,9 +145,6 @@ def render(
     mark = "⚠️" if facts.concerns else "✅"
     when = facts.collected_at.strftime("%a %d %b")
     out = [f"## {mark} Homelab digest — {when}", ""]
-
-    if narration:
-        out += [narration.strip(), ""]
 
     targets = (
         f"{facts.targets_up}/{facts.targets_total} up"
@@ -271,10 +198,6 @@ def render(
         out.append("-# " + " · ".join(f"[{name} ↗]({url})" for name, url in links(facts, grafana_url)))
 
     footer_bits: list[str] = []
-    if model and seconds is not None:
-        footer_bits.append(f"{model} · {seconds:.0f}s")
-    elif note:
-        footer_bits.append(note)
     origins = ["Prometheus", "Loki"]
     if day is not None:
         if {"calendar", "mail"} & set(day.sources):
@@ -299,17 +222,12 @@ def render(
 
 @dataclass
 class Draft:
-    """A digest collected and narrated, not yet rendered.
+    """A digest collected, not yet rendered.
 
-    Split from `build` so the scheduled digest can wait for the morning brief
-    *after* leaving the job queue: the queue serialises the local model, and
-    holding it while Claude reads mail would stall #chat for minutes."""
+    Split from `build` so the scheduled digest can add the morning brief,
+    which it collects alongside, before rendering."""
     facts: Facts
     day: Day | None
-    narration: str | None = None
-    model: str | None = None
-    seconds: float | None = None
-    note: str | None = None
 
     @property
     def complete(self) -> bool:
@@ -319,61 +237,39 @@ class Draft:
         return not self.facts.problems and not (self.day and self.day.problems)
 
     def render(self, grafana_url: str | None = None, brief: Brief | None = None) -> str:
-        return render(
-            self.facts, self.narration, model=self.model, seconds=self.seconds, note=self.note,
-            grafana_url=grafana_url, day=self.day, brief=brief,
-        )
+        return render(self.facts, grafana_url=grafana_url, day=self.day, brief=brief)
 
 
 async def prepare(
     collector,
-    ollama,
     now: datetime,
-    num_predict: int = 180,
     day_collector=None,
     since: datetime | None = None,
 ) -> Draft:
-    """Collect and narrate. Never raises for a narration failure.
+    """Collect the lab's facts and, when configured, the day's.
 
     `since` is when the last digest posted: what counts as new (mail,
     restarts, log errors) starts there instead of 24 hours ago."""
-    # Concurrently: these are network reads, not inference. DayCollector never
-    # raises, so it cannot take the lab's half of the digest down with it.
+    # Concurrently: these are network reads. DayCollector never raises, so it
+    # cannot take the lab's half of the digest down with it.
     window = {} if since is None else {"since": since}
     if day_collector is not None:
         facts, day = await asyncio.gather(collector.collect(now, **window),
                                           day_collector.collect(now, **window))
     else:
         facts, day = await collector.collect(now, **window), None
-
-    draft = Draft(facts, day)
-    try:
-        completion = await ollama.generate(
-            prompt=f"Facts:\n{facts_block(facts)}\n\nWrite the status note.",
-            system=SYSTEM,
-            # Low temperature: this is restatement, not creative writing.
-            temperature=0.2,
-            num_predict=num_predict,
-        )
-    except Exception as exc:  # noqa: BLE001 — degrade to facts-only, never drop the digest
-        log.warning("digest narration failed, posting facts only: %s", exc)
-        draft.note = "narration unavailable"
-    else:
-        draft.narration, draft.model, draft.seconds = completion.text, completion.model, completion.seconds
-    return draft
+    return Draft(facts, day)
 
 
 async def build(
     collector,
-    ollama,
     now: datetime,
-    num_predict: int = 180,
     grafana_url: str | None = None,
     day_collector=None,
     since: datetime | None = None,
 ) -> str:
-    """Collect, narrate, render. Never raises for a narration failure."""
-    draft = await prepare(collector, ollama, now, num_predict, day_collector=day_collector, since=since)
+    """Collect and render."""
+    draft = await prepare(collector, now, day_collector=day_collector, since=since)
     return draft.render(grafana_url)
 
 

@@ -337,11 +337,6 @@ budget.{$HOMELAB_DOMAIN} {
 	}
 }
 
-# Open WebUI — AI chat (container listens on 8080)
-chat.{$HOMELAB_DOMAIN} {
-	reverse_proxy open-webui:8080
-}
-
 # Portainer — Docker management
 apps.{$HOMELAB_DOMAIN} {
 	reverse_proxy portainer:9000
@@ -480,10 +475,6 @@ http://caddy {
 
 http://stats.home {
 	redir https://stats.{$HOMELAB_DOMAIN}{uri} permanent
-}
-
-http://chat.home {
-	redir https://chat.{$HOMELAB_DOMAIN}{uri} permanent
 }
 
 http://apps.home {

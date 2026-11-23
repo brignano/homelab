@@ -159,7 +159,6 @@ services:
     networks:
       - monitoring
       - core
-      - ai
       - proxy
 
   # --- Log store ---
@@ -210,9 +209,6 @@ networks:
   core:
     external: true
     name: core_core
-  ai:
-    external: true
-    name: ai_ai
   proxy:
     external: true
     name: proxy_proxy

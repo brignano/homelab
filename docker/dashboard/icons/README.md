@@ -128,8 +128,8 @@ the frozen list cannot serve — the fix makes the symptom worse.
 |---|---|
 | `brignano.svg` | The `A\|B` monogram, the mark brignano.io carries. Drawn here — one ink, re-inked from the page by `config/custom.css`. |
 | `grafana.svg`, `adguard-home.svg`, `kali-linux.svg` | Vendored verbatim from [dashboard-icons](https://github.com/homarr-labs/dashboard-icons). |
-| `portainer-on-light.svg`, `portainer-on-dark.svg`, and the same pair for `open-webui` | **Generated**: each upstream drawing on its own. What the tiles actually show — `config/custom.css` picks one by the dashboard's theme. |
-| `portainer.svg`, `open-webui.svg` | **Generated**: both drawings in one file, switched by the OS. The name the tile still points at, and the fallback. |
+| `portainer-on-light.svg`, `portainer-on-dark.svg` | **Generated**: each upstream drawing on its own. What the tiles actually show — `config/custom.css` picks one by the dashboard's theme. |
+| `portainer.svg` | **Generated**: both drawings in one file, switched by the OS. The name the tile still points at, and the fallback. |
 | `SOURCE` | The upstream repo and commit every vendored icon came from. |
 
 ```sh

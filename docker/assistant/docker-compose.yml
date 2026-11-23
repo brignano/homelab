@@ -1,10 +1,10 @@
 services:
-  # Discord-fronted job runner for the local model. See
-  # docs/design/tsd-local-llm-discord-jobs.md for why this exists.
+  # Otto: the daily digest, #ask (via docker/concierge) and follow-ups, over
+  # Discord. No local model since 2026-11; see README.md.
   #
   # Note there are no `ports:` here and no Caddy route. The bot opens an
   # OUTBOUND websocket to Discord, so it adds zero inbound attack surface — and
-  # unlike chat.home it keeps working when you're off the tailnet.
+  # it keeps working when you're off the tailnet.
   assistant:
     build: .
     image: homelab-assistant:latest
@@ -22,10 +22,8 @@ services:
       DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:?required}
 
       # Internal DNS names on the joined networks — no host ports involved.
-      OLLAMA_URL: http://ollama:11434
       PROMETHEUS_URL: http://prometheus:9090
       LOKI_URL: http://loki:3100
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:3b}
 
       # The one URL here that is NOT an internal name, because it is the only
       # one that gets clicked: the digest footer links to Grafana, and those
@@ -38,14 +36,8 @@ services:
       # without links rather than with broken ones.
       GRAFANA_URL: ${GRAFANA_URL:-}
 
-      # Optional: enables conversational mode in one channel. Blank = off.
-      DISCORD_CHAT_CHANNEL_ID: ${DISCORD_CHAT_CHANNEL_ID:-}
+      # How many turns of a thread or reply chain #ask passes on.
       CHAT_HISTORY_TURNS: ${CHAT_HISTORY_TURNS:-12}
-      CHAT_HISTORY_CHARS: ${CHAT_HISTORY_CHARS:-4000}
-      CHAT_NUM_PREDICT: ${CHAT_NUM_PREDICT:-350}
-      CHAT_TEMPERATURE: ${CHAT_TEMPERATURE:-0.6}
-      CHAT_LIVE_METRICS: ${CHAT_LIVE_METRICS:-true}
-      CHAT_METRICS_TTL_S: ${CHAT_METRICS_TTL_S:-60}
 
       # Optional: the digest's "Today" section — calendar and new mail, read-only.
       # All three blank = off, and the digest renders exactly as before. The
@@ -107,17 +99,7 @@ services:
       DIGEST_AT: ${DIGEST_AT:-07:30}
       DIGEST_ENABLED: ${DIGEST_ENABLED:-true}
 
-      OLLAMA_NUM_CTX: ${OLLAMA_NUM_CTX:-4096}
-      # How long Ollama keeps the model resident after a request. Its own
-      # default is 5m, which makes the first message after any pause pay a
-      # cold load. "0" unloads immediately, "-1" never unloads.
-      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
-      ASK_NUM_PREDICT: ${ASK_NUM_PREDICT:-400}
-      SUMMARIZE_NUM_PREDICT: ${SUMMARIZE_NUM_PREDICT:-300}
-      DIGEST_NUM_PREDICT: ${DIGEST_NUM_PREDICT:-180}
-      LLM_TIMEOUT_S: ${LLM_TIMEOUT_S:-300}
       MAX_INPUT_CHARS: ${MAX_INPUT_CHARS:-6000}
-      MAX_QUEUE: ${MAX_QUEUE:-8}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     volumes:
       # Where the bot records that a scheduled digest posted, for
@@ -138,16 +120,12 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
-      - ai
       - monitoring
       - concierge
 
-# Joins the ai stack (ollama) and the monitoring stack (prometheus, loki).
-# Bring both of those up first — Compose will not create external networks.
+# Joins the monitoring stack (prometheus, loki). Bring it up first — Compose
+# will not create external networks.
 networks:
-  ai:
-    external: true
-    name: ai_ai
   monitoring:
     external: true
     name: monitoring_monitoring

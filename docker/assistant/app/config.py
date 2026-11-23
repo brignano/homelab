@@ -29,16 +29,6 @@ def _int(name: str, default: int) -> int:
         raise SystemExit(f"config error: {name}={raw!r} is not an integer")
 
 
-def _float(name: str, default: float) -> float:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return float(raw)
-    except ValueError:
-        raise SystemExit(f"config error: {name}={raw!r} is not a number")
-
-
 def _id_set(name: str) -> frozenset[int]:
     """Parse a comma-separated list of Discord snowflake IDs."""
     raw = os.environ.get(name, "").strip()
@@ -194,8 +184,6 @@ class Config:
     allowed_user_ids: frozenset[int]
 
     # --- Backends (Docker-network DNS names; see docker-compose.yml) ---
-    ollama_url: str
-    ollama_model: str
     prometheus_url: str
     loki_url: str
     # Public Grafana base URL, used only to build the links in the digest
@@ -216,26 +204,10 @@ class Config:
     # heartbeat.sh has to be able to read it while this container is stopped.
     digest_stamp_path: str
 
-    # --- Inference budget (see README → "Why the caps") ---
-    num_ctx: int
-    ask_predict: int
-    summarize_predict: int
-    digest_predict: int
-    llm_timeout_s: int
+    # --- #ask input caps ---
     max_input_chars: int
-    ollama_keep_alive: str
-
-    # --- Conversational channel ---
-    chat_channel_id: int | None
+    # How many turns of a thread or reply chain #ask passes to the concierge.
     chat_history_turns: int
-    chat_history_chars: int
-    chat_predict: int
-    chat_temperature: float
-    chat_live_metrics: bool
-    chat_metrics_ttl_s: int
-
-    # --- Queue ---
-    max_queue: int
 
     # --- Google (the digest's "Today" section; all blank = off) ---
     # See docs/design/tsd-personal-assistant.md, phase 1. Read-only scopes only:
@@ -312,7 +284,7 @@ class Config:
         if not allowed:
             raise SystemExit(
                 "config error: DISCORD_ALLOWED_USER_IDS is required — without an "
-                "allowlist anyone in the guild could queue jobs on your CPU"
+                "allowlist anyone in the guild could use the bot"
             )
 
         g_id, g_secret, g_refresh = _google()
@@ -331,8 +303,6 @@ class Config:
             guild_id=int(_req("DISCORD_GUILD_ID")),
             digest_channel_id=_channel_id(),
             allowed_user_ids=allowed,
-            ollama_url=os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/"),
-            ollama_model=os.environ.get("OLLAMA_MODEL", "llama3.2:3b"),
             prometheus_url=os.environ.get("PROMETHEUS_URL", "http://prometheus:9090").rstrip("/"),
             loki_url=os.environ.get("LOKI_URL", "http://loki:3100").rstrip("/"),
             grafana_url=os.environ.get("GRAFANA_URL", "").strip().rstrip("/"),
@@ -340,21 +310,8 @@ class Config:
             digest_at=_hhmm("DIGEST_AT", "07:30"),
             digest_enabled=os.environ.get("DIGEST_ENABLED", "true").lower() != "false",
             digest_stamp_path=os.environ.get("DIGEST_STAMP_PATH", "/state/last-digest").strip(),
-            num_ctx=_int("OLLAMA_NUM_CTX", 4096),
-            ask_predict=_int("ASK_NUM_PREDICT", 400),
-            summarize_predict=_int("SUMMARIZE_NUM_PREDICT", 300),
-            digest_predict=_int("DIGEST_NUM_PREDICT", 180),
-            llm_timeout_s=_int("LLM_TIMEOUT_S", 300),
             max_input_chars=_int("MAX_INPUT_CHARS", 6000),
-            ollama_keep_alive=os.environ.get("OLLAMA_KEEP_ALIVE", "").strip() or "30m",
-            chat_channel_id=_optional_id("DISCORD_CHAT_CHANNEL_ID"),
             chat_history_turns=_int("CHAT_HISTORY_TURNS", 12),
-            chat_history_chars=_int("CHAT_HISTORY_CHARS", 4000),
-            chat_predict=_int("CHAT_NUM_PREDICT", 350),
-            chat_temperature=_float("CHAT_TEMPERATURE", 0.6),
-            chat_live_metrics=os.environ.get("CHAT_LIVE_METRICS", "true").lower() != "false",
-            chat_metrics_ttl_s=_int("CHAT_METRICS_TTL_S", 60),
-            max_queue=_int("MAX_QUEUE", 8),
             google_client_id=g_id,
             google_client_secret=g_secret,
             google_refresh_token=g_refresh,

@@ -119,9 +119,8 @@ services:
       # checks. Its only network peer should be the API.
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
       DISABLE_AUTOUPDATER: "1"
-    # A ceiling so a misbehaving agent process cannot crowd out Ollama. The
-    # TSD asks for `docker stats` to be measured with Ollama loaded; raise this
-    # if a real task gets near it.
+    # A ceiling so a misbehaving agent process cannot crowd out the rest of
+    # the box; raise this if a real task gets near it.
     mem_limit: 1g
     # Home Assistant runs on host networking: this name resolves to the host.
     extra_hosts:

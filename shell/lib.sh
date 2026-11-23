@@ -91,10 +91,6 @@ hl_backup() {
 	sh "$HL_REPO/scripts/pg-backup.sh"
 }
 
-# hl_models          — rebuild tuned Ollama models from docker/ai/models/*.Modelfile
-hl_models() {
-	sh "$HL_REPO/docker/ai/load-models.sh"
-}
 
 # hl_heartbeat       — run the dead man's switch once (same as the 5-min cron)
 hl_heartbeat() {

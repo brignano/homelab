@@ -1,6 +1,6 @@
 # TSD: Local-LLM async jobs, delivered over Discord
 
-**Status:** ✅ approved / shipped — `docker/assistant/`
+**Status:** 🗄️ retired 2026-11-23 (#406) — the model and its commands were removed; the digest stays, rendered by code
 **Date:** 2026-08-22
 **Owner:** Anthony
 

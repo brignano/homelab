@@ -82,8 +82,7 @@ Steps 1–2 above, skipping the drive. Then:
      | docker exec -i -u postgres postgres psql -q -d postgres
    ```
 5. Host-side items from §2 step 6, and new drives per `runbook-backups.md`
-   §2–3. Not restored, by design: Prometheus/Loki history, Ollama models
-   (`docker/ai/load-models.sh` re-pulls), and the media library.
+   §2–3. Not restored, by design: Prometheus/Loki history and the media library.
 
 ## The drill: prove it before you need it
 
