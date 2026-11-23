@@ -1,77 +1,51 @@
-# dashboard — the landing page
+# dashboard — the home page
 
-Homepage at the **bare** `$HOMELAB_DOMAIN`, which is the parent of every service
-name, so it is the one URL that does not have to be remembered and every other
-name is discoverable from it.
+The landing page at the **bare** `$HOMELAB_DOMAIN`, the parent of every service
+name, so it is the one URL that does not have to be remembered. Built to show
+people what the box runs (homelab#395): a plain-English hero with a live
+services-up ring, the box's stats with tap-for-details, the open-work totals,
+and every app with a live Up/Down.
 
-| Directory | What it is | Served at |
+**No container.** Caddy serves these files and three read-only routes
+(`docker/proxy/Caddyfile`, the bare-domain block). It replaced Homepage, whose
+look could only be changed by overriding its markup, which broke on its updates.
+
+| Path | What it is | Served at |
 |---|---|---|
-| `config/` | The tile list, settings, and the CSS/JS that style the page. | — |
-| `icons/` | The dashboard's mark (SVG + rasters) and every tile icon. [README](icons/README.md) | `/icons/...` |
-| `assets/` | The design system: vendored tokens, generated palette, Geist. [README](assets/README.md) | `/assets/...` |
+| `site/index.html`, `app.css`, `app.js` | The page. | `/` |
+| `site/services.json` | Every tile, in order, by section, plus the footer links. | `/services.json` |
+| `icons/` | The page's mark and every tile icon. [README](icons/README.md) | `/icons/...` |
+| `assets/` | The design system: vendored tokens and Geist. [README](assets/README.md) | `/assets/...` |
+| `.env` | Weather coordinates and Healthchecks id (see `.env.example`). Read by the proxy. | `/api/home.json` |
 
-Both `icons/` and `assets/` are **directory** mounts under `/app/public`, which
-is the only place Homepage serves local files from. Directory rather than
-single-file, so a `git pull` that replaces a file cannot leave the container on
-the old inode — see the 2026-08-30 entry in `docs/setup-log.md`.
+## Where the numbers come from
+
+| On the page | Source |
+|---|---|
+| CPU, memory, disks, network, uptime | node-exporter (`job="node"`), via `/api/prom/` |
+| Temperature | node-exporter hwmon sensors, if the box exposes any |
+| Busiest and biggest apps, containers count, desktops Asleep/Running | cAdvisor |
+| Up/Down and response time per tile | the blackbox probe named by the tile's `probe` |
+| "What's on it" and "TB of movies and shows" | `homelab_media_folder_bytes`, written daily by `scripts/media-usage.sh` |
+| Open-work totals | the Work page's `data.js` over the same GitHub route, so the totals match it |
+| Weather | Open-Meteo, from the browser, no key |
+
+Prometheus is reachable on the LAN already; `/api/prom/` passes only GET
+`/api/v1/query` and `/api/v1/query_range`, the two read endpoints.
+
+## Adding a tile
+
+1. A site block in `docker/proxy/Caddyfile`.
+2. A tile in `site/services.json`: `name`, `href` (`https://<name>.{domain}`),
+   `icon`, a plain-words `desc`, and a `probe` that is a blackbox target in
+   `docker/monitoring/prometheus/prometheus.yml` (or `container` for a
+   scale-to-zero desktop, which must not be probed).
+3. `./scripts/update-tile-icons.sh` to vendor the icon.
+
+`scripts/check-dashboard.sh` (CI) fails if any of those is missing.
 
 ## Deploying a change
 
-```sh
-cd /root/homelab && git pull
-docker compose -f docker/dashboard/docker-compose.yml up -d
-```
-
-`up -d`, not `restart`. A restart reuses the existing container spec, so a
-change to the compose file — a new mount, say — comes back looking exactly like
-nothing happened. `up -d` recreates when the spec changed and is a no-op when it
-did not. Content changes inside `config/`, `icons/` and `assets/` need only a
-restart, because all three are directory mounts.
-
-`scripts/repo-sync.sh` does both nightly and reports what it restarted.
-
-## If `git pull` refuses over `config/custom.css` or `custom.js`
-
-```
-error: The following untracked working tree files would be overwritten by merge:
-        docker/dashboard/config/custom.css
-```
-
-That is Homepage, not you. On start it copies a **0-byte skeleton** into the
-config directory for every config file it knows about — `custom.css` and
-`custom.js` among them — whenever one is missing. That is why this mount has to
-stay writable, and it is why the box ended up with two untracked empty files
-that git then refused to overwrite with the real ones.
-
-Check they are empty, then delete them and pull again:
-
-```sh
-wc -c docker/dashboard/config/custom.css docker/dashboard/config/custom.js
-rm docker/dashboard/config/custom.css docker/dashboard/config/custom.js
-git pull --ff-only
-```
-
-If either has anything in it, something wrote to it — move it aside and look at
-it rather than deleting it.
-
-`scripts/repo-sync.sh` now clears this case by itself: for each file an incoming
-commit adds, an untracked *empty* copy is removed before the pull, and reported.
-Anything with a byte in it still stops the pull, which is the point.
-
-The same skeleton logic applies to `docker.yaml`, `kubernetes.yaml` and
-`proxmox.yaml`, which this stack does not use and does not track. They sit in
-`config/` as empty files and are harmless.
-
-## What is deliberately not here
-
-- **No Docker socket.** Homepage can discover services from container labels,
-  but that needs root-equivalent access to save maintaining a list CI already
-  keeps honest (`scripts/check-dashboard.sh`).
-- **No widgets that need a credential.** The ones worth having need an admin
-  credential in this stack to render a number you can see by clicking through.
-  The Work tile had a count widget for a day; it made the tile taller than its
-  group, so the counts now live only on the Work page. The header's
-  weather is not one of them: Open-Meteo needs no key, and its
-  coordinates live in `.env` (`WEATHER_LATITUDE`, `WEATHER_LONGITUDE`).
-- **Only the proxy network.** Tiles are plain links, and the up/down checks go
-  through Caddy over the same URLs a browser uses.
+Files under `site/`, `icons/` and `assets/` are directory mounts into Caddy, so
+a pull is the whole deploy. A Caddyfile or proxy compose change needs
+`/deploy proxy`.

@@ -1,0 +1,42 @@
+{
+  "_comment": "Every tile on the home page, in order. href uses {domain} for HOMELAB_DOMAIN. probe is the blackbox `instance` in Prometheus that says Up or Down (docker/monitoring/prometheus/prometheus.yml); container is a scale-to-zero desktop, shown Asleep or Running from cAdvisor without waking it. scripts/check-dashboard.sh checks this file against the Caddyfile and the probes.",
+  "sections": [
+    { "name": "Everyday", "tiles": [
+      { "name": "Home Assistant", "href": "https://ha.{domain}", "icon": "home-assistant.svg", "desc": "Lights, locks, doors and cameras", "probe": "http://host.docker.internal:8123/manifest.json" },
+      { "name": "Jellyfin", "href": "https://jellyfin.{domain}", "icon": "jellyfin.svg", "desc": "Our own Netflix: movies and shows", "probe": "http://jellyfin:8096/health" },
+      { "name": "Work", "href": "https://work.{domain}", "icon": "work.svg", "desc": "Everything I'm building, live from GitHub", "probe": "http://caddy/health" },
+      { "name": "Actual Budget", "href": "https://budget.{domain}", "icon": "actual-budget.svg", "desc": "Private budget, no bank sync", "probe": "http://budget:5006/health" }
+    ]},
+    { "name": "Media", "tiles": [
+      { "name": "Sonarr", "href": "https://sonarr.{domain}", "icon": "sonarr.svg", "desc": "Finds new episodes of our shows", "probe": "http://sonarr:8989/ping" },
+      { "name": "Radarr", "href": "https://radarr.{domain}", "icon": "radarr.svg", "desc": "Finds movies we ask for", "probe": "http://radarr:7878/ping" },
+      { "name": "Prowlarr", "href": "https://prowlarr.{domain}", "icon": "prowlarr.svg", "desc": "Search sources for both", "probe": "http://prowlarr:9696/ping" },
+      { "name": "qBittorrent", "href": "https://torrent.{domain}", "icon": "qbittorrent.svg", "desc": "Downloads, through a VPN", "probe": "http://gluetun:8080/" },
+      { "name": "Cleanuparr", "href": "https://cleanuparr.{domain}", "icon": "cleanuparr.png", "desc": "Clears stuck downloads", "probe": "http://cleanuparr:11011/health" }
+    ]},
+    { "name": "Lab", "tiles": [
+      { "name": "Grafana", "href": "https://stats.{domain}", "icon": "grafana.svg", "desc": "Charts of everything on the box", "probe": "http://grafana:3000/api/health" },
+      { "name": "Portainer", "href": "https://apps.{domain}", "icon": "portainer-on-dark.svg", "iconLight": "portainer-on-light.svg", "desc": "Start and stop the apps", "probe": "http://portainer:9000/" },
+      { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" },
+      { "name": "Open WebUI", "href": "https://chat.{domain}", "icon": "open-webui-on-dark.svg", "iconLight": "open-webui-on-light.svg", "desc": "A private AI that never leaves the house", "probe": "http://open-webui:8080/" }
+    ]},
+    { "name": "Things I built", "tiles": [
+      { "name": "Photo & clip review", "href": "https://review.{domain}", "icon": "review.svg", "desc": "Sort home videos and move old ones to cold storage", "probe": "http://clipreview:8000/" },
+      { "name": "brignano.io", "href": "https://brignano.io", "icon": "brignano.svg", "inkIcon": true, "desc": "My website", "probe": "https://brignano.io/" }
+    ]},
+    { "name": "Desktops", "tiles": [
+      { "name": "Kali", "href": "https://kali.{domain}", "icon": "kali-linux.svg", "desc": "Starts when you open it", "container": "kali-linux" }
+    ]}
+  ],
+  "links": [
+    { "name": "homelab", "href": "https://github.com/brignano/homelab" },
+    { "name": "brignano.io", "href": "https://github.com/brignano/brignano.io" },
+    { "name": "design", "href": "https://github.com/brignano/design" },
+    { "name": "driftwood", "href": "https://github.com/brignano/driftwood" },
+    { "name": "ai-tools", "href": "https://github.com/brignano/ai-tools" },
+    { "name": "Actions", "href": "https://github.com/brignano/homelab/actions" },
+    { "name": "Cloudflare DNS", "href": "https://dash.cloudflare.com/?to=/:account/brignano.io/dns" },
+    { "name": "Healthchecks", "href": "https://healthchecks.io/projects/{healthchecks}/checks/" },
+    { "name": "Discord", "href": "https://discord.com/channels/1540936342714974298" }
+  ]
+}

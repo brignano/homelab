@@ -120,14 +120,6 @@ plan_for() {
     human "    # a directory mount shows the files immediately; Grafana reads them once, at boot"
     quiet=0
   fi
-  if printf '%s\n' "$paths" | grep -qE '^docker/dashboard/(icons|assets)/'; then
-    human "docker compose -f docker/dashboard/docker-compose.yml up -d --force-recreate"
-    act "recreate dashboard"
-    human "    # RECREATE, not restart: Next.js enumerates /app/public once, so a NEW"
-    human "    # FILENAME 404s until the container is replaced — and a 404 favicon is"
-    human "    # not an error anywhere, the browser just draws a globe"
-    quiet=0
-  fi
   if printf '%s\n' "$paths" | grep -qE '^scripts/'; then
     human "./scripts/install-cron.sh   # scripts changed; idempotent, never rewrites an existing entry"
     act "cron"

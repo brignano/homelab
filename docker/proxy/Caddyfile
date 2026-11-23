@@ -27,6 +27,47 @@
 	}
 }
 
+# The read-only GitHub GraphQL route, shared by the Work page and the home page
+# (homelab#386, #395). The argument is the one site allowed to call it: a
+# browser Origin must be exactly that host. Comments inside explain each guard.
+(github_graphql) {
+	handle /api/graphql {
+		@notpost not method POST
+		respond @notpost "POST only" 405
+
+		# Cross-site guard. Without it, any page open in a browser on the LAN or
+		# tailnet could POST here as `text/plain` (no CORS preflight), get the
+		# token attached, and read the answer, since GitHub replies with
+		# `Access-Control-Allow-Origin: *`. Requiring JSON forces a preflight,
+		# which the 405 above refuses; a browser Origin must be this site; and
+		# GitHub's CORS headers are stripped on the way back. A request with no
+		# Origin at all (curl, a script on the box) still gets through.
+		@notjson not header Content-Type application/json*
+		respond @notjson "JSON only" 415
+		@foreign {
+			header Origin *
+			not header Origin https://{args[0]}
+		}
+		respond @foreign "Wrong origin" 403
+		request_body {
+			max_size 16KB
+		}
+		rewrite * /graphql
+		reverse_proxy https://api.github.com {
+			header_up Host api.github.com
+			# GitHub refuses requests with no User-Agent (403, "administrative
+			# rules"). Browsers send one; curl and scripts may not.
+			header_up User-Agent "homelab-work-page"
+			header_up Authorization "Bearer {env.WORK_GITHUB_TOKEN}"
+			header_up -Cookie
+			header_up -Origin
+			header_up -Referer
+			header_down -Set-Cookie
+			header_down -Access-Control-*
+		}
+	}
+}
+
 # ── Services ────────────────────────────────────────────────────────────────
 
 # The landing page. Deliberately the bare {$HOMELAB_DOMAIN} rather than a
@@ -37,46 +78,74 @@
 # stats.home.<zone> and friends, but a DNS wildcard substitutes for the `*` and
 # never matches the parent name, so home.<zone> resolves nowhere without an
 # explicit A record alongside it.
+#
+# Plain files, no container (homelab#395, replacing Homepage): the page in
+# docker/dashboard/site reads its numbers from three routes below. Everything
+# is GET or read-only, and the site is LAN + tailnet like every other.
 {$HOMELAB_DOMAIN} {
-	# Safari's address bar, its suggestion list and its Favorites tiles probe
-	# these ROOT paths directly rather than parsing the page, so they never see
-	# the icon Homepage declares in its markup — they found its stock logo, or
-	# nothing, and fell back to a globe. The dashboard's own files live under
-	# /icons (docker/dashboard/icons, mounted into the container), so the probe
-	# is pointed at them here rather than by shadowing the image's /app/public.
-	# A query string a browser appends survives the rewrite and goes on working
-	# as its cache key.
-	rewrite /favicon.ico /icons/favicon.ico
-	rewrite /apple-touch-icon.png /icons/apple-touch-icon.png
-	rewrite /apple-touch-icon-precomposed.png /icons/apple-touch-icon.png
+	# Live numbers: Prometheus's two read-only query endpoints and nothing else
+	# of its API. Prometheus already answers these on the LAN at :9090; this is
+	# the same data on the page's own origin, so the browser needs no CORS.
+	handle_path /api/prom/* {
+		@query {
+			method GET
+			path /api/v1/query /api/v1/query_range
+		}
+		handle @query {
+			reverse_proxy prometheus:9090
+		}
+		respond "Not here" 404
+	}
 
-	# And the surface that reads no markup at all: an INSTALLED app. Chrome
-	# draws the window titlebar, the taskbar entry and the install dialog from
-	# the web app MANIFEST's icons — `rel="icon"` is not consulted, so none of
-	# the work above reaches it. Homepage hard-codes
-	# `<link rel="manifest" href="/site.webmanifest?v=4">` in its _document and
-	# ships a manifest listing its own logo, baked into the image where no
-	# config setting reaches it.
-	#
-	# Rewriting the root path is how that gets overridden without shadowing
-	# /app/public with a single-file bind mount. Same technique as the probes
-	# above, and for once the `?v=4` Homepage appends is useful: the manifest
-	# changing identity is exactly when a cache bust is wanted.
-	rewrite /site.webmanifest /icons/site.webmanifest
+	# The open-work totals, counted by the Work page's own code (data.js,
+	# served below) from the same read-only GitHub route.
+	import github_graphql {$HOMELAB_DOMAIN}
+	handle /work-data.js {
+		root * /srv/work
+		rewrite * /data.js
+		header Cache-Control "no-cache"
+		file_server
+	}
 
-	# Explicit, rather than trusting the mime table inside whatever Next.js
-	# build the image happens to carry. Chrome will parse a manifest served as
-	# application/json, but it logs the wrong type as an error in the install
-	# path, and an install error is the thing this block exists to fix.
-	#
-	# Both paths, deliberately. Caddy sorts directives into its own order rather
-	# than running them top to bottom, so whether this matcher sees the request
-	# before or after the rewrite above is not decided here. Naming both spellings
-	# is one line and does not depend on knowing which.
-	@manifest path /site.webmanifest /icons/site.webmanifest
-	header @manifest Content-Type "application/manifest+json"
+	# The two values the page needs from .env, neither a secret: where the
+	# weather is for, and which Healthchecks project the link opens. They come
+	# from docker/dashboard/.env (see the proxy's compose file); unset, the
+	# page hides the weather and the link.
+	handle /api/home.json {
+		header Content-Type application/json
+		header Cache-Control "no-cache"
+		respond `{"lat":"{env.WEATHER_LATITUDE}","lon":"{env.WEATHER_LONGITUDE}","healthchecks":"{env.HEALTHCHECKS_PROJECT_ID}"}` 200
+	}
 
-	reverse_proxy dashboard:3000
+	# Tokens and Geist, and the tile icons and page icons.
+	handle_path /assets/* {
+		root * /srv/design
+		file_server
+	}
+	handle_path /icons/* {
+		root * /srv/home-icons
+		file_server
+	}
+
+	# Safari, installed apps and the like probe these ROOT paths without
+	# reading any markup; the files live in docker/dashboard/icons.
+	@rooticons path /favicon.ico /apple-touch-icon.png /apple-touch-icon-precomposed.png
+	handle @rooticons {
+		root * /srv/home-icons
+		rewrite /apple-touch-icon-precomposed.png /apple-touch-icon.png
+		file_server
+	}
+	handle /site.webmanifest {
+		root * /srv/home-icons
+		header Content-Type "application/manifest+json"
+		file_server
+	}
+
+	handle {
+		root * /srv/home
+		header Cache-Control "no-cache"
+		file_server
+	}
 }
 
 # Grafana — dashboards & metrics
@@ -132,41 +201,7 @@ work.{$HOMELAB_DOMAIN} {
 	# the token's permissions are what make the route read-only: GitHub refuses
 	# a mutation from it. POST only, one path, small bodies. Unset token: GitHub
 	# answers 401 and the page says which variable to set.
-	handle /api/graphql {
-		@notpost not method POST
-		respond @notpost "POST only" 405
-
-		# Cross-site guard. Without it, any page open in a browser on the LAN or
-		# tailnet could POST here as `text/plain` (no CORS preflight), get the
-		# token attached, and read the answer, since GitHub replies with
-		# `Access-Control-Allow-Origin: *`. Requiring JSON forces a preflight,
-		# which the 405 above refuses; a browser Origin must be this site; and
-		# GitHub's CORS headers are stripped on the way back. Homepage's tile
-		# asks server-side with JSON and no Origin, so it still gets through.
-		@notjson not header Content-Type application/json*
-		respond @notjson "JSON only" 415
-		@foreign {
-			header Origin *
-			not header Origin https://work.{$HOMELAB_DOMAIN}
-		}
-		respond @foreign "Wrong origin" 403
-		request_body {
-			max_size 16KB
-		}
-		rewrite * /graphql
-		reverse_proxy https://api.github.com {
-			header_up Host api.github.com
-			# GitHub refuses requests with no User-Agent (403, "administrative
-			# rules"). Browsers send one; Homepage's server-side tile does not.
-			header_up User-Agent "homelab-work-page"
-			header_up Authorization "Bearer {env.WORK_GITHUB_TOKEN}"
-			header_up -Cookie
-			header_up -Origin
-			header_up -Referer
-			header_down -Set-Cookie
-			header_down -Access-Control-*
-		}
-	}
+	import github_graphql work.{$HOMELAB_DOMAIN}
 
 	# Tokens and Geist: the dashboard's vendored copies, already mounted for
 	# the budget theme. One source for every page on the box.

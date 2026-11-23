@@ -31,7 +31,7 @@ git config user.email test@example.invalid
 git config user.name test
 mkdir -p scripts scripts/host
 cp "$HERE/deploy-plan.sh" scripts/
-for s in monitoring dashboard assistant proxy media; do
+for s in monitoring assistant proxy media; do
   mkdir -p "docker/$s"
   printf 'services: {}\n' > "docker/$s/docker-compose.yml"
 done
@@ -66,11 +66,11 @@ expect "provisioning restarts grafana, flags the dropped uid" "up monitoring
 restart monitoring grafana
 deletion docker/monitoring/grafana/provisioning/alerting/rules.yml drop-me" "$(plan HEAD~1)"
 
-# A new dashboard icon: up + recreate.
+# A new home page icon: nothing. Caddy serves docker/dashboard/ from directory
+# mounts, so a pulled file is live (homelab#395 retired the Homepage container).
 echo "<svg/>" > docker/dashboard/icons/new.svg
 git add -A && git commit -qm icon
-expect "new dashboard icon recreates" "up dashboard
-recreate dashboard" "$(plan HEAD~1)"
+expect "new home page icon needs nothing" "" "$(plan HEAD~1)"
 
 # proxy, scripts and host: never acted on directly.
 echo "# x" > docker/proxy/Caddyfile
@@ -83,11 +83,9 @@ manual host" "$(plan HEAD~1)"
 
 # The whole range at once: every action, each once.
 expect "range from base" "build assistant
-up dashboard
 up media
 up monitoring
 restart monitoring grafana
-recreate dashboard
 cron
 manual proxy
 manual host

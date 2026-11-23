@@ -11,7 +11,7 @@ minutes to stay in sync (#384, ai-tools#109). Issue: #386.
 
 ```mermaid
 flowchart LR
-  B[Browser on LAN / tailnet] -- "GET /, /app.js, /assets/*" --> C[Caddy]
+  B[Browser on LAN / tailnet] -- "GET /, /app.js, /data.js, /assets/*" --> C[Caddy]
   B -- "POST /api/graphql" --> C
   C -- "files: docker/work/site, dashboard/assets" --> B
   C -- "POST /graphql + read-only token" --> G[api.github.com]
@@ -32,7 +32,7 @@ other than `https://work.<domain>` with a 403, and strips GitHub's
 ## What it shows
 
 Status follows the fleet standard's table ("Status, priority and blocked" in
-brignano/ai-tools `fleet/README.md`), computed from labels in `site/app.js`:
+brignano/ai-tools `fleet/README.md`), computed from labels in `site/data.js` (shared with the home page, which loads it as `/work-data.js` so its totals count the same way; `site/app.js` draws the page):
 
 | Labels | Section | Pill |
 |---|---|---|
@@ -74,11 +74,8 @@ be granted those repos at all.
    ```sh
    hl-ssh -t "cd /root/homelab && claude '/deploy proxy'"
    ```
-   Then restart the dashboard so Homepage serves the new `work.svg` tile icon
-   (it lists `/app/public` once at startup):
-   ```sh
-   hl-ssh -t "cd /root/homelab && claude '/deploy dashboard'"
-   ```
+   The home page's tiles and totals need nothing more: Caddy serves them
+   from the repo.
 
 When a repo joins the fleet, add it to the token too (GitHub settings, the same
 token, Repository access). `board.yml` alone is not enough: the page lists the
@@ -105,3 +102,8 @@ writes phone and desktop screenshots.
 | No "checks passing" words | Token lacks Commit statuses: read | Add the permission |
 | 403 "Request forbidden by administrative rules" | No User-Agent reached GitHub (Caddy block lost its `header_up User-Agent`); only server-side callers like curl hit it | Restore it; `/deploy proxy` |
 | Lists empty, no error | A search query lost its `is:issue` / `is:pr` (GitHub returns nothing without one) | Restore it |
+
+## Linking to one status
+
+`https://work.<domain>/#you` (or `#doing`, `#next`, `#held`) opens the page on
+that status across every repo. The home page's totals link this way.

@@ -1,7 +1,10 @@
 # Dashboard assets
 
-Everything `config/custom.css` imports, served at `/assets/...` by the
-`./assets:/app/public/assets` mount in `docker-compose.yml`.
+The design system the home page (`../site/app.css`), the Work page, the budget
+theme and the review page import, served at `/assets/...` by Caddy. Homepage,
+which this directory was first vendored for, was retired in #395; the
+`homepage-palette.css` sections below describe a file nothing reads any more.
+
 
 | File | What it is |
 |---|---|
