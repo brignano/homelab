@@ -23,7 +23,7 @@
       { "name": "Grafana", "href": "https://stats.{domain}", "icon": "grafana.svg", "desc": "Charts of everything on the box", "probe": "http://grafana:3000/api/health" },
       { "name": "Portainer", "href": "https://apps.{domain}", "icon": "portainer-on-dark.svg", "iconLight": "portainer-on-light.svg", "desc": "Start and stop the apps", "probe": "http://portainer:9000/" },
       { "name": "AdGuard Home", "href": "https://dns.{domain}", "icon": "adguard-home.svg", "desc": "Blocks ads for every device at home", "probe": "http://adguard:80/" },
-      { "name": "Kali", "href": "https://kali.{domain}", "icon": "kali-linux.svg", "desc": "Starts when you open it", "container": "kali-linux" }
+      { "name": "Kali", "href": "https://kali.{domain}", "icon": "kali-linux.svg", "desc": "Security practice lab, wakes when you open it", "container": "kali-linux" }
     ]}
   ],
   "links": [
