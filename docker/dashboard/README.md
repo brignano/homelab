@@ -22,8 +22,9 @@ look could only be changed by overriding its markup, which broke on its updates.
 
 | On the page | Source |
 |---|---|
-| CPU, memory, disks, network, uptime | node-exporter (`job="node"`), via `/api/prom/` |
-| Temperature | node-exporter hwmon sensors, if the box exposes any |
+| CPU, memory, network, uptime | node-exporter (`job="node"`), via `/api/prom/` |
+| System disk, media drive | the Capacity dashboard's series: `host="docker-lxc"` `/` and `host="proxmox"` `/mnt/media` |
+| Temperature | node-exporter hwmon: the CPU is chip `…00:18_3` (AMD k10temp), the SSD `nvme_nvme0` |
 | Busiest and biggest apps, containers count, desktops Asleep/Running | cAdvisor |
 | Up/Down and response time per tile | the blackbox probe named by the tile's `probe` |
 | "What's on it" and "TB of movies and shows" | `homelab_media_folder_bytes`, written daily by `scripts/media-usage.sh` |
