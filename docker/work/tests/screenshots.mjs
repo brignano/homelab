@@ -134,6 +134,7 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   await page.reload();
   await page.waitForFunction(() => /could not refresh/.test(document.getElementById('sub').textContent), null, { timeout: 5000 }).catch(() => {});
   const stale = await page.evaluate(() => document.getElementById('sub').textContent);
+  await page.screenshot({ path: join(OUT, `${name}-${scheme}-stale.png`) });
   expect(/could not refresh/.test(stale) && /[A-Z][a-z]{2} \d/.test(stale), 'old cached copy did not show its date: ' + stale);
   fail = false;
   await page.reload();
