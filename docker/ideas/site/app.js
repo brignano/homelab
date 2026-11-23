@@ -59,7 +59,7 @@ function apply(c) { ideas = normalise(c.data); loadedAt = new Date(c.at); render
 
 async function fetchLedger() {
   const r = await fetch('/api/ledger.json', { headers: { Accept: 'application/json' }, cache: 'no-store' });
-  if (r.status === 401 || r.status === 403) throw new Error('GitHub refused the token. Set IDEAS_GITHUB_TOKEN in docker/proxy/.env (docker/ideas/README.md).');
+  if (r.status === 401 || r.status === 403) throw new Error('GitHub refused the token. Set READ_GITHUB_TOKEN in docker/proxy/.env (docker/ideas/README.md).');
   if (r.status === 404) throw new Error('No ledger.json yet. Set IDEAS_LEDGER_REPO in docker/proxy/.env, and have the ledger build write ledger.json (docker/ideas/README.md).');
   if (!r.ok) throw new Error('GitHub answered ' + r.status + '.');
   return { data: await r.json(), at: Date.now() };

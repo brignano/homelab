@@ -19,7 +19,7 @@ async function gql(query, variables) {
   const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables }) });
   let body = null;
   try { body = await r.json(); } catch (_) {}
-  if (r.status === 401) throw new Error('GitHub refused the token (401). Check WORK_GITHUB_TOKEN in docker/proxy/.env, then recreate caddy.');
+  if (r.status === 401) throw new Error('GitHub refused the token (401). Check READ_GITHUB_TOKEN in docker/proxy/.env, then recreate caddy.');
   if (!r.ok) throw new Error('GitHub answered ' + r.status + (body && body.message ? ': ' + body.message : '') + '.');
   if (body && body.errors && !body.data) throw new Error(body.errors.map(e => e.message).join('; '));
   return body.data;

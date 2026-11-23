@@ -22,9 +22,12 @@ fixed in `.env`. The route is GET only, refuses a browser `Origin` other than
 `https://ideas.<domain>` with a 403, and strips GitHub's `Access-Control-*`
 headers, so another site open in a browser on the LAN cannot read it.
 
-The token is **separate from Work's** on purpose. `WORK_GITHUB_TOKEN` backs a
-route that runs any GraphQL query, and the ledger's repo must never be
-reachable through it. `IDEAS_GITHUB_TOKEN` reaches the ledger's repo alone.
+The token is **shared with Work**: `READ_GITHUB_TOKEN` in `docker/proxy/.env`,
+read-only, covering the fleet repos and the ledger's repo. Work's route runs
+any GraphQL query, so on the LAN and tailnet it can read the ledger's repo too;
+that was Anthony's call (one token to manage). The compose file still accepts
+the per-page names (`WORK_GITHUB_TOKEN`, `IDEAS_GITHUB_TOKEN`) if you ever
+want them split again: set those and leave `READ_GITHUB_TOKEN` unset.
 
 ## ledger.json
 
@@ -46,13 +49,11 @@ The page stays in step with the file: no field is read from anywhere else.
 
 ## Setup (once)
 
-1. Create a **fine-grained** token at
-   https://github.com/settings/personal-access-tokens/new:
-   - Repository access: **Only select repositories**, the ledger's repo only.
-   - Permissions: **Contents: Read-only**. Metadata is added automatically.
-2. On CT 100, add three lines to `docker/proxy/.env`:
+1. Reuse Work's: add the ledger's repo to `READ_GITHUB_TOKEN`
+   (docker/work/README.md, Setup). It needs **Contents: Read-only**.
+2. On CT 100, `docker/proxy/.env` needs:
    ```sh
-   IDEAS_GITHUB_TOKEN=github_pat_...
+   READ_GITHUB_TOKEN=github_pat_...
    IDEAS_LEDGER_REPO=<owner>/<repo>
    IDEAS_LEDGER_PATH=ledger.json
    ```
