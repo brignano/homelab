@@ -21,7 +21,7 @@ Personal homelab running on a GMKtec M5 Ultra mini PC.
 | VPN / mesh network | Tailscale |
 | Metrics collection | Prometheus |
 | Dashboards | Grafana |
-| Daily digest & #ask | Discord bot (`docker/assistant/`) |
+| Daily digest | Discord bot (`docker/assistant/`) |
 | Database | PostgreSQL |
 | Media server | Jellyfin *(planned)* |
 
@@ -83,7 +83,7 @@ homelab/
 │   ├── dashboard/           # Landing page — links + status for everything
 │   │   ├── docker-compose.yml
 │   │   └── config/          # Tiles, checked against the Caddyfile by CI
-│   └── assistant/           # Discord bot: daily digest + #ask
+│   └── assistant/           # Discord bot: daily digest
 │       ├── docker-compose.yml
 │       └── app/
 ├── scripts/                 # Run from cron on the Docker LXC
@@ -170,8 +170,9 @@ the Duet trial: chat happens in Claude, and the local 3B was holding memory on
 a 16 GB box for a digest that reads just as well without its two sentences.
 
 The [`assistant`](docker/assistant/README.md) stack is a Discord bot (Otto) that
-pushes the daily digest, answers `#ask` through the concierge, and runs
-follow-ups:
+pushes the daily digest and a weekly bank-import reminder. It calls no model and
+costs nothing to run: the paid `#ask` assistant (Claude via the API) was retired
+on 2026-11-23 for Claude Duet.
 
 | | |
 |---|---|

@@ -169,8 +169,9 @@ per-user *Settings → Home* options), for each library named `Photo Archive…`
 
 Access is unchanged: the archive is still reachable through Search or a
 bookmark, and anyone who can see it can turn it back on in *Settings → Home*.
-Run it again after adding a user or another `Photo Archive…` library. It uses
-the concierge's admin key (`docker/concierge/.env`) and never prints it.
+Run it again after adding a user or another `Photo Archive…` library. It reads
+an admin-scoped key from `JELLYFIN_API_KEY` in `docker/jellyfin/.env` (moved
+there from the retired concierge's `.env` in 2026-11) and never prints it.
 
 ## Monitoring
 

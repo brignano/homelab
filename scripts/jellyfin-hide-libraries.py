@@ -28,8 +28,9 @@ Run on CT 100 (needs no packages, only python3 and docker):
   ./scripts/jellyfin-hide-libraries.py             # apply (idempotent)
   ./scripts/jellyfin-hide-libraries.py --undo      # put them back
 
-The API key is the concierge's admin-scoped key (JELLYFIN_API_KEY in
-docker/concierge/.env), or JELLYFIN_API_KEY from the environment. It is never
+The API key is an admin-scoped Jellyfin key (JELLYFIN_API_KEY in
+docker/jellyfin/.env, read by this script only; compose ignores it), or
+JELLYFIN_API_KEY from the environment. It is never
 printed. Jellyfin publishes no port, so the script talks to the container's
 address on the proxy_proxy bridge (override with JELLYFIN_URL).
 """
@@ -45,7 +46,7 @@ REPO = os.environ.get(
     "HL_REPO", os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
 ENV_FILE = os.environ.get(
-    "HL_JELLYFIN_KEY_FILE", os.path.join(REPO, "docker/concierge/.env")
+    "HL_JELLYFIN_KEY_FILE", os.path.join(REPO, "docker/jellyfin/.env")
 )
 PREFIXES = [
     p.strip().lower()

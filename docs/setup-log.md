@@ -27,6 +27,26 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-23 — Retired the paid #ask assistant (#366)
+
+**Goal:** Make Otto cost nothing. The concierge (Claude via the Anthropic API key on CT 100) was the only per-use cost in the lab, and Claude Duet now does #ask's job on the plan.
+
+**Steps:**
+1. Checked what still called the concierge: #ask questions, follow-up "check" runs, the brief and the evening review (both already off since #365), and the leads/starred mail line (no model, but only reached through the brief).
+2. Removed `docker/concierge/`, its CI job and its `SETUP_GATED_STACKS` entry.
+3. `docker/assistant/`: removed #ask, approvals, #memory, #follow-ups, #activity, the brief, the review and the day thread; no Message Content intent. The leads/starred count moved into Today as a **Waiting** line from Gmail label counters (existing `gmail.metadata` token). The import reminder now posts in `#digest`.
+4. `guild.yml` keeps only LAB. `heartbeat.sh` and `hl-google-stale` drop the `brief`, `followups` and `review` sources.
+5. `scripts/jellyfin-hide-libraries.py` reads its key from `docker/jellyfin/.env` instead of the concierge's.
+
+**Issues encountered:**
+- Removing a stack from git does not stop its container or delete its untracked `.env` on the box.
+
+**Resolution:**
+- After merge, on CT 100: move `JELLYFIN_API_KEY` from `docker/concierge/.env` to `docker/jellyfin/.env`, `docker compose -f docker/concierge/docker-compose.yml down` (from git history) or `docker rm -f concierge`, delete `docker/concierge/`, `docker network rm assistant_concierge`, remove the stale `source-brief`/`source-followups`/`source-review` stamps, then redeploy assistant.
+- Anthony: revoke the Anthropic API key, remove the concierge's Google access and its Home Assistant user, and delete the old Discord channels if wanted.
+
+---
+
 ## 2026-11-23 — Removed the local model and Open WebUI (#406)
 
 **Goal:** Free the memory the resident `llama3.2:3b` held on the 16 GB box, now that chat happens in Claude (Duet).

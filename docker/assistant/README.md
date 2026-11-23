@@ -1,17 +1,25 @@
 # assistant — Otto, the homelab's Discord bot
 
-A single small Python container that posts the daily homelab digest, forwards
-`#ask` to the concierge (`docker/concierge/`, Claude), and runs follow-ups.
+A single small Python container that posts the daily homelab digest and a
+weekly bank-import reminder. It calls no model, so it costs nothing to run.
 
 ```
                      ┌──────────────────────────────────┐
   Discord  ◀────────▶│  assistant                       │
-  (outbound WSS,     │   digest · #ask · follow-ups     │
-   no inbound port)  └───┬─────────────┬────────────────┘
-                         │             │
-                 concierge:8080   prometheus:9090
-                 (#ask, Claude)   loki:3100  (the facts)
+  (outbound WSS,     │   digest · import reminder       │
+   no inbound port)  └───┬──────────────────────────────┘
+                         │
+                   prometheus:9090, loki:3100 (the facts)
+                   Google + Home Assistant (Today, read-only)
 ```
+
+**No #ask.** Until 2026-11-23 the bot also forwarded `#ask` to a concierge
+(`docker/concierge/`, Claude through the Anthropic API) that could read mail,
+calendar and the house and propose actions under ✅/❌, with `#memory`,
+`#follow-ups`, `#activity`, a morning brief and an evening review. It was the
+only part of the lab billed per use, and Claude Duet does the same job on the
+plan, so it was removed (#366). The leads and starred count it used to add
+moved into Today, with no model. The history is in git.
 
 **No local model.** Until 2026-11 this stack also drove a local `llama3.2:3b`
 through Ollama: `/ask`, `/summarize`, a `#chat` channel, and two sentences of
@@ -26,7 +34,7 @@ now posts them without the prose. The history is in git (`docker/ai/`, and
 | Surface | Kind | What it's for |
 |---------|------|---------------|
 | daily digest | scheduled | Homelab health at `DIGEST_AT`, posted to one channel |
-| `#ask` | conversational | Claude, through the concierge. See "#ask" below |
+| import reminder | scheduled | Weekly ping in `#digest` to import bank statements |
 | `/digest` | interactive | Run the digest now instead of waiting |
 | `/status` | interactive | Next and last scheduled digest |
 
@@ -145,6 +153,7 @@ readings:
 **All day** Mom's birthday
 **Overlaps** 3pm Dentist ↔ 3:30pm 1:1 with Sam
 **Mail (24h)** 3 new — Alice Chen: Re: flights for the 24th · Billing: Your invoice is ready
+**Waiting** 2 new Sites leads · 1 starred
 ```
 
 Phase 1 of [`tsd-personal-assistant.md`](../../docs/design/tsd-personal-assistant.md),
@@ -172,16 +181,22 @@ clickable.
 around the escaped subject, and points at the conversation in Gmail
 (`mail.google.com/mail/u/0/#all/<thread id>`, your first signed-in account).
 The URL is built only from Gmail's hex thread id; a subject cannot change where
-it points or add a link of its own. When the morning brief is on, it replaces
-this line, so these links appear only on digests without a brief.
+it points or add a link of its own.
+
+**Waiting: leads and starred mail.** Unread mail under `Leads/Driftwood`,
+`Leads/Sites` and `Leads/Guidebook`, counted per product, and how many messages
+are starred. Read from the labels' own counters (`labels.get`, allowed by
+`gmail.metadata`), so no message is opened and no search is run. Counts and
+product names only. The line is left out when everything is zero, so reading
+the lead or unstarring the message makes it disappear, and a failed count
+only drops the line; it never marks mail as "not read".
 
 **Unmarked on purpose.** The 🔴/🟠 marks and the ✅/⚠️ heading are the lab's
 verdict, and a double-booked afternoon is not a lab problem. A line that appears
 only when there is something to say, like **Overlaps**, is its own signal.
 
 **Privacy.** Senders, subjects and titles end up stored by Discord, because
-`#digest` is a Discord channel. They are never sent to Anthropic or to the
-model. `GOOGLE_SOURCES=calendar` leaves mail out entirely.
+`#digest` is a Discord channel. They are never sent to a model. `GOOGLE_SOURCES=calendar` leaves mail out entirely.
 
 ### Setting it up
 
@@ -287,180 +302,17 @@ fires. Unset, nothing changes.
 **After fixing the sign-in,** run `/digest` once. The alert clears on the next
 successful read, and otherwise that would be tomorrow's scheduled one.
 
-## #ask: conversations
-
-**Where you type decides what it remembers.** There is no command and no state
-to manage — the context is always visibly implied by where the message sits:
-
-| Where | Context | For |
-|-------|---------|-----|
-| **reply** to a message | **that reply chain** | picking a thread of conversation back up, no ceremony |
-| inside a **thread** | **the whole thread** | a named, persistent conversation with its own memory |
-
-**The memory lives in Discord, not in the bot.** No store, no database, no
-in-process state — the bot reads the relevant messages back out of Discord each
-time. That means:
-
-- **Restart-safe.** Rebuild the container mid-conversation and it picks up
-  where it was — the history was never in the container.
-- **What you see is what it sees.** Delete a message and it leaves the context.
-- **`//` is an escape hatch.** A line starting with `//` gets no reply and stays
-  out of the context — for notes, links and asides.
-
-Thread history and reply chains are capped at `CHAT_HISTORY_TURNS` turns.
-
-> **This needs the Message Content privileged intent** — Developer Portal → Bot
-> → Privileged Gateway Intents → **Message Content** → on. Without it Discord
-> delivers messages with an empty body and the bot cannot see what you typed.
-> No approval is needed under 100 servers.
->
-> It is a genuine widening: the bot can now read message text server-wide. It's
-> narrowed in code rather than by Discord — `_route` returns immediately
-> unless the message is from an allowlisted user in #ask
-> (or a thread under it), and it ignores bots including itself, which is what
-> stops it replying to its own replies forever. Leave `DISCORD_ASK_CHANNEL_ID`
-> blank and the intent is never requested at all.
-
-### #ask — Claude, through the concierge
-
-A new message in `#ask` is never a one-off. The bot opens a
-thread on it and answers there, so you keep talking in the thread and it
-reads the whole conversation, starting with the message that opened it. A
-reply to an older message in the channel still follows its reply chain. The
-bot only forwards the message to `docker/concierge/` and renders the
-answer.
-
-Opening the thread uses **Create Public Threads** and **Send Messages in
-Threads**. The bot gets both from `@everyone`, which has them by default; if
-you have taken them away, the bot logs a warning and answers in the channel
-instead. Set `DISCORD_ACTIVITY_CHANNEL_ID` (from `--provision --apply`) to log
-each approved action to `#activity`. The agent, its Anthropic key and its Google and Home Assistant tokens
-all live in that stack. The bot also reads `#memory` for each request, and it
-renders any proposed memory under ✅/❌ from the proposal's arguments
-(`app/concierge.py`). Only an allowlisted ✅ within 15 minutes posts it.
-Setup, costs and the audit trail are in
-[`docker/concierge/README.md`](../concierge/README.md).
-
-### The morning brief
-
-> **Off for the Claude Duet trial (since 2026-11-09, #365).** `BRIEF_ENABLED=false`
-> on CT 100, because Duet now sends the morning brief from Gmail and Calendar.
-> The digest still posts its lab sections and the leads/starred mail line. To
-> turn it back on, set `BRIEF_ENABLED=true` in `docker/assistant/.env` and run
-> `/deploy assistant`.
-
-**Mail line.** The concierge also adds one line to **Needs you**, with no model
-involved: unread `Leads/Driftwood`, `Leads/Sites` and `Leads/Guidebook` mail,
-counted per product, and starred mail, e.g. `📬 2 new Driftwood leads, 1 starred
-waiting`. It is left out when both counts are zero, so reading, archiving or
-unstarring a message makes it disappear. Counts and product names only: no
-sender, subject or body reaches the digest or a log, and nothing is ever
-labelled, archived, marked read or sent.
-
-With `#ask` set up, each **scheduled** digest gets one more section at the
-bottom, **Needs you**: Claude's read of the mail and dated things that need
-you. It is part of the same message, not a second post. The bot calls the
-concierge's `/v1/brief` as the digest starts, so mail is read while the lab's
-facts are collected; the concierge reads mail (24h, 72h on Mondays) and the
-calendar with read-only tools: it cannot propose anything, so it holds no
-draft, event or scene tool while it reads mail nobody asked it to. Ask in
-`#ask` for a draft. The section is rendered like `#ask`'s answers, with links
-shown in full, no previews, no pings, and any line starting with `#` escaped
-so it can't pass for one of the digest's headings. `/digest` does not run it.
-
-One answer about mail per post: when the brief really read mail, the Today
-section drops its own **Mail (24h)** count, which looks only at the labels in
-`GMAIL_LABELS` and could say "nothing new" right above mail the brief found.
-Today's calendar stays in Today and the brief is told not to repeat it; it
-looks ahead over the week on Google and, with `HA_CALENDARS` set in
-`docker/concierge/.env`, the Apple calendar through Home Assistant.
-
-**Opt-in:** `BRIEF_ENABLED=true` in `.env`, because it sends a day of mail
-to Anthropic every morning without anyone asking. A failed brief never fails
-the digest: its section becomes a one-line ⚠️ and the Mail line stays. A run
-that stopped early says so at the top of its section. If the whole post would
-not fit in one Discord message, the brief is cut, never the lab's facts. The
-digest waits for the brief, so it can post up to the concierge's timeout late.
-The brief stamps `source-brief` only when it finishes having actually read
-mail (an expired concierge sign-in does not count), so `hl-google-stale` fires
-if it stops working for 25h.
-
-### Follow-ups
-
-The concierge can propose a **follow-up**: "remind me Friday at 9 to call the
-vet", or, unasked, "nudge you Thursday if Dr. Lee hasn't replied" when an
-answer leaves you waiting on someone. It is shown under ✅/❌ like every
-other proposal, rendered from its arguments: when, the note, and what happens
-then. Approving it posts one message to the bot-only `#follow-ups` channel
-(`app/followups.py`); that message *is* the follow-up, the same idea as
-`#memory`, so a restart loses nothing and deleting the message cancels it.
-
-Every minute the bot reads `#follow-ups`, and for each one that is due it
-deletes the message first (so it fires once) and posts in the thread the
-follow-up was set in, pinging whoever approved it:
-
-- **remind** posts the note. No model runs, so it costs nothing.
-- **check** posts the note and then runs it as an `#ask` request in that
-  thread, with the thread as context, so Otto looks again (has the reply
-  come? did the package ship?) and answers there. One request's cost, and
-  anything it wants to do next is a proposal under ✅/❌ as usual.
-
-One that came due while the bot was down fires when it is back, marked late.
-Set `DISCORD_FOLLOWUPS_CHANNEL_ID` (from `--provision --apply`) to turn it on.
-Each scan that works stamps `source-followups`, so `hl-google-stale` fires if
-the loop stops.
-
-### One thread a day
-
-With `#ask` set up, each **scheduled** digest opens a thread under itself,
-named for the day (**Thu 15 Oct**). Reply there to ask about anything in the
-digest or to act on it ("draft a reply to that", "move the haircut"): a
-message in a thread under `#digest` is answered exactly like one in `#ask`,
-with the digest itself as the first turn, so "what does that mean?" works.
-The evening review posts in the same thread, so a day reads top to bottom in
-one place. Whichever runs first that day opens the thread and the rest join
-it: a second scheduled digest goes inside it, the review opens it if the
-digest hasn't, and `/digest` run in `#digest` posts into it too. `#digest`
-itself stays bot-only; only its threads are answered.
+## The weekly reminder
 
 ### The bank-statement import reminder
 
 Actual Budget has no bank sync, by design, so transactions arrive only when you
 download and import them. Every **Sunday at 10:00** (`IMPORT_REMINDER_DAY`,
-`IMPORT_REMINDER_AT`) the bot pings you in #ask with the accounts to download
+`IMPORT_REMINDER_AT`) the bot pings you in `#digest` with the accounts to download
 (Bank of America checking and savings, Discover; edit `ACCOUNTS` in
 `app/importreminder.py`) and the date range: ten days back, so a skipped week or
 a late-posting transaction is still covered. Fixed text, no Claude call, no
-spend. On whenever #ask is configured; `IMPORT_REMINDER_ENABLED=false` turns it off.
-
-### The evening review
-
-> **Off for the Claude Duet trial (since 2026-11-09, #365).** `REVIEW_ENABLED=false`
-> on CT 100; follow-ups go to Duet during the trial, while existing
-> `#follow-ups` entries still fire. To turn it back on, set
-> `REVIEW_ENABLED=true` in `docker/assistant/.env` and run `/deploy assistant`.
-
-Once a day at `REVIEW_AT` (21:00), the bot gathers the day: the `#ask`
-threads with activity in the last 24 hours (their turns, as `#ask` itself
-sends them), the lines in `#activity`, the follow-ups due in the next 36
-hours, and, with `REVIEW_HA_ENTITIES` set, those Home Assistant entities'
-last 24 hours from HA's history (one GET with the digest's token). Code turns
-the history into one line per entity ("Tesla battery: 34 → 80 % (low 30,
-high 80)", "Litter-Robot: cycling ×6, ready ×6; …"); the model only reads
-those lines. It sends all of it to the concierge's `/v1/review`, and posts the
-answer in that day's thread under the morning digest in `#digest` (or, if
-there is none, a thread of its own there, **Evening review · Tue 14 Oct**): what
-is still open, anything at home that stands out, and up to three proposals,
-each a memory or a follow-up. That is how `#memory` fills up without you
-saying "remember": the review proposes what you told it today, and you ✅ it.
-Code adds a **Coming up** list of the follow-ups already set. Reply in the
-thread to talk it over; it answers like `#ask`.
-
-The review reads no mailbox, calendar or house itself: the concierge gives
-that run only `remember` and `follow_up`, both carried out by the bot. A day
-with nothing to read posts nothing and calls nobody. **Opt-in:**
-`REVIEW_ENABLED=true`, because it sends the day's conversations to Anthropic
-unasked. It stamps `source-review` when it finished (or had nothing to do).
+spend. On by default; `IMPORT_REMINDER_ENABLED=false` turns it off.
 
 ### Tests
 
@@ -508,7 +360,7 @@ like; nothing here depends on the name.
 ### 2. Create the bot
 1. <https://discord.com/developers/applications> → **New Application**.
 2. **Bot** → **Reset Token** → copy it. Leave Message Content, Server Members
-   and Presence **off** — slash commands and context menus carry their own
+   and Presence **off** — slash commands carry their own
    payloads, so the bot never needs to read your channels.
 3. **Installation** → Guild install, scopes `bot` + `applications.commands`.
    Bot permissions: **View Channels**, **Send Messages**, **Manage Channels**,
@@ -612,25 +464,19 @@ logs a warning and carries on rather than aborting over something cosmetic.
 [`guild.yml`](guild.yml) is the source of truth:
 
 ```
-📁 OTTO         the one channel you type in
-   # ask        the one place to ask for anything; each request gets a thread
-
 📁 LAB          the lab reporting to you — alerts loud, the rest muted
    # alerts     needs you: Grafana, dead-man's switch, failed deploys; webhook-fed
-   # digest     daily health log, bot posts only
+   # digest     daily health log and the weekly import reminder, bot posts only
    # deploys    routine good news: verified auto-deploys, nightly repo-sync; webhook-fed
-
-📁 NOTEBOOK     Otto's own storage — collapse and mute it
-   # memory     what it remembers about you, bot only
-   # follow-ups what it will come back to, and when, bot only
-   # activity   what it actually did, one line per approved action, bot only
 ```
 
-The split is by **what you do with each channel**: type in `#ask`, get pinged by
-`#alerts`, scroll back through `#digest` and `#deploys` when you want to, and
-leave the notebook to Otto. (Until 2026-11-12 it was HOMELAB and ASSISTANT; a
-provision run moves existing channels into the new categories, keeping their
-history and IDs, and leaves the two empty categories for you to delete.)
+Nothing here is a channel you type in: you talk to Claude in Claude Duet. The
+OTTO (`#ask`) and NOTEBOOK (`#memory`, `#follow-ups`, `#activity`) categories
+went with the concierge on 2026-11-23 (#366). Provisioning never deletes, so on
+a server that still has them it reports those four channels as extra and leaves
+them; delete them by hand when you no longer want their history. (Until
+2026-11-12 the lab channels sat under HOMELAB; a provision run moves an existing
+channel into its category, keeping its history and ID.)
 
 `#deploys` exists so `#alerts` only speaks when something is wrong.
 `scripts/auto-deploy.sh` and `scripts/repo-sync.sh` pick the webhook by the
@@ -640,17 +486,8 @@ webhook blank, everything goes to `#alerts` as before.
 
 Within that, one decision carries the weight: **the digest is a log, not a
 chat.** "Was disk climbing last week?" is a question you'll actually scroll back
-for, and interleaved conversation would destroy it. So `#digest` and `#alerts`
-deny `@everyone` Send Messages, and everything you type goes in `#ask`.
-
-**One channel for every request, a thread per request.** Questions, lookups
-and things to do all go to `#ask`; splitting by topic would only make you pick
-a channel before asking. What keeps it readable is that the bot opens a thread
-on every new message, named after it, and answers there. The channel becomes a
-list of requests, and each thread holds one conversation with its own context,
-proposals and ✅ results. `#activity` is the write side's equivalent of
-`#digest`: answers stay in their threads, and only actions that changed
-something (an event, a draft, a scene) get a line there, linking back.
+for, and interleaved conversation would destroy it. So every channel denies
+`@everyone` Send Messages.
 
 > **Renaming an existing channel:** do it in Discord, not here. Renaming
 > preserves the channel and its history, and the provisioner then sees the new
@@ -686,8 +523,8 @@ docker compose -f docker/assistant/docker-compose.yml run --rm --build assistant
   dials out. It therefore also works when you're off the tailnet.
 - **Allowlist is mandatory.** `DISCORD_ALLOWED_USER_IDS` must be set or the
   container refuses to start; otherwise anyone who can see the bot could use it.
-- **RAM cost is ~50 MB.** It only orchestrates; #ask's reasoning happens in
-  the concierge, which calls Claude.
+- **RAM cost is ~50 MB, and no per-use cost.** Nothing here calls a model or
+  a billed API.
 - Slash commands are registered **guild-scoped**, so they appear immediately
   rather than taking up to an hour to propagate. Changing `DISCORD_GUILD_ID`
   leaves the old guild's commands behind until they're removed manually.

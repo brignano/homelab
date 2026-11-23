@@ -19,16 +19,6 @@ def _req(name: str) -> str:
     return val
 
 
-def _int(name: str, default: int) -> int:
-    raw = os.environ.get(name, "").strip()
-    if not raw:
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        raise SystemExit(f"config error: {name}={raw!r} is not an integer")
-
-
 def _id_set(name: str) -> frozenset[int]:
     """Parse a comma-separated list of Discord snowflake IDs."""
     raw = os.environ.get(name, "").strip()
@@ -43,20 +33,6 @@ def _id_set(name: str) -> frozenset[int]:
             raise SystemExit(f"config error: {name} contains a non-numeric ID {chunk!r}")
         out.add(int(chunk))
     return frozenset(out)
-
-
-def _optional_id(name: str) -> int | None:
-    """A Discord snowflake that may legitimately be unset.
-
-    Unlike the digest channel, conversational mode is opt-in: leaving this blank
-    turns it off entirely and the bot keeps working as slash-commands-only.
-    """
-    raw = os.environ.get(name, "").strip()
-    if not raw or set(raw) == {"0"}:
-        return None
-    if not raw.isdigit():
-        raise SystemExit(f"config error: {name}={raw!r} is not a numeric channel ID")
-    return int(raw)
 
 
 def _weekday(name: str, default: str) -> int:
@@ -124,27 +100,6 @@ def _google() -> tuple[str, str, str]:
 GOOGLE_SOURCES = ("calendar", "mail")
 
 
-def _concierge() -> tuple[int | None, int | None, str]:
-    """#ask, #memory and the shared token: all three, or none.
-
-    #ask without #memory would have nowhere to put an approved memory, and
-    without the token every request would be refused. Better to say so once
-    at startup than to discover it on the first question.
-    """
-    ask = _optional_id("DISCORD_ASK_CHANNEL_ID")
-    memory = _optional_id("DISCORD_MEMORY_CHANNEL_ID")
-    token = os.environ.get("CONCIERGE_TOKEN", "").strip()
-    if ask is None:
-        return None, memory, token
-    missing = [n for n, v in (("DISCORD_MEMORY_CHANNEL_ID", memory), ("CONCIERGE_TOKEN", token)) if not v]
-    if missing:
-        raise SystemExit(
-            f"config error: DISCORD_ASK_CHANNEL_ID is set but {', '.join(missing)} is not.\n"
-            "  #ask needs #memory (from --provision) and the token shared with docker/concierge/.env."
-        )
-    return ask, memory, token
-
-
 def _home() -> tuple[str, tuple[str, ...], tuple[str, ...]]:
     """HA_TOKEN with at least one of HA_ENTITIES and HA_CALENDARS, or none.
 
@@ -204,11 +159,6 @@ class Config:
     # heartbeat.sh has to be able to read it while this container is stopped.
     digest_stamp_path: str
 
-    # --- #ask input caps ---
-    max_input_chars: int
-    # How many turns of a thread or reply chain #ask passes to the concierge.
-    chat_history_turns: int
-
     # --- Google (the digest's "Today" section; all blank = off) ---
     # See docs/design/tsd-personal-assistant.md, phase 1. Read-only scopes only:
     # calendar.events.readonly and gmail.metadata (headers, never bodies).
@@ -234,41 +184,13 @@ class Config:
     # airing schedule). HA has no free/busy of its own.
     ha_free_calendars: tuple[str, ...] = ()
 
-    # --- Concierge (the act lane: #ask; all blank = off) ---
-    # See docs/design/tsd-personal-assistant.md, phase 3. The bot only forwards
-    # and renders; the agent runs in docker/concierge/.
-    ask_channel_id: int | None = None
-    memory_channel_id: int | None = None
-    # One line per approved action that changed something (an event, a draft,
-    # a scene), linking back to the thread it came from. Blank = off.
-    activity_channel_id: int | None = None
-    # Approved follow-ups, one bot message each, read back every minute and
-    # fired into the thread they were set in. Blank = follow-ups can be
-    # proposed but not saved.
-    followups_channel_id: int | None = None
-    concierge_url: str = "http://concierge:8080"
-    concierge_token: str = ""
-    # The morning brief: with each SCHEDULED digest, the concierge reads mail
-    # and calendar (read-only, no proposals) and the bot adds what needs you as
-    # the digest's last section. Needs #ask configured. Opt-in (BRIEF_ENABLED=true):
-    # it sends mail to Anthropic every morning without anyone asking.
-    brief_enabled: bool = False
-    # The evening review: once a day the concierge reads that day's #ask
-    # threads and #activity (never the inbox) and posts what is still open in
-    # a thread of its own, proposing memories and follow-ups. Opt-in
-    # (REVIEW_ENABLED=true), like the brief: Claude spend nobody asked for.
-    review_enabled: bool = False
-    review_at: tuple[int, int] = (21, 0)
     # The weekly nudge to download bank statements and import them into Actual
-    # Budget (app/importreminder.py): a fixed message in #ask, no Claude spend.
-    # On by default whenever #ask is configured; IMPORT_REMINDER_ENABLED=false
-    # turns it off. IMPORT_REMINDER_DAY is 0=Monday .. 6=Sunday.
+    # Budget (app/importreminder.py): a fixed message in #digest that pings
+    # you. No model, so it costs nothing. IMPORT_REMINDER_ENABLED=false turns
+    # it off. IMPORT_REMINDER_DAY is 0=Monday .. 6=Sunday.
     import_reminder_enabled: bool = True
     import_reminder_day: int = 6
     import_reminder_at: tuple[int, int] = (10, 0)
-    # Home Assistant entities whose last 24h of history the review reads
-    # (Tesla charging, a litter box), with the digest's HA_TOKEN. GET only.
-    review_ha_entities: tuple[str, ...] = ()
 
     heartbeat_path: str = field(default="/tmp/assistant-heartbeat")
 
@@ -289,7 +211,6 @@ class Config:
 
         g_id, g_secret, g_refresh = _google()
         ha_token, ha_entities, ha_calendars = _home()
-        ask_id, memory_id, concierge_token = _concierge()
         sources = _list("GOOGLE_SOURCES", ",".join(GOOGLE_SOURCES))
         unknown = [x for x in sources if x not in GOOGLE_SOURCES]
         if unknown:
@@ -310,8 +231,6 @@ class Config:
             digest_at=_hhmm("DIGEST_AT", "07:30"),
             digest_enabled=os.environ.get("DIGEST_ENABLED", "true").lower() != "false",
             digest_stamp_path=os.environ.get("DIGEST_STAMP_PATH", "/state/last-digest").strip(),
-            max_input_chars=_int("MAX_INPUT_CHARS", 6000),
-            chat_history_turns=_int("CHAT_HISTORY_TURNS", 12),
             google_client_id=g_id,
             google_client_secret=g_secret,
             google_refresh_token=g_refresh,
@@ -324,45 +243,14 @@ class Config:
             ha_entities=ha_entities,
             ha_calendars=ha_calendars,
             ha_free_calendars=tuple(c for c in _list("HA_FREE_CALENDARS", "") if c in ha_calendars),
-            ask_channel_id=ask_id,
-            memory_channel_id=memory_id,
-            activity_channel_id=_optional_id("DISCORD_ACTIVITY_CHANNEL_ID"),
-            followups_channel_id=_optional_id("DISCORD_FOLLOWUPS_CHANNEL_ID"),
-            concierge_url=os.environ.get("CONCIERGE_URL", "").strip().rstrip("/") or "http://concierge:8080",
-            concierge_token=concierge_token,
-            brief_enabled=os.environ.get("BRIEF_ENABLED", "false").lower() == "true",
-            review_enabled=os.environ.get("REVIEW_ENABLED", "false").lower() == "true",
-            review_at=_hhmm("REVIEW_AT", "21:00"),
             import_reminder_enabled=os.environ.get("IMPORT_REMINDER_ENABLED", "true").lower() != "false",
             import_reminder_day=_weekday("IMPORT_REMINDER_DAY", "6"),
             import_reminder_at=_hhmm("IMPORT_REMINDER_AT", "10:00"),
-            review_ha_entities=_list("REVIEW_HA_ENTITIES", ""),
         )
 
     @property
-    def ask_enabled(self) -> bool:
-        return self.ask_channel_id is not None
-
-    @property
-    def followups_active(self) -> bool:
-        return self.ask_enabled and self.followups_channel_id is not None
-
-    @property
     def import_reminder_active(self) -> bool:
-        return self.import_reminder_enabled and self.ask_enabled
-
-    @property
-    def review_active(self) -> bool:
-        return self.review_enabled and self.ask_enabled
-
-    @property
-    def review_history_enabled(self) -> bool:
-        return bool(self.ha_token and self.review_ha_entities)
-
-    @property
-    def brief_active(self) -> bool:
-        """The brief rides on the scheduled digest and the concierge: both must be on."""
-        return self.brief_enabled and self.ask_enabled and self.digest_enabled
+        return self.import_reminder_enabled
 
     @property
     def google_enabled(self) -> bool:

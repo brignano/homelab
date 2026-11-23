@@ -35,7 +35,7 @@ short list of things that are easy to get wrong.
 - **Never on the Cloudflare Tunnel.** HA is LAN and tailnet only, which rules
   out any route that needs public HTTPS (a self-built Alexa skill, Lambda).
 - **No HA token is read-only.** Each reader gets its own non-admin user
-  (`digest`, `concierge`) and long-lived token, kept in that stack's `.env`.
+  (`digest`, and one per other reader) and long-lived token, kept in that stack's `.env`.
 - **IP banning sees every tailnet device as one address** (Tailscale SNATs on
   the Proxmox host), so keep the threshold at 10 or more.
 

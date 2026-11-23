@@ -71,9 +71,10 @@ so far were already in one.
 
 ## Where the rest of the lab hooks in
 
-- **Otto (`docker/concierge/`)**: `media_search` and adding shows/movies from
-  #ask, and `movie_night` (Jellyfin + a TMDB watchlist + Anthony's streaming
-  services). Its Jellyfin key is admin-scoped, but the code only GETs.
+- **Otto** no longer adds shows or movies: the paid #ask assistant
+  (`docker/concierge/`) was retired on 2026-11-23 (#366). Add them in Sonarr or
+  Radarr. `scripts/jellyfin-hide-libraries.py` reads an admin-scoped key from
+  `JELLYFIN_API_KEY` in `docker/jellyfin/.env`.
 - **Home Assistant**: `calendar.sonarr` (Remote Calendar from Sonarr's iCal
   link) feeds the dashboard, the digest and the *Sonarr - episode airing*
   automation, which adds a **Watch <episode>** item to Apple Reminders. Sonarr

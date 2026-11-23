@@ -161,9 +161,9 @@ dashboard and, through `HA_CALENDARS`, the digest.
 3. Recreate HA (`up -d --force-recreate homeassistant`) to load the
    *Sonarr - episode airing* automation, and re-paste
    `dashboards/home.yaml` for the calendar card.
-4. For the digest, the morning brief and Claude's calendar reads, add
-   `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env`,
-   `docker/concierge/.env` and `docker/mcp-calendar/.env`, and
+4. For the digest and Claude's calendar reads, add
+   `calendar.sonarr` to `HA_CALENDARS` in `docker/assistant/.env` and
+   `docker/mcp-calendar/.env`, and
    `HA_FREE_CALENDARS=calendar.sonarr` in `docker/assistant/.env` so two
    shows at 9pm (or a show over dinner) never read as a double-booking.
    Then recreate those containers.

@@ -1,6 +1,6 @@
 """Calendars Home Assistant can see (Apple/iCloud via CalDAV, and the like). Read-only.
 
-Same ceiling as docker/concierge/app/hacalendar.py, for the same reasons:
+Read-only by construction:
 
 - The only HA call is `GET /api/calendars/<entity>`. The path is fixed and
   nothing here sends any other method, so a calendar cannot be changed.
