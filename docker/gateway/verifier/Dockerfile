@@ -1,6 +1,6 @@
 # Lock 3 of the secure gateway: re-checks the Cloudflare Access token per route.
 # Reached only by the gateway Caddy, over gateway_verifier. See verifier.py.
-FROM python:3.12-slim
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
