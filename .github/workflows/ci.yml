@@ -194,6 +194,7 @@ jobs:
         run: |
           ./scripts/test-deploy-plan.sh
           ./scripts/test-auto-deploy.sh
+          ./scripts/test-autoheal.sh
 
       - name: "scripts: python helpers compile"
         # Two scripts reach for python where sh would be unreadable — the token

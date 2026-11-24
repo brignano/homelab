@@ -154,6 +154,13 @@ most likely to be lost or carried off on its own.
 
 ### Phase 2 — offsite
 
+
+**Photo mirror (2026-10-31, #260):** `/media/photos/icloud` is `backup=0` and not
+in the vzdump, so it goes to B2 as a second restic step (tag `photos`) after the
+lab's data. It stops at 07:00 and at a monthly upload budget, and resumes the
+next night; stopping early is not a failure. Metrics:
+`homelab_offsite_photos_complete`, `homelab_offsite_photos_month_sent_bytes`.
+Restore one file: `restic restore latest --tag photos --target /tmp/r --include <path>`.
 ✅ Approved and built 2026-10-10: `scripts/offsite-backup.sh`, alerting as
 `hl-offsite-failed`. It does nothing (and reports
 `homelab_offsite_configured 0`) until `/root/.config/homelab/restic.env`
