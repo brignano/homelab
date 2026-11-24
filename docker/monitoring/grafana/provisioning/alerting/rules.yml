@@ -1662,6 +1662,87 @@ groups:
               conditions:
                 - evaluator: { type: gt, params: [80] }
 
+      # --- Disk cleanup ran by itself (hl-disk-guard, #253) ---
+      #
+      # The host crossed its cleanup line (pool 70%, guest 75%) and
+      # hl-disk-guard pruned images and build cache and trimmed CT 100. This
+      # only reports what it did. "It was not enough" is hl-thinpool-full
+      # (80% for 15 min) and hl-disk-full, which still fire on their own.
+      - uid: hl-disk-self-cleaned
+        title: Disk cleaned itself up
+        condition: C
+        for: 0m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "m5 freed disk on its own: thin pool {{ printf \"%.0f\" $values.B.Value }}% before, {{ printf \"%.0f\" $values.D.Value }}% after. Nothing to do unless hl-thinpool-full also fires (journalctl -t hl-disk-guard on m5)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (time() - homelab_disk_guard_cleanup_timestamp_seconds) / 60
+          - refId: B
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: B
+              instant: true
+              expr: >-
+                homelab_disk_guard_cleanup_pool_before_percent
+          - refId: D
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: D
+              instant: true
+              expr: >-
+                homelab_disk_guard_cleanup_pool_after_percent
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [60] }
+
+      # The guard's own dead man's switch. It runs every 10 minutes.
+      - uid: hl-disk-guard-stale
+        title: Disk guard has stopped
+        condition: C
+        for: 10m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "hl-disk-guard on m5 last ran {{ printf \"%.0f\" $values.A.Value }} min ago; check `systemctl status hl-disk-guard.timer` on m5"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                (time() - homelab_disk_guard_timestamp_seconds) / 60
+          - refId: C
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [45] }
+
       # --- An alert rule is failing to evaluate ---
       #
       # The watchman's own blind spot, and the sharpest version of the failure

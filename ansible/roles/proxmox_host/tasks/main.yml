@@ -45,6 +45,9 @@
 - name: Drives come back on their own when they can
   ansible.builtin.import_tasks: watchdog.yml
 
+- name: The disk guard (frees disk when the pool or CT 100 passes a limit)
+  ansible.builtin.import_tasks: diskguard.yml
+
 - name: Weekly trim of CT 100 (the thin pool does not reclaim on its own)
   # AGENTS.md → Disk. 05:00 Sunday, an hour after repo-sync's image prune.
   ansible.builtin.copy:

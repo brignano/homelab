@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+#
+# Frees disk on CT 100 when the thin pool (or the guest's own disk) crosses a
+# line, instead of waiting for the nightly prune and the Sunday trim. Runs on
+# the PROXMOX HOST (m5) from a systemd timer, every 10 minutes. Installed by
+# ansible/roles/proxmox_host/tasks/diskguard.yml. Design: docs/design/
+# tsd-self-healing-remediation.md (#253).
+#
+# Why on the host: `pct` does not exist inside CT 100, and the thin pool is
+# the real ceiling (AGENTS.md -> Disk). The guest's free-space number is
+# optimistic, so the pool is the number this watches first.
+#
+# When the pool is at or above HL_POOL_LIMIT (default 70%), or the guest's
+# rootfs is at or above HL_GUEST_LIMIT (default 75%), it runs the same safe
+# prunes repo-sync.sh runs, inside CT 100, then trims the pool:
+#   1. docker image prune -f              dangling images only. NEVER -a: that
+#                                         would delete the Kali image, which
+#                                         is built on demand and slow to redo.
+#   2. docker builder prune -f            only cache older than 7 days.
+#   3. pct fstrim 100                     hands the freed blocks back to the pool.
+# It never touches volumes, containers, or a tagged image.
+#
+# Then it measures again and leaves both readings behind as metrics. It does
+# not alert by itself: `hl-thinpool-full` (80% for 15 min) and `hl-disk-full`
+# are the "that was not enough" alert, and `hl-disk-self-cleaned` says a
+# cleanup ran and what it freed. Cleanup runs at most once an hour, so a
+# pool that stays high does not loop.
+#
+# Always exits 0. Failures go to the journal (`journalctl -t hl-disk-guard`).
+#
+set -u
+export PATH="$PATH:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+CT="${HL_CT_ID:-100}"
+POOL_LV="${HL_POOL_LV:-pve/data}"
+POOL_LIMIT="${HL_POOL_LIMIT:-70}"
+GUEST_LIMIT="${HL_GUEST_LIMIT:-75}"
+BUILD_CACHE_KEEP_HOURS="${HL_BUILD_CACHE_KEEP_HOURS:-168}"
+COOLDOWN="${HL_COOLDOWN:-3600}"
+TEXTFILE_DIR="${HL_TEXTFILE_DIR:-/var/lib/prometheus/node-exporter}"
+STATE_DIR="${HL_DISKGUARD_STATE:-/var/lib/hl-disk-guard}"
+
+log() { logger -t hl-disk-guard -- "$*" 2>/dev/null; echo "hl-disk-guard: $*" >&2; }
+mkdir -p "$STATE_DIR" 2>/dev/null
+
+# Whole-number percent used, or empty when it cannot be read.
+pool_pct() {
+  lvs --noheadings --nosuffix -o data_percent "$POOL_LV" 2>/dev/null | awk 'NF { printf "%d", $1; exit }'
+}
+guest_pct() {
+  pct exec "$CT" -- df --output=pcent / 2>/dev/null | awk 'NR == 2 { gsub(/[^0-9]/, ""); print; exit }'
+}
+in_ct() { timeout 600 pct exec "$CT" -- "$@" 2>/dev/null; }
+
+pool_before=$(pool_pct); guest_before=$(guest_pct)
+ran=0
+now=$(date +%s)
+last=$(cat "$STATE_DIR/last-run" 2>/dev/null || echo 0)
+
+over=""
+[ -n "$pool_before" ] && [ "$pool_before" -ge "$POOL_LIMIT" ] && over="pool ${pool_before}%"
+[ -n "$guest_before" ] && [ "$guest_before" -ge "$GUEST_LIMIT" ] && over="${over:+$over, }guest ${guest_before}%"
+
+pool_after=$pool_before guest_after=$guest_before
+if [ -z "$pool_before" ] && [ -z "$guest_before" ]; then
+  log "cannot read the pool or the guest disk; doing nothing"
+elif [ -n "$over" ]; then
+  if [ $(( now - last )) -lt "$COOLDOWN" ]; then
+    log "over the line ($over) but cleaned up under an hour ago; leaving it to the alerts"
+  else
+    log "over the line ($over); cleaning up"
+    echo "$now" > "$STATE_DIR/last-run"
+    in_ct docker image prune -f >/dev/null
+    in_ct docker builder prune -f --filter "until=${BUILD_CACHE_KEEP_HOURS}h" >/dev/null
+    pct fstrim "$CT" >/dev/null 2>&1 || log "pct fstrim $CT failed"
+    ran=1
+    pool_after=$(pool_pct); guest_after=$(guest_pct)
+    log "done: pool ${pool_before:-?}% -> ${pool_after:-?}%, guest ${guest_before:-?}% -> ${guest_after:-?}%"
+    echo "$now" > "$STATE_DIR/cleanup-timestamp"
+    echo "${pool_before:-0} ${pool_after:-0}" > "$STATE_DIR/cleanup-pool"
+  fi
+fi
+
+if [ -d "$TEXTFILE_DIR" ] && [ -w "$TEXTFILE_DIR" ]; then
+  tmp="$TEXTFILE_DIR/.hl_disk_guard.prom.$$"
+  {
+    echo "# HELP homelab_disk_guard_timestamp_seconds When hl-disk-guard last ran."
+    echo "# TYPE homelab_disk_guard_timestamp_seconds gauge"
+    echo "homelab_disk_guard_timestamp_seconds $now"
+    [ -n "$pool_after" ] && echo "homelab_disk_guard_pool_percent $pool_after"
+    [ -n "$guest_after" ] && echo "homelab_disk_guard_guest_percent $guest_after"
+    if [ -f "$STATE_DIR/cleanup-timestamp" ]; then
+      echo "homelab_disk_guard_cleanup_timestamp_seconds $(cat "$STATE_DIR/cleanup-timestamp")"
+      read -r b a < "$STATE_DIR/cleanup-pool"
+      echo "homelab_disk_guard_cleanup_pool_before_percent $b"
+      echo "homelab_disk_guard_cleanup_pool_after_percent $a"
+    fi
+  } > "$tmp" 2>/dev/null && mv -f "$tmp" "$TEXTFILE_DIR/hl_disk_guard.prom" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+fi
+exit 0
