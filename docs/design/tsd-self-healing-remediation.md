@@ -15,6 +15,7 @@
 | Disk fills with replaced images | Nightly `docker image prune` + build-cache prune (keeps 7 days) | `scripts/repo-sync.sh` → "Reclaim" |
 | Thin pool does not reclaim deleted blocks | Weekly `pct fstrim` of CT 100, Sunday 05:00 | `ansible/roles/proxmox_host/tasks/main.yml` |
 | Backup drive not mounted after a reboot | `hl-drive-watchdog` timer unlocks/remounts it and restarts the exporter; `hl-backup-drive-offline` alert is the backstop | `ansible/roles/proxmox_host/tasks/watchdog.yml` (#250, #251) |
+| A container hangs (running, not answering) | `healthcheck:` on sonarr, radarr, prowlarr, jellyfin, prometheus, grafana (plus postgres); `scripts/autoheal.sh` (cron, 5 min) restarts `unhealthy` ones, max 3 per 6h each, never `HL_NO_AUTOHEAL` stacks or gluetun; `hl-autoheal-restarted` notifies, `hl-autoheal-gave-up` pages when it stops | `scripts/autoheal.sh`, `scripts/test-autoheal.sh` (#252) |
 | Remote Control on CT 100 dies or the box reboots | `claude-rc.service`, `Restart=always` | Ansible `docker_lxc` role (#248) |
 
 ## Guardrails (decided)
@@ -28,6 +29,5 @@
 
 ## Not done yet
 
-- **Hung containers** — running but not answering. Only `core` and `ai` have a `healthcheck:`, and nothing acts on `unhealthy`. → #252
 - **Threshold-triggered disk cleanup** — cleanup is on a schedule; a spike between runs only alerts. Mind the thin-pool constraint (`pve/data` ~348 GiB, non-extendable 400 GiB rootfs) and AGENTS.md → Disk. → #253
 - **Rollback of a bad deploy** — a failed verify is reported, not rolled back. Only safe for stateless stacks: `core` (one-way Portainer migrations, Postgres) and `monitoring` (breaking Grafana upgrades) are not candidates. → #254
