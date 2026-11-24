@@ -4,9 +4,10 @@
 # So the limit is the operating system's, with a settings file as a second layer:
 #
 #   - `life` is in no group (not docker, not sudo) and has no password.
-#   - Its only way to anything is `sudo` for the two read-only scripts in
-#     scripts/life, via the wrappers below. Those scripts validate their own
-#     arguments and run inside the mcp-calendar / mcp-budget containers.
+#   - Its only way to anything is `sudo` for the three scripts in scripts/life,
+#     via the wrappers below: two read-only, and budget-set, which can change
+#     only one category's budgeted amount (#416). Those scripts validate their
+#     own arguments and run inside the mcp-calendar / mcp-budget containers.
 #   - Its session folder and settings are root-owned, so it cannot edit them.
 
 - name: Install sudo (missing from the Debian CT 100 image) and acl (so Ansible can become the life user)
@@ -48,6 +49,7 @@
   loop:
     - calendar
     - budget
+    - budget-set
 
 - name: The only thing life may sudo
   ansible.builtin.copy:
@@ -57,7 +59,7 @@
     mode: "0440"
     validate: /usr/sbin/visudo -cf %s
     content: |
-      life ALL=(root) NOPASSWD: {{ hl_repo_dir }}/scripts/life/calendar, {{ hl_repo_dir }}/scripts/life/budget
+      life ALL=(root) NOPASSWD: {{ hl_repo_dir }}/scripts/life/calendar, {{ hl_repo_dir }}/scripts/life/budget, {{ hl_repo_dir }}/scripts/life/budget-set
 
 - name: Session folder, root-owned
   ansible.builtin.file:
@@ -70,7 +72,7 @@
     - /srv/life-session
     - /srv/life-session/.claude
 
-- name: Session settings (allow the two wrappers, refuse everything else)
+- name: Session settings (allow the three wrappers, refuse everything else)
   ansible.builtin.copy:
     dest: /srv/life-session/.claude/settings.json
     owner: root
@@ -84,7 +86,9 @@
             "Bash(life-calendar)",
             "Bash(life-calendar *)",
             "Bash(life-budget)",
-            "Bash(life-budget *)"
+            "Bash(life-budget *)",
+            "Bash(life-budget-set)",
+            "Bash(life-budget-set *)"
           ],
           "deny": ["Edit", "Write", "NotebookEdit", "WebFetch", "WebSearch", "Bash(sudo *)"]
         }
@@ -99,7 +103,8 @@
     content: |
       # Life sessions on CT 100
 
-      You were started from Anthony's Life project to read his calendar or budget.
+      You were started from Anthony's Life project to read his calendar or budget,
+      or to set one category's budgeted amount when he asks.
       Run one of these, answer from what it prints, and stop:
 
       - `life-calendar [YYYY-MM-DD] [DAYS]` prints events (title, start, end, location).
@@ -107,8 +112,13 @@
       - `life-budget months [N]` prints each category's spent/budgeted for the last N months (default 12).
       - `life-budget payees [YYYY-MM[:YYYY-MM]]` prints top payees with totals and counts (default last 3 months).
 
-      Both are read-only. Do not look for other files or secrets, and do not try other
-      commands. If one fails, report its error line as it is.
+      - `life-budget-set <YYYY-MM> <category> <amount>` sets one category's budgeted
+        amount for this month or later. The amount is the new total, not a change.
+        Run it only when he asks for that exact change, and tell him the before and
+        after it prints. To undo, run it again with the "before" value.
+
+      `life-calendar` and `life-budget` are read-only. Do not look for other files or
+      secrets, and do not try other commands. If one fails, report its error line as it is.
 
 - name: Is Claude Code installed for life?
   ansible.builtin.stat:

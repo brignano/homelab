@@ -73,6 +73,6 @@ Over the tailnet, as above: Claude Code on your laptop or desktop.
 Claude in the cloud (claude.ai chats, the mobile app, cloud Claude Code sessions,
 the Life project) can't reach `mcp.$HOMELAB_DOMAIN`, and by design nothing here is
 public. It reads the calendar through a Remote Control session on CT 100 running as
-the unprivileged `life` user, which can run only `life-calendar` and `life-budget`.
+the unprivileged `life` user, which can run only `life-calendar`, `life-budget` and `life-budget-set`.
 See [`../../scripts/life/README.md`](../../scripts/life/README.md). The earlier
 Cloudflare Tunnel + Access listener (port 8001) was removed for this.
