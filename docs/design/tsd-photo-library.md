@@ -82,7 +82,8 @@ flowchart LR
   backup (`scripts/offsite-backup.sh`, tag `photos`, added 2026-10-31,
   homelab#260): nightly after the lab's data, stopping at 07:00 and at a
   monthly upload budget (`HL_OFFSITE_PHOTOS_MONTHLY_BUDGET_GB`, default 300).
-  About $6/TB/month; `HL_OFFSITE_PHOTOS_VIDEOS_ONLY=1` backs up only videos.
+  About $6/TB/month, so it is **OFF by default** (2026-11-24, Anthony: not paying for B2 yet);
+  set `HL_OFFSITE_PHOTOS=1` to turn it on. `HL_OFFSITE_PHOTOS_VIDEOS_ONLY=1` backs up only videos.
 - **No ports, no Caddy route.** It only makes outbound requests to Apple.
 - **First sync:** about 1.5 TB, and some Xfinity plans cap at about 1.2 TB a
   month. Rather than wait for the Frontier switch, `scripts/photos-sync.sh`
