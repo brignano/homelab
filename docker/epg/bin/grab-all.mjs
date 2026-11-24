@@ -23,7 +23,7 @@
 // Run by pm2 (pm2.config.cjs) on CRON_SCHEDULE and at startup, or by hand:
 //   docker exec -d epg node /hl/grab-all.mjs
 //
-//   EPG_BATCH  channels per batch (default 50)
+//   EPG_BATCH  channels per batch (default 25)
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
@@ -33,7 +33,7 @@ const CHANNELS = path.join(PUBLIC, 'channels.xml')
 const GUIDE = path.join(PUBLIC, 'guide.xml')
 const WORK = path.join(PUBLIC, '.batches')
 const LOCK = path.join(PUBLIC, '.grab.lock')
-const BATCH = Math.max(1, Number(process.env.EPG_BATCH) || 50)
+const BATCH = Math.max(1, Number(process.env.EPG_BATCH) || 25)
 // A grab that is still running after this long has died without cleaning up.
 const STALE_LOCK_MS = 12 * 60 * 60 * 1000
 
