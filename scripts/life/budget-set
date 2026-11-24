@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Set the budgeted amount for one category in one month, for a Life session
+# running on this box (issue #416).
+#   ./budget-set <YYYY-MM> <category> <amount>
+#
+#   YYYY-MM   this month or later (earlier months are refused)
+#   category  the exact name of one existing, non-income category (any case)
+#   amount    the new budgeted amount in dollars, not a change: 250, 250.5, 250.50
+#
+# It makes exactly one kind of change, Actual's setBudgetAmount for one category
+# in one month, then syncs. Nothing else in here writes. Like ./budget it runs
+# inside the mcp-budget container, which holds the server password, sync ID and
+# end-to-end key, so none of them reach this shell or the output. It uses its
+# own scratch data dir, so it never touches the one the MCP server has open.
+#
+# Every change is appended to LOG (root-only, outside the repo): timestamp,
+# month, category id, category name, before, after. To undo a change, run this
+# again with the "before" value.
+set -euo pipefail
+
+LOG=/var/log/life-budget-set.log
+
+usage() { echo "usage: budget-set <YYYY-MM> <category> <amount>" >&2; exit 2; }
+[ "$#" -eq 3 ] || usage
+month=$1 category=$2 amount=$3
+
+case "$month" in
+  [0-9][0-9][0-9][0-9]-0[1-9]|[0-9][0-9][0-9][0-9]-1[0-2]) ;;
+  *) echo "budget-set: month must be YYYY-MM, got '$month'" >&2; exit 2 ;;
+esac
+now=$(date +%Y-%m)
+if [[ "$month" < "$now" ]]; then
+  echo "budget-set: $month is in the past; only $now or later can be set" >&2
+  exit 2
+fi
+
+if [ -z "$category" ] || [ "${#category}" -gt 100 ]; then
+  echo "budget-set: category must be 1 to 100 characters" >&2
+  exit 2
+fi
+
+# Non-negative dollars, at most two decimals, below a billion.
+if ! [[ "$amount" =~ ^[0-9]{1,9}(\.[0-9]{1,2})?$ ]]; then
+  echo "budget-set: amount must be dollars like 250, 250.5 or 250.50, got '$amount'" >&2
+  exit 2
+fi
+dollars=${amount%%.*}
+cents=0
+if [[ "$amount" == *.* ]]; then
+  frac=${amount#*.}
+  [ "${#frac}" -eq 1 ] && frac="${frac}0"
+  cents=$((10#$frac))
+fi
+amount_cents=$((10#$dollars * 100 + cents))
+
+# The node program prints two tab-separated lines on success:
+#   RESULT  <month> <category name> <before> <after>
+#   LOG     <category id> <category name> <before> <after>   (plain dollars, e.g. 250.00)
+# and errors (with candidate names) on stderr, exiting non-zero.
+out=$(docker exec -i -e LIFE_MONTH="$month" -e LIFE_CATEGORY="$category" -e LIFE_AMOUNT="$amount_cents" \
+  mcp-budget node --input-type=module - <<'JS'
+import * as api from '@actual-app/api';
+import { mkdirSync } from 'node:fs';
+
+const usd = (cents) => (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+const month = process.env.LIFE_MONTH;
+const wanted = process.env.LIFE_CATEGORY;
+const amount = Number(process.env.LIFE_AMOUNT);
+const plain = (cents) => (cents / 100).toFixed(2);
+const clean = (s) => String(s).replace(/[\t\r\n]+/g, ' ');
+
+// The Actual API logs progress with console.log. Keep it out of stdout.
+console.log = console.info = console.debug = () => {};
+const say = (...cols) => process.stdout.write(cols.map(clean).join('\t') + '\n');
+const fail = (msg) => { const e = new Error(msg); e.expected = true; throw e; };
+
+// Budgeted amount for one category in one month, from a fresh read.
+async function budgeted(id) {
+  const data = await api.getBudgetMonth(month);
+  for (const g of data.categoryGroups) {
+    const c = g.categories.find((x) => x.id === id);
+    if (c) return c.budgeted;
+  }
+  fail(`category disappeared while setting it`);
+}
+
+try {
+  if (!Number.isSafeInteger(amount) || amount < 0) fail('bad amount');
+  mkdirSync('/tmp/life-budget-set', { recursive: true });
+  await api.init({
+    dataDir: '/tmp/life-budget-set',
+    serverURL: process.env.ACTUAL_SERVER_URL,
+    password: process.env.ACTUAL_PASSWORD,
+  });
+  await api.downloadBudget(process.env.ACTUAL_BUDGET_SYNC_ID, {
+    password: process.env.ACTUAL_BUDGET_ENCRYPTION_PASSWORD || undefined,
+  });
+
+  // Every non-income category in this month, with its group for the candidate list.
+  const data = await api.getBudgetMonth(month);
+  const all = [];
+  for (const g of data.categoryGroups) {
+    if (g.is_income) continue;
+    for (const c of g.categories) all.push({ id: c.id, name: c.name, group: g.name, budgeted: c.budgeted });
+  }
+  const key = wanted.trim().toLowerCase();
+  const matches = all.filter((c) => c.name.trim().toLowerCase() === key);
+  if (matches.length !== 1) {
+    const close = matches.length ? matches : all.filter((c) => c.name.toLowerCase().includes(key));
+    const list = (close.length ? close : all).map((c) => `  ${c.group} / ${c.name}`).join('\n');
+    fail(matches.length
+      ? `'${wanted}' matches ${matches.length} categories; nothing changed. Rename one in Actual first:\n${list}`
+      : `no non-income category is named '${wanted}'; nothing changed. Categories:\n${list}`);
+  }
+
+  const cat = matches[0];
+  const before = cat.budgeted;
+  if (before !== amount) {
+    // The one write this script makes. Log it as soon as it's made.
+    await api.setBudgetAmount(month, cat.id, amount);
+    say('LOG', cat.id, cat.name, plain(before), plain(amount));
+    await api.sync();
+  }
+  const after = await budgeted(cat.id);
+  say('RESULT', month, cat.name, usd(before), usd(after));
+  if (after !== amount) fail(`asked for ${usd(amount)} but Actual shows ${usd(after)}`);
+} catch (err) {
+  process.stderr.write(`budget-set: ${err && err.message ? err.message : err}\n`);
+  process.exitCode = 1;
+} finally {
+  await api.shutdown().catch(() => {});
+}
+JS
+) || status=$?
+
+result=$(printf '%s\n' "$out" | awk -F'\t' '$1 == "RESULT"')
+logline=$(printf '%s\n' "$out" | awk -F'\t' '$1 == "LOG"')
+
+if [ -n "$logline" ]; then
+  IFS=$'\t' read -r _ id name before after <<<"$logline"
+  ( umask 077
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$month" "$id" "$name" "$before" "$after" >>"$LOG"
+  ) || echo "budget-set: the change was made but could not be written to $LOG" >&2
+fi
+
+if [ -n "$result" ]; then
+  IFS=$'\t' read -r _ m name before after <<<"$result"
+  if [ "$before" = "$after" ]; then
+    echo "$m $name: budgeted $after (unchanged)"
+  else
+    echo "$m $name: budgeted $before -> $after"
+  fi
+fi
+exit "${status:-0}"
