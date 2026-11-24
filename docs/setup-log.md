@@ -27,6 +27,26 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-24 — TV guide grab: smaller batches after nightly OOM kills (#372)
+
+**Goal:** Stop the nightly `epg` grab from being killed at its 2g memory limit.
+
+**Steps:**
+1. Lowered the default `EPG_BATCH` from 50 to 25 (compose, `bin/grab-all.mjs`, `.env.example`, README).
+
+**Issues encountered:**
+- m5's kernel log showed a `node` process killed by the memory cgroup about 01:45 almost every night since 2026-10-31, anon-rss about 2 GB. `epg` is the only 2g-limited node container, so one batch of 50 was reaching the limit and its channels lost their listings for the day. hl-epg-stale stayed quiet because guide.xml was still rewritten.
+
+**Resolution:**
+- Batch size sets the peak (each batch is its own process), so halving it keeps `mem_limit: 2g` and the 1536 MB heap. The grab takes a little longer since it starts twice as many processes.
+
+**Notes / next steps:**
+- Watch 3 nights: `journalctl -k --since -3d | grep "Killed process.*(node)"` on m5 should be empty, and `docker logs epg` should end with "from N/N batches".
+- If 25 is still killed, raise `mem_limit` to 3g instead of going lower.
+- An `EPG_BATCH=` line in CT 100's `docker/epg/.env` would override the new default.
+
+---
+
 ## 2026-11-23 — Retired the paid #ask assistant (#366)
 
 **Goal:** Make Otto cost nothing. The concierge (Claude via the Anthropic API key on CT 100) was the only per-use cost in the lab, and Claude Duet now does #ask's job on the plan.
