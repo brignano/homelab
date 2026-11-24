@@ -51,8 +51,8 @@
 #   - hitting the window or the budget is "not finished yet", not a failure;
 #     a real restic error still fails the run and alerts as hl-offsite-failed.
 # HL_OFFSITE_PHOTOS_VIDEOS_ONLY=1 backs up only videos (and their .xmp), the
-# cheaper option if the whole mirror is too much. HL_OFFSITE_PHOTOS=0 turns the
-# step off. Cost: about $6/TB/month on B2.
+# cheaper option if the whole mirror is too much. HL_OFFSITE_PHOTOS=1 turns the
+# step ON (it is OFF by default: B2 costs money). Cost: about $6/TB/month on B2.
 #
 # Sundays it also runs `restic check --read-data-subset=5%` (restore-test tier
 # B′): every stored byte is downloaded and verified about once every five
@@ -68,7 +68,7 @@ STAGING="${HL_OFFSITE_STAGING:-/var/lib/homelab/offsite-staging}"
 STATE_DIR="${HL_OFFSITE_STATE_DIR:-/var/lib/homelab/offsite}"
 DUMPS="${HL_BACKUP_DIR:-/opt/backups/postgres}"
 PHOTOS_DIR="${HL_OFFSITE_PHOTOS_DIR:-/media/photos/icloud}"
-PHOTOS_ON="${HL_OFFSITE_PHOTOS:-1}"
+PHOTOS_ON="${HL_OFFSITE_PHOTOS:-0}"
 PHOTOS_VIDEOS_ONLY="${HL_OFFSITE_PHOTOS_VIDEOS_ONLY:-0}"
 PHOTOS_STOP_HOUR="${HL_OFFSITE_PHOTOS_STOP_HOUR:-7}"
 PHOTOS_BUDGET_GB="${HL_OFFSITE_PHOTOS_MONTHLY_BUDGET_GB:-300}"

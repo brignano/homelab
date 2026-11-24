@@ -155,7 +155,7 @@ most likely to be lost or carried off on its own.
 ### Phase 2 — offsite
 
 
-**Photo mirror (2026-10-31, #260):** `/media/photos/icloud` is `backup=0` and not
+**Photo mirror (2026-10-31, #260; OFF by default since 2026-11-24, set `HL_OFFSITE_PHOTOS=1` to enable):** `/media/photos/icloud` is `backup=0` and not
 in the vzdump, so it goes to B2 as a second restic step (tag `photos`) after the
 lab's data. It stops at 07:00 and at a monthly upload budget, and resumes the
 next night; stopping early is not a failure. Metrics:
