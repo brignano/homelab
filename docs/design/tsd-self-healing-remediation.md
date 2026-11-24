@@ -28,6 +28,12 @@
 - **Hypervisor stays on the hypervisor:** remediation for m5 runs on m5. CT 100 never gets root on the host.
 - **Proxmox HA:** N/A on a single node — revisit only if a second node appears.
 
-## Not done yet
+## Rollback of a bad deploy (#254)
 
-- **Rollback of a bad deploy** — a failed verify is reported, not rolled back. Only safe for stateless stacks: `core` (one-way Portainer migrations, Postgres) and `monitoring` (breaking Grafana upgrades) are not candidates. → #254
+`scripts/auto-deploy.sh` rolls a stack back when `verify_stack` says it did not come back after a deploy, but only for stacks on `HL_ROLLBACK_STACKS`. Default: `clipreview epg mcp mcp-calendar`, the stacks with no database and no state the new version could have migrated.
+
+- **How:** `git checkout <last-good> -- docker/<stack>`, `docker compose up -d --build`, verify again, then `git checkout HEAD -- docker/<stack>` so the box still matches main and git stays clean. The containers run the old version until the fix merges.
+- **Report:** the run is still red (a change broke it), and the message says whether the rollback came back or did not. `last-failed` stops the retry loop.
+- **Never:** `core` (one-way Portainer migrations, Postgres), `monitoring` (breaking Grafana upgrades), `assistant`, `budget` and `mcp-budget` (they hold data), and `proxy` / `matterbridge` (never deployed unattended). Those only report.
+- **Not covered:** floating tags (`:latest`) pulled fresh by a rebuild come back as the same image. Pin a tag to make a stack rollback-safe, then add it to the list.
+- **Tests:** `scripts/test-auto-deploy.sh` (on the list: rolled back and verified; off the list: reported only).

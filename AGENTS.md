@@ -328,7 +328,9 @@ whose `.env` lacks a new `.env.example` key, a stack that joins an external
 network nobody has created yet (its owning stack is not up), or the Proxmox
 host. Those, and
 any failure, come to Discord with the exact `/deploy` line. A failed commit
-alerts once and is not retried; a revert PR is the rollback. Pause it with
+alerts once and is not retried; a revert PR is the rollback, except that a stack on
+`HL_ROLLBACK_STACKS` (stateless: `clipreview epg mcp mcp-calendar`) is put back on
+its last good version by itself. Pause it with
 `touch /var/lib/homelab/auto-deploy.pause` or `HL_AUTOHEAL=no`. Design:
 [`docs/design/tsd-auto-deploy.md`](docs/design/tsd-auto-deploy.md). So a PR's
 `## Deploy` section says which stacks auto-deploy will pick up and what, if

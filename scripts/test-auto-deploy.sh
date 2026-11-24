@@ -43,6 +43,14 @@ if [ "$1" = compose ]; then
   # Like Compose: `up` fails when an external network it needs is missing.
   case " $* " in *" up "*)
     for a in "$@"; do case "$a" in */docker-compose.yml)
+      # With $W/autoclear present, an `up` from a file naming BAD leaves the
+      # stack unhealthy and any other `up` heals it: a rollback test needs the
+      # old version to come back.
+      if [ -f "$W/autoclear" ]; then
+        st=$(basename "$(dirname "$a")")
+        if grep -q BAD "$a" 2>/dev/null; then echo "$st" >> "$W/unhealthy"
+        else grep -vx "$st" "$W/unhealthy" > "$W/unhealthy.n" 2>/dev/null; mv "$W/unhealthy.n" "$W/unhealthy" 2>/dev/null || true; fi
+      fi
       for net in $(sed -n 's/^    name: //p' "$W/config-$(basename "$(dirname "$a")")" 2>/dev/null); do
         case "$net" in *_edge) grep -qx "$net" "$W/networks" 2>/dev/null || exit 1 ;; esac
       done ;; esac; done ;;
@@ -293,5 +301,31 @@ printf 'gateway_edge\n' > "$WORK/networks"
 merge docker/tunnel/docker-compose.yml 'services: {t: {image: m}}' "tunnel again"
 run
 check "network present: tunnel deployed" has "$WORK/compose.log" "docker/tunnel/docker-compose.yml up -d"
+
+# Rollback: a stack on HL_ROLLBACK_STACKS that fails verify goes back to the last
+# good version; one that is not on the list is only reported.
+: > "$WORK/unhealthy"
+touch "$WORK/autoclear"
+merge docker/media/docker-compose.yml 'services: {a: {image: good}}' "good version"
+run
+check "rollback: good version deployed" [ -f "$WORK/state/last-good" ]
+HL_ROLLBACK_STACKS=media; export HL_ROLLBACK_STACKS
+: > "$WORK/compose.log"
+merge docker/media/docker-compose.yml 'services: {a: {image: BAD}}' "bad version"
+run
+check "rollback: brought up twice (new, then back)" [ "$(grep -c 'docker/media/docker-compose.yml up -d' "$WORK/compose.log")" = 2 ]
+check "rollback: reported" has "$WORK/out" "rolled back"
+check "rollback: healthy again" [ ! -s "$WORK/unhealthy" ]
+check "rollback: tree restored to main" at_origin
+check "rollback: tree clean" [ -z "$(git -C "$WORK/box" status --porcelain --untracked-files=no)" ]
+check "rollback: run still counts as failed" [ -f "$WORK/state/last-failed" ]
+
+HL_ROLLBACK_STACKS=""; export HL_ROLLBACK_STACKS
+: > "$WORK/compose.log"
+merge docker/media/docker-compose.yml 'services: {a: {image: BAD, again: 1}}' "bad again"
+run
+check "off the list: not rolled back" [ "$(grep -c 'docker/media/docker-compose.yml up -d' "$WORK/compose.log")" = 1 ]
+check "off the list: failure reported" has "$WORK/out" "did not come back"
+check "off the list: no rollback claim" lacks "$WORK/out" "rolled back"
 
 exit $fail
