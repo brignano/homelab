@@ -71,6 +71,14 @@ docker exec prometheus wget -qO- \
   | grep -i 'storage.*local-lvm'
 ```
 
+**Cleanup no longer waits for the schedule.** `hl-disk-guard` on m5 (systemd
+timer, every 10 min, `scripts/host/hl-disk-guard`) runs the safe prunes inside
+CT 100 and then `pct fstrim 100` when the pool reaches 70% or the guest 75%,
+at most once an hour. It never uses `image prune -a` and never touches
+volumes. `hl-thinpool-full` and `hl-disk-full` are still the "not enough"
+alert; `hl-disk-self-cleaned` reports a run. Installed by the `proxmox_host`
+Ansible role (`diskguard.yml`).
+
 **Three things grow. Two of them now have a ceiling** (a fourth, media, lives on its own drive):
 
 - **Prometheus** — 30d (`--storage.tsdb.retention.time`), **Loki** — 30d

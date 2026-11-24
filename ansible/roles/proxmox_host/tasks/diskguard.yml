@@ -1,0 +1,47 @@
+# Frees disk on CT 100 when the thin pool or the guest crosses a line
+# (scripts/host/hl-disk-guard, #253). A systemd timer, like the drive watchdog.
+
+- name: The disk guard
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../scripts/host/hl-disk-guard"
+    dest: /usr/local/bin/hl-disk-guard
+    mode: "0755"
+
+- name: Its service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hl-disk-guard.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Free disk on CT 100 when the thin pool or guest passes its limit
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/hl-disk-guard
+  notify: Reload systemd
+
+- name: Its timer
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/hl-disk-guard.timer
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Run hl-disk-guard every 10 minutes
+
+      [Timer]
+      OnBootSec=5min
+      OnUnitActiveSec=10min
+
+      [Install]
+      WantedBy=timers.target
+  notify: Reload systemd
+
+- name: Flush the reload before enabling the timer
+  ansible.builtin.meta: flush_handlers
+
+- name: Timer on
+  ansible.builtin.systemd_service:
+    name: hl-disk-guard.timer
+    enabled: true
+    state: started
+  ignore_errors: "{{ ansible_check_mode }}"

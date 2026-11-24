@@ -1,6 +1,6 @@
 # TSD — Self-healing / auto-remediation
 
-**Status:** 🚧 first remediations shipped (2026-10-31) — follow-ups tracked in #252, #253, #254
+**Status:** 🚧 first remediations shipped (2026-10-31) — follow-up tracked in #254
 **Goal:** An active auto-remediation layer *above* detection — auto-restart crashed containers (autoheal / health-check restart policies), automatic rollback of a bad deploy, preventive capacity actions (trigger prune / evacuate when disk crosses a threshold instead of just alerting).
 
 > Builds on [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md). Detection is passive and safe (worst case it pings you); remediation is **active** and can itself cause outages if it misfires. Never automate remediation before detection is trusted — so this only starts once the monitoring layer is proven.
@@ -14,6 +14,7 @@
 | A merge is not live yet | Deployed within ~10 minutes and verified with the same `verify_stack` (which now also fails on `unhealthy`) | `scripts/auto-deploy.sh` (#335, [`tsd-auto-deploy.md`](tsd-auto-deploy.md)) |
 | Disk fills with replaced images | Nightly `docker image prune` + build-cache prune (keeps 7 days) | `scripts/repo-sync.sh` → "Reclaim" |
 | Thin pool does not reclaim deleted blocks | Weekly `pct fstrim` of CT 100, Sunday 05:00 | `ansible/roles/proxmox_host/tasks/main.yml` |
+| Pool or guest disk crosses a line between runs | `hl-disk-guard` on m5 (every 10 min): at pool ≥70% or guest ≥75% it runs the repo-sync prunes inside CT 100 (never `-a`, never volumes), then `pct fstrim 100`; once an hour at most. `hl-thinpool-full`/`hl-disk-full` stay as the "not enough" alert, `hl-disk-self-cleaned` reports the run | `scripts/host/hl-disk-guard`, `ansible/.../diskguard.yml` (#253) |
 | Backup drive not mounted after a reboot | `hl-drive-watchdog` timer unlocks/remounts it and restarts the exporter; `hl-backup-drive-offline` alert is the backstop | `ansible/roles/proxmox_host/tasks/watchdog.yml` (#250, #251) |
 | A container hangs (running, not answering) | `healthcheck:` on sonarr, radarr, prowlarr, jellyfin, prometheus, grafana (plus postgres); `scripts/autoheal.sh` (cron, 5 min) restarts `unhealthy` ones, max 3 per 6h each, never `HL_NO_AUTOHEAL` stacks or gluetun; `hl-autoheal-restarted` notifies, `hl-autoheal-gave-up` pages when it stops | `scripts/autoheal.sh`, `scripts/test-autoheal.sh` (#252) |
 | Remote Control on CT 100 dies or the box reboots | `claude-rc.service`, `Restart=always` | Ansible `docker_lxc` role (#248) |
@@ -26,10 +27,6 @@
 - **Unknown tree, no action:** auto-heal is skipped when the pull failed.
 - **Hypervisor stays on the hypervisor:** remediation for m5 runs on m5. CT 100 never gets root on the host.
 - **Proxmox HA:** N/A on a single node — revisit only if a second node appears.
-
-## Not done yet
-
-- **Threshold-triggered disk cleanup** — cleanup is on a schedule; a spike between runs only alerts. Mind the thin-pool constraint (`pve/data` ~348 GiB, non-extendable 400 GiB rootfs) and AGENTS.md → Disk. → #253
 
 ## Rollback of a bad deploy (#254)
 
