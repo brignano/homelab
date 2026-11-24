@@ -16,6 +16,7 @@
 | Thin pool does not reclaim deleted blocks | Weekly `pct fstrim` of CT 100, Sunday 05:00 | `ansible/roles/proxmox_host/tasks/main.yml` |
 | Pool or guest disk crosses a line between runs | `hl-disk-guard` on m5 (every 10 min): at pool ≥70% or guest ≥75% it runs the repo-sync prunes inside CT 100 (never `-a`, never volumes), then `pct fstrim 100`; once an hour at most. `hl-thinpool-full`/`hl-disk-full` stay as the "not enough" alert, `hl-disk-self-cleaned` reports the run | `scripts/host/hl-disk-guard`, `ansible/.../diskguard.yml` (#253) |
 | Backup drive not mounted after a reboot | `hl-drive-watchdog` timer unlocks/remounts it and restarts the exporter; `hl-backup-drive-offline` alert is the backstop | `ansible/roles/proxmox_host/tasks/watchdog.yml` (#250, #251) |
+| A container hangs (running, not answering) | `healthcheck:` on sonarr, radarr, prowlarr, jellyfin, prometheus, grafana (plus postgres); `scripts/autoheal.sh` (cron, 5 min) restarts `unhealthy` ones, max 3 per 6h each, never `HL_NO_AUTOHEAL` stacks or gluetun; `hl-autoheal-restarted` notifies, `hl-autoheal-gave-up` pages when it stops | `scripts/autoheal.sh`, `scripts/test-autoheal.sh` (#252) |
 | Remote Control on CT 100 dies or the box reboots | `claude-rc.service`, `Restart=always` | Ansible `docker_lxc` role (#248) |
 
 ## Guardrails (decided)
@@ -29,5 +30,4 @@
 
 ## Not done yet
 
-- **Hung containers** — running but not answering. Only `core` and `ai` have a `healthcheck:`, and nothing acts on `unhealthy`. → #252
 - **Rollback of a bad deploy** — a failed verify is reported, not rolled back. Only safe for stateless stacks: `core` (one-way Portainer migrations, Postgres) and `monitoring` (breaking Grafana upgrades) are not candidates. → #254

@@ -689,6 +689,67 @@ groups:
               conditions:
                 - evaluator: { type: lt, params: [1] }
 
+      # --- A hung container was restarted, or autoheal gave up (#252) ---
+      #
+      # scripts/autoheal.sh restarts containers Docker reports unhealthy, at most
+      # 3 per 6h each. The first rule is the notice that it happened; the second
+      # is the flapper that autoheal has stopped restarting and needs a person.
+      - uid: hl-autoheal-restarted
+        title: Container restarted automatically
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.container }} was unhealthy and has been restarted automatically (within the last 6h)"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_autoheal_restarts_in_window
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
+      - uid: hl-autoheal-gave-up
+        title: Container keeps hanging
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.container }} keeps going unhealthy: autoheal restarted it 3 times in 6h and has stopped"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: homelab_autoheal_gave_up
+              instant: true
+          - refId: C
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+
       # --- The repo sync has not run ---
       #
       # 26 hours, against an 04:00 daily schedule: one missed run plus two hours

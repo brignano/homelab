@@ -3,6 +3,13 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     restart: unless-stopped
+    # Docker marks it unhealthy when it hangs; scripts/autoheal.sh restarts it (#252).
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9090/-/healthy >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
@@ -20,6 +27,13 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     restart: unless-stopped
+    # Docker marks it unhealthy when it hangs; scripts/autoheal.sh restarts it (#252).
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}
