@@ -15,7 +15,7 @@ services:
       - ../dashboard/assets:/srv/design:ro
       # The Work page's static files (docker/work/site), served at work.<domain>.
       - ../work/site:/srv/work:ro
-      # The Ideas page (docker/ideas/site), served at ideas.<domain>.
+      # The Ideas page (docker/ideas/site), served at work.<domain>/ideas/.
       - ../ideas/site:/srv/ideas:ro
       # The home page at the bare domain (docker/dashboard/site) and its tile
       # and page icons. Directory mounts, so a git pull reaches them live.

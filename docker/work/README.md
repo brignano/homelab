@@ -29,8 +29,14 @@ browser ask first, and that preflight gets a 405), refuses a browser `Origin`
 other than `https://work.<domain>` with a 403, and strips GitHub's
 `Access-Control-*` headers. Keep all three if you touch the block.
 
-The Ideas page (`docker/ideas/`) sits beside this one: a Work / Ideas switch
-at the top of both, and Ideas loads this page's `app.css`. Ideas links to
+The Ideas page (`docker/ideas/`) sits beside this one, on the same origin at
+`/ideas/` (homelab#414): a Work / Ideas switch at the top of both, and Ideas
+loads this page's `app.css`. One origin is what makes the switch smooth: the
+browser cross-fades between the pages (`@view-transition` in `app.css`, off
+under reduced motion), keeps the switch still, shares one copy of the
+stylesheet, tokens and font, and prerenders the other page when the switch is
+hovered or pressed. Two origins can't do any of that, which is why the switch
+used to blank and redraw. Ideas links to
 `#repo=<name>`, which opens Work filtered to that repo.
 
 ## What it shows

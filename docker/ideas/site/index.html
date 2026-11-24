@@ -5,10 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Ideas</title>
 <meta name="description" content="Every idea in the ledger, read live from GitHub.">
-<link rel="icon" href="/icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="/work.css">
+<meta name="color-scheme" content="light dark">
+<link rel="icon" href="/ideas/icon.svg" type="image/svg+xml">
+<!-- Served from Work's origin at /ideas/ (homelab#414): Work's stylesheet at
+     /app.css carries the layout and the tab switch's cross-fade, and both
+     pages share one copy of it, the tokens and the font. -->
+<link rel="preload" href="/assets/design-tokens.css" as="style">
+<link rel="preload" href="/assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
-<script src="/app.js" defer></script>
+<link rel="stylesheet" href="/ideas/app.css">
+<script type="speculationrules">{"prerender":[{"where":{"selector_matches":"nav.switch a:not([aria-current])"},"eagerness":"moderate"}]}</script>
+<script src="/ideas/app.js" defer blocking="render"></script>
 </head>
 <body>
 <div class="wrap">
@@ -18,7 +25,7 @@
       <div class="sub" id="sub">Reading GitHub…</div>
     </div>
     <div class="hl">
-      <nav class="switch" aria-label="Pages"><a href="#" id="worklink">Work</a><a href="/" aria-current="page">Ideas</a></nav>
+      <nav class="switch" aria-label="Pages"><a href="/">Work</a><a href="/ideas/" aria-current="page">Ideas</a></nav>
       <button class="btn" type="button" id="refresh">Refresh</button>
     </div>
   </header>

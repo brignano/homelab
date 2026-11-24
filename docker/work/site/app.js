@@ -31,8 +31,6 @@ if (want.startsWith('repo=')) Object.assign(st, { repo: decodeURIComponent(want.
 const save = () => { try { localStorage.setItem('work.prefs', JSON.stringify({ repo: st.repo, group: st.group, sort: st.sort, status: st.status })); } catch (_) {} };
 
 const $ = id => document.getElementById(id);
-// Ideas lives beside this page: work.<domain> -> ideas.<domain>.
-$('ideaslink').href = location.origin.replace('//work.', '//ideas.') + '/';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // The last good load is kept in this browser and drawn at once on the next
