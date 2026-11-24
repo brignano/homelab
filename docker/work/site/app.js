@@ -278,3 +278,15 @@ $('refresh').addEventListener('click', () => load());
 
 fetch('/config.json').then(r => r.ok ? r.json() : {}).then(c => { PROJECTS = (c && c.projects) || {}; }).catch(() => {});
 load();
+
+// Stay current while the page is open: every 2 minutes while the tab is
+// visible, and straight away when you come back to it. All from the browser, so
+// nothing runs on a schedule and no Claude tokens or Actions minutes are spent.
+// (GitHub search allows 30 requests a minute; one load makes about 7.)
+const POLL_MS = 120000;
+function refreshIfDue() {
+  if (document.hidden || updating) return;
+  if (!loadedAt || Date.now() - loadedAt.getTime() >= POLL_MS - 5000) load();
+}
+setInterval(refreshIfDue, POLL_MS);
+document.addEventListener('visibilitychange', refreshIfDue);

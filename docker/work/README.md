@@ -3,7 +3,8 @@
 `https://work.$HOMELAB_DOMAIN`: one page that shows what is waiting on you, what
 agents are building, what is up next and what is blocked, across every repo in
 ai-tools `fleet/board.yml`. It reads GitHub live on every load (and on
-Refresh), so nothing runs on a schedule. The browser keeps its last load and
+Refresh), and an open page refreshes itself every 2 minutes while the tab is
+visible, so nothing runs on a schedule. The browser keeps its last load and
 draws it at once on the next visit, marked "updating", until GitHub answers;
 all searches run in parallel, so that takes about 2 to 3 seconds. It replaces the
 GitHub Projects board, which needed the `fleet-board` Action and its Actions
