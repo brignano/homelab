@@ -1,6 +1,6 @@
 # TSD — Self-healing / auto-remediation
 
-**Status:** 🚧 first remediations shipped (2026-10-31) — follow-ups tracked in #252, #254
+**Status:** 🚧 first remediations shipped (2026-10-31) — follow-up tracked in #254
 **Goal:** An active auto-remediation layer *above* detection — auto-restart crashed containers (autoheal / health-check restart policies), automatic rollback of a bad deploy, preventive capacity actions (trigger prune / evacuate when disk crosses a threshold instead of just alerting).
 
 > Builds on [`tsd-backups-and-monitoring.md`](tsd-backups-and-monitoring.md). Detection is passive and safe (worst case it pings you); remediation is **active** and can itself cause outages if it misfires. Never automate remediation before detection is trusted — so this only starts once the monitoring layer is proven.
