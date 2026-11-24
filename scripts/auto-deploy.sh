@@ -28,8 +28,9 @@
 # - Deploy a stack that joins an external network nobody has created yet (its
 #   owning stack is not up). It says which network and which stack.
 # - Anything on the Proxmox host (scripts/host/).
-# - Roll back. A failed verify alerts once; a revert PR is the rollback, and it
-#   arrives here like any other merge.
+# - Roll back a stack that is not on HL_ROLLBACK_STACKS. A failed verify alerts
+#   once and a revert PR is the rollback, arriving here like any other merge.
+#   Only stateless stacks are allowed to go back by themselves: see ROLLBACK.
 #
 # Quiet by design: a run where main has not moved does a `git fetch` and nothing
 # else, and posts nothing. Discord hears about a run only when it changed
@@ -60,6 +61,13 @@ PAUSE_FILE="${HL_AUTO_DEPLOY_PAUSE:-/var/lib/homelab/auto-deploy.pause}"
 MANUAL_HOLD="${HL_AUTO_DEPLOY_MANUAL_HOLD:-1800}"
 BRANCH="${HL_AUTO_DEPLOY_BRANCH:-main}"
 NO_AUTOHEAL="${HL_NO_AUTOHEAL:-proxy matterbridge}"
+# ROLLBACK: stacks where "put the previous commit's compose files back" really
+# is a rollback, because they hold no data the new version could have migrated
+# (docs/design/tsd-self-healing-remediation.md). Never core (one-way Portainer
+# and Postgres migrations), monitoring (breaking Grafana upgrades) or any stack
+# with a database or a state directory the app rewrites. A stack on
+# HL_NO_AUTOHEAL is never rolled back either: it is never deployed here at all.
+ROLLBACK="${HL_ROLLBACK_STACKS:-clipreview epg mcp mcp-calendar}"
 AUTOHEAL="${HL_AUTOHEAL:-yes}"
 MAX_CHARS=3800
 
@@ -533,11 +541,40 @@ for c in $(docker ps --format '{{.Names}}' 2>/dev/null || true); do
   fi
 done
 
+# --- roll back ------------------------------------------------------------------
+# rollback_stack <stack>: put docker/<stack> back to how it was at BASE (the last
+# commit that deployed cleanly), bring it up from that, then restore the tree to
+# HEAD so the box still matches main and git stays clean. The containers run the
+# old version until the fix merges; last-failed stops the retry loop meanwhile.
+# Returns 0 only if it came back up. Untracked files (.env) are never touched.
+rollback_stack() {
+  _s=$1
+  # No change since BASE means no previous version to go back to.
+  git diff --quiet "$BASE" HEAD -- "docker/$_s" 2>/dev/null && return 1
+  git checkout -q "$BASE" -- "docker/$_s" 2>/dev/null || return 1
+  _rc=0
+  compose_run "$_s" up -d --build >/dev/null || _rc=1
+  git checkout -q HEAD -- "docker/$_s" 2>/dev/null || _rc=1
+  [ "$_rc" -eq 0 ] || return 1
+  _want=0
+  for kv in $WANT; do [ "${kv%%=*}" = "$_s" ] && _want=${kv#*=}; done
+  verify_stack "$REPO/docker/$_s" "$_want" >/dev/null
+}
+
 # --- verify ---------------------------------------------------------------------
 for s in $TOUCHED; do
   want=0
   for kv in $WANT; do [ "${kv%%=*}" = "$s" ] && want=${kv#*=}; done
   if ! why=$(verify_stack "$REPO/docker/$s" "$want"); then
+    if in_list "$s" "$ROLLBACK" && ! in_list "$s" "$NO_AUTOHEAL"; then
+      if rollback_stack "$s"; then
+        add FAILED "**$s** did not come back ($why), so it was rolled back to \`$(git rev-parse --short "$BASE")\` and is running the previous version. Fix forward or revert the change that broke it"
+      else
+        add FAILED "**$s** did not come back ($why), and the rollback to \`$(git rev-parse --short "$BASE")\` did not bring it back either (or there was nothing to go back to)
+\`docker compose -f docker/$s/docker-compose.yml ps\`, then \`$(manual_line "$s")\`"
+      fi
+      continue
+    fi
     add FAILED "**$s** did not come back: $why
 \`docker compose -f docker/$s/docker-compose.yml ps\`, then \`$(manual_line "$s")\`"
   fi
