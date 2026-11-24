@@ -46,6 +46,15 @@ The [`ai-tools`](https://github.com/brignano/ai-tools) installer wires this into
 machine's shell profile automatically (one guarded `source` line). After cloning this
 repo and running the ai-tools installer, open a new shell and run `hl-help`.
 
+On the server (CT 100), one command does it, no ai-tools needed:
+
+```sh
+/root/homelab/scripts/install-shell.sh   # adds a guarded source line to ~/.bashrc
+```
+
+Sourcing `aliases.sh` by its path also works without any setup: it finds its
+own checkout, so `. /root/homelab/shell/aliases.sh` is enough on the server.
+
 To wire it by hand instead:
 
 - **Mac** `~/.zshrc` / **server** `~/.bashrc`:
@@ -59,6 +68,9 @@ To wire it by hand instead:
   ```
 
 Update later with `git pull` — the profile sources the live file, no re-install needed.
+If a new `hl-*` command is "not recognized" on Windows or "not found" on the Mac,
+that machine's checkout is behind: `git -C ~/Projects/homelab pull`, then reload
+the profile (`. $PROFILE` or open a new shell).
 
 ## Config
 

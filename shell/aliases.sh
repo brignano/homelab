@@ -10,8 +10,24 @@
 # Docker. The only name to remember is `hl`: bare it lists everything (fzf picker
 # when installed, hl-help otherwise); `hl logs grafana` ≡ `hl-logs grafana`.
 
-# Where this homelab checkout lives (the ai-tools hook exports this; default for
-# direct sourcing on the Mac). Used to find lib.sh and detect server mode.
+# Where this homelab checkout lives (the ai-tools hook exports this). When it
+# isn't set, use the checkout this file was sourced from, so
+# `. /root/homelab/shell/aliases.sh` works on the server without HOMELAB_DIR.
+# Last resort is the Mac default. Used to find lib.sh and detect server mode.
+if [ -z "${HOMELAB_DIR:-}" ]; then
+	_hl_self=
+	if [ -n "${BASH_VERSION:-}" ]; then
+		eval '_hl_self=${BASH_SOURCE[0]:-}'
+	elif [ -n "${ZSH_VERSION:-}" ]; then
+		eval '_hl_self=${(%):-%x}'
+	fi
+	case "$_hl_self" in
+		*shell/aliases.sh)
+			_hl_self=${_hl_self%shell/aliases.sh}
+			HOMELAB_DIR=$(cd "${_hl_self:-.}" && pwd) ;;
+	esac
+	unset _hl_self
+fi
 : "${HOMELAB_DIR:=$HOME/Projects/homelab}"
 
 # Are we ON the server (the Docker LXC)? Default is "no" (the common case: a
@@ -32,7 +48,13 @@ fi
 [ "$_hl_local" = 1 ] && : "${HL_REPO:=$HOMELAB_DIR}"
 
 # Config + doer functions (sourcing is side-effect-free; nothing runs Docker).
-[ -f "$HOMELAB_DIR/shell/lib.sh" ] && . "$HOMELAB_DIR/shell/lib.sh"
+# Without it every ops command would run with an empty HL_SSH ("Could not
+# resolve hostname"), so say what's wrong instead.
+if [ -f "$HOMELAB_DIR/shell/lib.sh" ]; then
+	. "$HOMELAB_DIR/shell/lib.sh"
+else
+	echo "hl: no homelab checkout at $HOMELAB_DIR; set HOMELAB_DIR to it" >&2
+fi
 
 # ── Docker / ops: local calls on the server, SSH wrappers everywhere else ─────
 if [ "$_hl_local" = 1 ]; then
