@@ -1,17 +1,18 @@
 # ideas — the idea ledger beside Work
 
-`https://ideas.$HOMELAB_DOMAIN`: every idea in the ledger on one page, grouped
+`https://work.$HOMELAB_DOMAIN/ideas/` (the old `ideas.` address redirects there): every idea in the ledger on one page, grouped
 by stage (Building, Proposals, Inbox, with the archive folded away), with the
-ones ready to move counted first. It sits beside the Work page: a Work / Ideas
+ones ready to move counted first. It sits beside the Work page, on Work's origin so the
+switch between them cross-fades instead of reloading (homelab#414): a Work / Ideas
 switch at the top of each, one stylesheet, and a tile for each on the home
 page. It reads the ledger live on every load (and on Refresh); the browser
 keeps its last load and draws it at once on the next visit.
 
 ```mermaid
 flowchart LR
-  B[Browser on LAN / tailnet] -- "GET /, /app.js, /work.css, /assets/*" --> C[Caddy]
+  B[Browser on LAN / tailnet] -- "GET /ideas/*, /app.css, /assets/*" --> C[Caddy]
   B -- "GET /api/ledger.json" --> C
-  C -- "files: docker/ideas/site, work/site/app.css, dashboard/assets" --> B
+  C -- "files: docker/ideas/site at /ideas/, work/site, dashboard/assets" --> B
   C -- "GET /repos/$IDEAS_LEDGER_REPO/contents/$IDEAS_LEDGER_PATH + read-only token" --> G[api.github.com]
 ```
 
@@ -19,7 +20,7 @@ flowchart LR
 reading one file from GitHub with a token it holds. The browser never sees
 the token, the repo or the path, and cannot choose what is read: the path is
 fixed in `.env`. The route is GET only, refuses a browser `Origin` other than
-`https://ideas.<domain>` with a 403, and strips GitHub's `Access-Control-*`
+`https://work.<domain>` with a 403, and strips GitHub's `Access-Control-*`
 headers, so another site open in a browser on the LAN cannot read it.
 
 The token is **shared with Work**: `READ_GITHUB_TOKEN` in `docker/proxy/.env`,

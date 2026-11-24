@@ -47,12 +47,14 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   let status = 200;
-  await page.route('http://ideas.test/**', async route => {
+  // Ideas is served from Work's origin at /ideas/ (homelab#414), as the
+  // Caddyfile's work. block does: /ideas/* from this site, the rest from Work.
+  await page.route('http://work.test/**', async route => {
     const url = new URL(route.request().url());
     if (url.pathname === '/api/ledger.json') return status === 200 ? route.fulfill({ contentType: 'application/json', body: JSON.stringify(LEDGER) }) : route.fulfill({ status, body: '{}' });
-    const file = url.pathname === '/work.css' ? join(WORK, 'app.css')
-      : url.pathname.startsWith('/assets/') ? join(ASSETS, url.pathname.slice(8))
-      : join(SITE, url.pathname === '/' ? 'index.html' : url.pathname.slice(1));
+    const file = url.pathname.startsWith('/assets/') ? join(ASSETS, url.pathname.slice(8))
+      : url.pathname.startsWith('/ideas/') ? join(SITE, url.pathname === '/ideas/' ? 'index.html' : url.pathname.slice(7))
+      : join(WORK, url.pathname.slice(1));
     if (!existsSync(file)) return route.fulfill({ status: 404, body: 'not found' });
     return route.fulfill({ contentType: TYPES[extname(file)] || 'application/octet-stream', body: readFileSync(file) });
   });
@@ -61,20 +63,20 @@ for (const [name, width, scheme] of [['phone', 390, 'light'], ['phone', 390, 'da
   // No token / no ledger yet: the page says what to set, not a blank screen.
   for (const [code, words] of [[401, 'READ_GITHUB_TOKEN'], [404, 'IDEAS_LEDGER_REPO']]) {
     status = code;
-    await page.goto('http://ideas.test/');
+    await page.goto('http://work.test/ideas/');
     await page.waitForSelector('.state.err');
     const t = await page.textContent('.state.err');
     expect(t.includes(words), `${code} did not name ${words}: ${t}`);
   }
   status = 200;
-  await page.goto('http://ideas.test/');
+  await page.goto('http://work.test/ideas/');
   await page.waitForSelector('.row');
   await page.waitForTimeout(300);
 
   const got = await page.evaluate(() => ({
     counts: [...document.querySelectorAll('.count b')].map(b => +b.textContent),
     sections: [...document.querySelectorAll('#lists section h2')].map(h => h.textContent.replace(/\s+/g, ' ').trim()),
-    work: document.getElementById('worklink').href,
+    work: document.querySelector('nav.switch a:not([aria-current])').href,
     repoLink: (document.querySelector('a.repo') || {}).href || '',
     select: document.querySelectorAll('select').length,
     scroll: document.documentElement.scrollWidth,

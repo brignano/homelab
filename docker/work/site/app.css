@@ -25,6 +25,10 @@ html,body{background:var(--bg);color:var(--ink)}
 body{font-family:var(--sans);font-size:var(--text-base);line-height:var(--leading-ui,1.4)}
 .wrap{max-width:1240px;margin:0 auto;padding-block:var(--s4) var(--s7);padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:grid;gap:var(--s5)}
 header{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);justify-content:space-between}
+/* The title block takes what the switch leaves, and its status line wraps
+   inside it, so "Reading GitHub…" and a long "read from GitHub at…" put the
+   switch in the same place: it never hops to its own row mid-load. */
+header>div:first-child{flex:1 1 9rem;min-width:0}
 h1{font-size:var(--text-xl);font-weight:var(--weight-semibold);margin:0;letter-spacing:var(--tracking-title,0)}
 .sub{font-family:var(--mono);font-size:var(--text-xs);color:var(--ink-soft);margin-top:2px}
 .btn{font:inherit;font-size:var(--text-sm);border:1px solid var(--line-control,var(--line-strong));background:var(--card);color:var(--i-ink);border-radius:var(--radius-control,var(--radius-sm));padding:6px 12px;cursor:pointer;text-decoration:none}
@@ -159,3 +163,14 @@ html,body{margin:0}
 .switch a+a{border-left:1px solid var(--line)}
 .switch a:hover{background:var(--surface-hover)}
 .switch a[aria-current=page]{background:var(--i-surface);color:var(--i-ink)}
+
+/* Switching Work <-> Ideas (homelab#414). Both pages are one origin, so the
+   browser keeps the old page on screen until the new one is drawn, then
+   cross-fades: the switch and Refresh stay put, the title and body fade.
+   Reduced motion: no transition, the new page simply appears. */
+@media (prefers-reduced-motion: no-preference){
+  @view-transition{navigation:auto}
+  .hl{view-transition-name:pageswitch}
+  ::view-transition-group(root){animation-duration:160ms}
+  ::view-transition-group(pageswitch){animation-duration:0s}
+}

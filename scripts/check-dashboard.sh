@@ -39,7 +39,9 @@ compose = "\n".join(p.read_text() for p in (repo / "docker").glob("*/docker-comp
 # Sites that intentionally have no tile. Each needs a reason, not just a name.
 #   mcp, budget-mcp   API endpoints, not pages: they answer MCP over HTTP and
 #                     return 401 to a browser without a bearer token.
-EXEMPT = {"mcp", "budget-mcp"}
+#   ideas             Only a redirect to work.<domain>/ideas/, its old address
+#                     (homelab#414). The Ideas tile links there directly.
+EXEMPT = {"mcp", "budget-mcp", "ideas"}
 
 bad = []
 def ok(msg): print("ok       " + msg)

@@ -5,10 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Work</title>
 <meta name="description" content="Open issues and PRs across the fleet repos, read live from GitHub.">
+<meta name="color-scheme" content="light dark">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
+<!-- Ideas sits on this origin at /ideas/ (homelab#414): the switch keeps the
+     header still and cross-fades the rest (app.css), the shared files below
+     are fetched once for both pages, and the other page is prerendered when
+     the switch is hovered or pressed, so the tap is instant. -->
+<link rel="preload" href="/assets/design-tokens.css" as="style">
+<link rel="preload" href="/assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/app.css">
-<script src="/data.js" defer></script>
-<script src="/app.js" defer></script>
+<script type="speculationrules">{"prerender":[{"where":{"selector_matches":"nav.switch a:not([aria-current])"},"eagerness":"moderate"}]}</script>
+<script src="/data.js" defer blocking="render"></script>
+<script src="/app.js" defer blocking="render"></script>
 </head>
 <body>
 <div class="wrap">
@@ -18,7 +26,7 @@
       <div class="sub" id="sub">Reading GitHub…</div>
     </div>
     <div class="hl">
-      <nav class="switch" aria-label="Pages"><a href="/" aria-current="page">Work</a><a href="#" id="ideaslink">Ideas</a></nav>
+      <nav class="switch" aria-label="Pages"><a href="/" aria-current="page">Work</a><a href="/ideas/">Ideas</a></nav>
       <button class="btn" type="button" id="refresh">Refresh</button>
     </div>
   </header>

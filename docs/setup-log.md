@@ -27,6 +27,26 @@ Chronological record of significant configuration steps, decisions, and issues.
 
 ---
 
+## 2026-11-24 — Work and Ideas on one origin, so the switch cross-fades (#414)
+
+**Goal:** Stop the Work / Ideas switch from flickering.
+
+**Steps:**
+1. Ideas moved from `ideas.<domain>` to `work.<domain>/ideas/` (Caddyfile `work.` block: `/ideas/*` and `/api/ledger.json`, origin guard now `https://work.<domain>`). `ideas.<domain>` is a 308 to it; the home tile points there directly.
+2. `@view-transition` cross-fade (160 ms, the switch held still, off under reduced motion), speculation-rules prerender of the other page on hover or press, preloaded tokens and Geist, `color-scheme` meta, render-blocking scripts so the cached copy is drawn before the first frame.
+3. Header: the title block wraps its status line instead of pushing the switch onto its own row mid-load.
+
+**Issues encountered:**
+- Two subdomains meant every tap was a cross-site load: the browser blanked the page, fetched the shared CSS and font again under a second address, and View Transitions only work within one origin.
+
+**Resolution:**
+- One origin. Slowed before/after recordings in the PR.
+
+**Notes / next steps:**
+- Each browser's cached Ideas copy and saved filters start fresh once (localStorage is per origin).
+
+---
+
 ## 2026-11-24 — TV guide grab: smaller batches after nightly OOM kills (#372)
 
 **Goal:** Stop the nightly `epg` grab from being killed at its 2g memory limit.

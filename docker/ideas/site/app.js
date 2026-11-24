@@ -30,9 +30,8 @@ const INBOX_SHOWN = 5;
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-// Work lives beside this page: ideas.<domain> -> work.<domain>.
-const WORK = location.origin.replace('//ideas.', '//work.');
-$('worklink').href = WORK + '/';
+// Work is this origin's root page; this page is /ideas/ (homelab#414).
+const WORK = '';
 
 let ideas = [], loadedAt = null, updating = false;
 const st = { kind: 'All', proof: 'any', q: '', count: null, stage: 'All', open: null, inboxAll: false };

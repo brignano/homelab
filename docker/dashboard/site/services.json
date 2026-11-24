@@ -3,7 +3,7 @@
   "sections": [
     { "name": "Things I built", "featured": true, "tiles": [
       { "name": "Work", "href": "https://work.{domain}", "icon": "work.svg", "desc": "Everything I'm building, live from GitHub", "probe": "http://caddy/health" },
-      { "name": "Ideas", "href": "https://ideas.{domain}", "icon": "ideas.svg", "desc": "Every idea and how close it is to building", "probe": "http://caddy/health" },
+      { "name": "Ideas", "href": "https://work.{domain}/ideas/", "icon": "ideas.svg", "desc": "Every idea and how close it is to building", "probe": "http://caddy/health" },
       { "name": "Photo & clip review", "href": "https://review.{domain}", "icon": "review.svg", "desc": "Sort home videos and move old ones to cold storage", "probe": "http://clipreview:8000/" },
       { "name": "brignano.io", "href": "https://brignano.io", "icon": "brignano.svg", "inkIcon": true, "desc": "My website", "probe": "https://brignano.io/" }
     ]},

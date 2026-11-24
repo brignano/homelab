@@ -192,36 +192,24 @@ review.{$HOMELAB_DOMAIN} {
 }
 
 # Work (docker/work/): open issues and PRs across the fleet repos, read live
-# from GitHub on every load (homelab#386). Static files plus one API route, so
-# there is no container: Caddy serves the page and holds the token.
+# from GitHub on every load (homelab#386). Static files plus API routes, so
+# there is no container: Caddy serves the pages and holds the token.
 # LAN + tailnet only, never the tunnel: private repos' issues come through here.
+#
+# Ideas (docker/ideas/), the idea ledger, lives on this same origin at /ideas/
+# (homelab#414). As two sites, every tap on the Work / Ideas switch was a full
+# cross-site load that blanked and redrew the page; on one origin the browser
+# shares the stylesheet, tokens and font between them and cross-fades the
+# switch (@view-transition only works within an origin).
 work.{$HOMELAB_DOMAIN} {
-	# The page's only data call. Caddy adds a fine-grained READ-ONLY token
+	# Work's data call. Caddy adds a fine-grained READ-ONLY token
 	# (READ_GITHUB_TOKEN in docker/proxy/.env, shared with Ideas) so the browser never holds one, and
 	# the token's permissions are what make the route read-only: GitHub refuses
 	# a mutation from it. POST only, one path, small bodies. Unset token: GitHub
 	# answers 401 and the page says which variable to set.
 	import github_graphql work.{$HOMELAB_DOMAIN}
 
-	# Tokens and Geist: the dashboard's vendored copies, already mounted for
-	# the budget theme. One source for every page on the box.
-	handle_path /assets/* {
-		root * /srv/design
-		file_server
-	}
-
-	handle {
-		root * /srv/work
-		header Cache-Control "no-cache"
-		file_server
-	}
-}
-
-# Ideas (docker/ideas/): the idea ledger beside Work, read live from GitHub on
-# every load. Static files plus one read-only route, so no container, like
-# Work. LAN + tailnet only, never the tunnel: the ledger is private.
-ideas.{$HOMELAB_DOMAIN} {
-	# The page's only data call: one fixed file, GET only. Caddy adds its own
+	# Ideas' data call: one fixed file, GET only. Caddy adds its own
 	# fine-grained READ-ONLY token (READ_GITHUB_TOKEN in docker/proxy/.env,
 	# shared with Work), and the repo and path come from docker/proxy/.env
 	# too, so neither is in this public repo. The browser cannot choose what
@@ -232,7 +220,7 @@ ideas.{$HOMELAB_DOMAIN} {
 		respond @notget "GET only" 405
 		@foreign {
 			header Origin *
-			not header Origin https://ideas.{$HOMELAB_DOMAIN}
+			not header Origin https://work.{$HOMELAB_DOMAIN}
 		}
 		respond @foreign "Wrong origin" 403
 		rewrite * /repos/{env.IDEAS_LEDGER_REPO}/contents/{env.IDEAS_LEDGER_PATH}
@@ -252,24 +240,33 @@ ideas.{$HOMELAB_DOMAIN} {
 		}
 	}
 
-	# Layout, rows, counts and menus are Work's: one stylesheet for both pages.
-	handle /work.css {
-		root * /srv/work
-		rewrite * /app.css
-		header Cache-Control "no-cache"
-		file_server
-	}
-
+	# Tokens and Geist: the dashboard's vendored copies, already mounted for
+	# the budget theme. One source for every page on the box.
 	handle_path /assets/* {
 		root * /srv/design
 		file_server
 	}
 
-	handle {
+	# The Ideas page's own files. Its layout, rows, counts and menus are
+	# Work's /app.css: one stylesheet for both pages.
+	redir /ideas /ideas/ 308
+	handle_path /ideas/* {
 		root * /srv/ideas
 		header Cache-Control "no-cache"
 		file_server
 	}
+
+	handle {
+		root * /srv/work
+		header Cache-Control "no-cache"
+		file_server
+	}
+}
+
+# Ideas' old address, kept so bookmarks still land: the page itself is Work's
+# /ideas/ above (homelab#414).
+ideas.{$HOMELAB_DOMAIN} {
+	redir https://work.{$HOMELAB_DOMAIN}/ideas/ 308
 }
 
 # Actual Budget (docker/budget/). Joins the proxy network. Financial data: LAN +
