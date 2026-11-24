@@ -127,7 +127,9 @@ of telling, so you can see which one to trust before it judges every clip:
   drop with no pause. Shaky handheld clips are hard on it.
 - **claude**: about 12 frames per clip, with timestamps, sent to the Claude
   API (`claude-opus-5-5`, about $0.02 a clip). More context, but the frames
-  leave the house.
+  leave the house. Cheaper models were tried in October and missed: Sonnet
+  16/23 with 1 send called a fall, Haiku 9/23 with 2. The default stays on
+  Opus. Each run prints its token use per clip.
 
 ### Test it on clips you have labelled
 
