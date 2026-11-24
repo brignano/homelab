@@ -204,6 +204,10 @@ SCHEMA = {
 }
 
 
+# Running token total for the Claude method, so a run can report cost per clip.
+USAGE = {"clips": 0, "in": 0, "out": 0}
+
+
 def judge_claude(path: Path, seconds: float, client, model: str, frames: int) -> tuple[str, float, str]:
     # Evenly spaced, plus extra density over the last third, where most
     # attempts end.
@@ -232,6 +236,9 @@ def judge_claude(path: Path, seconds: float, client, model: str, frames: int) ->
         output_config={"effort": "medium", "format": {"type": "json_schema", "schema": SCHEMA}},
         messages=[{"role": "user", "content": content}],
     )
+    USAGE["clips"] += 1
+    USAGE["in"] += resp.usage.input_tokens
+    USAGE["out"] += resp.usage.output_tokens
     if resp.stop_reason == "refusal":
         return "unsure", 0.0, "declined by the API"
     text = next(b.text for b in resp.content if b.type == "text")
@@ -355,6 +362,11 @@ def main() -> int:
                         c.claude, "%.2f" % c.claude_conf if c.claude else "", c.claude_why,
                         "; ".join(c.errors)])
     print("\nverdicts written to %s" % args.out)
+    if USAGE["clips"]:
+        print("claude tokens: %d in / %d out over %d clips (%d in / %d out a clip); "
+              "multiply by the model's per-token price for the cost" % (
+                  USAGE["in"], USAGE["out"], USAGE["clips"],
+                  USAGE["in"] // USAGE["clips"], USAGE["out"] // USAGE["clips"]))
     if labels:
         print()
         for m in ("local", "claude"):
