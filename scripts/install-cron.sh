@@ -58,6 +58,7 @@ DIGEST_STATE_UID="${HL_DIGEST_STATE_UID:-10001}"
 # own header documents; they are the same file, so keep them that way.
 JOBS="*/5 * * * *|heartbeat.sh|dead man's switch -> Healthchecks
 0 4 * * *|repo-sync.sh|pull, restart stale stacks, report
+*/5 * * * *|autoheal.sh|restart containers Docker reports unhealthy, max 3 per 6h (#252)
 */5 * * * *|auto-deploy.sh|deploy what merged to main, pull-based (docs/design/tsd-auto-deploy.md)
 0 2 * * *|pg-backup.sh|nightly pg_dumpall, 14-day retention
 0 3 * * 0|pg-restore-test.sh|weekly: restore the newest dump into a scratch Postgres
