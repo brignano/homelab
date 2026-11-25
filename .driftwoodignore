@@ -1,0 +1,3 @@
+# Compose override applied on top of docker/mcp-budget/docker-compose.yml, same project.
+# Driftwood stops drawing proxy routes when two files share a project name.
+docker/mcp-budget/docker-compose.write.yml
