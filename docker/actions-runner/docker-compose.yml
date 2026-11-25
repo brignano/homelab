@@ -21,7 +21,7 @@ x-runner: &runner
   cpus: 2
   mem_limit: 3g
   tmpfs:
-    - /tmp/runner:size=2g
+    - /tmp/runner:size=2g,exec,nosuid,nodev
   networks:
     - runners
 
