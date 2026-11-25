@@ -1,0 +1,9 @@
+# Read by `driftwood scan` (scripts/architecture.sh). Adds the one thing scan
+# cannot find on its own: which Compose service each Caddy site reaches.
+providers:
+  - use: docker-compose
+    with:
+      proxies:
+        - service: proxy/caddy
+          format: routes
+          config: ./docs/architecture/routes.json
