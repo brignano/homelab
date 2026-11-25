@@ -161,6 +161,7 @@ jobs:
           ACTUAL_PASSWORD: ci
           ACTUAL_BUDGET_SYNC_ID: ci
           MCP_BUDGET_TOKEN: ci
+          RUNNER_GITHUB_TOKEN: ci
           EPG_PLAYLISTS: https://example.invalid/ci.m3u
         if: ${{ !cancelled() && steps.run.outputs.config == 'true' }}
         run: |

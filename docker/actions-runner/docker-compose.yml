@@ -1,0 +1,76 @@
+# Self-hosted GitHub Actions runners for the PRIVATE repos (#430).
+#
+# Why: Actions minutes are one quota shared by every repo, and private repos are
+# the ones that spend it. Public repos run free on GitHub's hosted runners and
+# are deliberately NOT here: a public repo's fork PRs would run on this box.
+# If a repo below ever turns public, delete its service first.
+#
+#   1. No ports, no Caddy route, no Docker socket, no host mounts. Each runner
+#      opens an OUTBOUND connection to GitHub and waits for work.
+#   2. EPHEMERAL: a runner takes one job, deregisters, and restarts clean, so a
+#      job leaves nothing behind for the next one. Its work folder is tmpfs.
+#   3. Capped, so a job cannot starve the rest of the box (16 GB).
+#   4. One token, from docker/actions-runner/.env, never from git.
+#
+# Jobs that need Docker (`services:`, `container:`, image builds) cannot run
+# here by design. Keep those on `ubuntu-latest`.
+x-runner: &runner
+  # Pinned by tag and digest; Renovate opens a PR for each bump.
+  image: myoung34/github-runner:2.338.2-ubuntu-noble@sha256:23e3a4a1da30de5b462ad0ae13d901288e803a688075c3b9b5bb79b7148c07fa
+  restart: unless-stopped
+  cpus: 2
+  mem_limit: 3g
+  tmpfs:
+    - /tmp/runner:size=2g
+  networks:
+    - runners
+
+x-env: &env
+  TZ: ${TZ:-America/New_York}
+  RUNNER_SCOPE: repo
+  # A fine-grained token with Administration read/write on the repos below.
+  # The image swaps it for a one-hour registration token on every start.
+  ACCESS_TOKEN: ${RUNNER_GITHUB_TOKEN:?required}
+  EPHEMERAL: "true"
+  RUNNER_WORKDIR: /tmp/runner
+  # Workflows pick this box with: runs-on: [self-hosted, homelab]
+  LABELS: homelab
+  DISABLE_AUTO_UPDATE: "true"
+
+services:
+  runner-driftwood:
+    <<: *runner
+    container_name: runner-driftwood
+    environment:
+      <<: *env
+      REPO_URL: https://github.com/brignano/driftwood
+      RUNNER_NAME: homelab-driftwood
+
+  runner-guidebook:
+    <<: *runner
+    container_name: runner-guidebook
+    environment:
+      <<: *env
+      REPO_URL: https://github.com/brignano/guidebook
+      RUNNER_NAME: homelab-guidebook
+
+  runner-sites:
+    <<: *runner
+    container_name: runner-sites
+    environment:
+      <<: *env
+      REPO_URL: https://github.com/brignano/sites
+      RUNNER_NAME: homelab-sites
+
+  runner-receipts:
+    <<: *runner
+    container_name: runner-receipts
+    environment:
+      <<: *env
+      REPO_URL: https://github.com/brignano/receipts
+      RUNNER_NAME: homelab-receipts
+
+# Its own network, joined by nothing else: a job cannot reach another
+# container by name.
+networks:
+  runners:
